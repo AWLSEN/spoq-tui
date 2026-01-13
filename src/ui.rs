@@ -40,9 +40,6 @@ pub const COLOR_QUEUED: Color = Color::Gray;
 /// Dim text for less important info
 pub const COLOR_DIM: Color = Color::DarkGray;
 
-/// Background color - black
-pub const COLOR_BG: Color = Color::Black;
-
 /// Background for input areas (used in later phases)
 #[allow(dead_code)]
 pub const COLOR_INPUT_BG: Color = Color::Rgb(20, 20, 30);
