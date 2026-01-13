@@ -786,25 +786,6 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(""));
     }
 
-    // Show current input preview if there's input being typed
-    let user_input = app.input_box.content();
-    if !user_input.is_empty() {
-        lines.push(Line::from(vec![Span::styled(
-            "─────────────────────────────────────────",
-            Style::default().fg(COLOR_DIM),
-        )]));
-        lines.push(Line::from(vec![
-            Span::styled(
-                "You (typing): ",
-                Style::default()
-                    .fg(COLOR_ACTIVE)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(user_input, Style::default().fg(Color::White)),
-        ]));
-        lines.push(Line::from(""));
-    }
-
     let messages_widget = Paragraph::new(lines);
     frame.render_widget(messages_widget, inner);
 }
@@ -1001,7 +982,7 @@ mod tests {
     }
 
     #[test]
-    fn test_conversation_screen_shows_user_input() {
+    fn test_conversation_screen_renders_with_user_input() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
@@ -1018,17 +999,13 @@ mod tests {
             })
             .unwrap();
 
-        // Check that the buffer shows "You (typing):" label when there's input being typed
+        // Check that the screen renders without panic when there's input
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
+        let has_content = buffer
             .content()
             .iter()
-            .map(|cell| cell.symbol())
-            .collect();
-        assert!(
-            buffer_str.contains("You (typing):"),
-            "Conversation screen should show typing indicator when input is present"
-        );
+            .any(|cell| cell.symbol() != " ");
+        assert!(has_content, "Conversation screen should render content with user input");
     }
 
     #[test]
