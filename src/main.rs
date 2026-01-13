@@ -1,3 +1,8 @@
+mod app;
+mod state;
+mod storage;
+
+use app::App;
 use color_eyre::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -24,8 +29,16 @@ async fn main() -> Result<()> {
     // Clear the terminal
     terminal.clear()?;
 
+    // Initialize application state
+    let mut app = App::new()?;
+
     // Main event loop
-    let result = run_app(&mut terminal).await;
+    let result = run_app(&mut terminal, &mut app).await;
+
+    // Save app state before exit
+    if let Err(e) = app.save() {
+        eprintln!("Failed to save app state: {}", e);
+    }
 
     // Restore terminal
     disable_raw_mode()?;
@@ -38,7 +51,7 @@ async fn main() -> Result<()> {
     result
 }
 
-async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Result<()> {
+async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
         // Draw blank screen
         terminal.draw(|_f| {
@@ -51,15 +64,21 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>) -> Re
                 if key.kind == KeyEventKind::Press {
                     match key.code {
                         KeyCode::Char('c') if key.modifiers.contains(event::KeyModifiers::CONTROL) => {
+                            app.quit();
                             return Ok(());
                         }
                         KeyCode::Char('q') => {
+                            app.quit();
                             return Ok(());
                         }
                         _ => {}
                     }
                 }
             }
+        }
+
+        if app.should_quit {
+            return Ok(());
         }
     }
 }
