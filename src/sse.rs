@@ -53,9 +53,24 @@ pub enum SseEvent {
 }
 
 /// Raw data payload from SSE data lines
+/// Supports multiple field names that backends might use for content
 #[derive(Debug, Clone, Deserialize)]
 struct ContentPayload {
-    text: String,
+    /// The text content - accepts "text", "content", "chunk", or "token" fields
+    #[serde(alias = "content", alias = "chunk", alias = "token")]
+    text: Option<String>,
+    /// Some backends nest content in a delta object (OpenAI style)
+    #[serde(default)]
+    delta: Option<DeltaPayload>,
+}
+
+/// Nested delta payload for OpenAI-style responses
+#[derive(Debug, Clone, Deserialize, Default)]
+struct DeltaPayload {
+    #[serde(default)]
+    content: Option<String>,
+    #[serde(default)]
+    text: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,7 +123,14 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
                     event_type: event_type.to_string(),
                     source: e.to_string(),
                 })?;
-            Ok(SseEvent::Content { text: payload.text })
+
+            // Extract text from various possible locations in the payload
+            let text = payload.text
+                .or_else(|| payload.delta.as_ref().and_then(|d| d.content.clone()))
+                .or_else(|| payload.delta.as_ref().and_then(|d| d.text.clone()))
+                .unwrap_or_default();
+
+            Ok(SseEvent::Content { text })
         }
         "thread_info" => {
             let payload: ThreadInfoPayload = serde_json::from_str(data)
@@ -333,6 +355,57 @@ mod tests {
             result.unwrap(),
             SseEvent::Content {
                 text: "Hello world".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_content_event_with_content_field() {
+        // Some backends use "content" instead of "text"
+        let result = parse_sse_event("content", r#"{"content": "From content field"}"#);
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::Content {
+                text: "From content field".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_content_event_with_delta_field() {
+        // OpenAI-style nested delta.content
+        let result = parse_sse_event("content", r#"{"delta": {"content": "From delta"}}"#);
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::Content {
+                text: "From delta".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_content_event_with_extra_fields() {
+        // Backend may send extra fields we don't care about
+        let result = parse_sse_event(
+            "content",
+            r#"{"text": "Hello", "id": 123, "model": "claude", "extra": "ignored"}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::Content {
+                text: "Hello".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_content_event_empty_when_no_text() {
+        // If no text field found, should return empty string (not error)
+        let result = parse_sse_event("content", r#"{"other_field": "value"}"#);
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::Content {
+                text: "".to_string()
             }
         );
     }

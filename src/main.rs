@@ -181,6 +181,15 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
 
                             // Handle input-specific keys when Input is focused
                             if app.focus == Focus::Input {
+                                // Check for Shift+Escape FIRST (before plain Escape)
+                                // This ensures Shift+Escape goes back to CommandDeck even when typing
+                                if key.code == KeyCode::Esc && key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    if app.screen == Screen::Conversation {
+                                        app.navigate_to_command_deck();
+                                    }
+                                    continue;
+                                }
+
                                 match key.code {
                                     KeyCode::Char(c) => {
                                         app.input_box.insert_char(c);
@@ -215,7 +224,7 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         continue;
                                     }
                                     KeyCode::Esc => {
-                                        // Escape behavior depends on input state and screen
+                                        // Plain Escape (no Shift) - depends on input state and screen
                                         if app.screen == Screen::Conversation {
                                             if app.input_box.is_empty() {
                                                 // Empty input: go back to CommandDeck
