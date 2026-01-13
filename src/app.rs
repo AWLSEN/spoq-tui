@@ -390,16 +390,20 @@ impl App {
         match msg {
             AppMessage::StreamToken { thread_id, token } => {
                 self.cache.append_to_message(&thread_id, &token);
-                // Auto-scroll to bottom when new content arrives
-                self.conversation_scroll = 0;
+                // Auto-scroll to bottom when new content arrives, but only for the active thread
+                if self.active_thread_id.as_ref() == Some(&thread_id) {
+                    self.conversation_scroll = 0;
+                }
             }
             AppMessage::StreamComplete {
                 thread_id,
                 message_id,
             } => {
                 self.cache.finalize_message(&thread_id, message_id);
-                // Auto-scroll to bottom when stream completes
-                self.conversation_scroll = 0;
+                // Auto-scroll to bottom when stream completes, but only for the active thread
+                if self.active_thread_id.as_ref() == Some(&thread_id) {
+                    self.conversation_scroll = 0;
+                }
             }
             AppMessage::StreamError { thread_id: _, error } => {
                 self.stream_error = Some(error);
@@ -1087,5 +1091,97 @@ mod tests {
 
         // Cache should start empty (no stub data)
         assert_eq!(app.cache.thread_count(), 0);
+    }
+
+    // ============= Scroll Behavior Tests =============
+
+    #[test]
+    fn test_stream_token_does_not_reset_scroll_for_non_active_thread() {
+        let mut app = App::default();
+
+        // Create two threads
+        let thread1_id = app.cache.create_streaming_thread("Thread 1".to_string());
+        let thread2_id = app.cache.create_streaming_thread("Thread 2".to_string());
+
+        // Set thread 1 as active
+        app.active_thread_id = Some(thread1_id.clone());
+
+        // Set conversation scroll to a non-zero value (user has scrolled up)
+        app.conversation_scroll = 5;
+
+        // Receive token for thread 2 (non-active thread)
+        app.handle_message(AppMessage::StreamToken {
+            thread_id: thread2_id.clone(),
+            token: "Hello from thread 2".to_string(),
+        });
+
+        // Scroll should NOT be reset (should still be 5)
+        assert_eq!(app.conversation_scroll, 5);
+    }
+
+    #[test]
+    fn test_stream_token_resets_scroll_for_active_thread() {
+        let mut app = App::default();
+
+        // Create a thread and set it as active
+        let thread_id = app.cache.create_streaming_thread("Active thread".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Set conversation scroll to a non-zero value
+        app.conversation_scroll = 10;
+
+        // Receive token for the active thread
+        app.handle_message(AppMessage::StreamToken {
+            thread_id: thread_id.clone(),
+            token: "Hello".to_string(),
+        });
+
+        // Scroll should be reset to 0 (auto-scroll to bottom)
+        assert_eq!(app.conversation_scroll, 0);
+    }
+
+    #[test]
+    fn test_stream_complete_does_not_reset_scroll_for_non_active_thread() {
+        let mut app = App::default();
+
+        // Create two threads
+        let thread1_id = app.cache.create_streaming_thread("Thread 1".to_string());
+        let thread2_id = app.cache.create_streaming_thread("Thread 2".to_string());
+
+        // Set thread 1 as active
+        app.active_thread_id = Some(thread1_id.clone());
+
+        // Set conversation scroll to a non-zero value
+        app.conversation_scroll = 7;
+
+        // Complete stream for thread 2 (non-active thread)
+        app.handle_message(AppMessage::StreamComplete {
+            thread_id: thread2_id.clone(),
+            message_id: 42,
+        });
+
+        // Scroll should NOT be reset
+        assert_eq!(app.conversation_scroll, 7);
+    }
+
+    #[test]
+    fn test_stream_complete_resets_scroll_for_active_thread() {
+        let mut app = App::default();
+
+        // Create a thread and set it as active
+        let thread_id = app.cache.create_streaming_thread("Active thread".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Set conversation scroll to a non-zero value
+        app.conversation_scroll = 15;
+
+        // Complete stream for the active thread
+        app.handle_message(AppMessage::StreamComplete {
+            thread_id: thread_id.clone(),
+            message_id: 99,
+        });
+
+        // Scroll should be reset to 0
+        assert_eq!(app.conversation_scroll, 0);
     }
 }

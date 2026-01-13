@@ -204,6 +204,17 @@ impl ThreadCache {
             .unwrap_or(thread_id)
     }
 
+    /// Check if a thread has any streaming messages.
+    /// Returns true if any message in the thread has is_streaming=true.
+    /// Returns false if the thread doesn't exist or has no streaming messages.
+    pub fn is_thread_streaming(&self, thread_id: &str) -> bool {
+        let resolved_id = self.resolve_thread_id(thread_id);
+        self.messages
+            .get(resolved_id)
+            .map(|msgs| msgs.iter().any(|m| m.is_streaming))
+            .unwrap_or(false)
+    }
+
     /// Append a token to the streaming message in a thread
     /// Finds the last message with is_streaming=true and appends the token
     pub fn append_to_message(&mut self, thread_id: &str, token: &str) {
@@ -1442,5 +1453,51 @@ mod tests {
 
         // Thread should be moved to front
         assert_eq!(cache.threads()[0].id, "thread-001");
+    }
+
+    // ============= is_thread_streaming Tests =============
+
+    #[test]
+    fn test_is_thread_streaming_returns_true_when_streaming() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Thread has a streaming message
+        assert!(cache.is_thread_streaming(&thread_id));
+    }
+
+    #[test]
+    fn test_is_thread_streaming_returns_false_when_not_streaming() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Finalize the streaming message
+        cache.finalize_message(&thread_id, 1);
+
+        // No longer streaming
+        assert!(!cache.is_thread_streaming(&thread_id));
+    }
+
+    #[test]
+    fn test_is_thread_streaming_returns_false_for_unknown_thread() {
+        let cache = ThreadCache::new();
+
+        // Unknown thread should return false
+        assert!(!cache.is_thread_streaming("nonexistent-thread"));
+    }
+
+    #[test]
+    fn test_is_thread_streaming_with_reconciled_thread() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Hello".to_string());
+
+        // Reconcile to real ID
+        cache.reconcile_thread_id(&pending_id, "real-thread-123", None);
+
+        // Should still be streaming under the real ID
+        assert!(cache.is_thread_streaming("real-thread-123"));
+
+        // Should also work with the old pending ID (redirected)
+        assert!(cache.is_thread_streaming(&pending_id));
     }
 }
