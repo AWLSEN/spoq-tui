@@ -1,10 +1,12 @@
 mod app;
+mod cache;
+mod models;
 mod state;
 mod storage;
 mod ui;
 mod widgets;
 
-use app::{App, Focus};
+use app::{App, Focus, Screen};
 use color_eyre::Result;
 use crossterm::{
     cursor::Show,
@@ -118,6 +120,13 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                             app.quit();
                             return Ok(());
+                        }
+                        // Shift+Escape to return to CommandDeck from Conversation
+                        KeyCode::Esc if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                            if app.screen == Screen::Conversation {
+                                app.navigate_to_command_deck();
+                            }
+                            continue;
                         }
                         // Shift+N to create new thread
                         KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {

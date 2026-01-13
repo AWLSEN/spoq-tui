@@ -3,6 +3,14 @@ use crate::storage;
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
 
+/// Represents which screen is currently active
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Screen {
+    #[default]
+    CommandDeck,
+    Conversation,
+}
+
 /// Represents which UI component has focus
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Focus {
@@ -22,6 +30,10 @@ pub struct App {
     pub tasks: Vec<Task>,
     /// Flag to track if the app should quit
     pub should_quit: bool,
+    /// Current screen being displayed
+    pub screen: Screen,
+    /// ID of the active thread when in Conversation screen
+    pub active_thread_id: Option<String>,
     /// Current focus panel
     pub focus: Focus,
     /// Selected index in notifications panel
@@ -50,6 +62,8 @@ impl App {
             threads,
             tasks,
             should_quit: false,
+            screen: Screen::default(),
+            active_thread_id: None,
             focus: Focus::default(),
             notifications_index: 0,
             tasks_index: 0,
@@ -149,10 +163,67 @@ impl App {
     pub fn quit(&mut self) {
         self.should_quit = true;
     }
+
+    /// Navigate back to the CommandDeck screen
+    pub fn navigate_to_command_deck(&mut self) {
+        self.screen = Screen::CommandDeck;
+    }
 }
 
 impl Default for App {
     fn default() -> Self {
         Self::new().expect("Failed to create default App")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_screen_default_is_command_deck() {
+        assert_eq!(Screen::default(), Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_screen_equality() {
+        assert_eq!(Screen::CommandDeck, Screen::CommandDeck);
+        assert_eq!(Screen::Conversation, Screen::Conversation);
+        assert_ne!(Screen::CommandDeck, Screen::Conversation);
+    }
+
+    #[test]
+    fn test_screen_copy() {
+        let screen = Screen::Conversation;
+        let copied = screen;
+        assert_eq!(screen, copied);
+    }
+
+    #[test]
+    fn test_navigate_to_command_deck_from_conversation() {
+        let mut app = App::default();
+        app.screen = Screen::Conversation;
+        app.navigate_to_command_deck();
+        assert_eq!(app.screen, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_navigate_to_command_deck_when_already_on_command_deck() {
+        let mut app = App::default();
+        assert_eq!(app.screen, Screen::CommandDeck);
+        app.navigate_to_command_deck();
+        assert_eq!(app.screen, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_app_initializes_with_no_active_thread() {
+        let app = App::default();
+        assert!(app.active_thread_id.is_none());
+    }
+
+    #[test]
+    fn test_app_initializes_on_command_deck() {
+        let app = App::default();
+        assert_eq!(app.screen, Screen::CommandDeck);
     }
 }
