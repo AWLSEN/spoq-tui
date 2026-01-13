@@ -134,10 +134,6 @@ fn render_logo(frame: &mut Frame, area: Rect) {
 }
 
 fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
-    // Calculate migration progress (mock for now - 67%)
-    let migration_progress = 0.67;
-    let is_migrating = migration_progress < 1.0;
-
     let mut lines = vec![
         Line::from(""),
         Line::from(Span::styled(
@@ -147,11 +143,12 @@ fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(""),
     ];
 
-    if is_migrating {
+    // Show migration progress if it's running
+    if let Some(progress) = app.migration_progress {
         lines.push(Line::from(vec![
             Span::styled("[MIGRATING] ", Style::default().fg(COLOR_QUEUED)),
             Span::styled(
-                format!("{}%", (migration_progress * 100.0) as u8),
+                format!("{}%", progress),
                 Style::default().fg(COLOR_ACCENT),
             ),
         ]));

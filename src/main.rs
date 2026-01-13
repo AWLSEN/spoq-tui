@@ -7,6 +7,7 @@ mod widgets;
 use app::{App, Focus};
 use color_eyre::Result;
 use crossterm::{
+    cursor::Show,
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -20,6 +21,9 @@ use std::io;
 #[tokio::main]
 async fn main() -> Result<()> {
     color_eyre::install()?;
+
+    // Setup panic hook to ensure terminal cleanup on panic
+    setup_panic_hook();
 
     // Setup terminal
     enable_raw_mode()?;
@@ -43,14 +47,34 @@ async fn main() -> Result<()> {
     }
 
     // Restore terminal
+    restore_terminal(&mut terminal)?;
+
+    result
+}
+
+/// Setup panic hook to restore terminal on panic
+fn setup_panic_hook() {
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Try to restore terminal state
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), Show);
+
+        // Call the original panic hook
+        original_hook(panic_info);
+    }));
+}
+
+/// Restore terminal to normal mode
+fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mut Terminal<B>) -> Result<()> {
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
         LeaveAlternateScreen
     )?;
     terminal.show_cursor()?;
-
-    result
+    Ok(())
 }
 
 async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
@@ -58,7 +82,24 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
     const MOCK_NOTIFICATIONS_COUNT: usize = 4;
     const MOCK_THREADS_COUNT: usize = 3;
 
+    // Track migration progress animation
+    let migration_start = tokio::time::Instant::now();
+    const MIGRATION_DURATION_MS: u64 = 5000; // 5 seconds
+
     loop {
+        // Update migration progress if it's running
+        if app.migration_progress.is_some() {
+            let elapsed_ms = migration_start.elapsed().as_millis() as u64;
+            if elapsed_ms >= MIGRATION_DURATION_MS {
+                // Migration complete, hide progress bar
+                app.migration_progress = None;
+            } else {
+                // Calculate progress percentage (0-100)
+                let progress = ((elapsed_ms * 100) / MIGRATION_DURATION_MS) as u8;
+                app.migration_progress = Some(progress);
+            }
+        }
+
         // Draw the UI
         terminal.draw(|f| {
             ui::render(f, app);
@@ -66,8 +107,12 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
 
         // Handle events
         if event::poll(std::time::Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                Event::Resize(_width, _height) => {
+                    // Terminal was resized, redraw will happen on next loop iteration
+                    continue;
+                }
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
                     // Global keybinds (always active)
                     match key.code {
                         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -158,6 +203,9 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                         }
                         _ => {}
                     }
+                }
+                _ => {
+                    // Ignore other events (mouse, focus, etc.)
                 }
             }
         }

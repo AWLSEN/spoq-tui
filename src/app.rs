@@ -32,6 +32,8 @@ pub struct App {
     pub threads_index: usize,
     /// Input box state
     pub input_box: InputBox,
+    /// Migration/indexing progress (0-100), None when complete
+    pub migration_progress: Option<u8>,
 }
 
 impl App {
@@ -53,6 +55,7 @@ impl App {
             tasks_index: 0,
             threads_index: 0,
             input_box: InputBox::new(),
+            migration_progress: Some(0),
         })
     }
 
