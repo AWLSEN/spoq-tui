@@ -445,20 +445,29 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         Line::from(""),
     ];
 
-    // Use threads from cache
+    // Use threads from cache (no mock fallback - show empty if no threads)
     let cached_threads = app.cache.threads();
-    let threads_to_render: Vec<(String, String)> = if cached_threads.is_empty() {
-        // Fallback mock data if cache is empty
-        vec![
-            ("Project Setup".to_string(), "Setting up Rust environment...".to_string()),
-            ("Bug Investigation".to_string(), "Analyzing stack trace...".to_string()),
-            ("Feature Request".to_string(), "Adding dark mode support...".to_string()),
-        ]
-    } else {
-        cached_threads.iter().map(|t| {
-            (t.title.clone(), t.preview.clone())
-        }).collect()
-    };
+    let threads_to_render: Vec<(String, String)> = cached_threads.iter().map(|t| {
+        (t.title.clone(), t.preview.clone())
+    }).collect();
+
+    // Show empty state if no threads
+    if threads_to_render.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw(padding_str.clone()),
+            Span::styled(
+                "No conversations yet",
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw(padding_str.clone()),
+            Span::styled(
+                "Type a message to start",
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+    }
 
     for (i, (title, preview)) in threads_to_render.iter().enumerate() {
         let is_selected = focused && i == app.threads_index;

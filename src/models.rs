@@ -1,17 +1,70 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
+
+/// Helper to deserialize id as either string or integer
+fn deserialize_id<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct IdVisitor;
+
+    impl<'de> Visitor<'de> for IdVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a string or integer")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_string())
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            Ok(value)
+        }
+
+        fn visit_i64<E>(self, value: i64) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_string())
+        }
+
+        fn visit_u64<E>(self, value: u64) -> Result<String, E>
+        where
+            E: de::Error,
+        {
+            Ok(value.to_string())
+        }
+    }
+
+    deserializer.deserialize_any(IdVisitor)
+}
 
 /// Represents a conversation thread from the backend API
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Thread {
-    /// Unique identifier from backend
+    /// Unique identifier from backend (can be string or integer)
+    #[serde(deserialize_with = "deserialize_id")]
     pub id: String,
     /// Title derived from first message
+    #[serde(default)]
     pub title: String,
     /// Preview of the last message
+    #[serde(default)]
     pub preview: String,
     /// When the thread was last updated
+    #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
 }
 
