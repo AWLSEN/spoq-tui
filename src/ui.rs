@@ -15,6 +15,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Focus, Screen};
+use crate::markdown::render_markdown;
 use crate::state::{Notification, TaskStatus};
 use crate::widgets::input_box::InputBoxWidget;
 
@@ -792,21 +793,68 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                 // Display partial_content with blinking cursor
                 // Blink cursor every ~500ms (assuming 10 ticks/sec, toggle every 5 ticks)
                 let show_cursor = (app.tick_count / 5) % 2 == 0;
-                let cursor = if show_cursor { "█" } else { " " };
+                let cursor_span = Span::styled(
+                    if show_cursor { "█" } else { " " },
+                    Style::default().fg(COLOR_ACCENT),
+                );
 
-                let display_content = &message.partial_content;
+                // Parse partial content with markdown renderer
+                let mut content_lines = render_markdown(&message.partial_content);
 
-                lines.push(Line::from(vec![
-                    Span::styled(label, label_style),
-                    Span::styled(display_content, Style::default().fg(Color::White)),
-                    Span::styled(cursor, Style::default().fg(COLOR_ACCENT)),
-                ]));
+                // Add label to first line, append cursor to last line
+                if content_lines.is_empty() {
+                    // No content yet, just show label with cursor
+                    lines.push(Line::from(vec![
+                        Span::styled(label, label_style),
+                        cursor_span,
+                    ]));
+                } else {
+                    // Prepend label to first line
+                    let first_line = content_lines.remove(0);
+                    let mut first_spans = vec![Span::styled(label, label_style)];
+                    first_spans.extend(first_line.spans);
+                    lines.push(Line::from(first_spans));
+
+                    // Add middle lines as-is
+                    for line in content_lines.drain(..content_lines.len().saturating_sub(1)) {
+                        lines.push(line);
+                    }
+
+                    // Append cursor to last line (if there are remaining lines)
+                    if let Some(last_line) = content_lines.pop() {
+                        let mut last_spans = last_line.spans;
+                        last_spans.push(cursor_span);
+                        lines.push(Line::from(last_spans));
+                    } else {
+                        // Only had one line, cursor was not added yet
+                        // The first line is already pushed, so add cursor separately
+                        // Actually, we need to modify the last pushed line
+                        if let Some(last_pushed) = lines.last_mut() {
+                            last_pushed.spans.push(cursor_span);
+                        }
+                    }
+                }
             } else {
-                // Display completed message content
-                lines.push(Line::from(vec![
-                    Span::styled(label, label_style),
-                    Span::styled(&message.content, Style::default().fg(Color::White)),
-                ]));
+                // Display completed message content with markdown rendering
+                let content_lines = render_markdown(&message.content);
+
+                if content_lines.is_empty() {
+                    // Empty content, just show label
+                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                } else {
+                    // Prepend label to first line
+                    let mut iter = content_lines.into_iter();
+                    if let Some(first_line) = iter.next() {
+                        let mut first_spans = vec![Span::styled(label, label_style)];
+                        first_spans.extend(first_line.spans);
+                        lines.push(Line::from(first_spans));
+                    }
+
+                    // Add remaining lines as-is
+                    for line in iter {
+                        lines.push(line);
+                    }
+                }
             }
             lines.push(Line::from(""));
         }
