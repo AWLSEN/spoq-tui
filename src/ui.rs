@@ -795,9 +795,39 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(""));
     }
 
+    // Calculate content height for scroll bounds
+    // With word wrap enabled, we need to estimate wrapped line count
+    let viewport_height = inner.height as usize;
+    let viewport_width = inner.width as usize;
+
+    // Estimate total lines after wrapping
+    let mut total_lines: usize = 0;
+    for line in &lines {
+        let line_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+        if line_width == 0 {
+            total_lines += 1; // Empty line
+        } else {
+            // Estimate wrapped lines (ceil division)
+            total_lines += (line_width + viewport_width - 1) / viewport_width.max(1);
+        }
+    }
+
+    // Calculate max scroll (how far up we can scroll from bottom)
+    // scroll=0 means showing the bottom (latest content)
+    // scroll=max means showing the top (oldest content)
+    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+
+    // Clamp user's scroll to valid range
+    let clamped_scroll = app.conversation_scroll.min(max_scroll);
+
+    // Convert from "scroll from bottom" to ratatui's "scroll from top"
+    // If user_scroll=0, show bottom → actual_scroll = max_scroll
+    // If user_scroll=max, show top → actual_scroll = 0
+    let actual_scroll = max_scroll.saturating_sub(clamped_scroll);
+
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .scroll((app.conversation_scroll, 0));
+        .scroll((actual_scroll, 0));
     frame.render_widget(messages_widget, inner);
 }
 
