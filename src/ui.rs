@@ -401,6 +401,17 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 
     let inner = inner_rect(area, 1);
 
+    // Calculate centering padding for thread cards
+    // Card width is 39 chars (including borders)
+    let card_width: u16 = 39;
+    let panel_width = inner.width;
+    let left_padding = if panel_width > card_width {
+        (panel_width - card_width) / 2
+    } else {
+        0
+    };
+    let padding_str: String = " ".repeat(left_padding as usize);
+
     let header_style = if focused {
         Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
     } else {
@@ -432,15 +443,19 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         let is_selected = focused && i == app.threads_index;
         let card_border_color = if is_selected { COLOR_HEADER } else { COLOR_BORDER };
 
-        // Thread card top border
-        lines.push(Line::from(Span::styled(
-            "┌─────────────────────────────────────┐",
-            Style::default().fg(card_border_color),
-        )));
+        // Thread card top border (centered)
+        lines.push(Line::from(vec![
+            Span::raw(padding_str.clone()),
+            Span::styled(
+                "┌─────────────────────────────────────┐",
+                Style::default().fg(card_border_color),
+            ),
+        ]));
 
-        // Thread title
+        // Thread title (centered)
         let title_marker = if is_selected { "▶ " } else { "► " };
         lines.push(Line::from(vec![
+            Span::raw(padding_str.clone()),
             Span::styled("│ ", Style::default().fg(card_border_color)),
             Span::styled(title_marker, Style::default().fg(if is_selected { COLOR_HEADER } else { COLOR_ACCENT })),
             Span::styled(
@@ -455,8 +470,9 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
             ),
         ]));
 
-        // Thread preview
+        // Thread preview (centered)
         lines.push(Line::from(vec![
+            Span::raw(padding_str.clone()),
             Span::styled("│   ", Style::default().fg(card_border_color)),
             Span::styled(format!("\"{}\"", preview), Style::default().fg(COLOR_DIM)),
             Span::styled(
@@ -465,16 +481,20 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
             ),
         ]));
 
-        // Thread card bottom border
-        lines.push(Line::from(Span::styled(
-            "└─────────────────────────────────────┘",
-            Style::default().fg(card_border_color),
-        )));
+        // Thread card bottom border (centered)
+        lines.push(Line::from(vec![
+            Span::raw(padding_str.clone()),
+            Span::styled(
+                "└─────────────────────────────────────┘",
+                Style::default().fg(card_border_color),
+            ),
+        ]));
         lines.push(Line::from(""));
     }
 
-    // Keybind hints at bottom of threads panel
+    // Keybind hints at bottom of threads panel (centered)
     lines.push(Line::from(vec![
+        Span::raw(padding_str),
         Span::styled("[Shift+N]", Style::default().fg(COLOR_ACCENT)),
         Span::raw(" New Thread  "),
         Span::styled("[TAB]", Style::default().fg(COLOR_ACCENT)),
