@@ -14,8 +14,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, Focus};
 use crate::state::{Notification, TaskStatus};
+use crate::widgets::input_box::InputBoxWidget;
 
 // ============================================================================
 // Cyberpunk Color Theme
@@ -91,7 +92,7 @@ pub fn render(frame: &mut Frame, app: &App) {
 
     render_header(frame, main_chunks[0], app);
     render_main_content(frame, main_chunks[1], app);
-    render_input_area(frame, main_chunks[2]);
+    render_input_area(frame, main_chunks[2], app);
 }
 
 /// Get inner rect with margin
@@ -192,7 +193,7 @@ fn render_main_content(frame: &mut Frame, area: Rect, app: &App) {
         .split(area);
 
     render_left_panel(frame, content_chunks[0], app);
-    render_right_panel(frame, content_chunks[1], app);
+    render_right_panel(frame, content_chunks[1], app, app.focus == Focus::Threads);
 }
 
 // ============================================================================
@@ -215,19 +216,26 @@ fn render_left_panel(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    render_notifications(frame, left_chunks[0], app);
-    render_tasks(frame, left_chunks[1], app);
+    render_notifications(frame, left_chunks[0], app, app.focus == Focus::Notifications);
+    render_tasks(frame, left_chunks[1], app, app.focus == Focus::Tasks);
 }
 
-fn render_notifications(frame: &mut Frame, area: Rect, _app: &App) {
+fn render_notifications(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
+    // Header styling changes based on focus
+    let header_style = if focused {
+        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+    };
+
     let mut lines = vec![
         Line::from(Span::styled(
-            "◈ NOTIFICATIONS",
-            Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD),
+            if focused { "◈ NOTIFICATIONS ◄" } else { "◈ NOTIFICATIONS" },
+            header_style,
         )),
         Line::from(Span::styled(
             "─────────────────────────────",
-            Style::default().fg(COLOR_DIM),
+            Style::default().fg(if focused { COLOR_ACCENT } else { COLOR_DIM }),
         )),
     ];
 
@@ -251,12 +259,27 @@ fn render_notifications(frame: &mut Frame, area: Rect, _app: &App) {
         },
     ];
 
-    for notif in mock_notifications.iter().take(area.height.saturating_sub(3) as usize) {
+    for (i, notif) in mock_notifications.iter().take(area.height.saturating_sub(3) as usize).enumerate() {
         let time = notif.timestamp.format("%H:%M").to_string();
+        let is_selected = focused && i == app.notifications_index;
+        let marker = if is_selected { "▶ " } else { "▸ " };
+        let marker_style = if is_selected {
+            Style::default().fg(COLOR_HEADER)
+        } else {
+            Style::default().fg(COLOR_ACCENT)
+        };
+
         lines.push(Line::from(vec![
-            Span::styled("▸ ", Style::default().fg(COLOR_ACCENT)),
+            Span::styled(marker, marker_style),
             Span::styled(format!("[{}] ", time), Style::default().fg(COLOR_DIM)),
-            Span::raw(&notif.message),
+            Span::styled(
+                &notif.message,
+                if is_selected {
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                },
+            ),
         ]));
     }
 
@@ -264,11 +287,12 @@ fn render_notifications(frame: &mut Frame, area: Rect, _app: &App) {
     frame.render_widget(notifications, area);
 }
 
-fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
+fn render_tasks(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
+    let border_color = if focused { COLOR_ACCENT } else { COLOR_DIM };
     let task_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
-        .border_style(Style::default().fg(COLOR_DIM));
+        .border_style(Style::default().fg(border_color));
     frame.render_widget(task_block.clone(), area);
 
     let inner = inner_rect(area, 1);
@@ -282,25 +306,46 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    render_saved_tasks(frame, task_chunks[0], app);
-    render_active_tasks(frame, task_chunks[1], app);
+    render_saved_tasks(frame, task_chunks[0], app, focused);
+    render_active_tasks(frame, task_chunks[1], app, focused);
 }
 
-fn render_saved_tasks(frame: &mut Frame, area: Rect, _app: &App) {
+fn render_saved_tasks(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
+    let header_style = if focused {
+        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+    };
+
     let mut lines = vec![
         Line::from(Span::styled(
-            "◇ SAVED",
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
+            if focused { "◇ SAVED ◄" } else { "◇ SAVED" },
+            header_style,
         )),
-        Line::from(Span::styled("────────────", Style::default().fg(COLOR_DIM))),
+        Line::from(Span::styled("────────────", Style::default().fg(if focused { COLOR_ACCENT } else { COLOR_DIM }))),
     ];
 
     // Mock saved tasks for static render
     let saved_tasks = ["task-001", "task-002", "task-003"];
-    for task in saved_tasks.iter() {
+    for (i, task) in saved_tasks.iter().enumerate() {
+        let is_selected = focused && i == app.tasks_index;
+        let marker = if is_selected { "▶ " } else { "□ " };
+        let marker_style = if is_selected {
+            Style::default().fg(COLOR_HEADER)
+        } else {
+            Style::default().fg(COLOR_DIM)
+        };
+
         lines.push(Line::from(vec![
-            Span::styled("□ ", Style::default().fg(COLOR_DIM)),
-            Span::raw(*task),
+            Span::styled(marker, marker_style),
+            Span::styled(
+                *task,
+                if is_selected {
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default()
+                },
+            ),
         ]));
     }
 
@@ -308,7 +353,7 @@ fn render_saved_tasks(frame: &mut Frame, area: Rect, _app: &App) {
     frame.render_widget(saved, area);
 }
 
-fn render_active_tasks(frame: &mut Frame, area: Rect, _app: &App) {
+fn render_active_tasks(frame: &mut Frame, area: Rect, _app: &App, _focused: bool) {
     let mut lines = vec![
         Line::from(Span::styled(
             "◆ ACTIVE",
@@ -347,72 +392,91 @@ fn render_active_tasks(frame: &mut Frame, area: Rect, _app: &App) {
 // Right Panel: Threads
 // ============================================================================
 
-fn render_right_panel(frame: &mut Frame, area: Rect, _app: &App) {
+fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
+    let border_color = if focused { COLOR_HEADER } else { COLOR_BORDER };
     let right_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Plain)
-        .border_style(Style::default().fg(COLOR_BORDER));
+        .border_type(if focused { BorderType::Thick } else { BorderType::Plain })
+        .border_style(Style::default().fg(border_color));
     frame.render_widget(right_block.clone(), area);
 
     let inner = inner_rect(area, 1);
 
+    let header_style = if focused {
+        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+    };
+
     let mut lines = vec![
         Line::from(Span::styled(
-            "◈ THREADS",
-            Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD),
+            if focused { "◈ THREADS ◄" } else { "◈ THREADS" },
+            header_style,
         )),
         Line::from(""),
     ];
 
-    // Mock threads for static render
-    let mock_threads = [
-        ("Project Setup", "Setting up Rust environment..."),
-        ("Bug Investigation", "Analyzing stack trace..."),
-        ("Feature Request", "Adding dark mode support..."),
-    ];
+    // Use actual threads from app if available, otherwise use mock
+    let threads_to_render: Vec<(String, String)> = if app.threads.is_empty() {
+        vec![
+            ("Project Setup".to_string(), "Setting up Rust environment...".to_string()),
+            ("Bug Investigation".to_string(), "Analyzing stack trace...".to_string()),
+            ("Feature Request".to_string(), "Adding dark mode support...".to_string()),
+        ]
+    } else {
+        app.threads.iter().map(|t| {
+            (t.title.clone(), t.preview.clone())
+        }).collect()
+    };
 
-    for (title, preview) in mock_threads.iter() {
+    for (i, (title, preview)) in threads_to_render.iter().enumerate() {
+        let is_selected = focused && i == app.threads_index;
+        let card_border_color = if is_selected { COLOR_HEADER } else { COLOR_BORDER };
+
         // Thread card top border
         lines.push(Line::from(Span::styled(
             "┌─────────────────────────────────────┐",
-            Style::default().fg(COLOR_BORDER),
+            Style::default().fg(card_border_color),
         )));
 
         // Thread title
+        let title_marker = if is_selected { "▶ " } else { "► " };
         lines.push(Line::from(vec![
-            Span::styled("│ ", Style::default().fg(COLOR_BORDER)),
-            Span::styled("► ", Style::default().fg(COLOR_ACCENT)),
+            Span::styled("│ ", Style::default().fg(card_border_color)),
+            Span::styled(title_marker, Style::default().fg(if is_selected { COLOR_HEADER } else { COLOR_ACCENT })),
             Span::styled(
                 format!("Thread: {}", title),
-                Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(if is_selected { Color::White } else { COLOR_HEADER })
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!("{:>width$}│", "", width = 35_usize.saturating_sub(10 + title.len())),
-                Style::default().fg(COLOR_BORDER),
+                Style::default().fg(card_border_color),
             ),
         ]));
 
         // Thread preview
         lines.push(Line::from(vec![
-            Span::styled("│   ", Style::default().fg(COLOR_BORDER)),
+            Span::styled("│   ", Style::default().fg(card_border_color)),
             Span::styled(format!("\"{}\"", preview), Style::default().fg(COLOR_DIM)),
             Span::styled(
                 format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + preview.len())),
-                Style::default().fg(COLOR_BORDER),
+                Style::default().fg(card_border_color),
             ),
         ]));
 
         // Thread card bottom border
         lines.push(Line::from(Span::styled(
             "└─────────────────────────────────────┘",
-            Style::default().fg(COLOR_BORDER),
+            Style::default().fg(card_border_color),
         )));
         lines.push(Line::from(""));
     }
 
     // Keybind hints at bottom of threads panel
     lines.push(Line::from(vec![
-        Span::styled("[CAPS]", Style::default().fg(COLOR_ACCENT)),
+        Span::styled("[Shift+N]", Style::default().fg(COLOR_ACCENT)),
         Span::raw(" New Thread  "),
         Span::styled("[TAB]", Style::default().fg(COLOR_ACCENT)),
         Span::raw(" Switch Panel"),
@@ -426,11 +490,14 @@ fn render_right_panel(frame: &mut Frame, area: Rect, _app: &App) {
 // Input Area
 // ============================================================================
 
-fn render_input_area(frame: &mut Frame, area: Rect) {
+fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
+    let input_focused = app.focus == Focus::Input;
+    let border_color = if input_focused { COLOR_HEADER } else { COLOR_BORDER };
+
     let input_outer = Block::default()
         .borders(Borders::TOP)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(COLOR_BORDER));
+        .border_style(Style::default().fg(border_color));
     frame.render_widget(input_outer, area);
 
     let inner = Rect {
@@ -443,36 +510,26 @@ fn render_input_area(frame: &mut Frame, area: Rect) {
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // Input box
+            Constraint::Length(3), // Input box (needs 3 for border + content)
             Constraint::Length(1), // Keybinds
         ])
         .split(inner);
 
-    // Input box
-    let input_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(COLOR_DIM));
-
-    let input_text = Paragraph::new(Line::from(vec![
-        Span::styled("▌", Style::default().fg(COLOR_ACCENT)),
-        Span::styled("Type your message...", Style::default().fg(COLOR_DIM)),
-    ]))
-    .block(input_block);
-
-    frame.render_widget(input_text, input_chunks[0]);
+    // Render the InputBox widget
+    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
+    frame.render_widget(input_widget, input_chunks[0]);
 
     // Keybind hints
     let keybinds = Line::from(vec![
         Span::raw(" "),
         Span::styled("[ENTER]", Style::default().fg(COLOR_ACCENT)),
         Span::raw(" Send   "),
+        Span::styled("[TAB]", Style::default().fg(COLOR_ACCENT)),
+        Span::raw(" Switch   "),
         Span::styled("[CTRL+C]", Style::default().fg(COLOR_ACCENT)),
         Span::raw(" Exit   "),
-        Span::styled("[F1]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Help   "),
-        Span::styled("[F2]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Settings"),
+        Span::styled("[ESC]", Style::default().fg(COLOR_ACCENT)),
+        Span::raw(" Back"),
     ]);
 
     let keybinds_widget = Paragraph::new(keybinds);
