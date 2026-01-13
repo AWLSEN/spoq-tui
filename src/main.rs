@@ -2,6 +2,7 @@ mod app;
 mod cache;
 mod conductor;
 mod events;
+mod markdown;
 mod models;
 pub mod sse;
 mod state;
