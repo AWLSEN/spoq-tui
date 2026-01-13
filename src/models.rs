@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Represents a conversation thread from the backend API
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -63,11 +64,13 @@ impl Message {
 pub struct StreamRequest {
     /// The prompt/message to send
     pub prompt: String,
-    /// Optional session ID for authentication
-    pub session_id: Option<String>,
+    /// Session ID for authentication (required by backend)
+    pub session_id: String,
     /// Thread ID - None means create a new thread
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<String>,
     /// Message ID to reply to - for future stitching support
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<i64>,
 }
 
@@ -76,7 +79,7 @@ impl StreamRequest {
     pub fn new(prompt: String) -> Self {
         Self {
             prompt,
-            session_id: None,
+            session_id: Uuid::new_v4().to_string(),
             thread_id: None,
             reply_to: None,
         }
@@ -87,7 +90,7 @@ impl StreamRequest {
     pub fn with_thread(prompt: String, thread_id: String) -> Self {
         Self {
             prompt,
-            session_id: None,
+            session_id: Uuid::new_v4().to_string(),
             thread_id: Some(thread_id),
             reply_to: None,
         }
@@ -98,7 +101,7 @@ impl StreamRequest {
     pub fn with_reply(prompt: String, thread_id: String, reply_to: i64) -> Self {
         Self {
             prompt,
-            session_id: None,
+            session_id: Uuid::new_v4().to_string(),
             thread_id: Some(thread_id),
             reply_to: Some(reply_to),
         }
@@ -323,7 +326,7 @@ mod tests {
         let request = StreamRequest::new("Hello".to_string());
 
         assert_eq!(request.prompt, "Hello");
-        assert!(request.session_id.is_none());
+        assert!(!request.session_id.is_empty());
         assert!(request.thread_id.is_none());
         assert!(request.reply_to.is_none());
     }
@@ -333,7 +336,7 @@ mod tests {
         let request = StreamRequest::with_thread("Hello".to_string(), "thread-123".to_string());
 
         assert_eq!(request.prompt, "Hello");
-        assert!(request.session_id.is_none());
+        assert!(!request.session_id.is_empty());
         assert_eq!(request.thread_id, Some("thread-123".to_string()));
         assert!(request.reply_to.is_none());
     }
@@ -347,7 +350,7 @@ mod tests {
         );
 
         assert_eq!(request.prompt, "Hello");
-        assert!(request.session_id.is_none());
+        assert!(!request.session_id.is_empty());
         assert_eq!(request.thread_id, Some("thread-123".to_string()));
         assert_eq!(request.reply_to, Some(42));
     }
@@ -356,7 +359,7 @@ mod tests {
     fn test_stream_request_serialization() {
         let request = StreamRequest {
             prompt: "Test prompt".to_string(),
-            session_id: Some("session-abc".to_string()),
+            session_id: "session-abc".to_string(),
             thread_id: Some("thread-xyz".to_string()),
             reply_to: Some(100),
         };

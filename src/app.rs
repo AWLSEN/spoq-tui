@@ -21,6 +21,12 @@ pub enum AppMessage {
     StreamError { thread_id: String, error: String },
     /// Connection status changed
     ConnectionStatus(bool),
+    /// Thread created on backend - reconcile pending ID with real ID
+    ThreadCreated {
+        pending_id: String,
+        real_id: String,
+        title: Option<String>,
+    },
 }
 
 /// Represents which screen is currently active
@@ -250,6 +256,15 @@ impl App {
                                         });
                                         break;
                                     }
+                                    SseEvent::UserMessageSaved(event) => {
+                                        // ThreadInfo event mapped to UserMessageSaved in conductor.rs
+                                        // This provides the real backend thread_id
+                                        let _ = message_tx.send(AppMessage::ThreadCreated {
+                                            pending_id: thread_id_for_task.clone(),
+                                            real_id: event.thread_id,
+                                            title: None, // Title not available in this event
+                                        });
+                                    }
                                     // Ignore other event types for now (reasoning, tool calls, etc.)
                                     _ => {}
                                 }
@@ -289,6 +304,8 @@ impl App {
     /// Navigate back to the CommandDeck screen
     pub fn navigate_to_command_deck(&mut self) {
         self.screen = Screen::CommandDeck;
+        self.active_thread_id = None;  // Clear so next submit creates new thread
+        self.input_box.clear();        // Clear any partial input
     }
 
     /// Handle an incoming async message
@@ -311,6 +328,19 @@ impl App {
                 if connected {
                     // Clear any previous error when reconnected
                     self.stream_error = None;
+                }
+            }
+            AppMessage::ThreadCreated {
+                pending_id,
+                real_id,
+                title,
+            } => {
+                // Reconcile the pending local thread ID with the real backend ID
+                self.cache
+                    .reconcile_thread_id(&pending_id, &real_id, title);
+                // Update active_thread_id if it matches the pending ID
+                if self.active_thread_id.as_ref() == Some(&pending_id) {
+                    self.active_thread_id = Some(real_id);
                 }
             }
         }
@@ -383,16 +413,32 @@ mod tests {
     fn test_navigate_to_command_deck_from_conversation() {
         let mut app = App::default();
         app.screen = Screen::Conversation;
+        app.active_thread_id = Some("thread-123".to_string());
+        app.input_box.insert_char('T');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('s');
+        app.input_box.insert_char('t');
+
         app.navigate_to_command_deck();
+
         assert_eq!(app.screen, Screen::CommandDeck);
+        assert!(app.active_thread_id.is_none());
+        assert!(app.input_box.is_empty());
     }
 
     #[test]
     fn test_navigate_to_command_deck_when_already_on_command_deck() {
         let mut app = App::default();
         assert_eq!(app.screen, Screen::CommandDeck);
+        app.active_thread_id = Some("thread-456".to_string());
+        app.input_box.insert_char('H');
+        app.input_box.insert_char('i');
+
         app.navigate_to_command_deck();
+
         assert_eq!(app.screen, Screen::CommandDeck);
+        assert!(app.active_thread_id.is_none());
+        assert!(app.input_box.is_empty());
     }
 
     #[test]
