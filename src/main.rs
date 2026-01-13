@@ -254,6 +254,10 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         app.navigate_to_command_deck();
                                     }
                                 }
+                                KeyCode::Enter if app.focus == Focus::Threads => {
+                                    // Open selected thread when pressing Enter on Threads panel
+                                    app.open_selected_thread();
+                                }
                                 KeyCode::Up => {
                                     app.move_up();
                                 }

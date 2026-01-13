@@ -356,6 +356,35 @@ impl App {
         self.input_box.clear();        // Clear any partial input
     }
 
+    /// Open a specific thread by ID for conversation
+    pub fn open_thread(&mut self, thread_id: String) {
+        // Set active thread
+        self.active_thread_id = Some(thread_id);
+
+        // Navigate to conversation
+        self.screen = Screen::Conversation;
+
+        // Clear input box for fresh start
+        self.input_box.clear();
+
+        // Messages should already be in cache from backend fetch
+    }
+
+    /// Open the currently selected thread from the threads panel
+    pub fn open_selected_thread(&mut self) {
+        let threads = self.cache.threads();
+
+        // Check if selection is beyond thread list (e.g., "New Thread" button)
+        if self.threads_index >= threads.len() {
+            // No valid thread selected, just focus input
+            self.focus = Focus::Input;
+            return;
+        }
+
+        let thread_id = threads[self.threads_index].id.clone();
+        self.open_thread(thread_id);
+    }
+
     /// Handle an incoming async message
     pub fn handle_message(&mut self, msg: AppMessage) {
         match msg {
