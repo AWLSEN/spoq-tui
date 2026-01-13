@@ -140,7 +140,15 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     return Ok(());
                                 }
                                 // Shift+Escape to return to CommandDeck from Conversation
+                                // (kept for terminals that support it)
                                 KeyCode::Esc if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                    if app.screen == Screen::Conversation {
+                                        app.navigate_to_command_deck();
+                                    }
+                                    continue;
+                                }
+                                // Ctrl+W to return to CommandDeck (explicit close/back binding)
+                                KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                     if app.screen == Screen::Conversation {
                                         app.navigate_to_command_deck();
                                     }
@@ -204,8 +212,19 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         continue;
                                     }
                                     KeyCode::Esc => {
-                                        // Escape from input to go back to threads
-                                        app.focus = Focus::Threads;
+                                        // Escape behavior depends on input state and screen
+                                        if app.screen == Screen::Conversation {
+                                            if app.input_box.is_empty() {
+                                                // Empty input: go back to CommandDeck
+                                                app.navigate_to_command_deck();
+                                            } else {
+                                                // Has content: just unfocus to allow navigation
+                                                app.focus = Focus::Threads;
+                                            }
+                                        } else {
+                                            // On CommandDeck: unfocus input
+                                            app.focus = Focus::Threads;
+                                        }
                                         continue;
                                     }
                                     _ => {}
@@ -225,6 +244,12 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         Focus::Threads => Focus::Tasks,
                                         Focus::Input => Focus::Threads,
                                     };
+                                }
+                                KeyCode::Esc if app.focus != Focus::Input => {
+                                    // Escape when not in input: go back to CommandDeck
+                                    if app.screen == Screen::Conversation {
+                                        app.navigate_to_command_deck();
+                                    }
                                 }
                                 KeyCode::Up => {
                                     app.move_up();
