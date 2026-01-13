@@ -47,3 +47,57 @@ impl StubStream {
         Self {}
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::StreamRequest;
+
+    #[test]
+    fn test_conductor_client_new() {
+        let client = ConductorClient::new();
+        assert_eq!(client.base_url, CONDUCTOR_BASE_URL);
+    }
+
+    #[test]
+    fn test_conductor_client_with_base_url() {
+        let custom_url = "http://localhost:8080".to_string();
+        let client = ConductorClient::with_base_url(custom_url.clone());
+        assert_eq!(client.base_url, custom_url);
+    }
+
+    #[test]
+    fn test_stream_returns_stub() {
+        let client = ConductorClient::new();
+        let request = StreamRequest::new("test".to_string());
+        let _stream = client.stream(&request);
+        // Just verify it doesn't panic - stub returns StubStream
+    }
+
+    #[test]
+    fn test_get_thread_returns_none() {
+        let client = ConductorClient::new();
+        let result = client.get_thread("test-id");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_recent_messages_returns_empty() {
+        let client = ConductorClient::new();
+        let messages = client.get_recent_messages();
+        assert!(messages.is_empty());
+    }
+
+    #[test]
+    fn test_cancel_doesnt_panic() {
+        let client = ConductorClient::new();
+        client.cancel("session-id");
+        // Just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_stub_stream_new() {
+        let _stream = StubStream::new();
+        // Just verify construction doesn't panic
+    }
+}
