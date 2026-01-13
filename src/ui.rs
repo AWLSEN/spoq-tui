@@ -484,21 +484,55 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 
         // Thread title (centered)
         let title_marker = if is_selected { "▶ " } else { "► " };
-        lines.push(Line::from(vec![
+
+        // Check if this thread is streaming and compute dots
+        let thread_id = &cached_threads[i].id;
+        let is_streaming = app.cache.is_thread_streaming(thread_id);
+        let dots = if is_streaming {
+            match (app.tick_count / 5) % 3 {
+                0 => ".",
+                1 => "..",
+                _ => "...",
+            }
+        } else {
+            ""
+        };
+
+        // Calculate available width for title to ensure dots fit
+        // Card width is 37 inner chars, minus "Thread: " (8) and marker (2) = 27 chars available
+        // Reserve 3 chars for dots if streaming
+        let max_title_len = if is_streaming { 24 } else { 27 };
+        let display_title = if title.len() > max_title_len {
+            format!("{}...", &title[..max_title_len.saturating_sub(3)])
+        } else {
+            title.clone()
+        };
+
+        let mut title_spans = vec![
             Span::raw(padding_str.clone()),
             Span::styled("│ ", Style::default().fg(card_border_color)),
             Span::styled(title_marker, Style::default().fg(if is_selected { COLOR_HEADER } else { COLOR_ACCENT })),
             Span::styled(
-                format!("Thread: {}", title),
+                format!("Thread: {}", display_title),
                 Style::default()
                     .fg(if is_selected { Color::White } else { COLOR_HEADER })
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                format!("{:>width$}│", "", width = 35_usize.saturating_sub(10 + title.len())),
-                Style::default().fg(card_border_color),
-            ),
-        ]));
+        ];
+
+        if is_streaming {
+            title_spans.push(Span::styled(
+                dots,
+                Style::default().fg(COLOR_ACTIVE),
+            ));
+        }
+
+        title_spans.push(Span::styled(
+            format!("{:>width$}│", "", width = 35_usize.saturating_sub(10 + display_title.len() + dots.len())),
+            Style::default().fg(card_border_color),
+        ));
+
+        lines.push(Line::from(title_spans));
 
         // Thread preview (centered)
         lines.push(Line::from(vec![
