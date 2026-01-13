@@ -14,7 +14,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus};
+use crate::app::{App, Focus, Screen};
 use crate::state::{Notification, TaskStatus};
 use crate::widgets::input_box::InputBoxWidget;
 
@@ -68,8 +68,16 @@ const SPOQ_LOGO: &[&str] = &[
 // Main UI Rendering
 // ============================================================================
 
-/// Render the complete Command Deck UI
+/// Render the UI based on current screen
 pub fn render(frame: &mut Frame, app: &App) {
+    match app.screen {
+        Screen::CommandDeck => render_command_deck(frame, app),
+        Screen::Conversation => render_conversation_screen(frame, app),
+    }
+}
+
+/// Render the complete Command Deck UI
+fn render_command_deck(frame: &mut Frame, app: &App) {
     let size = frame.area();
 
     // Main outer border
@@ -550,4 +558,356 @@ fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
 
     let keybinds_widget = Paragraph::new(keybinds);
     frame.render_widget(keybinds_widget, input_chunks[1]);
+}
+
+// ============================================================================
+// Conversation Screen
+// ============================================================================
+
+/// Render the conversation screen with header, messages area, and input
+fn render_conversation_screen(frame: &mut Frame, app: &App) {
+    let size = frame.area();
+
+    // Main outer border
+    let outer_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Double)
+        .border_style(Style::default().fg(COLOR_BORDER));
+    frame.render_widget(outer_block, size);
+
+    // Create main layout sections
+    let inner = inner_rect(size, 1);
+    let main_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),  // Thread header
+            Constraint::Min(10),    // Messages area
+            Constraint::Length(8),  // Input area with keybinds
+        ])
+        .split(inner);
+
+    render_conversation_header(frame, main_chunks[0], app);
+    render_messages_area(frame, main_chunks[1], app);
+    render_conversation_input(frame, main_chunks[2], app);
+}
+
+/// Render the thread title header
+fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
+    // Get thread title from active thread or default
+    let thread_title = app
+        .active_thread_id
+        .as_ref()
+        .and_then(|id| app.threads.iter().find(|t| &t.id == id))
+        .map(|t| t.title.as_str())
+        .unwrap_or("New Conversation");
+
+    let header_block = Block::default()
+        .borders(Borders::BOTTOM)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(COLOR_BORDER));
+
+    let header_text = Line::from(vec![
+        Span::styled("  Thread: ", Style::default().fg(COLOR_DIM)),
+        Span::styled(
+            thread_title,
+            Style::default()
+                .fg(COLOR_HEADER)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    let header = Paragraph::new(header_text).block(header_block);
+    frame.render_widget(header, area);
+}
+
+/// Render the messages area with user messages and AI responses
+fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
+    let inner = inner_rect(area, 1);
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Show user message preview if there's input
+    let user_input = app.input_box.content();
+    if !user_input.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "─────────────────────────────────────────",
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("You: ", Style::default().fg(COLOR_ACTIVE).add_modifier(Modifier::BOLD)),
+            Span::styled(user_input, Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    // Stub AI response (always shown as placeholder)
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "───────────────────────────────────────────────",
+            Style::default().fg(COLOR_DIM),
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled(
+            "AI: ",
+            Style::default()
+                .fg(COLOR_ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Waiting for your message...",
+            Style::default().fg(COLOR_DIM),
+        ),
+    ]));
+    lines.push(Line::from(""));
+
+    let messages = Paragraph::new(lines);
+    frame.render_widget(messages, inner);
+}
+
+/// Render the input area for conversation screen
+fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
+    let input_focused = app.focus == Focus::Input;
+    let border_color = if input_focused { COLOR_HEADER } else { COLOR_BORDER };
+
+    let input_outer = Block::default()
+        .borders(Borders::TOP)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(border_color));
+    frame.render_widget(input_outer, area);
+
+    let inner = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(2),
+    };
+
+    let input_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(5), // Input box
+            Constraint::Length(1), // Keybinds
+        ])
+        .split(inner);
+
+    // Render the InputBox widget
+    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
+    frame.render_widget(input_widget, input_chunks[0]);
+
+    // Conversation-specific keybind hints
+    let keybinds = Line::from(vec![
+        Span::raw(" "),
+        Span::styled("[ENTER]", Style::default().fg(COLOR_ACCENT)),
+        Span::raw(" Send   "),
+        Span::styled("[Shift+ESC]", Style::default().fg(COLOR_ACCENT)),
+        Span::raw(" Back to CommandDeck"),
+    ]);
+
+    let keybinds_widget = Paragraph::new(keybinds);
+    frame.render_widget(keybinds_widget, input_chunks[1]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    fn create_test_app() -> App {
+        App {
+            threads: vec![],
+            tasks: vec![],
+            should_quit: false,
+            screen: Screen::CommandDeck,
+            active_thread_id: None,
+            focus: Focus::default(),
+            notifications_index: 0,
+            tasks_index: 0,
+            threads_index: 0,
+            input_box: crate::widgets::input_box::InputBox::new(),
+            migration_progress: None,
+        }
+    }
+
+    #[test]
+    fn test_screen_enum_default() {
+        let screen = Screen::default();
+        assert_eq!(screen, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_screen_enum_variants() {
+        let command_deck = Screen::CommandDeck;
+        let conversation = Screen::Conversation;
+        assert_ne!(command_deck, conversation);
+    }
+
+    #[test]
+    fn test_render_command_deck_screen() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let app = create_test_app();
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        // Check that the terminal rendered without panic
+        let buffer = terminal.backend().buffer();
+        // Verify the buffer contains some content (not all spaces)
+        let has_content = buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() != " ");
+        assert!(has_content, "CommandDeck screen should render content");
+    }
+
+    #[test]
+    fn test_render_conversation_screen() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        // Check that the terminal rendered without panic
+        let buffer = terminal.backend().buffer();
+        // Verify the buffer contains some content
+        let has_content = buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() != " ");
+        assert!(has_content, "Conversation screen should render content");
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_thread_title() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.threads.push(crate::state::Thread {
+            id: "test-thread".to_string(),
+            title: "Test Thread".to_string(),
+            preview: "Test preview".to_string(),
+            created_at: chrono::Utc::now(),
+        });
+        app.active_thread_id = Some("test-thread".to_string());
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        // Check that the buffer contains the thread title
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Test Thread"),
+            "Conversation screen should show thread title"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_default_title() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = None;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        // Check that the buffer contains the default title
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("New Conversation"),
+            "Conversation screen should show default title when no active thread"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_user_input() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.input_box.insert_char('H');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('l');
+        app.input_box.insert_char('l');
+        app.input_box.insert_char('o');
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        // Check that the buffer shows "You:" label when there's input
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("You:"),
+            "Conversation screen should show user label when input is present"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_ai_stub() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        // Check that the buffer shows AI stub response
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("AI:"),
+            "Conversation screen should show AI label"
+        );
+        assert!(
+            buffer_str.contains("Waiting for your message"),
+            "Conversation screen should show AI stub response"
+        );
+    }
 }

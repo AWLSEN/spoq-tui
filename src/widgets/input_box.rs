@@ -101,6 +101,11 @@ impl InputBox {
         self.content.is_empty()
     }
 
+    /// Get the current content of the input box
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
     /// Render the input box with the given title
     pub fn render_with_title(&self, area: Rect, buf: &mut Buffer, title: &str, focused: bool) {
         // Calculate inner area (accounting for border)
