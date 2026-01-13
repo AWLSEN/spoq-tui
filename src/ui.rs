@@ -759,6 +759,7 @@ mod tests {
     use ratatui::{backend::TestBackend, Terminal};
 
     fn create_test_app() -> App {
+        let (message_tx, message_rx) = tokio::sync::mpsc::unbounded_channel();
         App {
             threads: vec![],
             tasks: vec![],
@@ -772,6 +773,10 @@ mod tests {
             input_box: crate::widgets::input_box::InputBox::new(),
             migration_progress: None,
             cache: crate::cache::ThreadCache::new(),
+            message_rx: Some(message_rx),
+            message_tx,
+            connection_status: false,
+            stream_error: None,
         }
     }
 

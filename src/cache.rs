@@ -134,9 +134,89 @@ impl ThreadCache {
             role,
             content,
             created_at: now,
+            is_streaming: false,
+            partial_content: String::new(),
         };
 
         self.add_message(message);
+    }
+
+    /// Create a new thread with a streaming assistant response
+    /// Returns the thread_id for tracking
+    pub fn create_streaming_thread(&mut self, first_message: String) -> String {
+        let thread_id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        // Create title from first message (truncate if too long)
+        let title = if first_message.len() > 40 {
+            format!("{}...", &first_message[..37])
+        } else {
+            first_message.clone()
+        };
+
+        let thread = Thread {
+            id: thread_id.clone(),
+            title,
+            preview: first_message.clone(),
+            updated_at: now,
+        };
+
+        self.upsert_thread(thread);
+
+        // Add the user message
+        let user_message = Message {
+            id: 1,
+            thread_id: thread_id.clone(),
+            role: MessageRole::User,
+            content: first_message,
+            created_at: now,
+            is_streaming: false,
+            partial_content: String::new(),
+        };
+        self.add_message(user_message);
+
+        // Add placeholder assistant message with is_streaming=true
+        let assistant_message = Message {
+            id: 0, // Will be updated with real ID from backend
+            thread_id: thread_id.clone(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: now,
+            is_streaming: true,
+            partial_content: String::new(),
+        };
+        self.add_message(assistant_message);
+
+        thread_id
+    }
+
+    /// Append a token to the streaming message in a thread
+    /// Finds the last message with is_streaming=true and appends the token
+    pub fn append_to_message(&mut self, thread_id: &str, token: &str) {
+        if let Some(messages) = self.messages.get_mut(thread_id) {
+            // Find the last streaming message
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.append_token(token);
+            }
+        }
+    }
+
+    /// Finalize the streaming message in a thread
+    /// Updates the message ID to the real backend ID and marks streaming as complete
+    pub fn finalize_message(&mut self, thread_id: &str, message_id: i64) {
+        if let Some(messages) = self.messages.get_mut(thread_id) {
+            // Find the streaming message
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.id = message_id;
+                streaming_msg.finalize();
+            }
+        }
+    }
+
+    /// Get mutable access to messages for a thread
+    #[allow(dead_code)]
+    pub fn get_messages_mut(&mut self, thread_id: &str) -> Option<&mut Vec<Message>> {
+        self.messages.get_mut(thread_id)
     }
 
     /// Populate with stub data for development/testing
@@ -158,6 +238,8 @@ impl ThreadCache {
                 role: MessageRole::User,
                 content: "Can you explain Rust async patterns?".to_string(),
                 created_at: now - Duration::minutes(10),
+                is_streaming: false,
+                partial_content: String::new(),
             },
             Message {
                 id: 2,
@@ -165,6 +247,8 @@ impl ThreadCache {
                 role: MessageRole::Assistant,
                 content: "Here's how you can use tokio for async operations in Rust...".to_string(),
                 created_at: now - Duration::minutes(5),
+                is_streaming: false,
+                partial_content: String::new(),
             },
         ];
 
@@ -183,6 +267,8 @@ impl ThreadCache {
                 role: MessageRole::User,
                 content: "What are best practices for TUI design?".to_string(),
                 created_at: now - Duration::hours(3),
+                is_streaming: false,
+                partial_content: String::new(),
             },
             Message {
                 id: 4,
@@ -190,6 +276,8 @@ impl ThreadCache {
                 role: MessageRole::Assistant,
                 content: "For TUI apps, consider using ratatui with a clean layout...".to_string(),
                 created_at: now - Duration::hours(2),
+                is_streaming: false,
+                partial_content: String::new(),
             },
         ];
 
@@ -208,6 +296,8 @@ impl ThreadCache {
                 role: MessageRole::User,
                 content: "How do I integrate with a REST API in Rust?".to_string(),
                 created_at: now - Duration::days(1) - Duration::hours(1),
+                is_streaming: false,
+                partial_content: String::new(),
             },
             Message {
                 id: 6,
@@ -215,6 +305,8 @@ impl ThreadCache {
                 role: MessageRole::Assistant,
                 content: "You can use reqwest for HTTP requests. Here's an example...".to_string(),
                 created_at: now - Duration::days(1),
+                is_streaming: false,
+                partial_content: String::new(),
             },
         ];
 
@@ -335,6 +427,8 @@ mod tests {
             role: MessageRole::User,
             content: "Test message".to_string(),
             created_at: Utc::now(),
+            is_streaming: false,
+            partial_content: String::new(),
         };
 
         cache.add_message(message);
@@ -355,6 +449,8 @@ mod tests {
                 role: MessageRole::System,
                 content: "System message".to_string(),
                 created_at: Utc::now(),
+                is_streaming: false,
+                partial_content: String::new(),
             },
         ];
 
@@ -485,5 +581,215 @@ mod tests {
         assert_eq!(messages[0].id, 1);
         assert_eq!(messages[1].id, 2);
         assert_eq!(messages[2].id, 3);
+    }
+
+    // ============= Streaming Tests =============
+
+    #[test]
+    fn test_create_streaming_thread_returns_uuid() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello world".to_string());
+
+        // Should be a valid UUID format
+        assert_eq!(thread_id.len(), 36);
+        assert!(thread_id.contains('-'));
+    }
+
+    #[test]
+    fn test_create_streaming_thread_creates_thread() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Test message".to_string());
+
+        let thread = cache.get_thread(&thread_id);
+        assert!(thread.is_some());
+
+        let thread = thread.unwrap();
+        assert_eq!(thread.id, thread_id);
+        assert_eq!(thread.title, "Test message");
+        assert_eq!(thread.preview, "Test message");
+    }
+
+    #[test]
+    fn test_create_streaming_thread_creates_user_message() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("User says hello".to_string());
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages.len(), 2);
+
+        // First message should be user message
+        assert_eq!(messages[0].role, MessageRole::User);
+        assert_eq!(messages[0].content, "User says hello");
+        assert!(!messages[0].is_streaming);
+    }
+
+    #[test]
+    fn test_create_streaming_thread_creates_streaming_assistant_message() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages.len(), 2);
+
+        // Second message should be streaming assistant message
+        assert_eq!(messages[1].role, MessageRole::Assistant);
+        assert_eq!(messages[1].id, 0); // Placeholder ID
+        assert!(messages[1].is_streaming);
+        assert!(messages[1].content.is_empty());
+        assert!(messages[1].partial_content.is_empty());
+    }
+
+    #[test]
+    fn test_append_to_message_accumulates_tokens() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        cache.append_to_message(&thread_id, "Hello");
+        cache.append_to_message(&thread_id, " ");
+        cache.append_to_message(&thread_id, "world");
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        let streaming_msg = &messages[1];
+
+        assert!(streaming_msg.is_streaming);
+        assert_eq!(streaming_msg.partial_content, "Hello world");
+        assert!(streaming_msg.content.is_empty()); // Content remains empty until finalized
+    }
+
+    #[test]
+    fn test_append_to_message_does_nothing_for_nonexistent_thread() {
+        let mut cache = ThreadCache::new();
+
+        // Should not panic
+        cache.append_to_message("nonexistent", "token");
+
+        // No thread should exist
+        assert!(cache.get_messages("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_append_to_message_does_nothing_without_streaming_message() {
+        let mut cache = ThreadCache::new();
+        cache.add_message_simple("thread-x", MessageRole::User, "Hello".to_string());
+
+        // Should not panic
+        cache.append_to_message("thread-x", "token");
+
+        // Message should be unchanged
+        let messages = cache.get_messages("thread-x").unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content, "Hello");
+    }
+
+    #[test]
+    fn test_finalize_message_moves_content() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        cache.append_to_message(&thread_id, "Response ");
+        cache.append_to_message(&thread_id, "content");
+        cache.finalize_message(&thread_id, 42);
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        let finalized_msg = &messages[1];
+
+        assert!(!finalized_msg.is_streaming);
+        assert_eq!(finalized_msg.id, 42);
+        assert_eq!(finalized_msg.content, "Response content");
+        assert!(finalized_msg.partial_content.is_empty());
+    }
+
+    #[test]
+    fn test_finalize_message_updates_message_id() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Initially message ID is 0
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages[1].id, 0);
+
+        cache.finalize_message(&thread_id, 12345);
+
+        // After finalization, message ID should be updated
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages[1].id, 12345);
+    }
+
+    #[test]
+    fn test_finalize_message_does_nothing_for_nonexistent_thread() {
+        let mut cache = ThreadCache::new();
+
+        // Should not panic
+        cache.finalize_message("nonexistent", 42);
+    }
+
+    #[test]
+    fn test_finalize_message_does_nothing_without_streaming_message() {
+        let mut cache = ThreadCache::new();
+        cache.add_message_simple("thread-x", MessageRole::User, "Hello".to_string());
+
+        // Should not panic
+        cache.finalize_message("thread-x", 42);
+
+        // Message should be unchanged
+        let messages = cache.get_messages("thread-x").unwrap();
+        assert_eq!(messages[0].id, 1);
+        assert_eq!(messages[0].content, "Hello");
+    }
+
+    #[test]
+    fn test_streaming_full_workflow() {
+        let mut cache = ThreadCache::new();
+
+        // Create streaming thread
+        let thread_id = cache.create_streaming_thread("What is Rust?".to_string());
+
+        // Verify initial state
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages.len(), 2);
+        assert!(messages[1].is_streaming);
+
+        // Stream tokens
+        cache.append_to_message(&thread_id, "Rust is ");
+        cache.append_to_message(&thread_id, "a systems ");
+        cache.append_to_message(&thread_id, "programming language.");
+
+        // Verify streaming state
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert!(messages[1].is_streaming);
+        assert_eq!(messages[1].partial_content, "Rust is a systems programming language.");
+        assert!(messages[1].content.is_empty());
+
+        // Finalize
+        cache.finalize_message(&thread_id, 999);
+
+        // Verify final state
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert!(!messages[1].is_streaming);
+        assert_eq!(messages[1].id, 999);
+        assert_eq!(messages[1].content, "Rust is a systems programming language.");
+        assert!(messages[1].partial_content.is_empty());
+    }
+
+    #[test]
+    fn test_get_messages_mut() {
+        let mut cache = ThreadCache::new();
+        cache.add_message_simple("thread-x", MessageRole::User, "Hello".to_string());
+
+        let messages = cache.get_messages_mut("thread-x");
+        assert!(messages.is_some());
+
+        let messages = messages.unwrap();
+        messages[0].content = "Modified".to_string();
+
+        // Verify modification persisted
+        let messages = cache.get_messages("thread-x").unwrap();
+        assert_eq!(messages[0].content, "Modified");
+    }
+
+    #[test]
+    fn test_get_messages_mut_nonexistent() {
+        let mut cache = ThreadCache::new();
+        assert!(cache.get_messages_mut("nonexistent").is_none());
     }
 }

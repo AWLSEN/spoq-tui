@@ -35,6 +35,27 @@ pub struct Message {
     pub content: String,
     /// When the message was created
     pub created_at: DateTime<Utc>,
+    /// Whether the message is currently being streamed
+    #[serde(default)]
+    pub is_streaming: bool,
+    /// Partial content accumulated during streaming
+    #[serde(default)]
+    pub partial_content: String,
+}
+
+impl Message {
+    /// Append a token to the partial content during streaming
+    pub fn append_token(&mut self, token: &str) {
+        self.partial_content.push_str(token);
+    }
+
+    /// Finalize the message by moving partial_content to content and marking as not streaming
+    pub fn finalize(&mut self) {
+        if self.is_streaming {
+            self.content = std::mem::take(&mut self.partial_content);
+            self.is_streaming = false;
+        }
+    }
 }
 
 /// Request structure for streaming API calls
@@ -125,12 +146,16 @@ mod tests {
             role: MessageRole::User,
             content: "Hello!".to_string(),
             created_at: Utc::now(),
+            is_streaming: false,
+            partial_content: String::new(),
         };
 
         assert_eq!(message.id, 1);
         assert_eq!(message.thread_id, "thread-123");
         assert_eq!(message.role, MessageRole::User);
         assert_eq!(message.content, "Hello!");
+        assert!(!message.is_streaming);
+        assert!(message.partial_content.is_empty());
     }
 
     #[test]
@@ -148,12 +173,149 @@ mod tests {
             role: MessageRole::Assistant,
             content: "I can help with that.".to_string(),
             created_at: Utc::now(),
+            is_streaming: false,
+            partial_content: String::new(),
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
         let deserialized: Message = serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(message, deserialized);
+    }
+
+    #[test]
+    fn test_message_append_token() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+        };
+
+        message.append_token("Hello");
+        assert_eq!(message.partial_content, "Hello");
+
+        message.append_token(", ");
+        assert_eq!(message.partial_content, "Hello, ");
+
+        message.append_token("world!");
+        assert_eq!(message.partial_content, "Hello, world!");
+    }
+
+    #[test]
+    fn test_message_finalize() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: "Streamed content".to_string(),
+        };
+
+        assert!(message.is_streaming);
+        assert_eq!(message.partial_content, "Streamed content");
+        assert!(message.content.is_empty());
+
+        message.finalize();
+
+        assert!(!message.is_streaming);
+        assert!(message.partial_content.is_empty());
+        assert_eq!(message.content, "Streamed content");
+    }
+
+    #[test]
+    fn test_message_finalize_when_not_streaming() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: "Original content".to_string(),
+            created_at: Utc::now(),
+            is_streaming: false,
+            partial_content: "Should not replace".to_string(),
+        };
+
+        message.finalize();
+
+        // Content should remain unchanged when not streaming
+        assert!(!message.is_streaming);
+        assert_eq!(message.content, "Original content");
+        assert_eq!(message.partial_content, "Should not replace");
+    }
+
+    #[test]
+    fn test_message_streaming_workflow() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+        };
+
+        // Simulate streaming tokens
+        message.append_token("The ");
+        message.append_token("quick ");
+        message.append_token("brown ");
+        message.append_token("fox");
+
+        assert!(message.is_streaming);
+        assert_eq!(message.partial_content, "The quick brown fox");
+        assert!(message.content.is_empty());
+
+        // Finalize the message
+        message.finalize();
+
+        assert!(!message.is_streaming);
+        assert!(message.partial_content.is_empty());
+        assert_eq!(message.content, "The quick brown fox");
+    }
+
+    #[test]
+    fn test_message_serialization_with_streaming_fields() {
+        let message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: "Partial content".to_string(),
+        };
+
+        let json = serde_json::to_string(&message).expect("Failed to serialize");
+        let deserialized: Message = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(message, deserialized);
+        assert!(deserialized.is_streaming);
+        assert_eq!(deserialized.partial_content, "Partial content");
+    }
+
+    #[test]
+    fn test_message_deserialization_without_streaming_fields() {
+        // Test backward compatibility - deserialize JSON without streaming fields
+        let json = r#"{
+            "id": 1,
+            "thread_id": "thread-123",
+            "role": "User",
+            "content": "Hello",
+            "created_at": "2024-01-01T00:00:00Z"
+        }"#;
+
+        let message: Message = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(message.id, 1);
+        assert_eq!(message.content, "Hello");
+        // Default values should be applied
+        assert!(!message.is_streaming);
+        assert!(message.partial_content.is_empty());
     }
 
     #[test]
