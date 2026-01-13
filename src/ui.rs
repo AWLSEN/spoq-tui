@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
 
@@ -795,7 +795,7 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(""));
     }
 
-    let messages_widget = Paragraph::new(lines);
+    let messages_widget = Paragraph::new(lines).wrap(Wrap { trim: false });
     frame.render_widget(messages_widget, inner);
 }
 
@@ -868,6 +868,7 @@ mod tests {
             stream_error: None,
             client: std::sync::Arc::new(crate::conductor::ConductorClient::new()),
             tick_count: 0,
+            conversation_scroll: 0,
         }
     }
 
