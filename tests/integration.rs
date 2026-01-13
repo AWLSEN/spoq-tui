@@ -6,8 +6,8 @@
 use spoq::app::{App, Screen};
 use spoq::models::MessageRole;
 
-#[test]
-fn test_full_thread_creation_flow() {
+#[tokio::test]
+async fn test_full_thread_creation_flow() {
     // 1. Create App instance
     let mut app = App::new().expect("Failed to create app");
     let initial_thread_count = app.cache.thread_count();
@@ -60,8 +60,8 @@ fn test_full_thread_creation_flow() {
     assert_eq!(messages[1].role, MessageRole::Assistant);
 }
 
-#[test]
-fn test_screen_navigation() {
+#[tokio::test]
+async fn test_screen_navigation() {
     // 1. Start at CommandDeck
     let mut app = App::new().expect("Failed to create app");
     assert_eq!(
@@ -100,8 +100,8 @@ fn test_screen_navigation() {
     );
 }
 
-#[test]
-fn test_thread_appears_in_right_panel() {
+#[tokio::test]
+async fn test_thread_appears_in_right_panel() {
     // 1. Create thread via submit_input
     let mut app = App::new().expect("Failed to create app");
 
@@ -140,8 +140,8 @@ fn test_thread_appears_in_right_panel() {
     );
 }
 
-#[test]
-fn test_multiple_threads_ordering() {
+#[tokio::test]
+async fn test_multiple_threads_ordering() {
     let mut app = App::new().expect("Failed to create app");
     let initial_count = app.cache.thread_count();
 
@@ -183,8 +183,8 @@ fn test_multiple_threads_ordering() {
     );
 }
 
-#[test]
-fn test_empty_input_does_not_create_thread() {
+#[tokio::test]
+async fn test_empty_input_does_not_create_thread() {
     let mut app = App::new().expect("Failed to create app");
     let initial_count = app.cache.thread_count();
 
@@ -208,8 +208,8 @@ fn test_empty_input_does_not_create_thread() {
     );
 }
 
-#[test]
-fn test_whitespace_only_input_does_not_create_thread() {
+#[tokio::test]
+async fn test_whitespace_only_input_does_not_create_thread() {
     let mut app = App::new().expect("Failed to create app");
     let initial_count = app.cache.thread_count();
 
@@ -227,8 +227,8 @@ fn test_whitespace_only_input_does_not_create_thread() {
     );
 }
 
-#[test]
-fn test_input_cleared_after_submit() {
+#[tokio::test]
+async fn test_input_cleared_after_submit() {
     let mut app = App::new().expect("Failed to create app");
 
     for c in "Test message".chars() {
@@ -244,8 +244,8 @@ fn test_input_cleared_after_submit() {
     );
 }
 
-#[test]
-fn test_thread_messages_have_correct_roles() {
+#[tokio::test]
+async fn test_thread_messages_have_correct_roles() {
     let mut app = App::new().expect("Failed to create app");
 
     for c in "Hello AI".chars() {

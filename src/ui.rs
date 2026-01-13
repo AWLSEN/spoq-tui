@@ -125,7 +125,7 @@ fn render_header(frame: &mut Frame, area: Rect, app: &App) {
             Constraint::Length(2),  // Left margin
             Constraint::Length(38), // Logo width
             Constraint::Min(1),     // Flexible spacer
-            Constraint::Length(24), // Right-aligned status info
+            Constraint::Length(44), // Right-aligned status info (wider for connection status)
         ])
         .split(area);
 
@@ -144,12 +144,26 @@ fn render_logo(frame: &mut Frame, area: Rect) {
 }
 
 fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
+    // Connection status indicator
+    let (status_icon, status_text, status_color) = if app.connection_status {
+        ("●", "Connected", Color::LightGreen)
+    } else {
+        ("○", "Disconnected", Color::Red)
+    };
+
     let mut lines = vec![
         Line::from(""),
-        Line::from(Span::styled(
-            "COMMAND DECK v0.1.0",
-            Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD),
-        )),
+        Line::from(vec![
+            Span::styled(
+                "COMMAND DECK v0.1.0",
+                Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  "),
+            Span::styled("[", Style::default().fg(COLOR_DIM)),
+            Span::styled(status_icon, Style::default().fg(status_color)),
+            Span::styled("] ", Style::default().fg(COLOR_DIM)),
+            Span::styled(status_text, Style::default().fg(status_color)),
+        ]),
         Line::from(""),
     ];
 
@@ -593,7 +607,7 @@ fn render_conversation_screen(frame: &mut Frame, app: &App) {
     render_conversation_input(frame, main_chunks[2], app);
 }
 
-/// Render the thread title header
+/// Render the thread title header with connection status
 fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
     // Get thread title from cache or default
     let thread_title = app
@@ -603,12 +617,29 @@ fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
         .map(|t| t.title.as_str())
         .unwrap_or("New Conversation");
 
+    // Connection status indicator
+    let (status_icon, status_text, status_color) = if app.connection_status {
+        ("●", "Connected", Color::LightGreen)
+    } else {
+        ("○", "Disconnected", Color::Red)
+    };
+
     let header_block = Block::default()
         .borders(Borders::BOTTOM)
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(COLOR_BORDER));
 
-    let header_text = Line::from(vec![
+    // Split header area to show title on left and connection status on right
+    let header_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Min(20),     // Thread title (flexible)
+            Constraint::Length(20),  // Connection status (fixed)
+        ])
+        .split(area);
+
+    // Thread title (left side)
+    let title_text = Line::from(vec![
         Span::styled("  Thread: ", Style::default().fg(COLOR_DIM)),
         Span::styled(
             thread_title,
@@ -618,8 +649,20 @@ fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]);
 
-    let header = Paragraph::new(header_text).block(header_block);
-    frame.render_widget(header, area);
+    let title_widget = Paragraph::new(title_text).block(header_block);
+    frame.render_widget(title_widget, header_chunks[0]);
+
+    // Connection status (right side)
+    let status_text_widget = Line::from(vec![
+        Span::styled("[", Style::default().fg(COLOR_DIM)),
+        Span::styled(status_icon, Style::default().fg(status_color)),
+        Span::styled("] ", Style::default().fg(COLOR_DIM)),
+        Span::styled(status_text, Style::default().fg(status_color)),
+    ]);
+
+    let status_widget = Paragraph::new(status_text_widget)
+        .alignment(ratatui::layout::Alignment::Right);
+    frame.render_widget(status_widget, header_chunks[1]);
 }
 
 /// Render the messages area with user messages and AI responses
@@ -628,6 +671,26 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
 
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
+
+    // Show error banner if there's a stream error
+    if let Some(error) = &app.stream_error {
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  ⚠ ERROR: ",
+                Style::default()
+                    .fg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                error.as_str(),
+                Style::default().fg(Color::Red),
+            ),
+        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "═══════════════════════════════════════════════",
+            Style::default().fg(Color::Red),
+        )]));
+    }
 
     // Get messages from cache if we have an active thread
     let cached_messages = app
