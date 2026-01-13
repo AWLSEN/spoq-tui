@@ -132,6 +132,15 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                         _ => {}
                     }
 
+                    // Auto-focus to Input when user starts typing
+                    // (printable characters only, not Ctrl combinations)
+                    if let KeyCode::Char(_) = key.code {
+                        if !key.modifiers.contains(KeyModifiers::CONTROL) && app.focus != Focus::Input {
+                            app.focus = Focus::Input;
+                            // Character will be processed by input handling below
+                        }
+                    }
+
                     // Handle input-specific keys when Input is focused
                     if app.focus == Focus::Input {
                         match key.code {
