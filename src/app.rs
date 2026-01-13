@@ -1,3 +1,5 @@
+use crate::cache::ThreadCache;
+use crate::models::{MessageRole, StreamRequest};
 use crate::state::{Task, Thread};
 use crate::storage;
 use crate::widgets::input_box::InputBox;
@@ -24,7 +26,7 @@ pub enum Focus {
 /// Main application state
 #[derive(Debug)]
 pub struct App {
-    /// List of conversation threads
+    /// List of conversation threads (legacy - for storage compatibility)
     pub threads: Vec<Thread>,
     /// List of tasks
     pub tasks: Vec<Task>,
@@ -46,6 +48,8 @@ pub struct App {
     pub input_box: InputBox,
     /// Migration/indexing progress (0-100), None when complete
     pub migration_progress: Option<u8>,
+    /// Thread and message cache
+    pub cache: ThreadCache,
 }
 
 impl App {
