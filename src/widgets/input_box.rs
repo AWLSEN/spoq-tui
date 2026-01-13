@@ -11,7 +11,7 @@ use ratatui::{
 /// - Basic text editing (insert, delete, backspace)
 /// - Cursor movement (left/right)
 /// - Horizontal scrolling when text exceeds widget width
-/// - Cyberpunk styling with cyan border and magenta cursor
+/// - Dark theme styling with gray border and white cursor
 #[derive(Debug, Clone, Default)]
 pub struct InputBox {
     /// The text content of the input box
@@ -77,23 +77,6 @@ impl InputBox {
         self.cursor_position = self.content.len();
     }
 
-    /// Get the current text content
-    pub fn get_content(&self) -> &str {
-        &self.content
-    }
-
-    /// Get the current cursor position
-    pub fn cursor_position(&self) -> usize {
-        self.cursor_position
-    }
-
-    /// Set the text content and reset cursor to end
-    pub fn set_content(&mut self, content: String) {
-        self.content = content;
-        self.cursor_position = self.content.len();
-        self.scroll_offset = 0;
-    }
-
     /// Clear all content and reset cursor
     pub fn clear(&mut self) {
         self.content.clear();
@@ -106,33 +89,10 @@ impl InputBox {
         self.content.is_empty()
     }
 
-    /// Get the length of the content
-    pub fn len(&self) -> usize {
-        self.content.len()
-    }
-
-    /// Update scroll offset to ensure cursor is visible within the given width
-    fn update_scroll(&mut self, visible_width: usize) {
-        if visible_width == 0 {
-            return;
-        }
-
-        // If cursor is before the visible area, scroll left
-        if self.cursor_position < self.scroll_offset {
-            self.scroll_offset = self.cursor_position;
-        }
-
-        // If cursor is after the visible area, scroll right
-        // Leave one character space for the cursor block
-        if self.cursor_position >= self.scroll_offset + visible_width {
-            self.scroll_offset = self.cursor_position - visible_width + 1;
-        }
-    }
-
     /// Render the input box with the given title
     pub fn render_with_title(&self, area: Rect, buf: &mut Buffer, title: &str, focused: bool) {
         // Calculate inner area (accounting for border)
-        let inner_width = if area.width > 2 { area.width - 2 } else { 0 };
+        let inner_width = area.width.saturating_sub(2);
 
         // Create a mutable copy to update scroll
         let mut scroll_offset = self.scroll_offset;
@@ -147,8 +107,8 @@ impl InputBox {
             }
         }
 
-        // Draw border with cyberpunk cyan color
-        let border_color = if focused { Color::Cyan } else { Color::DarkGray };
+        // Draw border with dark theme colors
+        let border_color = if focused { Color::Gray } else { Color::DarkGray };
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::default().fg(border_color))
@@ -200,10 +160,10 @@ impl InputBox {
                     .nth(self.cursor_position)
                     .unwrap_or(' ');
 
-                // Magenta cursor block for cyberpunk look
+                // White cursor block for dark theme
                 let cursor_style = Style::default()
                     .fg(Color::Black)
-                    .bg(Color::Magenta);
+                    .bg(Color::White);
 
                 buf.set_string(
                     inner_area.x + cursor_x,
@@ -247,8 +207,6 @@ mod tests {
     fn test_new_input_box() {
         let input = InputBox::new();
         assert!(input.is_empty());
-        assert_eq!(input.cursor_position(), 0);
-        assert_eq!(input.get_content(), "");
     }
 
     #[test]
@@ -256,8 +214,7 @@ mod tests {
         let mut input = InputBox::new();
         input.insert_char('H');
         input.insert_char('i');
-        assert_eq!(input.get_content(), "Hi");
-        assert_eq!(input.cursor_position(), 2);
+        assert_eq!(input.content, "Hi");
     }
 
     #[test]
@@ -266,8 +223,7 @@ mod tests {
         input.insert_char('H');
         input.insert_char('i');
         input.backspace();
-        assert_eq!(input.get_content(), "H");
-        assert_eq!(input.cursor_position(), 1);
+        assert_eq!(input.content, "H");
     }
 
     #[test]
@@ -277,27 +233,27 @@ mod tests {
         input.insert_char('i');
         input.move_cursor_left();
         input.delete_char();
-        assert_eq!(input.get_content(), "H");
-        assert_eq!(input.cursor_position(), 1);
+        assert_eq!(input.content, "H");
     }
 
     #[test]
     fn test_cursor_movement() {
         let mut input = InputBox::new();
-        input.set_content("Hello".to_string());
-        assert_eq!(input.cursor_position(), 5);
+        input.insert_char('H');
+        input.insert_char('i');
+        assert_eq!(input.cursor_position, 2);
 
         input.move_cursor_left();
-        assert_eq!(input.cursor_position(), 4);
+        assert_eq!(input.cursor_position, 1);
 
         input.move_cursor_home();
-        assert_eq!(input.cursor_position(), 0);
+        assert_eq!(input.cursor_position, 0);
 
         input.move_cursor_right();
-        assert_eq!(input.cursor_position(), 1);
+        assert_eq!(input.cursor_position, 1);
 
         input.move_cursor_end();
-        assert_eq!(input.cursor_position(), 5);
+        assert_eq!(input.cursor_position, 2);
     }
 
     #[test]
@@ -308,30 +264,20 @@ mod tests {
         // Cursor should not go below 0
         input.move_cursor_home();
         input.move_cursor_left();
-        assert_eq!(input.cursor_position(), 0);
+        assert_eq!(input.cursor_position, 0);
 
         // Cursor should not go beyond content length
         input.move_cursor_end();
         input.move_cursor_right();
-        assert_eq!(input.cursor_position(), 1);
+        assert_eq!(input.cursor_position, 1);
     }
 
     #[test]
     fn test_clear() {
         let mut input = InputBox::new();
-        input.set_content("Hello World".to_string());
+        input.insert_char('H');
+        input.insert_char('i');
         input.clear();
         assert!(input.is_empty());
-        assert_eq!(input.cursor_position(), 0);
-    }
-
-    #[test]
-    fn test_insert_at_cursor() {
-        let mut input = InputBox::new();
-        input.set_content("Hllo".to_string());
-        input.move_cursor_home();
-        input.move_cursor_right(); // cursor at position 1
-        input.insert_char('e');
-        assert_eq!(input.get_content(), "Hello");
     }
 }
