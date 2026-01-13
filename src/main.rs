@@ -1,6 +1,7 @@
 mod app;
 mod state;
 mod storage;
+mod ui;
 
 use app::App;
 use color_eyre::Result;
@@ -53,9 +54,9 @@ async fn main() -> Result<()> {
 
 async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
-        // Draw blank screen
-        terminal.draw(|_f| {
-            // Intentionally blank for now
+        // Draw the UI
+        terminal.draw(|f| {
+            ui::render(f, app);
         })?;
 
         // Handle events
