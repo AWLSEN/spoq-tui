@@ -117,12 +117,12 @@ impl InputBox {
         // Render the block
         block.render(area, buf);
 
-        // Calculate inner area for text
+        // Calculate inner area for text (use available height for multi-line)
         let inner_area = Rect {
             x: area.x + 1,
             y: area.y + 1,
             width: inner_width,
-            height: if area.height > 2 { 1 } else { 0 },
+            height: area.height.saturating_sub(2),
         };
 
         if inner_area.width == 0 || inner_area.height == 0 {

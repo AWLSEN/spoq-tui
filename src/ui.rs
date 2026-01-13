@@ -89,7 +89,7 @@ pub fn render(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(9),  // Header with logo
             Constraint::Min(10),    // Main content area
-            Constraint::Length(5),  // Input area
+            Constraint::Length(7),  // Input area
         ])
         .split(inner);
 
@@ -529,7 +529,7 @@ fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Input box (needs 3 for border + content)
+            Constraint::Length(5), // Input box (needs 5 for border + multi-line content)
             Constraint::Length(1), // Keybinds
         ])
         .split(inner);
