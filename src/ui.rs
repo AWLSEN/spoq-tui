@@ -431,15 +431,17 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         Line::from(""),
     ];
 
-    // Use actual threads from app if available, otherwise use mock
-    let threads_to_render: Vec<(String, String)> = if app.threads.is_empty() {
+    // Use threads from cache
+    let cached_threads = app.cache.threads();
+    let threads_to_render: Vec<(String, String)> = if cached_threads.is_empty() {
+        // Fallback mock data if cache is empty
         vec![
             ("Project Setup".to_string(), "Setting up Rust environment...".to_string()),
             ("Bug Investigation".to_string(), "Analyzing stack trace...".to_string()),
             ("Feature Request".to_string(), "Adding dark mode support...".to_string()),
         ]
     } else {
-        app.threads.iter().map(|t| {
+        cached_threads.iter().map(|t| {
             (t.title.clone(), t.preview.clone())
         }).collect()
     };
@@ -593,11 +595,11 @@ fn render_conversation_screen(frame: &mut Frame, app: &App) {
 
 /// Render the thread title header
 fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
-    // Get thread title from active thread or default
+    // Get thread title from cache or default
     let thread_title = app
         .active_thread_id
         .as_ref()
-        .and_then(|id| app.threads.iter().find(|t| &t.id == id))
+        .and_then(|id| app.cache.get_thread(id))
         .map(|t| t.title.as_str())
         .unwrap_or("New Conversation");
 
@@ -622,50 +624,90 @@ fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Render the messages area with user messages and AI responses
 fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
+    use crate::models::MessageRole;
+
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
 
-    // Show user message preview if there's input
-    let user_input = app.input_box.content();
-    if !user_input.is_empty() {
+    // Get messages from cache if we have an active thread
+    let cached_messages = app
+        .active_thread_id
+        .as_ref()
+        .and_then(|id| app.cache.get_messages(id));
+
+    if let Some(messages) = cached_messages {
+        for message in messages {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![Span::styled(
+                "───────────────────────────────────────────────",
+                Style::default().fg(COLOR_DIM),
+            )]));
+
+            let (label, label_style) = match message.role {
+                MessageRole::User => (
+                    "You: ",
+                    Style::default()
+                        .fg(COLOR_ACTIVE)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                MessageRole::Assistant => (
+                    "AI: ",
+                    Style::default()
+                        .fg(COLOR_ACCENT)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                MessageRole::System => (
+                    "System: ",
+                    Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD),
+                ),
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled(label, label_style),
+                Span::styled(&message.content, Style::default().fg(Color::White)),
+            ]));
+            lines.push(Line::from(""));
+        }
+    } else {
+        // No messages yet - show placeholder
         lines.push(Line::from(""));
+        lines.push(Line::from(vec![Span::styled(
+            "───────────────────────────────────────────────",
+            Style::default().fg(COLOR_DIM),
+        )]));
         lines.push(Line::from(vec![
             Span::styled(
-                "─────────────────────────────────────────",
-                Style::default().fg(COLOR_DIM),
+                "AI: ",
+                Style::default()
+                    .fg(COLOR_ACCENT)
+                    .add_modifier(Modifier::BOLD),
             ),
+            Span::styled("Waiting for your message...", Style::default().fg(COLOR_DIM)),
         ]));
+        lines.push(Line::from(""));
+    }
+
+    // Show current input preview if there's input being typed
+    let user_input = app.input_box.content();
+    if !user_input.is_empty() {
+        lines.push(Line::from(vec![Span::styled(
+            "─────────────────────────────────────────",
+            Style::default().fg(COLOR_DIM),
+        )]));
         lines.push(Line::from(vec![
-            Span::styled("You: ", Style::default().fg(COLOR_ACTIVE).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "You (typing): ",
+                Style::default()
+                    .fg(COLOR_ACTIVE)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(user_input, Style::default().fg(Color::White)),
         ]));
         lines.push(Line::from(""));
     }
 
-    // Stub AI response (always shown as placeholder)
-    lines.push(Line::from(""));
-    lines.push(Line::from(vec![
-        Span::styled(
-            "───────────────────────────────────────────────",
-            Style::default().fg(COLOR_DIM),
-        ),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled(
-            "AI: ",
-            Style::default()
-                .fg(COLOR_ACCENT)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            "Waiting for your message...",
-            Style::default().fg(COLOR_DIM),
-        ),
-    ]));
-    lines.push(Line::from(""));
-
-    let messages = Paragraph::new(lines);
-    frame.render_widget(messages, inner);
+    let messages_widget = Paragraph::new(lines);
+    frame.render_widget(messages_widget, inner);
 }
 
 /// Render the input area for conversation screen
@@ -729,6 +771,7 @@ mod tests {
             threads_index: 0,
             input_box: crate::widgets::input_box::InputBox::new(),
             migration_progress: None,
+            cache: crate::cache::ThreadCache::new(),
         }
     }
 
@@ -796,11 +839,12 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
         app.screen = Screen::Conversation;
-        app.threads.push(crate::state::Thread {
+        // Add thread to cache instead of legacy threads vec
+        app.cache.upsert_thread(crate::models::Thread {
             id: "test-thread".to_string(),
             title: "Test Thread".to_string(),
             preview: "Test preview".to_string(),
-            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("test-thread".to_string());
 
@@ -868,7 +912,7 @@ mod tests {
             })
             .unwrap();
 
-        // Check that the buffer shows "You:" label when there's input
+        // Check that the buffer shows "You (typing):" label when there's input being typed
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer
             .content()
@@ -876,8 +920,8 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(
-            buffer_str.contains("You:"),
-            "Conversation screen should show user label when input is present"
+            buffer_str.contains("You (typing):"),
+            "Conversation screen should show typing indicator when input is present"
         );
     }
 

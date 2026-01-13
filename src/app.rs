@@ -62,6 +62,9 @@ impl App {
         let threads = storage::load_threads().unwrap_or_default();
         let tasks = storage::load_tasks().unwrap_or_default();
 
+        // Initialize cache with stub data for development
+        let cache = ThreadCache::with_stub_data();
+
         Ok(Self {
             threads,
             tasks,
@@ -74,6 +77,7 @@ impl App {
             threads_index: 0,
             input_box: InputBox::new(),
             migration_progress: Some(0),
+            cache,
         })
     }
 
@@ -147,13 +151,34 @@ impl App {
         self.focus = Focus::Threads;
     }
 
-    /// Submit the current input (for now just clear it)
+    /// Submit the current input, create a thread (stubbed), and navigate to conversation
     pub fn submit_input(&mut self) {
-        if !self.input_box.is_empty() {
-            // For now, just clear the input
-            // In future phases, this will send the message
-            self.input_box.clear();
+        let content = self.input_box.content().to_string();
+        if content.trim().is_empty() {
+            return;
         }
+        self.input_box.clear();
+
+        // Build request (for future backend call)
+        let _request = StreamRequest::new(content.clone());
+
+        // STUB: Create thread locally (will be replaced by backend call)
+        let thread_id = self.cache.create_stub_thread(content.clone());
+
+        // STUB: Add user message
+        self.cache
+            .add_message_simple(&thread_id, MessageRole::User, content);
+
+        // STUB: Add AI response
+        self.cache.add_message_simple(
+            &thread_id,
+            MessageRole::Assistant,
+            "This is a stub response. Backend not connected.".into(),
+        );
+
+        // Navigate to conversation
+        self.active_thread_id = Some(thread_id);
+        self.screen = Screen::Conversation;
     }
 
     /// Save all data to storage
@@ -229,5 +254,93 @@ mod tests {
     fn test_app_initializes_on_command_deck() {
         let app = App::default();
         assert_eq!(app.screen, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_submit_input_with_empty_input_does_nothing() {
+        let mut app = App::default();
+        let initial_cache_count = app.cache.thread_count();
+
+        app.submit_input();
+
+        // Nothing should change with empty input
+        assert_eq!(app.cache.thread_count(), initial_cache_count);
+        assert_eq!(app.screen, Screen::CommandDeck);
+        assert!(app.active_thread_id.is_none());
+    }
+
+    #[test]
+    fn test_submit_input_with_whitespace_only_does_nothing() {
+        let mut app = App::default();
+        app.input_box.insert_char(' ');
+        app.input_box.insert_char(' ');
+        let initial_cache_count = app.cache.thread_count();
+
+        app.submit_input();
+
+        // Whitespace-only input should be ignored
+        assert_eq!(app.cache.thread_count(), initial_cache_count);
+        assert_eq!(app.screen, Screen::CommandDeck);
+        assert!(app.active_thread_id.is_none());
+    }
+
+    #[test]
+    fn test_submit_input_creates_thread_and_navigates() {
+        let mut app = App::default();
+        app.input_box.insert_char('H');
+        app.input_box.insert_char('i');
+        let initial_cache_count = app.cache.thread_count();
+
+        app.submit_input();
+
+        // Should create a new thread
+        assert_eq!(app.cache.thread_count(), initial_cache_count + 1);
+        // Should navigate to conversation screen
+        assert_eq!(app.screen, Screen::Conversation);
+        // Should have an active thread ID
+        assert!(app.active_thread_id.is_some());
+        // Input should be cleared
+        assert!(app.input_box.is_empty());
+    }
+
+    #[test]
+    fn test_submit_input_adds_messages_to_thread() {
+        let mut app = App::default();
+        app.input_box.insert_char('T');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('s');
+        app.input_box.insert_char('t');
+
+        app.submit_input();
+
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+        let messages = app.cache.get_messages(thread_id);
+        assert!(messages.is_some());
+
+        let messages = messages.unwrap();
+        // Should have user message and AI stub response
+        assert_eq!(messages.len(), 2);
+
+        // First message should be the user's input
+        assert_eq!(messages[0].role, MessageRole::User);
+        assert_eq!(messages[0].content, "Test");
+
+        // Second message should be the AI stub
+        assert_eq!(messages[1].role, MessageRole::Assistant);
+        assert!(messages[1].content.contains("stub"));
+    }
+
+    #[test]
+    fn test_submit_input_creates_thread_at_front() {
+        let mut app = App::default();
+        app.input_box.insert_char('N');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('w');
+
+        app.submit_input();
+
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+        // The new thread should be at the front of the list
+        assert_eq!(app.cache.threads()[0].id, *thread_id);
     }
 }

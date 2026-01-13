@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{Duration, Utc};
+use uuid::Uuid;
 
 use crate::models::{Message, MessageRole, Thread};
 
@@ -82,6 +83,58 @@ impl ThreadCache {
         self.threads.clear();
         self.messages.clear();
         self.thread_order.clear();
+    }
+
+    /// Create a stub thread locally (will be replaced by backend call in future)
+    /// Returns the thread_id
+    pub fn create_stub_thread(&mut self, first_message: String) -> String {
+        let thread_id = Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        // Create title from first message (truncate if too long)
+        let title = if first_message.len() > 40 {
+            format!("{}...", &first_message[..37])
+        } else {
+            first_message.clone()
+        };
+
+        let thread = Thread {
+            id: thread_id.clone(),
+            title,
+            preview: first_message,
+            updated_at: now,
+        };
+
+        self.upsert_thread(thread);
+        thread_id
+    }
+
+    /// Add a message to a thread using role and content
+    /// This is a convenience method that creates the full Message struct
+    pub fn add_message_simple(
+        &mut self,
+        thread_id: &str,
+        role: MessageRole,
+        content: String,
+    ) {
+        let now = Utc::now();
+
+        // Generate a simple message ID based on existing count
+        let existing_count = self
+            .messages
+            .get(thread_id)
+            .map(|m| m.len())
+            .unwrap_or(0);
+
+        let message = Message {
+            id: (existing_count + 1) as i64,
+            thread_id: thread_id.to_string(),
+            role,
+            content,
+            created_at: now,
+        };
+
+        self.add_message(message);
     }
 
     /// Populate with stub data for development/testing
@@ -351,5 +404,84 @@ mod tests {
         assert_eq!(cache.threads()[0].id, "thread-1");
         assert_eq!(cache.threads()[1].id, "thread-3");
         assert_eq!(cache.threads()[2].id, "thread-2");
+    }
+
+    #[test]
+    fn test_create_stub_thread_returns_uuid() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_stub_thread("Hello world".to_string());
+
+        // Should be a valid UUID format
+        assert!(thread_id.len() == 36); // UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        assert!(thread_id.contains('-'));
+    }
+
+    #[test]
+    fn test_create_stub_thread_adds_to_cache() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_stub_thread("Test message".to_string());
+
+        let thread = cache.get_thread(&thread_id);
+        assert!(thread.is_some());
+
+        let thread = thread.unwrap();
+        assert_eq!(thread.id, thread_id);
+        assert_eq!(thread.title, "Test message");
+        assert_eq!(thread.preview, "Test message");
+    }
+
+    #[test]
+    fn test_create_stub_thread_truncates_long_title() {
+        let mut cache = ThreadCache::new();
+        let long_message = "This is a very long message that should be truncated in the title field".to_string();
+        let thread_id = cache.create_stub_thread(long_message.clone());
+
+        let thread = cache.get_thread(&thread_id).unwrap();
+        // Title should be truncated to 37 chars + "..."
+        assert_eq!(thread.title.len(), 40);
+        assert!(thread.title.ends_with("..."));
+        // Preview should be the full message
+        assert_eq!(thread.preview, long_message);
+    }
+
+    #[test]
+    fn test_create_stub_thread_at_front_of_order() {
+        let mut cache = ThreadCache::with_stub_data();
+        let initial_count = cache.thread_count();
+
+        let thread_id = cache.create_stub_thread("New thread".to_string());
+
+        assert_eq!(cache.thread_count(), initial_count + 1);
+        assert_eq!(cache.threads()[0].id, thread_id);
+    }
+
+    #[test]
+    fn test_add_message_simple_creates_message() {
+        let mut cache = ThreadCache::new();
+        cache.add_message_simple("thread-x", MessageRole::User, "Hello".to_string());
+
+        let messages = cache.get_messages("thread-x");
+        assert!(messages.is_some());
+
+        let messages = messages.unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].id, 1);
+        assert_eq!(messages[0].thread_id, "thread-x");
+        assert_eq!(messages[0].role, MessageRole::User);
+        assert_eq!(messages[0].content, "Hello");
+    }
+
+    #[test]
+    fn test_add_message_simple_increments_id() {
+        let mut cache = ThreadCache::new();
+        cache.add_message_simple("thread-x", MessageRole::User, "First".to_string());
+        cache.add_message_simple("thread-x", MessageRole::Assistant, "Second".to_string());
+        cache.add_message_simple("thread-x", MessageRole::User, "Third".to_string());
+
+        let messages = cache.get_messages("thread-x").unwrap();
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[0].id, 1);
+        assert_eq!(messages[1].id, 2);
+        assert_eq!(messages[2].id, 3);
     }
 }
