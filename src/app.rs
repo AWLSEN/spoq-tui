@@ -221,23 +221,50 @@ impl App {
         self.focus = Focus::Threads;
     }
 
-    /// Submit the current input, create a streaming thread, and spawn async API call
+    /// Submit the current input, create a streaming thread, and spawn async API call.
+    ///
+    /// This handles two distinct cases:
+    /// 1. NEW thread: When `active_thread_id` is None, creates a new pending thread
+    /// 2. CONTINUING thread: When `active_thread_id` exists, adds to the existing thread
+    ///
+    /// Edge case: If active_thread_id starts with "pending-", we block submission
+    /// because we're still waiting for the backend to confirm the thread ID.
     pub fn submit_input(&mut self) {
         let content = self.input_box.content().to_string();
         if content.trim().is_empty() {
             return;
         }
+
+        // CRITICAL: Determine if this is a NEW thread or CONTINUING existing
+        let (request, thread_id) = if let Some(existing_id) = &self.active_thread_id {
+            // Check if thread is still pending (waiting for backend ThreadInfo)
+            if existing_id.starts_with("pending-") {
+                // Block rapid second message - still waiting for ThreadInfo
+                self.stream_error = Some(
+                    "Please wait for the current response to complete before sending another message."
+                        .to_string(),
+                );
+                return;
+            }
+
+            // CONTINUING existing thread
+            let request = StreamRequest::with_thread(content.clone(), existing_id.clone());
+            if !self.cache.add_streaming_message(existing_id, content) {
+                // Thread doesn't exist in cache - might have been deleted
+                self.stream_error = Some("Thread no longer exists.".to_string());
+                return;
+            }
+            (request, existing_id.clone())
+        } else {
+            // NEW thread - create pending, will reconcile when backend responds
+            let request = StreamRequest::new(content.clone());
+            let pending_id = self.cache.create_pending_thread(content);
+            self.active_thread_id = Some(pending_id.clone());
+            self.screen = Screen::Conversation;
+            (request, pending_id)
+        };
+
         self.input_box.clear();
-
-        // Build the stream request
-        let request = StreamRequest::new(content.clone());
-
-        // Create streaming thread in cache (with user message and placeholder assistant message)
-        let thread_id = self.cache.create_streaming_thread(content);
-
-        // Navigate to conversation immediately
-        self.active_thread_id = Some(thread_id.clone());
-        self.screen = Screen::Conversation;
 
         // Clone what we need for the async task
         let client = Arc::clone(&self.client);
@@ -515,8 +542,9 @@ mod tests {
         assert_eq!(app.cache.thread_count(), initial_cache_count + 1);
         // Should navigate to conversation screen
         assert_eq!(app.screen, Screen::Conversation);
-        // Should have an active thread ID
+        // Should have an active thread ID that starts with "pending-"
         assert!(app.active_thread_id.is_some());
+        assert!(app.active_thread_id.as_ref().unwrap().starts_with("pending-"));
         // Input should be cleared
         assert!(app.input_box.is_empty());
     }
@@ -550,7 +578,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_submit_input_creates_thread_at_front() {
+    async fn test_submit_input_creates_pending_thread_at_front() {
         let mut app = App::default();
         app.input_box.insert_char('N');
         app.input_box.insert_char('e');
@@ -559,8 +587,235 @@ mod tests {
         app.submit_input();
 
         let thread_id = app.active_thread_id.as_ref().unwrap();
-        // The new thread should be at the front of the list
+        // The new thread should be at the front of the list and have pending- prefix
         assert_eq!(app.cache.threads()[0].id, *thread_id);
+        assert!(thread_id.starts_with("pending-"));
+    }
+
+    // ============= New Thread vs Continuing Thread Tests =============
+
+    #[tokio::test]
+    async fn test_submit_input_new_thread_when_no_active_thread() {
+        let mut app = App::default();
+        assert!(app.active_thread_id.is_none());
+        app.input_box.insert_char('H');
+        app.input_box.insert_char('i');
+
+        app.submit_input();
+
+        // Should create a pending thread
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+        assert!(thread_id.starts_with("pending-"));
+        // Should navigate to conversation
+        assert_eq!(app.screen, Screen::Conversation);
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_continues_existing_thread() {
+        let mut app = App::default();
+
+        // Create an existing thread with a real (non-pending) ID
+        let existing_id = "real-thread-123".to_string();
+        app.cache.upsert_thread(crate::models::Thread {
+            id: existing_id.clone(),
+            title: "Existing Thread".to_string(),
+            preview: "Previous message".to_string(),
+            updated_at: chrono::Utc::now(),
+        });
+        app.cache.add_message_simple(&existing_id, MessageRole::User, "Previous question".to_string());
+        app.cache.add_message_simple(&existing_id, MessageRole::Assistant, "Previous answer".to_string());
+
+        // Set as active thread
+        app.active_thread_id = Some(existing_id.clone());
+        app.screen = Screen::Conversation;
+
+        let initial_msg_count = app.cache.get_messages(&existing_id).unwrap().len();
+
+        // Submit follow-up
+        app.input_box.insert_char('F');
+        app.input_box.insert_char('o');
+        app.input_box.insert_char('l');
+        app.input_box.insert_char('l');
+        app.input_box.insert_char('o');
+        app.input_box.insert_char('w');
+        app.submit_input();
+
+        // Should NOT create a new thread
+        assert_eq!(app.active_thread_id.as_ref().unwrap(), &existing_id);
+        // Should add messages to existing thread
+        let messages = app.cache.get_messages(&existing_id).unwrap();
+        assert_eq!(messages.len(), initial_msg_count + 2); // +1 user, +1 streaming assistant
+
+        // Last user message should be our follow-up
+        let user_msgs: Vec<_> = messages.iter().filter(|m| m.role == MessageRole::User).collect();
+        assert_eq!(user_msgs.last().unwrap().content, "Follow");
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_blocks_rapid_submit_on_pending_thread() {
+        let mut app = App::default();
+
+        // First submit creates pending thread
+        app.input_box.insert_char('F');
+        app.input_box.insert_char('i');
+        app.input_box.insert_char('r');
+        app.input_box.insert_char('s');
+        app.input_box.insert_char('t');
+        app.submit_input();
+
+        let pending_id = app.active_thread_id.clone().unwrap();
+        assert!(pending_id.starts_with("pending-"));
+
+        // Try to submit again while still pending
+        app.input_box.insert_char('S');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('c');
+        app.input_box.insert_char('o');
+        app.input_box.insert_char('n');
+        app.input_box.insert_char('d');
+        app.submit_input();
+
+        // Should NOT create a new thread or add messages
+        // Should set an error
+        assert!(app.stream_error.is_some());
+        assert!(app.stream_error.as_ref().unwrap().contains("wait"));
+
+        // Input should NOT be cleared (submission was rejected)
+        assert!(!app.input_box.is_empty());
+        assert_eq!(app.input_box.content(), "Second");
+
+        // Should still be on the pending thread
+        assert_eq!(app.active_thread_id, Some(pending_id));
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_allows_submit_after_thread_reconciled() {
+        let mut app = App::default();
+
+        // First submit creates pending thread
+        app.input_box.insert_char('F');
+        app.input_box.insert_char('i');
+        app.input_box.insert_char('r');
+        app.input_box.insert_char('s');
+        app.input_box.insert_char('t');
+        app.submit_input();
+
+        let pending_id = app.active_thread_id.clone().unwrap();
+
+        // Simulate backend responding with ThreadCreated
+        app.handle_message(AppMessage::ThreadCreated {
+            pending_id: pending_id.clone(),
+            real_id: "real-backend-id".to_string(),
+            title: None,
+        });
+
+        // Verify reconciliation happened
+        assert_eq!(app.active_thread_id, Some("real-backend-id".to_string()));
+
+        // Finalize the first response
+        app.cache.append_to_message("real-backend-id", "First response");
+        app.cache.finalize_message("real-backend-id", 1);
+
+        // Now second submit should work
+        app.input_box.insert_char('S');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('c');
+        app.input_box.insert_char('o');
+        app.input_box.insert_char('n');
+        app.input_box.insert_char('d');
+        let before_count = app.cache.get_messages("real-backend-id").unwrap().len();
+        app.submit_input();
+
+        // Should add to existing thread
+        let messages = app.cache.get_messages("real-backend-id").unwrap();
+        assert_eq!(messages.len(), before_count + 2);
+        assert!(app.input_box.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_handles_deleted_thread() {
+        let mut app = App::default();
+
+        // Set active thread to non-existent (simulates deleted thread)
+        app.active_thread_id = Some("deleted-thread".to_string());
+        app.screen = Screen::Conversation;
+
+        app.input_box.insert_char('T');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('s');
+        app.input_box.insert_char('t');
+        app.submit_input();
+
+        // Should show error about thread not existing
+        assert!(app.stream_error.is_some());
+        assert!(app.stream_error.as_ref().unwrap().contains("no longer exists"));
+
+        // Input should NOT be cleared
+        assert!(!app.input_box.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_full_conversation_workflow() {
+        let mut app = App::default();
+
+        // === Turn 1: New thread ===
+        app.input_box.insert_char('H');
+        app.input_box.insert_char('i');
+        app.submit_input();
+
+        let pending_id = app.active_thread_id.clone().unwrap();
+        assert!(pending_id.starts_with("pending-"));
+        assert_eq!(app.screen, Screen::Conversation);
+
+        // Simulate backend response
+        app.handle_message(AppMessage::ThreadCreated {
+            pending_id: pending_id.clone(),
+            real_id: "thread-abc".to_string(),
+            title: Some("Greeting".to_string()),
+        });
+        app.cache.append_to_message("thread-abc", "Hello! How can I help?");
+        app.cache.finalize_message("thread-abc", 100);
+
+        assert_eq!(app.active_thread_id, Some("thread-abc".to_string()));
+
+        // === Turn 2: Continue thread ===
+        app.input_box.insert_char('T');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('l');
+        app.input_box.insert_char('l');
+        app.input_box.insert_char(' ');
+        app.input_box.insert_char('m');
+        app.input_box.insert_char('e');
+        app.submit_input();
+
+        // Should still be on same thread
+        assert_eq!(app.active_thread_id, Some("thread-abc".to_string()));
+
+        // Should have 4 messages: user1, assistant1, user2, assistant2(streaming)
+        let messages = app.cache.get_messages("thread-abc").unwrap();
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[2].content, "Tell me");
+        assert!(messages[3].is_streaming);
+
+        // === Navigate away and back ===
+        app.navigate_to_command_deck();
+        assert!(app.active_thread_id.is_none());
+        assert_eq!(app.screen, Screen::CommandDeck);
+
+        // === Turn 3: New thread after navigating away ===
+        app.input_box.insert_char('N');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('w');
+        app.submit_input();
+
+        // Should be a NEW pending thread
+        let new_pending = app.active_thread_id.clone().unwrap();
+        assert!(new_pending.starts_with("pending-"));
+        assert_ne!(new_pending, "thread-abc");
+
+        // Cache should have both threads
+        assert!(app.cache.get_thread("thread-abc").is_some());
+        assert!(app.cache.get_thread(&new_pending).is_some());
     }
 
     #[test]
