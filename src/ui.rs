@@ -113,17 +113,19 @@ fn inner_rect(area: Rect, margin: u16) -> Rect {
 // ============================================================================
 
 fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    // Split header into logo area and info area
+    // Split header into: [margin] [logo] [spacer] [status info right-aligned]
     let header_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
+            Constraint::Length(2),  // Left margin
             Constraint::Length(38), // Logo width
-            Constraint::Min(20),    // Info area
+            Constraint::Min(1),     // Flexible spacer
+            Constraint::Length(24), // Right-aligned status info
         ])
         .split(area);
 
-    render_logo(frame, header_chunks[0]);
-    render_header_info(frame, header_chunks[1], app);
+    render_logo(frame, header_chunks[1]);
+    render_header_info(frame, header_chunks[3], app);
 }
 
 fn render_logo(frame: &mut Frame, area: Rect) {
@@ -174,7 +176,8 @@ fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]));
 
-    let info = Paragraph::new(lines);
+    let info = Paragraph::new(lines)
+        .alignment(ratatui::layout::Alignment::Right);
     frame.render_widget(info, area);
 }
 
