@@ -19,33 +19,36 @@ use crate::state::{Notification, TaskStatus};
 use crate::widgets::input_box::InputBoxWidget;
 
 // ============================================================================
-// Cyberpunk Color Theme
+// Minimal Dark Color Theme
 // ============================================================================
 
-/// Primary border color - cyan for that classic cyberpunk look
-pub const COLOR_BORDER: Color = Color::Cyan;
+/// Primary border color - dark gray for minimal aesthetic
+pub const COLOR_BORDER: Color = Color::DarkGray;
 
-/// Accent color - magenta for highlights and important elements
-pub const COLOR_ACCENT: Color = Color::Magenta;
+/// Accent color - white for highlights and important elements
+pub const COLOR_ACCENT: Color = Color::White;
 
-/// Header text color - bright cyan for the logo
-pub const COLOR_HEADER: Color = Color::LightCyan;
+/// Header text color - white for the logo
+pub const COLOR_HEADER: Color = Color::White;
 
 /// Active/running elements - bright green
 pub const COLOR_ACTIVE: Color = Color::LightGreen;
 
-/// Queued/pending elements - yellow
-pub const COLOR_QUEUED: Color = Color::Yellow;
+/// Queued/pending elements - gray
+pub const COLOR_QUEUED: Color = Color::Gray;
 
 /// Dim text for less important info
 pub const COLOR_DIM: Color = Color::DarkGray;
+
+/// Background color - black
+pub const COLOR_BG: Color = Color::Black;
 
 /// Background for input areas (used in later phases)
 #[allow(dead_code)]
 pub const COLOR_INPUT_BG: Color = Color::Rgb(20, 20, 30);
 
-/// Progress bar fill color
-pub const COLOR_PROGRESS: Color = Color::Magenta;
+/// Progress bar fill color - white
+pub const COLOR_PROGRESS: Color = Color::White;
 
 /// Progress bar background (used in later phases)
 #[allow(dead_code)]
@@ -237,7 +240,7 @@ fn render_notifications(frame: &mut Frame, area: Rect, app: &App, focused: bool)
     ];
 
     // Mock notifications for static render
-    let mock_notifications = vec![
+    let mock_notifications = [
         Notification {
             timestamp: chrono::Utc::now(),
             message: "Agent completed task".to_string(),
@@ -308,11 +311,7 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 }
 
 fn render_saved_tasks(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
-    let header_style = if focused {
-        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
-    };
+    let header_style = Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD);
 
     let mut lines = vec![
         Line::from(Span::styled(
