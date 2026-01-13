@@ -62,6 +62,7 @@ impl StreamRequest {
     }
 
     /// Create a StreamRequest for an existing thread
+    #[allow(dead_code)]
     pub fn with_thread(prompt: String, thread_id: String) -> Self {
         Self {
             prompt,
@@ -72,6 +73,7 @@ impl StreamRequest {
     }
 
     /// Create a StreamRequest as a reply to a specific message
+    #[allow(dead_code)]
     pub fn with_reply(prompt: String, thread_id: String, reply_to: i64) -> Self {
         Self {
             prompt,

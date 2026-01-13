@@ -1,48 +1,58 @@
 use crate::models::{Message, StreamRequest, Thread};
 
+#[allow(dead_code)]
 pub const CONDUCTOR_BASE_URL: &str = "http://100.80.115.93:8000";
 
+#[allow(dead_code)]
 pub struct ConductorClient {
     pub base_url: String,
 }
 
 impl ConductorClient {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             base_url: CONDUCTOR_BASE_URL.to_string(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_base_url(base_url: String) -> Self {
         Self { base_url }
     }
 
     // Stubbed - will implement later with actual HTTP calls
+    #[allow(dead_code)]
     pub fn stream(&self, _request: &StreamRequest) -> StubStream {
         StubStream::new()
     }
 
+    #[allow(dead_code)]
     pub fn get_thread(&self, _thread_id: &str) -> Option<Thread> {
         // Stub: return None for now
         None
     }
 
+    #[allow(dead_code)]
     pub fn get_recent_messages(&self) -> Vec<Message> {
         // Stub: return empty vec for now
         Vec::new()
     }
 
+    #[allow(dead_code)]
     pub fn cancel(&self, _session_id: &str) {
         // Stub: no-op for now
     }
 }
 
 // Placeholder for future SSE stream
+#[allow(dead_code)]
 pub struct StubStream {
     // Will hold actual stream state later
 }
 
 impl StubStream {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {}
     }

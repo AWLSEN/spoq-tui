@@ -97,6 +97,7 @@ impl InputBox {
     }
 
     /// Check if the input box is empty
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.content.is_empty()
     }

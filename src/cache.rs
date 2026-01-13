@@ -74,11 +74,13 @@ impl ThreadCache {
     }
 
     /// Get the number of cached threads
+    #[allow(dead_code)]
     pub fn thread_count(&self) -> usize {
         self.threads.len()
     }
 
     /// Clear all cached data
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.threads.clear();
         self.messages.clear();
