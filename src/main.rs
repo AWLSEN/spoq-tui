@@ -42,6 +42,9 @@ async fn main() -> Result<()> {
     // Initialize application state
     let mut app = App::new()?;
 
+    // Load threads from backend (async initialization)
+    app.initialize().await;
+
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;
 

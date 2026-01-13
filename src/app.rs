@@ -102,8 +102,8 @@ impl App {
         let threads = storage::load_threads().unwrap_or_default();
         let tasks = storage::load_tasks().unwrap_or_default();
 
-        // Initialize cache with stub data for development
-        let cache = ThreadCache::with_stub_data();
+        // Initialize empty cache - will be populated by initialize()
+        let cache = ThreadCache::new();
 
         // Create the message channel for async communication
         let (message_tx, message_rx) = mpsc::unbounded_channel();
@@ -128,6 +128,27 @@ impl App {
             client,
             tick_count: 0,
         })
+    }
+
+    /// Initialize the app by fetching data from the backend.
+    ///
+    /// This should be called after creating the App to load recent threads
+    /// from the Conductor backend. If the backend is unreachable, the app
+    /// will continue with an empty thread list and show a connection error.
+    pub async fn initialize(&mut self) {
+        match self.client.get_recent_threads().await {
+            Ok(threads) => {
+                for thread in threads {
+                    self.cache.upsert_thread(thread);
+                }
+                self.connection_status = true;
+            }
+            Err(e) => {
+                // Keep empty threads, show connection error
+                self.connection_status = false;
+                self.stream_error = Some(format!("Failed to load threads: {}", e));
+            }
+        }
     }
 
     /// Cycle focus to the next panel
@@ -751,5 +772,34 @@ mod tests {
         for msg in messages {
             assert_eq!(msg.thread_id, "real-backend-id");
         }
+    }
+
+    // ============= Initialize Tests =============
+
+    #[tokio::test]
+    async fn test_initialize_sets_error_on_connection_failure() {
+        // Use invalid URL to simulate connection failure
+        let client = Arc::new(ConductorClient::with_base_url("http://127.0.0.1:1".to_string()));
+        let mut app = App::with_client(client).unwrap();
+
+        // Connection status should start as false
+        assert!(!app.connection_status);
+        assert!(app.stream_error.is_none());
+
+        app.initialize().await;
+
+        // After failed initialization, connection_status should be false and error should be set
+        assert!(!app.connection_status);
+        assert!(app.stream_error.is_some());
+        assert!(app.stream_error.as_ref().unwrap().contains("Failed to load threads"));
+    }
+
+    #[tokio::test]
+    async fn test_initialize_starts_with_empty_cache() {
+        let client = Arc::new(ConductorClient::with_base_url("http://127.0.0.1:1".to_string()));
+        let app = App::with_client(client).unwrap();
+
+        // Cache should start empty (no stub data)
+        assert_eq!(app.cache.thread_count(), 0);
     }
 }

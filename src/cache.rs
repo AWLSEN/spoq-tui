@@ -269,6 +269,122 @@ impl ThreadCache {
         self.messages.get_mut(thread_id)
     }
 
+    /// Create a pending thread (uses temporary ID until backend confirms).
+    ///
+    /// This creates a thread with a "pending-" prefix that will be reconciled
+    /// with the real backend ID once we receive the ThreadInfo event.
+    ///
+    /// Returns the pending thread_id for tracking.
+    pub fn create_pending_thread(&mut self, first_message: String) -> String {
+        let pending_id = format!("pending-{}", Uuid::new_v4());
+        let now = Utc::now();
+
+        // Create title from first message (truncate if too long)
+        let title = if first_message.len() > 40 {
+            format!("{}...", &first_message[..37])
+        } else {
+            first_message.clone()
+        };
+
+        let thread = Thread {
+            id: pending_id.clone(),
+            title,
+            preview: first_message.clone(),
+            updated_at: now,
+        };
+
+        self.upsert_thread(thread);
+
+        // Add the user message
+        let user_message = Message {
+            id: 1,
+            thread_id: pending_id.clone(),
+            role: MessageRole::User,
+            content: first_message,
+            created_at: now,
+            is_streaming: false,
+            partial_content: String::new(),
+        };
+        self.add_message(user_message);
+
+        // Add placeholder assistant message with is_streaming=true
+        let assistant_message = Message {
+            id: 0, // Will be updated with real ID from backend
+            thread_id: pending_id.clone(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: now,
+            is_streaming: true,
+            partial_content: String::new(),
+        };
+        self.add_message(assistant_message);
+
+        pending_id
+    }
+
+    /// Add a new message exchange to an existing thread.
+    ///
+    /// Creates a user message and a streaming assistant placeholder.
+    /// Use this for follow-up messages in an existing conversation.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The ID of the existing thread
+    /// * `user_content` - The user's message content
+    ///
+    /// # Returns
+    /// `true` if the thread exists and messages were added, `false` otherwise.
+    pub fn add_streaming_message(&mut self, thread_id: &str, user_content: String) -> bool {
+        // Verify thread exists
+        if !self.threads.contains_key(thread_id) {
+            return false;
+        }
+
+        let now = Utc::now();
+
+        // Get the next message ID based on existing messages
+        let next_id = self
+            .messages
+            .get(thread_id)
+            .map(|m| m.len() as i64 + 1)
+            .unwrap_or(1);
+
+        // Add user message
+        let user_message = Message {
+            id: next_id,
+            thread_id: thread_id.to_string(),
+            role: MessageRole::User,
+            content: user_content.clone(),
+            created_at: now,
+            is_streaming: false,
+            partial_content: String::new(),
+        };
+        self.add_message(user_message);
+
+        // Add streaming assistant placeholder
+        let assistant_message = Message {
+            id: 0, // Will be updated with real ID from backend
+            thread_id: thread_id.to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: now,
+            is_streaming: true,
+            partial_content: String::new(),
+        };
+        self.add_message(assistant_message);
+
+        // Update thread preview and updated_at
+        if let Some(thread) = self.threads.get_mut(thread_id) {
+            thread.preview = user_content;
+            thread.updated_at = now;
+        }
+
+        // Move thread to front of order (most recent activity)
+        self.thread_order.retain(|id| id != thread_id);
+        self.thread_order.insert(0, thread_id.to_string());
+
+        true
+    }
+
     /// Populate with stub data for development/testing
     fn populate_stub_data(&mut self) {
         let now = Utc::now();
@@ -955,5 +1071,320 @@ mod tests {
         // Verify original data is preserved
         let thread = cache.get_thread("real-id").unwrap();
         assert_eq!(thread.preview, original_preview);
+    }
+
+    // ============= Pending Thread Tests =============
+
+    #[test]
+    fn test_create_pending_thread_returns_pending_prefixed_id() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Hello".to_string());
+
+        // Should start with "pending-" prefix
+        assert!(pending_id.starts_with("pending-"));
+        // Rest should be a UUID (36 chars for standard UUID)
+        let uuid_part = &pending_id[8..]; // Skip "pending-"
+        assert_eq!(uuid_part.len(), 36);
+        assert!(uuid_part.contains('-'));
+    }
+
+    #[test]
+    fn test_create_pending_thread_creates_thread() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Test message".to_string());
+
+        let thread = cache.get_thread(&pending_id);
+        assert!(thread.is_some());
+
+        let thread = thread.unwrap();
+        assert_eq!(thread.id, pending_id);
+        assert_eq!(thread.title, "Test message");
+        assert_eq!(thread.preview, "Test message");
+    }
+
+    #[test]
+    fn test_create_pending_thread_truncates_long_title() {
+        let mut cache = ThreadCache::new();
+        let long_message =
+            "This is a very long message that should be truncated in the title field".to_string();
+        let pending_id = cache.create_pending_thread(long_message.clone());
+
+        let thread = cache.get_thread(&pending_id).unwrap();
+        // Title should be truncated to 37 chars + "..."
+        assert_eq!(thread.title.len(), 40);
+        assert!(thread.title.ends_with("..."));
+        // Preview should be the full message
+        assert_eq!(thread.preview, long_message);
+    }
+
+    #[test]
+    fn test_create_pending_thread_creates_messages() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("User says hello".to_string());
+
+        let messages = cache.get_messages(&pending_id).unwrap();
+        assert_eq!(messages.len(), 2);
+
+        // First message should be user message
+        assert_eq!(messages[0].role, MessageRole::User);
+        assert_eq!(messages[0].content, "User says hello");
+        assert!(!messages[0].is_streaming);
+        assert_eq!(messages[0].thread_id, pending_id);
+
+        // Second message should be streaming assistant placeholder
+        assert_eq!(messages[1].role, MessageRole::Assistant);
+        assert_eq!(messages[1].id, 0);
+        assert!(messages[1].is_streaming);
+        assert!(messages[1].content.is_empty());
+        assert_eq!(messages[1].thread_id, pending_id);
+    }
+
+    #[test]
+    fn test_create_pending_thread_at_front_of_order() {
+        let mut cache = ThreadCache::with_stub_data();
+        let initial_count = cache.thread_count();
+
+        let pending_id = cache.create_pending_thread("New pending thread".to_string());
+
+        assert_eq!(cache.thread_count(), initial_count + 1);
+        assert_eq!(cache.threads()[0].id, pending_id);
+    }
+
+    #[test]
+    fn test_create_pending_thread_full_workflow_with_reconciliation() {
+        let mut cache = ThreadCache::new();
+
+        // Create pending thread
+        let pending_id = cache.create_pending_thread("What is Rust?".to_string());
+        assert!(pending_id.starts_with("pending-"));
+
+        // Stream some tokens
+        cache.append_to_message(&pending_id, "Rust is ");
+        cache.append_to_message(&pending_id, "a systems language.");
+
+        // Verify streaming state
+        let messages = cache.get_messages(&pending_id).unwrap();
+        assert_eq!(messages[1].partial_content, "Rust is a systems language.");
+
+        // Reconcile with backend ID
+        cache.reconcile_thread_id(&pending_id, "backend-thread-123", Some("Rust Programming".to_string()));
+
+        // Verify old ID is gone
+        assert!(cache.get_thread(&pending_id).is_none());
+        assert!(cache.get_messages(&pending_id).is_none());
+
+        // Verify new ID exists with correct data
+        let thread = cache.get_thread("backend-thread-123").unwrap();
+        assert_eq!(thread.title, "Rust Programming");
+
+        let messages = cache.get_messages("backend-thread-123").unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].thread_id, "backend-thread-123");
+        assert_eq!(messages[1].thread_id, "backend-thread-123");
+        assert_eq!(messages[1].partial_content, "Rust is a systems language.");
+
+        // Finalize the message
+        cache.finalize_message("backend-thread-123", 42);
+        let messages = cache.get_messages("backend-thread-123").unwrap();
+        assert!(!messages[1].is_streaming);
+        assert_eq!(messages[1].content, "Rust is a systems language.");
+    }
+
+    // ============= Add Streaming Message Tests =============
+
+    #[test]
+    fn test_add_streaming_message_to_existing_thread() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("First question".to_string());
+
+        // Finalize the first response
+        cache.append_to_message(&thread_id, "First answer");
+        cache.finalize_message(&thread_id, 1);
+
+        // Add a follow-up message
+        let result = cache.add_streaming_message(&thread_id, "Follow-up question".to_string());
+
+        assert!(result);
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages.len(), 4); // Original 2 + new 2
+
+        // Check the new user message
+        assert_eq!(messages[2].role, MessageRole::User);
+        assert_eq!(messages[2].content, "Follow-up question");
+        assert!(!messages[2].is_streaming);
+        assert_eq!(messages[2].id, 3); // Next sequential ID
+
+        // Check the new streaming assistant message
+        assert_eq!(messages[3].role, MessageRole::Assistant);
+        assert!(messages[3].is_streaming);
+        assert_eq!(messages[3].id, 0);
+    }
+
+    #[test]
+    fn test_add_streaming_message_returns_false_for_nonexistent_thread() {
+        let mut cache = ThreadCache::new();
+
+        let result = cache.add_streaming_message("nonexistent", "Message".to_string());
+
+        assert!(!result);
+        assert!(cache.get_messages("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_add_streaming_message_updates_thread_preview() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original message".to_string());
+
+        // Verify original preview
+        assert_eq!(cache.get_thread(&thread_id).unwrap().preview, "Original message");
+
+        // Add follow-up
+        cache.add_streaming_message(&thread_id, "New follow-up message".to_string());
+
+        // Preview should be updated
+        assert_eq!(cache.get_thread(&thread_id).unwrap().preview, "New follow-up message");
+    }
+
+    #[test]
+    fn test_add_streaming_message_updates_thread_updated_at() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original".to_string());
+
+        let original_updated_at = cache.get_thread(&thread_id).unwrap().updated_at;
+
+        // Sleep briefly to ensure time difference (or we can just check it's >= original)
+        cache.add_streaming_message(&thread_id, "Follow-up".to_string());
+
+        let new_updated_at = cache.get_thread(&thread_id).unwrap().updated_at;
+        assert!(new_updated_at >= original_updated_at);
+    }
+
+    #[test]
+    fn test_add_streaming_message_moves_thread_to_front() {
+        let mut cache = ThreadCache::new();
+
+        // Create multiple threads
+        let thread1 = cache.create_streaming_thread("Thread 1".to_string());
+        let thread2 = cache.create_streaming_thread("Thread 2".to_string());
+        let thread3 = cache.create_streaming_thread("Thread 3".to_string());
+
+        // Thread 3 should be at front
+        assert_eq!(cache.threads()[0].id, thread3);
+
+        // Add message to thread 1
+        cache.add_streaming_message(&thread1, "Follow-up".to_string());
+
+        // Now thread 1 should be at front
+        assert_eq!(cache.threads()[0].id, thread1);
+        assert_eq!(cache.threads()[1].id, thread3);
+        assert_eq!(cache.threads()[2].id, thread2);
+    }
+
+    #[test]
+    fn test_add_streaming_message_increments_message_ids() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("First".to_string());
+
+        // First thread creates messages with IDs 1 (user) and 0 (streaming assistant)
+        cache.finalize_message(&thread_id, 2);
+
+        // Add second exchange
+        cache.add_streaming_message(&thread_id, "Second".to_string());
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        // Messages: [user(1), assistant(2), user(3), assistant(0)]
+        assert_eq!(messages[2].id, 3);
+        assert_eq!(messages[3].id, 0); // Placeholder until finalized
+    }
+
+    #[test]
+    fn test_add_streaming_message_can_stream_tokens() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("First question".to_string());
+        cache.finalize_message(&thread_id, 1);
+
+        // Add follow-up
+        cache.add_streaming_message(&thread_id, "Follow-up".to_string());
+
+        // Stream tokens to the new assistant message
+        cache.append_to_message(&thread_id, "Response ");
+        cache.append_to_message(&thread_id, "content");
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages[3].partial_content, "Response content");
+        assert!(messages[3].is_streaming);
+
+        // Finalize
+        cache.finalize_message(&thread_id, 99);
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages[3].content, "Response content");
+        assert!(!messages[3].is_streaming);
+        assert_eq!(messages[3].id, 99);
+    }
+
+    #[test]
+    fn test_add_streaming_message_full_conversation_workflow() {
+        let mut cache = ThreadCache::new();
+
+        // Start conversation with pending thread
+        let pending_id = cache.create_pending_thread("What is Rust?".to_string());
+
+        // Stream first response
+        cache.append_to_message(&pending_id, "Rust is a systems programming language.");
+        cache.finalize_message(&pending_id, 1);
+
+        // Reconcile with backend
+        cache.reconcile_thread_id(&pending_id, "thread-abc", Some("Rust Info".to_string()));
+
+        // Add follow-up question
+        let result = cache.add_streaming_message("thread-abc", "Tell me more about ownership.".to_string());
+        assert!(result);
+
+        // Stream second response
+        cache.append_to_message("thread-abc", "Ownership is Rust's key feature.");
+        cache.finalize_message("thread-abc", 3);
+
+        // Verify final state
+        let messages = cache.get_messages("thread-abc").unwrap();
+        assert_eq!(messages.len(), 4);
+
+        assert_eq!(messages[0].role, MessageRole::User);
+        assert_eq!(messages[0].content, "What is Rust?");
+
+        assert_eq!(messages[1].role, MessageRole::Assistant);
+        assert_eq!(messages[1].content, "Rust is a systems programming language.");
+
+        assert_eq!(messages[2].role, MessageRole::User);
+        assert_eq!(messages[2].content, "Tell me more about ownership.");
+
+        assert_eq!(messages[3].role, MessageRole::Assistant);
+        assert_eq!(messages[3].content, "Ownership is Rust's key feature.");
+
+        // All messages should have correct thread_id
+        for msg in messages {
+            assert_eq!(msg.thread_id, "thread-abc");
+        }
+
+        // Thread should have updated preview
+        let thread = cache.get_thread("thread-abc").unwrap();
+        assert_eq!(thread.preview, "Tell me more about ownership.");
+    }
+
+    #[test]
+    fn test_add_streaming_message_to_stub_data_thread() {
+        let mut cache = ThreadCache::with_stub_data();
+
+        // Add to an existing stub thread
+        let result = cache.add_streaming_message("thread-001", "New question".to_string());
+        assert!(result);
+
+        let messages = cache.get_messages("thread-001").unwrap();
+        // Original 2 messages + new 2
+        assert_eq!(messages.len(), 4);
+
+        // Thread should be moved to front
+        assert_eq!(cache.threads()[0].id, "thread-001");
     }
 }
