@@ -4,6 +4,20 @@ use crate::state::{Task, Thread};
 use crate::storage;
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
+use tokio::sync::mpsc;
+
+/// Messages received from async operations (streaming, connection status)
+#[derive(Debug, Clone)]
+pub enum AppMessage {
+    /// A token received during streaming
+    StreamToken { thread_id: String, token: String },
+    /// Streaming completed successfully
+    StreamComplete { thread_id: String, message_id: i64 },
+    /// An error occurred during streaming
+    StreamError { thread_id: String, error: String },
+    /// Connection status changed
+    ConnectionStatus(bool),
+}
 
 /// Represents which screen is currently active
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -24,7 +38,6 @@ pub enum Focus {
 }
 
 /// Main application state
-#[derive(Debug)]
 pub struct App {
     /// List of conversation threads (legacy - for storage compatibility)
     pub threads: Vec<Thread>,
@@ -50,6 +63,14 @@ pub struct App {
     pub migration_progress: Option<u8>,
     /// Thread and message cache
     pub cache: ThreadCache,
+    /// Receiver for async messages (streaming tokens, connection status)
+    pub message_rx: Option<mpsc::UnboundedReceiver<AppMessage>>,
+    /// Sender for async messages (clone this to pass to async tasks)
+    pub message_tx: mpsc::UnboundedSender<AppMessage>,
+    /// Current connection status to the backend
+    pub connection_status: bool,
+    /// Last stream error for display
+    pub stream_error: Option<String>,
 }
 
 impl App {
@@ -65,6 +86,9 @@ impl App {
         // Initialize cache with stub data for development
         let cache = ThreadCache::with_stub_data();
 
+        // Create the message channel for async communication
+        let (message_tx, message_rx) = mpsc::unbounded_channel();
+
         Ok(Self {
             threads,
             tasks,
@@ -78,6 +102,10 @@ impl App {
             input_box: InputBox::new(),
             migration_progress: Some(0),
             cache,
+            message_rx: Some(message_rx),
+            message_tx,
+            connection_status: false,
+            stream_error: None,
         })
     }
 
@@ -196,6 +224,36 @@ impl App {
     /// Navigate back to the CommandDeck screen
     pub fn navigate_to_command_deck(&mut self) {
         self.screen = Screen::CommandDeck;
+    }
+
+    /// Handle an incoming async message
+    pub fn handle_message(&mut self, msg: AppMessage) {
+        match msg {
+            AppMessage::StreamToken { thread_id, token } => {
+                self.cache.append_to_message(&thread_id, &token);
+            }
+            AppMessage::StreamComplete {
+                thread_id,
+                message_id,
+            } => {
+                self.cache.finalize_message(&thread_id, message_id);
+            }
+            AppMessage::StreamError { thread_id: _, error } => {
+                self.stream_error = Some(error);
+            }
+            AppMessage::ConnectionStatus(connected) => {
+                self.connection_status = connected;
+                if connected {
+                    // Clear any previous error when reconnected
+                    self.stream_error = None;
+                }
+            }
+        }
+    }
+
+    /// Get a clone of the message sender for passing to async tasks
+    pub fn message_sender(&self) -> mpsc::UnboundedSender<AppMessage> {
+        self.message_tx.clone()
     }
 }
 
@@ -342,5 +400,97 @@ mod tests {
         let thread_id = app.active_thread_id.as_ref().unwrap();
         // The new thread should be at the front of the list
         assert_eq!(app.cache.threads()[0].id, *thread_id);
+    }
+
+    #[test]
+    fn test_handle_message_stream_token() {
+        let mut app = App::default();
+        // Create a streaming thread first
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+
+        // Send a stream token
+        app.handle_message(AppMessage::StreamToken {
+            thread_id: thread_id.clone(),
+            token: "Hello".to_string(),
+        });
+
+        // Verify the token was appended
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages.iter().find(|m| m.role == MessageRole::Assistant).unwrap();
+        assert!(assistant_msg.content.contains("Hello") || assistant_msg.partial_content.contains("Hello"));
+    }
+
+    #[test]
+    fn test_handle_message_stream_complete() {
+        let mut app = App::default();
+        // Create a streaming thread first
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+
+        // Append some tokens
+        app.handle_message(AppMessage::StreamToken {
+            thread_id: thread_id.clone(),
+            token: "Response".to_string(),
+        });
+
+        // Complete the stream
+        app.handle_message(AppMessage::StreamComplete {
+            thread_id: thread_id.clone(),
+            message_id: 42,
+        });
+
+        // Verify the message was finalized with correct ID
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages.iter().find(|m| m.role == MessageRole::Assistant).unwrap();
+        assert_eq!(assistant_msg.id, 42);
+        assert!(!assistant_msg.is_streaming);
+    }
+
+    #[test]
+    fn test_handle_message_stream_error() {
+        let mut app = App::default();
+
+        // Send a stream error
+        app.handle_message(AppMessage::StreamError {
+            thread_id: "thread-001".to_string(),
+            error: "Connection failed".to_string(),
+        });
+
+        // Verify the error was stored
+        assert!(app.stream_error.is_some());
+        assert_eq!(app.stream_error.as_ref().unwrap(), "Connection failed");
+    }
+
+    #[test]
+    fn test_handle_message_connection_status_connected() {
+        let mut app = App::default();
+        app.stream_error = Some("Previous error".to_string());
+        assert!(!app.connection_status);
+
+        // Send connection status update
+        app.handle_message(AppMessage::ConnectionStatus(true));
+
+        // Verify status updated and error cleared
+        assert!(app.connection_status);
+        assert!(app.stream_error.is_none());
+    }
+
+    #[test]
+    fn test_handle_message_connection_status_disconnected() {
+        let mut app = App::default();
+        app.connection_status = true;
+
+        // Send disconnection status
+        app.handle_message(AppMessage::ConnectionStatus(false));
+
+        // Verify status updated (error not cleared on disconnect)
+        assert!(!app.connection_status);
+    }
+
+    #[test]
+    fn test_message_sender_returns_clone() {
+        let app = App::default();
+        let _sender = app.message_sender();
+        // Just verify it compiles and returns without panic
+        // The sender should be usable for sending messages
     }
 }

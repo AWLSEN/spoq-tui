@@ -1,25 +1,26 @@
 mod app;
 mod cache;
 mod conductor;
+mod events;
 mod models;
+pub mod sse;
 mod state;
 mod storage;
 mod ui;
 mod widgets;
 
-use app::{App, Focus, Screen};
+use app::{App, AppMessage, Focus, Screen};
 use color_eyre::Result;
 use crossterm::{
     cursor::Show,
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
+use futures::StreamExt;
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
+use tokio::sync::mpsc;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -89,6 +90,12 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
     let migration_start = tokio::time::Instant::now();
     const MIGRATION_DURATION_MS: u64 = 5000; // 5 seconds
 
+    // Create async event stream for keyboard input
+    let mut event_stream = EventStream::new();
+
+    // Take the message receiver from the app (we need ownership for select!)
+    let mut message_rx: Option<mpsc::UnboundedReceiver<AppMessage>> = app.message_rx.take();
+
     loop {
         // Update migration progress if it's running
         if app.migration_progress.is_some() {
@@ -108,123 +115,147 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
             ui::render(f, app);
         })?;
 
-        // Handle events
-        if event::poll(std::time::Duration::from_millis(100))? {
-            match event::read()? {
-                Event::Resize(_width, _height) => {
-                    // Terminal was resized, redraw will happen on next loop iteration
-                    continue;
+        // Poll both keyboard events and message channel using tokio::select!
+        let timeout = tokio::time::sleep(std::time::Duration::from_millis(100));
+
+        tokio::select! {
+            // Handle timeout for UI updates (migration progress, etc.)
+            _ = timeout => {
+                // Just continue to redraw
+            }
+
+            // Handle keyboard events
+            event_result = event_stream.next() => {
+                if let Some(Ok(event)) = event_result {
+                    match event {
+                        Event::Resize(_width, _height) => {
+                            // Terminal was resized, redraw will happen on next loop iteration
+                            continue;
+                        }
+                        Event::Key(key) if key.kind == KeyEventKind::Press => {
+                            // Global keybinds (always active)
+                            match key.code {
+                                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    app.quit();
+                                    return Ok(());
+                                }
+                                // Shift+Escape to return to CommandDeck from Conversation
+                                KeyCode::Esc if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                    if app.screen == Screen::Conversation {
+                                        app.navigate_to_command_deck();
+                                    }
+                                    continue;
+                                }
+                                // Shift+N to create new thread
+                                KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                    app.create_new_thread();
+                                    continue;
+                                }
+                                // CapsLock is tricky - use Ctrl+N as alternative
+                                KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    app.create_new_thread();
+                                    continue;
+                                }
+                                _ => {}
+                            }
+
+                            // Auto-focus to Input when user starts typing
+                            // (printable characters only, not Ctrl combinations)
+                            if let KeyCode::Char(_) = key.code {
+                                if !key.modifiers.contains(KeyModifiers::CONTROL) && app.focus != Focus::Input {
+                                    app.focus = Focus::Input;
+                                    // Character will be processed by input handling below
+                                }
+                            }
+
+                            // Handle input-specific keys when Input is focused
+                            if app.focus == Focus::Input {
+                                match key.code {
+                                    KeyCode::Char(c) => {
+                                        app.input_box.insert_char(c);
+                                        continue;
+                                    }
+                                    KeyCode::Backspace => {
+                                        app.input_box.backspace();
+                                        continue;
+                                    }
+                                    KeyCode::Delete => {
+                                        app.input_box.delete_char();
+                                        continue;
+                                    }
+                                    KeyCode::Left => {
+                                        app.input_box.move_cursor_left();
+                                        continue;
+                                    }
+                                    KeyCode::Right => {
+                                        app.input_box.move_cursor_right();
+                                        continue;
+                                    }
+                                    KeyCode::Home => {
+                                        app.input_box.move_cursor_home();
+                                        continue;
+                                    }
+                                    KeyCode::End => {
+                                        app.input_box.move_cursor_end();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        app.submit_input();
+                                        continue;
+                                    }
+                                    KeyCode::Esc => {
+                                        // Escape from input to go back to threads
+                                        app.focus = Focus::Threads;
+                                        continue;
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            // Panel navigation (when not typing in input)
+                            match key.code {
+                                KeyCode::Tab => {
+                                    app.cycle_focus();
+                                }
+                                KeyCode::BackTab => {
+                                    // Shift+Tab to go backwards
+                                    app.focus = match app.focus {
+                                        Focus::Notifications => Focus::Input,
+                                        Focus::Tasks => Focus::Notifications,
+                                        Focus::Threads => Focus::Tasks,
+                                        Focus::Input => Focus::Threads,
+                                    };
+                                }
+                                KeyCode::Up => {
+                                    app.move_up();
+                                }
+                                KeyCode::Down => {
+                                    let max_tasks = app.tasks.len().max(5); // Mock minimum of 5
+                                    app.move_down(MOCK_NOTIFICATIONS_COUNT, max_tasks, MOCK_THREADS_COUNT.max(app.threads.len()));
+                                }
+                                KeyCode::Char('q') if app.focus != Focus::Input => {
+                                    app.quit();
+                                    return Ok(());
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {
+                            // Ignore other events (mouse, focus, etc.)
+                        }
+                    }
                 }
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    // Global keybinds (always active)
-                    match key.code {
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            app.quit();
-                            return Ok(());
-                        }
-                        // Shift+Escape to return to CommandDeck from Conversation
-                        KeyCode::Esc if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            if app.screen == Screen::Conversation {
-                                app.navigate_to_command_deck();
-                            }
-                            continue;
-                        }
-                        // Shift+N to create new thread
-                        KeyCode::Char('N') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                            app.create_new_thread();
-                            continue;
-                        }
-                        // CapsLock is tricky - use Ctrl+N as alternative
-                        KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            app.create_new_thread();
-                            continue;
-                        }
-                        _ => {}
-                    }
+            }
 
-                    // Auto-focus to Input when user starts typing
-                    // (printable characters only, not Ctrl combinations)
-                    if let KeyCode::Char(_) = key.code {
-                        if !key.modifiers.contains(KeyModifiers::CONTROL) && app.focus != Focus::Input {
-                            app.focus = Focus::Input;
-                            // Character will be processed by input handling below
-                        }
-                    }
-
-                    // Handle input-specific keys when Input is focused
-                    if app.focus == Focus::Input {
-                        match key.code {
-                            KeyCode::Char(c) => {
-                                app.input_box.insert_char(c);
-                                continue;
-                            }
-                            KeyCode::Backspace => {
-                                app.input_box.backspace();
-                                continue;
-                            }
-                            KeyCode::Delete => {
-                                app.input_box.delete_char();
-                                continue;
-                            }
-                            KeyCode::Left => {
-                                app.input_box.move_cursor_left();
-                                continue;
-                            }
-                            KeyCode::Right => {
-                                app.input_box.move_cursor_right();
-                                continue;
-                            }
-                            KeyCode::Home => {
-                                app.input_box.move_cursor_home();
-                                continue;
-                            }
-                            KeyCode::End => {
-                                app.input_box.move_cursor_end();
-                                continue;
-                            }
-                            KeyCode::Enter => {
-                                app.submit_input();
-                                continue;
-                            }
-                            KeyCode::Esc => {
-                                // Escape from input to go back to threads
-                                app.focus = Focus::Threads;
-                                continue;
-                            }
-                            _ => {}
-                        }
-                    }
-
-                    // Panel navigation (when not typing in input)
-                    match key.code {
-                        KeyCode::Tab => {
-                            app.cycle_focus();
-                        }
-                        KeyCode::BackTab => {
-                            // Shift+Tab to go backwards
-                            app.focus = match app.focus {
-                                Focus::Notifications => Focus::Input,
-                                Focus::Tasks => Focus::Notifications,
-                                Focus::Threads => Focus::Tasks,
-                                Focus::Input => Focus::Threads,
-                            };
-                        }
-                        KeyCode::Up => {
-                            app.move_up();
-                        }
-                        KeyCode::Down => {
-                            let max_tasks = app.tasks.len().max(5); // Mock minimum of 5
-                            app.move_down(MOCK_NOTIFICATIONS_COUNT, max_tasks, MOCK_THREADS_COUNT.max(app.threads.len()));
-                        }
-                        KeyCode::Char('q') if app.focus != Focus::Input => {
-                            app.quit();
-                            return Ok(());
-                        }
-                        _ => {}
-                    }
+            // Handle async messages from streaming/connection
+            msg = async {
+                match &mut message_rx {
+                    Some(rx) => rx.recv().await,
+                    None => std::future::pending().await,
                 }
-                _ => {
-                    // Ignore other events (mouse, focus, etc.)
+            } => {
+                if let Some(msg) = msg {
+                    app.handle_message(msg);
                 }
             }
         }
