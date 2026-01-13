@@ -653,4 +653,103 @@ mod tests {
 
         assert!(app.stream_error.is_none());
     }
+
+    // ============= ThreadCreated Message Tests =============
+
+    #[test]
+    fn test_handle_message_thread_created_reconciles_cache() {
+        let mut app = App::default();
+        // Create a streaming thread first
+        let pending_id = app.cache.create_streaming_thread("Test".to_string());
+
+        // Handle ThreadCreated message
+        app.handle_message(AppMessage::ThreadCreated {
+            pending_id: pending_id.clone(),
+            real_id: "real-backend-id".to_string(),
+            title: None,
+        });
+
+        // Verify the thread was reconciled
+        assert!(app.cache.get_thread(&pending_id).is_none());
+        assert!(app.cache.get_thread("real-backend-id").is_some());
+    }
+
+    #[test]
+    fn test_handle_message_thread_created_updates_active_thread() {
+        let mut app = App::default();
+        // Create a streaming thread and set it as active
+        let pending_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(pending_id.clone());
+
+        // Handle ThreadCreated message
+        app.handle_message(AppMessage::ThreadCreated {
+            pending_id,
+            real_id: "real-backend-id".to_string(),
+            title: None,
+        });
+
+        // Verify active_thread_id was updated
+        assert_eq!(app.active_thread_id, Some("real-backend-id".to_string()));
+    }
+
+    #[test]
+    fn test_handle_message_thread_created_does_not_update_different_active_thread() {
+        let mut app = App::default();
+        // Create a streaming thread
+        let pending_id = app.cache.create_streaming_thread("Test".to_string());
+        // Set a different thread as active
+        app.active_thread_id = Some("different-thread".to_string());
+
+        // Handle ThreadCreated message
+        app.handle_message(AppMessage::ThreadCreated {
+            pending_id,
+            real_id: "real-backend-id".to_string(),
+            title: None,
+        });
+
+        // Verify active_thread_id was NOT updated (it's different)
+        assert_eq!(app.active_thread_id, Some("different-thread".to_string()));
+    }
+
+    #[test]
+    fn test_handle_message_thread_created_with_title() {
+        let mut app = App::default();
+        let pending_id = app.cache.create_streaming_thread("Original".to_string());
+
+        app.handle_message(AppMessage::ThreadCreated {
+            pending_id,
+            real_id: "real-backend-id".to_string(),
+            title: Some("New Title from Backend".to_string()),
+        });
+
+        let thread = app.cache.get_thread("real-backend-id").unwrap();
+        assert_eq!(thread.title, "New Title from Backend");
+    }
+
+    #[test]
+    fn test_handle_message_thread_created_messages_accessible_by_new_id() {
+        let mut app = App::default();
+        let pending_id = app.cache.create_streaming_thread("Test".to_string());
+
+        // Append some tokens
+        app.cache.append_to_message(&pending_id, "Response content");
+
+        // Handle ThreadCreated message
+        app.handle_message(AppMessage::ThreadCreated {
+            pending_id: pending_id.clone(),
+            real_id: "real-backend-id".to_string(),
+            title: None,
+        });
+
+        // Messages should be accessible by the new ID
+        let messages = app.cache.get_messages("real-backend-id");
+        assert!(messages.is_some());
+        let messages = messages.unwrap();
+        assert_eq!(messages.len(), 2);
+
+        // All messages should have the new thread_id
+        for msg in messages {
+            assert_eq!(msg.thread_id, "real-backend-id");
+        }
+    }
 }

@@ -93,10 +93,11 @@ async fn test_screen_navigation() {
         "Screen should be CommandDeck after navigation"
     );
 
-    // active_thread_id should still be set (we didn't clear it)
+    // active_thread_id is cleared when navigating back to CommandDeck
+    // This allows the next submit to create a new thread
     assert!(
-        app.active_thread_id.is_some(),
-        "active_thread_id should persist after navigation"
+        app.active_thread_id.is_none(),
+        "active_thread_id should be cleared after navigation to CommandDeck"
     );
 }
 
