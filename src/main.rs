@@ -2,6 +2,7 @@ mod app;
 mod state;
 mod storage;
 mod ui;
+mod widgets;
 
 use app::App;
 use color_eyre::Result;
