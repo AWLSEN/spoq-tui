@@ -56,8 +56,9 @@ pub enum SseEvent {
 /// Supports multiple field names that backends might use for content
 #[derive(Debug, Clone, Deserialize)]
 struct ContentPayload {
-    /// The text content - accepts "text", "content", "chunk", or "token" fields
-    #[serde(alias = "content", alias = "chunk", alias = "token")]
+    /// The text content - accepts "text", "content", "data", "chunk", or "token" fields
+    /// Conductor uses "data" for content chunks
+    #[serde(alias = "content", alias = "data", alias = "chunk", alias = "token")]
     text: Option<String>,
     /// Some backends nest content in a delta object (OpenAI style)
     #[serde(default)]
@@ -71,13 +72,22 @@ struct DeltaPayload {
     content: Option<String>,
     #[serde(default)]
     text: Option<String>,
+    #[serde(default)]
+    data: Option<String>,
 }
 
+/// Legacy thread_info payload
 #[derive(Debug, Clone, Deserialize)]
 struct ThreadInfoPayload {
     thread_id: String,
     #[serde(default)]
     title: Option<String>,
+}
+
+/// Conductor's done payload
+#[derive(Debug, Clone, Deserialize)]
+struct DonePayload {
+    message_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -117,7 +127,8 @@ pub fn parse_sse_line(line: &str) -> SseLine {
 /// Parse SSE event type and data into a typed SseEvent
 pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
     match event_type {
-        "content" => {
+        // Support various event type names for content
+        "content" | "text" | "message" | "chunk" | "delta" | "content_block_delta" => {
             let payload: ContentPayload = serde_json::from_str(data)
                 .map_err(|e| SseParseError::InvalidJson {
                     event_type: event_type.to_string(),
@@ -128,10 +139,12 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
             let text = payload.text
                 .or_else(|| payload.delta.as_ref().and_then(|d| d.content.clone()))
                 .or_else(|| payload.delta.as_ref().and_then(|d| d.text.clone()))
+                .or_else(|| payload.delta.as_ref().and_then(|d| d.data.clone()))
                 .unwrap_or_default();
 
             Ok(SseEvent::Content { text })
         }
+        // thread_info - legacy format with thread_id field
         "thread_info" => {
             let payload: ThreadInfoPayload = serde_json::from_str(data)
                 .map_err(|e| SseParseError::InvalidJson {
@@ -141,6 +154,29 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
             Ok(SseEvent::ThreadInfo {
                 thread_id: payload.thread_id,
                 title: payload.title,
+            })
+        }
+        // Conductor sends user_message_saved with message_id and optional thread_id
+        // Parse to Value first to handle potential duplicate fields (serde rejects duplicates)
+        "user_message_saved" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+
+            let message_id = v.get("message_id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+
+            let thread_id = v.get("thread_id")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| message_id.to_string());
+
+            Ok(SseEvent::ThreadInfo {
+                thread_id,
+                title: None,
             })
         }
         "message_info" => {
@@ -153,8 +189,20 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
                 message_id: payload.message_id,
             })
         }
-        "done" => Ok(SseEvent::Done),
+        // Conductor sends done with message_id in JSON
+        "done" => {
+            // Try to parse message_id from JSON, fall back to Done without data
+            if let Ok(payload) = serde_json::from_str::<DonePayload>(data) {
+                Ok(SseEvent::MessageInfo {
+                    message_id: payload.message_id.parse().unwrap_or(0),
+                })
+            } else {
+                Ok(SseEvent::Done)
+            }
+        }
         "ping" => Ok(SseEvent::Ping),
+        // Conductor sends skills_injected - ignore it
+        "skills_injected" => Ok(SseEvent::Ping), // Treat as no-op
         "error" => {
             let payload: ErrorPayload = serde_json::from_str(data)
                 .map_err(|e| SseParseError::InvalidJson {
@@ -166,7 +214,8 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
                 code: payload.code,
             })
         }
-        _ => Err(SseParseError::UnknownEventType(event_type.to_string())),
+        // Ignore unknown events instead of erroring (more resilient)
+        _ => Ok(SseEvent::Ping)
     }
 }
 
@@ -253,9 +302,19 @@ impl SseParser {
             return Ok(None);
         }
 
-        let event_type = self.current_event_type.take();
+        let mut event_type = self.current_event_type.take();
         let data = self.data_buffer.join("\n");
         self.data_buffer.clear();
+
+        // If no explicit event type, try to extract from JSON "type" field
+        // Conductor sends: data: {"type":"content","data":"hello",...}
+        if event_type.is_none() && !data.is_empty() {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) {
+                if let Some(t) = json.get("type").and_then(|v| v.as_str()) {
+                    event_type = Some(t.to_string());
+                }
+            }
+        }
 
         match event_type {
             Some(et) => {
@@ -484,8 +543,9 @@ mod tests {
 
     #[test]
     fn test_parse_unknown_event_type() {
+        // Unknown events are now ignored (return Ping) for resilience
         let result = parse_sse_event("unknown_type", "{}");
-        assert!(matches!(result, Err(SseParseError::UnknownEventType(_))));
+        assert!(matches!(result, Ok(SseEvent::Ping)));
     }
 
     #[test]
@@ -655,6 +715,65 @@ mod tests {
                 code: Some("429".to_string()),
             })
         );
+    }
+
+    #[test]
+    fn test_parse_user_message_saved_with_duplicate_fields() {
+        // Backend may send JSON with duplicate field names
+        // serde_json::from_str to struct would reject this, but parsing to Value handles it
+        // Note: serde_json::Value uses the last occurrence of duplicate keys
+        let data_with_duplicate = r#"{"message_id": 42, "thread_id": "thread-123", "thread_id": "thread-456"}"#;
+
+        let result = parse_sse_event("user_message_saved", data_with_duplicate);
+
+        // Should successfully parse (serde_json::Value uses last occurrence)
+        assert!(result.is_ok());
+        let event = result.unwrap();
+
+        // Should be ThreadInfo with thread_id extracted (last occurrence)
+        match event {
+            SseEvent::ThreadInfo { thread_id, title } => {
+                assert_eq!(thread_id, "thread-456");
+                assert_eq!(title, None);
+            }
+            _ => panic!("Expected ThreadInfo event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_user_message_saved_without_thread_id() {
+        // When thread_id is not present, should fall back to message_id
+        let data = r#"{"message_id": 789}"#;
+
+        let result = parse_sse_event("user_message_saved", data);
+        assert!(result.is_ok());
+
+        let event = result.unwrap();
+        match event {
+            SseEvent::ThreadInfo { thread_id, title } => {
+                assert_eq!(thread_id, "789");
+                assert_eq!(title, None);
+            }
+            _ => panic!("Expected ThreadInfo event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_user_message_saved_with_thread_id() {
+        // Normal case with thread_id present
+        let data = r#"{"message_id": 123, "thread_id": "my-thread"}"#;
+
+        let result = parse_sse_event("user_message_saved", data);
+        assert!(result.is_ok());
+
+        let event = result.unwrap();
+        match event {
+            SseEvent::ThreadInfo { thread_id, title } => {
+                assert_eq!(thread_id, "my-thread");
+                assert_eq!(title, None);
+            }
+            _ => panic!("Expected ThreadInfo event"),
+        }
     }
 
     #[test]
