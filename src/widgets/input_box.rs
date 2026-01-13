@@ -32,16 +32,27 @@ impl InputBox {
         }
     }
 
+    /// Convert character index to byte index
+    fn char_to_byte_index(&self, char_idx: usize) -> usize {
+        self.content
+            .char_indices()
+            .nth(char_idx)
+            .map(|(byte_idx, _)| byte_idx)
+            .unwrap_or(self.content.len())
+    }
+
     /// Insert a character at the current cursor position
     pub fn insert_char(&mut self, c: char) {
-        self.content.insert(self.cursor_position, c);
+        let byte_idx = self.char_to_byte_index(self.cursor_position);
+        self.content.insert(byte_idx, c);
         self.cursor_position += 1;
     }
 
     /// Delete the character at the current cursor position (like Delete key)
     pub fn delete_char(&mut self) {
-        if self.cursor_position < self.content.len() {
-            self.content.remove(self.cursor_position);
+        if self.cursor_position < self.content.chars().count() {
+            let byte_idx = self.char_to_byte_index(self.cursor_position);
+            self.content.remove(byte_idx);
         }
     }
 
@@ -49,7 +60,8 @@ impl InputBox {
     pub fn backspace(&mut self) {
         if self.cursor_position > 0 {
             self.cursor_position -= 1;
-            self.content.remove(self.cursor_position);
+            let byte_idx = self.char_to_byte_index(self.cursor_position);
+            self.content.remove(byte_idx);
         }
     }
 
@@ -62,7 +74,7 @@ impl InputBox {
 
     /// Move cursor one position to the right
     pub fn move_cursor_right(&mut self) {
-        if self.cursor_position < self.content.len() {
+        if self.cursor_position < self.content.chars().count() {
             self.cursor_position += 1;
         }
     }
@@ -74,7 +86,7 @@ impl InputBox {
 
     /// Move cursor to the end of the text
     pub fn move_cursor_end(&mut self) {
-        self.cursor_position = self.content.len();
+        self.cursor_position = self.content.chars().count();
     }
 
     /// Clear all content and reset cursor
