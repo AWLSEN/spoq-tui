@@ -1,9 +1,13 @@
 use crate::cache::ThreadCache;
-use crate::models::{MessageRole, StreamRequest};
+use crate::conductor::ConductorClient;
+use crate::events::SseEvent;
+use crate::models::StreamRequest;
 use crate::state::{Task, Thread};
 use crate::storage;
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
+use futures_util::StreamExt;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 /// Messages received from async operations (streaming, connection status)
@@ -71,11 +75,18 @@ pub struct App {
     pub connection_status: bool,
     /// Last stream error for display
     pub stream_error: Option<String>,
+    /// Conductor API client (shared across async tasks)
+    pub client: Arc<ConductorClient>,
 }
 
 impl App {
     /// Create a new App instance
     pub fn new() -> Result<Self> {
+        Self::with_client(Arc::new(ConductorClient::new()))
+    }
+
+    /// Create a new App instance with a custom ConductorClient
+    pub fn with_client(client: Arc<ConductorClient>) -> Result<Self> {
         // Initialize storage directories
         storage::init_storage()?;
 
@@ -106,6 +117,7 @@ impl App {
             message_tx,
             connection_status: false,
             stream_error: None,
+            client,
         })
     }
 
@@ -179,7 +191,7 @@ impl App {
         self.focus = Focus::Threads;
     }
 
-    /// Submit the current input, create a thread (stubbed), and navigate to conversation
+    /// Submit the current input, create a streaming thread, and spawn async API call
     pub fn submit_input(&mut self) {
         let content = self.input_box.content().to_string();
         if content.trim().is_empty() {
@@ -187,26 +199,76 @@ impl App {
         }
         self.input_box.clear();
 
-        // Build request (for future backend call)
-        let _request = StreamRequest::new(content.clone());
+        // Build the stream request
+        let request = StreamRequest::new(content.clone());
 
-        // STUB: Create thread locally (will be replaced by backend call)
-        let thread_id = self.cache.create_stub_thread(content.clone());
+        // Create streaming thread in cache (with user message and placeholder assistant message)
+        let thread_id = self.cache.create_streaming_thread(content);
 
-        // STUB: Add user message
-        self.cache
-            .add_message_simple(&thread_id, MessageRole::User, content);
-
-        // STUB: Add AI response
-        self.cache.add_message_simple(
-            &thread_id,
-            MessageRole::Assistant,
-            "This is a stub response. Backend not connected.".into(),
-        );
-
-        // Navigate to conversation
-        self.active_thread_id = Some(thread_id);
+        // Navigate to conversation immediately
+        self.active_thread_id = Some(thread_id.clone());
         self.screen = Screen::Conversation;
+
+        // Clone what we need for the async task
+        let client = Arc::clone(&self.client);
+        let message_tx = self.message_tx.clone();
+        let thread_id_for_task = thread_id;
+
+        // Spawn async task to stream the response
+        tokio::spawn(async move {
+            match client.stream(&request).await {
+                Ok(mut stream) => {
+                    while let Some(result) = stream.next().await {
+                        match result {
+                            Ok(event) => {
+                                match event {
+                                    SseEvent::Content(content_event) => {
+                                        let _ = message_tx.send(AppMessage::StreamToken {
+                                            thread_id: thread_id_for_task.clone(),
+                                            token: content_event.text,
+                                        });
+                                    }
+                                    SseEvent::Done(done_event) => {
+                                        // Parse message_id from string to i64
+                                        let message_id = done_event
+                                            .message_id
+                                            .parse::<i64>()
+                                            .unwrap_or(0);
+                                        let _ = message_tx.send(AppMessage::StreamComplete {
+                                            thread_id: thread_id_for_task.clone(),
+                                            message_id,
+                                        });
+                                        break;
+                                    }
+                                    SseEvent::Error(error_event) => {
+                                        let _ = message_tx.send(AppMessage::StreamError {
+                                            thread_id: thread_id_for_task.clone(),
+                                            error: error_event.message,
+                                        });
+                                        break;
+                                    }
+                                    // Ignore other event types for now (reasoning, tool calls, etc.)
+                                    _ => {}
+                                }
+                            }
+                            Err(e) => {
+                                let _ = message_tx.send(AppMessage::StreamError {
+                                    thread_id: thread_id_for_task.clone(),
+                                    error: e.to_string(),
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = message_tx.send(AppMessage::StreamError {
+                        thread_id: thread_id_for_task,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
     }
 
     /// Save all data to storage
@@ -255,6 +317,28 @@ impl App {
     pub fn message_sender(&self) -> mpsc::UnboundedSender<AppMessage> {
         self.message_tx.clone()
     }
+
+    /// Spawn an async task to check connection status.
+    ///
+    /// This calls the ConductorClient health_check and sends the result
+    /// via the message channel. The App will update connection_status
+    /// when the message is received.
+    pub fn check_connection(&self) {
+        let tx = self.message_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            let connected = match client.health_check().await {
+                Ok(healthy) => healthy,
+                Err(_) => false,
+            };
+            let _ = tx.send(AppMessage::ConnectionStatus(connected));
+        });
+    }
+
+    /// Clear the current stream error
+    pub fn clear_error(&mut self) {
+        self.stream_error = None;
+    }
 }
 
 impl Default for App {
@@ -266,6 +350,7 @@ impl Default for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::MessageRole;
 
     #[test]
     fn test_screen_default_is_command_deck() {
@@ -342,8 +427,8 @@ mod tests {
         assert!(app.active_thread_id.is_none());
     }
 
-    #[test]
-    fn test_submit_input_creates_thread_and_navigates() {
+    #[tokio::test]
+    async fn test_submit_input_creates_thread_and_navigates() {
         let mut app = App::default();
         app.input_box.insert_char('H');
         app.input_box.insert_char('i');
@@ -361,8 +446,8 @@ mod tests {
         assert!(app.input_box.is_empty());
     }
 
-    #[test]
-    fn test_submit_input_adds_messages_to_thread() {
+    #[tokio::test]
+    async fn test_submit_input_adds_messages_to_thread() {
         let mut app = App::default();
         app.input_box.insert_char('T');
         app.input_box.insert_char('e');
@@ -376,20 +461,21 @@ mod tests {
         assert!(messages.is_some());
 
         let messages = messages.unwrap();
-        // Should have user message and AI stub response
+        // Should have user message and streaming assistant placeholder
         assert_eq!(messages.len(), 2);
 
         // First message should be the user's input
         assert_eq!(messages[0].role, MessageRole::User);
         assert_eq!(messages[0].content, "Test");
 
-        // Second message should be the AI stub
+        // Second message should be the streaming assistant placeholder
         assert_eq!(messages[1].role, MessageRole::Assistant);
-        assert!(messages[1].content.contains("stub"));
+        assert!(messages[1].is_streaming);
+        assert!(messages[1].content.is_empty());
     }
 
-    #[test]
-    fn test_submit_input_creates_thread_at_front() {
+    #[tokio::test]
+    async fn test_submit_input_creates_thread_at_front() {
         let mut app = App::default();
         app.input_box.insert_char('N');
         app.input_box.insert_char('e');
@@ -492,5 +578,25 @@ mod tests {
         let _sender = app.message_sender();
         // Just verify it compiles and returns without panic
         // The sender should be usable for sending messages
+    }
+
+    #[test]
+    fn test_clear_error() {
+        let mut app = App::default();
+        app.stream_error = Some("Test error".to_string());
+
+        app.clear_error();
+
+        assert!(app.stream_error.is_none());
+    }
+
+    #[test]
+    fn test_clear_error_when_no_error() {
+        let mut app = App::default();
+        assert!(app.stream_error.is_none());
+
+        app.clear_error();
+
+        assert!(app.stream_error.is_none());
     }
 }

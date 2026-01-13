@@ -777,6 +777,7 @@ mod tests {
             message_tx,
             connection_status: false,
             stream_error: None,
+            client: std::sync::Arc::new(crate::conductor::ConductorClient::new()),
         }
     }
 
@@ -957,6 +958,172 @@ mod tests {
         assert!(
             buffer_str.contains("Waiting for your message"),
             "Conversation screen should show AI stub response"
+        );
+    }
+
+    #[test]
+    fn test_command_deck_shows_disconnected_status() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.connection_status = false;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Disconnected"),
+            "CommandDeck should show Disconnected status when connection_status is false"
+        );
+        assert!(
+            buffer_str.contains("○"),
+            "CommandDeck should show empty circle icon when disconnected"
+        );
+    }
+
+    #[test]
+    fn test_command_deck_shows_connected_status() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.connection_status = true;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Connected"),
+            "CommandDeck should show Connected status when connection_status is true"
+        );
+        assert!(
+            buffer_str.contains("●"),
+            "CommandDeck should show filled circle icon when connected"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_disconnected_status() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.connection_status = false;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Disconnected"),
+            "Conversation screen should show Disconnected status"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_connected_status() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.connection_status = true;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Connected"),
+            "Conversation screen should show Connected status"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_error_banner() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.stream_error = Some("Connection timed out".to_string());
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("ERROR"),
+            "Conversation screen should show ERROR label when stream_error is set"
+        );
+        assert!(
+            buffer_str.contains("Connection timed out"),
+            "Conversation screen should show the error message"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_no_error_banner_when_no_error() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.stream_error = None;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            !buffer_str.contains("ERROR"),
+            "Conversation screen should not show ERROR label when stream_error is None"
         );
     }
 }
