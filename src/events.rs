@@ -1,0 +1,665 @@
+//! SSE Event types for Conductor API integration.
+//!
+//! This module defines all the event types that can be received from the Conductor
+//! backend via Server-Sent Events (SSE) during streaming conversations.
+
+use serde::Deserialize;
+
+/// Metadata included with every SSE event.
+///
+/// Contains sequencing and identification information for event ordering
+/// and session/thread association.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct EventMeta {
+    /// Sequence number for ordering events within a stream
+    pub seq: u64,
+    /// Session ID for the current streaming session
+    pub session_id: String,
+    /// Thread ID this event belongs to
+    pub thread_id: String,
+    /// ISO 8601 timestamp of when the event was generated
+    pub timestamp: String,
+}
+
+/// Content streaming event containing assistant text output.
+///
+/// Received incrementally as the assistant generates response text.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ContentEvent {
+    /// A chunk of text content from the assistant's response
+    pub text: String,
+}
+
+/// Reasoning/thinking event containing assistant's internal reasoning.
+///
+/// Shows the assistant's chain-of-thought process when enabled.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ReasoningEvent {
+    /// A chunk of reasoning text from the assistant
+    pub text: String,
+}
+
+/// Event indicating a tool call has started.
+///
+/// Sent when the assistant begins invoking a tool.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ToolCallStartEvent {
+    /// Name of the tool being called
+    pub tool_name: String,
+    /// Unique identifier for this tool call
+    pub tool_call_id: String,
+}
+
+/// Event containing incremental tool call arguments.
+///
+/// Sent as the tool's input arguments are being streamed.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ToolCallArgumentEvent {
+    /// The tool call this argument chunk belongs to
+    pub tool_call_id: String,
+    /// A chunk of the argument JSON being built
+    pub argument_chunk: String,
+}
+
+/// Event indicating tool execution has begun.
+///
+/// Sent after arguments are complete and the tool is being executed.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ToolExecutingEvent {
+    /// The tool call that is now executing
+    pub tool_call_id: String,
+}
+
+/// Event containing the result of a tool execution.
+///
+/// Sent after a tool has completed execution.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ToolResultEvent {
+    /// The tool call this result belongs to
+    pub tool_call_id: String,
+    /// The result returned by the tool (typically JSON)
+    pub result: String,
+}
+
+/// Event indicating the streaming response is complete.
+///
+/// Sent when the assistant has finished generating the response.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct DoneEvent {
+    /// The ID of the completed message
+    pub message_id: String,
+}
+
+/// Event indicating an error occurred during streaming.
+///
+/// May be sent at any point if an error occurs.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ErrorEvent {
+    /// Human-readable error message
+    pub message: String,
+    /// Optional error code for programmatic handling
+    pub code: Option<String>,
+}
+
+/// Event confirming a user message has been saved.
+///
+/// Sent after the user's input message has been persisted.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct UserMessageSavedEvent {
+    /// The ID assigned to the saved user message
+    pub message_id: String,
+    /// The thread ID the message was saved to
+    pub thread_id: String,
+}
+
+/// A single todo item in the assistant's task list.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct TodoItem {
+    /// The todo item content/description
+    pub content: String,
+    /// Status: "pending", "in_progress", or "completed"
+    pub status: String,
+}
+
+/// Event indicating the todo list has been updated.
+///
+/// Sent when the assistant modifies its internal task tracking.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct TodosUpdatedEvent {
+    /// The current list of todos
+    pub todos: Vec<TodoItem>,
+}
+
+/// Event containing subagent activity information.
+///
+/// Sent when the assistant spawns or receives updates from subagents.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SubagentEvent {
+    /// The type of subagent event (e.g., "spawn", "progress", "complete")
+    /// Note: This is named `subagent_type` to avoid conflict with SSE's `type` tag discriminator.
+    /// The backend should send this as `subagent_type` in the JSON.
+    #[serde(default)]
+    pub subagent_type: String,
+    /// Event-specific data (structure varies by type)
+    pub data: serde_json::Value,
+}
+
+/// Event requesting user permission for an action.
+///
+/// Sent when the assistant needs explicit user approval to proceed.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct PermissionRequestEvent {
+    /// Unique identifier for this permission request
+    pub permission_id: String,
+    /// Human-readable description of what permission is being requested
+    pub description: String,
+    /// The tool that requires permission to execute
+    pub tool: String,
+}
+
+/// Wrapper enum for all possible SSE event types from Conductor.
+///
+/// Use pattern matching to handle different event types during stream processing.
+///
+/// # Example
+///
+/// ```ignore
+/// match event {
+///     SseEvent::Content(content) => {
+///         // Append text to UI
+///     }
+///     SseEvent::Done(done) => {
+///         // Finalize message
+///     }
+///     SseEvent::Error(err) => {
+///         // Handle error
+///     }
+///     _ => {}
+/// }
+/// ```
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SseEvent {
+    /// Assistant text content chunk
+    Content(ContentEvent),
+    /// Assistant reasoning/thinking chunk
+    Reasoning(ReasoningEvent),
+    /// Tool call has started
+    ToolCallStart(ToolCallStartEvent),
+    /// Tool call argument chunk
+    ToolCallArgument(ToolCallArgumentEvent),
+    /// Tool is now executing
+    ToolExecuting(ToolExecutingEvent),
+    /// Tool execution result
+    ToolResult(ToolResultEvent),
+    /// Streaming complete
+    Done(DoneEvent),
+    /// Error occurred
+    Error(ErrorEvent),
+    /// User message saved confirmation
+    UserMessageSaved(UserMessageSavedEvent),
+    /// Todo list updated
+    TodosUpdated(TodosUpdatedEvent),
+    /// Subagent activity
+    Subagent(SubagentEvent),
+    /// Permission request
+    PermissionRequest(PermissionRequestEvent),
+}
+
+/// Wraps an SSE event with its metadata.
+///
+/// This is the top-level structure received from the SSE stream,
+/// containing both the event-specific data and common metadata.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SseEventWithMeta {
+    /// The event payload
+    #[serde(flatten)]
+    pub event: SseEvent,
+    /// Metadata for sequencing and identification
+    pub meta: EventMeta,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_event_meta() {
+        let json = r#"{
+            "seq": 42,
+            "session_id": "sess-abc123",
+            "thread_id": "thread-xyz789",
+            "timestamp": "2024-01-15T10:30:00Z"
+        }"#;
+
+        let meta: EventMeta = serde_json::from_str(json).unwrap();
+        assert_eq!(meta.seq, 42);
+        assert_eq!(meta.session_id, "sess-abc123");
+        assert_eq!(meta.thread_id, "thread-xyz789");
+        assert_eq!(meta.timestamp, "2024-01-15T10:30:00Z");
+    }
+
+    #[test]
+    fn test_parse_content_event() {
+        let json = r#"{"text": "Hello, how can I help you?"}"#;
+        let event: ContentEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.text, "Hello, how can I help you?");
+    }
+
+    #[test]
+    fn test_parse_reasoning_event() {
+        let json = r#"{"text": "Let me think about this..."}"#;
+        let event: ReasoningEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.text, "Let me think about this...");
+    }
+
+    #[test]
+    fn test_parse_tool_call_start_event() {
+        let json = r#"{
+            "tool_name": "read_file",
+            "tool_call_id": "tc-12345"
+        }"#;
+
+        let event: ToolCallStartEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.tool_name, "read_file");
+        assert_eq!(event.tool_call_id, "tc-12345");
+    }
+
+    #[test]
+    fn test_parse_tool_call_argument_event() {
+        let json = r#"{
+            "tool_call_id": "tc-12345",
+            "argument_chunk": "{\"path\": \"/src"
+        }"#;
+
+        let event: ToolCallArgumentEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.tool_call_id, "tc-12345");
+        assert_eq!(event.argument_chunk, "{\"path\": \"/src");
+    }
+
+    #[test]
+    fn test_parse_tool_executing_event() {
+        let json = r#"{"tool_call_id": "tc-12345"}"#;
+        let event: ToolExecutingEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.tool_call_id, "tc-12345");
+    }
+
+    #[test]
+    fn test_parse_tool_result_event() {
+        let json = r#"{
+            "tool_call_id": "tc-12345",
+            "result": "{\"content\": \"file contents here\"}"
+        }"#;
+
+        let event: ToolResultEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.tool_call_id, "tc-12345");
+        assert_eq!(event.result, "{\"content\": \"file contents here\"}");
+    }
+
+    #[test]
+    fn test_parse_done_event() {
+        let json = r#"{"message_id": "msg-98765"}"#;
+        let event: DoneEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.message_id, "msg-98765");
+    }
+
+    #[test]
+    fn test_parse_error_event_with_code() {
+        let json = r#"{
+            "message": "Rate limit exceeded",
+            "code": "RATE_LIMIT"
+        }"#;
+
+        let event: ErrorEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.message, "Rate limit exceeded");
+        assert_eq!(event.code, Some("RATE_LIMIT".to_string()));
+    }
+
+    #[test]
+    fn test_parse_error_event_without_code() {
+        let json = r#"{"message": "Unknown error"}"#;
+        let event: ErrorEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.message, "Unknown error");
+        assert_eq!(event.code, None);
+    }
+
+    #[test]
+    fn test_parse_user_message_saved_event() {
+        let json = r#"{
+            "message_id": "msg-11111",
+            "thread_id": "thread-22222"
+        }"#;
+
+        let event: UserMessageSavedEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.message_id, "msg-11111");
+        assert_eq!(event.thread_id, "thread-22222");
+    }
+
+    #[test]
+    fn test_parse_todos_updated_event() {
+        let json = r#"{
+            "todos": [
+                {"content": "Read the file", "status": "completed"},
+                {"content": "Parse the JSON", "status": "in_progress"},
+                {"content": "Write tests", "status": "pending"}
+            ]
+        }"#;
+
+        let event: TodosUpdatedEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.todos.len(), 3);
+        assert_eq!(event.todos[0].content, "Read the file");
+        assert_eq!(event.todos[0].status, "completed");
+        assert_eq!(event.todos[1].content, "Parse the JSON");
+        assert_eq!(event.todos[1].status, "in_progress");
+        assert_eq!(event.todos[2].content, "Write tests");
+        assert_eq!(event.todos[2].status, "pending");
+    }
+
+    #[test]
+    fn test_parse_subagent_event() {
+        let json = r#"{
+            "subagent_type": "spawn",
+            "data": {"agent_id": "agent-001", "task": "research"}
+        }"#;
+
+        let event: SubagentEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.subagent_type, "spawn");
+        assert_eq!(event.data["agent_id"], "agent-001");
+        assert_eq!(event.data["task"], "research");
+    }
+
+    #[test]
+    fn test_parse_permission_request_event() {
+        let json = r#"{
+            "permission_id": "perm-55555",
+            "description": "Execute shell command: ls -la",
+            "tool": "bash"
+        }"#;
+
+        let event: PermissionRequestEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.permission_id, "perm-55555");
+        assert_eq!(event.description, "Execute shell command: ls -la");
+        assert_eq!(event.tool, "bash");
+    }
+
+    #[test]
+    fn test_parse_sse_event_content() {
+        let json = r#"{
+            "type": "content",
+            "text": "Hello world"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::Content(content) => {
+                assert_eq!(content.text, "Hello world");
+            }
+            _ => panic!("Expected Content event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_reasoning() {
+        let json = r#"{
+            "type": "reasoning",
+            "text": "Thinking..."
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::Reasoning(reasoning) => {
+                assert_eq!(reasoning.text, "Thinking...");
+            }
+            _ => panic!("Expected Reasoning event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_tool_call_start() {
+        let json = r#"{
+            "type": "tool_call_start",
+            "tool_name": "write_file",
+            "tool_call_id": "tc-99999"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::ToolCallStart(e) => {
+                assert_eq!(e.tool_name, "write_file");
+                assert_eq!(e.tool_call_id, "tc-99999");
+            }
+            _ => panic!("Expected ToolCallStart event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_tool_call_argument() {
+        let json = r#"{
+            "type": "tool_call_argument",
+            "tool_call_id": "tc-99999",
+            "argument_chunk": "partial_arg"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::ToolCallArgument(e) => {
+                assert_eq!(e.tool_call_id, "tc-99999");
+                assert_eq!(e.argument_chunk, "partial_arg");
+            }
+            _ => panic!("Expected ToolCallArgument event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_tool_executing() {
+        let json = r#"{
+            "type": "tool_executing",
+            "tool_call_id": "tc-99999"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::ToolExecuting(e) => {
+                assert_eq!(e.tool_call_id, "tc-99999");
+            }
+            _ => panic!("Expected ToolExecuting event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_tool_result() {
+        let json = r#"{
+            "type": "tool_result",
+            "tool_call_id": "tc-99999",
+            "result": "success"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::ToolResult(e) => {
+                assert_eq!(e.tool_call_id, "tc-99999");
+                assert_eq!(e.result, "success");
+            }
+            _ => panic!("Expected ToolResult event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_done() {
+        let json = r#"{
+            "type": "done",
+            "message_id": "msg-final"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::Done(e) => {
+                assert_eq!(e.message_id, "msg-final");
+            }
+            _ => panic!("Expected Done event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_error() {
+        let json = r#"{
+            "type": "error",
+            "message": "Something went wrong",
+            "code": "ERR_001"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::Error(e) => {
+                assert_eq!(e.message, "Something went wrong");
+                assert_eq!(e.code, Some("ERR_001".to_string()));
+            }
+            _ => panic!("Expected Error event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_user_message_saved() {
+        let json = r#"{
+            "type": "user_message_saved",
+            "message_id": "msg-user",
+            "thread_id": "thread-main"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::UserMessageSaved(e) => {
+                assert_eq!(e.message_id, "msg-user");
+                assert_eq!(e.thread_id, "thread-main");
+            }
+            _ => panic!("Expected UserMessageSaved event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_todos_updated() {
+        let json = r#"{
+            "type": "todos_updated",
+            "todos": [{"content": "Task 1", "status": "pending"}]
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::TodosUpdated(e) => {
+                assert_eq!(e.todos.len(), 1);
+                assert_eq!(e.todos[0].content, "Task 1");
+            }
+            _ => panic!("Expected TodosUpdated event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_subagent() {
+        let json = r#"{
+            "type": "subagent",
+            "subagent_type": "progress",
+            "data": {"percent": 50}
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::Subagent(e) => {
+                assert_eq!(e.subagent_type, "progress");
+                assert_eq!(e.data["percent"], 50);
+            }
+            _ => panic!("Expected Subagent event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_permission_request() {
+        let json = r#"{
+            "type": "permission_request",
+            "permission_id": "perm-001",
+            "description": "Allow file write",
+            "tool": "write"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::PermissionRequest(e) => {
+                assert_eq!(e.permission_id, "perm-001");
+                assert_eq!(e.description, "Allow file write");
+                assert_eq!(e.tool, "write");
+            }
+            _ => panic!("Expected PermissionRequest event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_with_meta() {
+        let json = r#"{
+            "type": "content",
+            "text": "Response text",
+            "meta": {
+                "seq": 1,
+                "session_id": "sess-123",
+                "thread_id": "thread-456",
+                "timestamp": "2024-01-15T12:00:00Z"
+            }
+        }"#;
+
+        let event_with_meta: SseEventWithMeta = serde_json::from_str(json).unwrap();
+
+        match &event_with_meta.event {
+            SseEvent::Content(content) => {
+                assert_eq!(content.text, "Response text");
+            }
+            _ => panic!("Expected Content event"),
+        }
+
+        assert_eq!(event_with_meta.meta.seq, 1);
+        assert_eq!(event_with_meta.meta.session_id, "sess-123");
+        assert_eq!(event_with_meta.meta.thread_id, "thread-456");
+        assert_eq!(event_with_meta.meta.timestamp, "2024-01-15T12:00:00Z");
+    }
+
+    #[test]
+    fn test_todo_item_parsing() {
+        let json = r#"{"content": "Write documentation", "status": "pending"}"#;
+        let item: TodoItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.content, "Write documentation");
+        assert_eq!(item.status, "pending");
+    }
+
+    #[test]
+    fn test_content_event_clone() {
+        let event = ContentEvent {
+            text: "Hello".to_string(),
+        };
+        let cloned = event.clone();
+        assert_eq!(event, cloned);
+    }
+
+    #[test]
+    fn test_error_event_debug() {
+        let event = ErrorEvent {
+            message: "Test error".to_string(),
+            code: Some("E001".to_string()),
+        };
+        let debug_str = format!("{:?}", event);
+        assert!(debug_str.contains("Test error"));
+        assert!(debug_str.contains("E001"));
+    }
+
+    #[test]
+    fn test_sse_event_equality() {
+        let event1 = SseEvent::Content(ContentEvent {
+            text: "Hello".to_string(),
+        });
+        let event2 = SseEvent::Content(ContentEvent {
+            text: "Hello".to_string(),
+        });
+        let event3 = SseEvent::Content(ContentEvent {
+            text: "World".to_string(),
+        });
+
+        assert_eq!(event1, event2);
+        assert_ne!(event1, event3);
+    }
+}
