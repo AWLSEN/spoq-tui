@@ -13,7 +13,10 @@ use app::{App, AppMessage, Focus, Screen};
 use color_eyre::Result;
 use crossterm::{
     cursor::Show,
-    event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers},
+    event::{
+        DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
+        KeyModifiers, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -32,7 +35,7 @@ async fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -65,7 +68,7 @@ fn setup_panic_hook() {
     std::panic::set_hook(Box::new(move |panic_info| {
         // Try to restore terminal state
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
         let _ = execute!(io::stdout(), Show);
 
         // Call the original panic hook
@@ -78,6 +81,7 @@ fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mu
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
+        DisableMouseCapture,
         LeaveAlternateScreen
     )?;
     terminal.show_cursor()?;
@@ -281,8 +285,26 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 _ => {}
                             }
                         }
+                        Event::Mouse(mouse_event) => {
+                            match mouse_event.kind {
+                                MouseEventKind::ScrollUp => {
+                                    if app.screen == Screen::Conversation {
+                                        app.conversation_scroll =
+                                            app.conversation_scroll.saturating_add(3);
+                                    }
+                                }
+                                MouseEventKind::ScrollDown => {
+                                    if app.screen == Screen::Conversation {
+                                        app.conversation_scroll =
+                                            app.conversation_scroll.saturating_sub(3);
+                                    }
+                                }
+                                _ => {}
+                            }
+                            continue;
+                        }
                         _ => {
-                            // Ignore other events (mouse, focus, etc.)
+                            // Ignore other events (focus, etc.)
                         }
                     }
                 }

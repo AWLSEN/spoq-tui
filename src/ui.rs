@@ -795,7 +795,9 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         lines.push(Line::from(""));
     }
 
-    let messages_widget = Paragraph::new(lines).wrap(Wrap { trim: false });
+    let messages_widget = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .scroll((app.conversation_scroll, 0));
     frame.render_widget(messages_widget, inner);
 }
 
