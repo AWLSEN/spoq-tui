@@ -15,6 +15,10 @@ pub struct ThreadCache {
     messages: HashMap<String, Vec<Message>>,
     /// Order of thread IDs (most recent first)
     thread_order: Vec<String>,
+    /// Mapping from pending IDs to real IDs for redirecting tokens
+    /// When a thread is reconciled, we keep track so streaming tokens using
+    /// the old pending ID can be redirected to the correct thread.
+    pending_to_real: HashMap<String, String>,
 }
 
 impl ThreadCache {
@@ -190,10 +194,22 @@ impl ThreadCache {
         thread_id
     }
 
+    /// Resolve a thread ID, following pending→real mappings if needed.
+    /// This allows streaming tokens sent with the old pending ID to be
+    /// redirected to the correct thread after reconciliation.
+    fn resolve_thread_id<'a>(&'a self, thread_id: &'a str) -> &'a str {
+        self.pending_to_real
+            .get(thread_id)
+            .map(|s| s.as_str())
+            .unwrap_or(thread_id)
+    }
+
     /// Append a token to the streaming message in a thread
     /// Finds the last message with is_streaming=true and appends the token
     pub fn append_to_message(&mut self, thread_id: &str, token: &str) {
-        if let Some(messages) = self.messages.get_mut(thread_id) {
+        // Resolve the thread_id in case it's a pending ID that was reconciled
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
             // Find the last streaming message
             if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
                 streaming_msg.append_token(token);
@@ -204,7 +220,9 @@ impl ThreadCache {
     /// Finalize the streaming message in a thread
     /// Updates the message ID to the real backend ID and marks streaming as complete
     pub fn finalize_message(&mut self, thread_id: &str, message_id: i64) {
-        if let Some(messages) = self.messages.get_mut(thread_id) {
+        // Resolve the thread_id in case it's a pending ID that was reconciled
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
             // Find the streaming message
             if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
                 streaming_msg.id = message_id;
@@ -261,6 +279,11 @@ impl ThreadCache {
             }
             self.messages.insert(real_id.to_string(), messages);
         }
+
+        // Track the mapping so streaming tokens using the old pending ID
+        // can be redirected to the correct thread
+        self.pending_to_real
+            .insert(pending_id.to_string(), real_id.to_string());
     }
 
     /// Get mutable access to messages for a thread
@@ -1188,6 +1211,39 @@ mod tests {
         let messages = cache.get_messages("backend-thread-123").unwrap();
         assert!(!messages[1].is_streaming);
         assert_eq!(messages[1].content, "Rust is a systems language.");
+    }
+
+    #[test]
+    fn test_tokens_redirected_after_reconciliation() {
+        // This tests the critical bug fix: when user_message_saved arrives
+        // and reconciles the thread ID, subsequent tokens using the OLD pending ID
+        // must be redirected to the new real ID.
+        let mut cache = ThreadCache::new();
+
+        // Create pending thread
+        let pending_id = cache.create_pending_thread("Hello".to_string());
+        assert!(pending_id.starts_with("pending-"));
+
+        // Simulate receiving user_message_saved which triggers reconciliation
+        // BEFORE all content tokens arrive
+        cache.reconcile_thread_id(&pending_id, "real-thread-42", None);
+
+        // Now tokens arrive using the OLD pending ID
+        // (this is what the async task does since it captured pending_id at spawn time)
+        cache.append_to_message(&pending_id, "Hi ");
+        cache.append_to_message(&pending_id, "there!");
+
+        // Tokens should have been redirected to the real thread
+        let messages = cache.get_messages("real-thread-42").unwrap();
+        assert_eq!(messages.len(), 2); // User message + streaming assistant message
+        assert_eq!(messages[1].partial_content, "Hi there!");
+
+        // Finalize also uses the old ID
+        cache.finalize_message(&pending_id, 999);
+        let messages = cache.get_messages("real-thread-42").unwrap();
+        assert!(!messages[1].is_streaming);
+        assert_eq!(messages[1].content, "Hi there!");
+        assert_eq!(messages[1].id, 999);
     }
 
     // ============= Add Streaming Message Tests =============

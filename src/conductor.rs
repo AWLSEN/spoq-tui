@@ -227,28 +227,6 @@ impl ConductorClient {
 
     /// Fetch recent threads from the backend.
     ///
-    /// Retrieves a list of threads from the `/v1/messages/recent` endpoint,
-    /// ordered by most recently updated.
-    ///
-    /// # Returns
-    /// A vector of `Thread` objects on success, or a `ConductorError` on failure
-    pub async fn get_recent_threads(&self) -> Result<Vec<Thread>, ConductorError> {
-        let url = format!("{}/v1/messages/recent", self.base_url);
-
-        let response = self.client.get(&url).send().await?;
-
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
-            let message = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(ConductorError::ServerError { status, message });
-        }
-
-        let threads: Vec<Thread> = response.json().await?;
-        Ok(threads)
-    }
 
     /// Get a thread by ID (stub - will implement with REST API)
     #[allow(dead_code)]
@@ -431,11 +409,4 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[tokio::test]
-    async fn test_get_recent_threads_with_invalid_server() {
-        let client = ConductorClient::with_base_url("http://127.0.0.1:1".to_string());
-        let result = client.get_recent_threads().await;
-        // Should fail with HTTP error since server doesn't exist
-        assert!(result.is_err());
-    }
 }
