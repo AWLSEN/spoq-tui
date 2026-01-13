@@ -77,6 +77,8 @@ pub struct App {
     pub stream_error: Option<String>,
     /// Conductor API client (shared across async tasks)
     pub client: Arc<ConductorClient>,
+    /// Tick counter for animations (blinking cursor, etc.)
+    pub tick_count: u64,
 }
 
 impl App {
@@ -118,6 +120,7 @@ impl App {
             connection_status: false,
             stream_error: None,
             client,
+            tick_count: 0,
         })
     }
 
@@ -338,6 +341,11 @@ impl App {
     /// Clear the current stream error
     pub fn clear_error(&mut self) {
         self.stream_error = None;
+    }
+
+    /// Increment the tick counter for animations
+    pub fn tick(&mut self) {
+        self.tick_count = self.tick_count.wrapping_add(1);
     }
 }
 

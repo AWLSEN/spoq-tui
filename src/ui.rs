@@ -698,6 +698,25 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         .as_ref()
         .and_then(|id| app.cache.get_messages(id));
 
+    // Check if any message is currently streaming
+    let has_streaming_message = cached_messages
+        .as_ref()
+        .map(|msgs| msgs.iter().any(|m| m.is_streaming))
+        .unwrap_or(false);
+
+    // Show "AI is responding..." indicator if streaming
+    if has_streaming_message {
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  AI is responding...",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
     if let Some(messages) = cached_messages {
         for message in messages {
             lines.push(Line::from(""));
@@ -725,10 +744,27 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                 ),
             };
 
-            lines.push(Line::from(vec![
-                Span::styled(label, label_style),
-                Span::styled(&message.content, Style::default().fg(Color::White)),
-            ]));
+            // Handle streaming vs completed messages
+            if message.is_streaming {
+                // Display partial_content with blinking cursor
+                // Blink cursor every ~500ms (assuming 10 ticks/sec, toggle every 5 ticks)
+                let show_cursor = (app.tick_count / 5) % 2 == 0;
+                let cursor = if show_cursor { "█" } else { " " };
+
+                let display_content = &message.partial_content;
+
+                lines.push(Line::from(vec![
+                    Span::styled(label, label_style),
+                    Span::styled(display_content, Style::default().fg(Color::White)),
+                    Span::styled(cursor, Style::default().fg(COLOR_ACCENT)),
+                ]));
+            } else {
+                // Display completed message content
+                lines.push(Line::from(vec![
+                    Span::styled(label, label_style),
+                    Span::styled(&message.content, Style::default().fg(Color::White)),
+                ]));
+            }
             lines.push(Line::from(""));
         }
     } else {
@@ -841,6 +877,7 @@ mod tests {
             connection_status: false,
             stream_error: None,
             client: std::sync::Arc::new(crate::conductor::ConductorClient::new()),
+            tick_count: 0,
         }
     }
 
@@ -1187,6 +1224,255 @@ mod tests {
         assert!(
             !buffer_str.contains("ERROR"),
             "Conversation screen should not show ERROR label when stream_error is None"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_streaming_indicator() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread with a streaming message
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("AI is responding"),
+            "Conversation screen should show 'AI is responding...' when a message is streaming"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_partial_content_during_streaming() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread and append some tokens
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        app.cache.append_to_message(&thread_id, "Hello from ");
+        app.cache.append_to_message(&thread_id, "the AI");
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Hello from the AI"),
+            "Conversation screen should show partial_content during streaming"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_cursor_during_streaming() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.tick_count = 0; // Ensure cursor is visible (tick_count / 5) % 2 == 0
+
+        // Create a streaming thread
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.cache.append_to_message(&thread_id, "Response");
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        // The cursor character █ should be present when tick_count makes it visible
+        assert!(
+            buffer_str.contains("█"),
+            "Conversation screen should show blinking cursor during streaming"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_cursor_blinks() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.cache.append_to_message(&thread_id, "Response");
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Test cursor visible (tick_count = 0, 0/5 % 2 == 0)
+        app.tick_count = 0;
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str_visible: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Test cursor hidden (tick_count = 5, 5/5 % 2 == 1)
+        app.tick_count = 5;
+        let backend2 = TestBackend::new(100, 30);
+        let mut terminal2 = Terminal::new(backend2).unwrap();
+        terminal2
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer2 = terminal2.backend().buffer();
+        let buffer_str_hidden: String = buffer2
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // When visible, should have █; when hidden, the cursor position should have space
+        assert!(
+            buffer_str_visible.contains("█"),
+            "Cursor should be visible at tick_count=0"
+        );
+        // Note: The hidden cursor shows a space, so we check that █ is not present
+        // or that the behavior differs
+        assert!(
+            !buffer_str_hidden.contains("█"),
+            "Cursor should be hidden at tick_count=5"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_no_streaming_indicator_for_completed_messages() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread and finalize it
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        app.cache.append_to_message(&thread_id, "Completed response");
+        app.cache.finalize_message(&thread_id, 123);
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            !buffer_str.contains("AI is responding"),
+            "Conversation screen should NOT show 'AI is responding...' for completed messages"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_completed_message_content() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread and finalize it
+        let thread_id = app.cache.create_streaming_thread("User question".to_string());
+        app.cache.append_to_message(&thread_id, "Final answer from AI");
+        app.cache.finalize_message(&thread_id, 456);
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Final answer from AI"),
+            "Conversation screen should show completed message content"
+        );
+        // Should NOT have the blinking cursor for completed messages
+        assert!(
+            !buffer_str.contains("█"),
+            "Conversation screen should NOT show cursor for completed messages"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_shows_user_message() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread (which includes a user message)
+        let thread_id = app.cache.create_streaming_thread("Hello from user".to_string());
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            buffer_str.contains("Hello from user"),
+            "Conversation screen should show user message content"
+        );
+        assert!(
+            buffer_str.contains("You:"),
+            "Conversation screen should show 'You:' label for user messages"
         );
     }
 }
