@@ -310,8 +310,12 @@ impl ThreadCache {
     /// This creates a thread with a "pending-" prefix that will be reconciled
     /// with the real backend ID once we receive the ThreadInfo event.
     ///
+    /// # Arguments
+    /// * `first_message` - The initial message content for the thread
+    /// * `thread_type` - The type of thread (Conversation or Programming)
+    ///
     /// Returns the pending thread_id for tracking.
-    pub fn create_pending_thread(&mut self, first_message: String) -> String {
+    pub fn create_pending_thread(&mut self, first_message: String, thread_type: ThreadType) -> String {
         let pending_id = format!("pending-{}", Uuid::new_v4());
         let now = Utc::now();
 
@@ -327,7 +331,7 @@ impl ThreadCache {
             title,
             preview: first_message.clone(),
             updated_at: now,
-            thread_type: ThreadType::default(),
+            thread_type,
         };
 
         self.upsert_thread(thread);
@@ -1146,7 +1150,7 @@ mod tests {
     #[test]
     fn test_create_pending_thread_returns_pending_prefixed_id() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("Hello".to_string());
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
 
         // Should start with "pending-" prefix
         assert!(pending_id.starts_with("pending-"));
@@ -1159,7 +1163,7 @@ mod tests {
     #[test]
     fn test_create_pending_thread_creates_thread() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("Test message".to_string());
+        let pending_id = cache.create_pending_thread("Test message".to_string(), ThreadType::Conversation);
 
         let thread = cache.get_thread(&pending_id);
         assert!(thread.is_some());
@@ -1175,7 +1179,7 @@ mod tests {
         let mut cache = ThreadCache::new();
         let long_message =
             "This is a very long message that should be truncated in the title field".to_string();
-        let pending_id = cache.create_pending_thread(long_message.clone());
+        let pending_id = cache.create_pending_thread(long_message.clone(), ThreadType::Conversation);
 
         let thread = cache.get_thread(&pending_id).unwrap();
         // Title should be truncated to 37 chars + "..."
@@ -1188,7 +1192,7 @@ mod tests {
     #[test]
     fn test_create_pending_thread_creates_messages() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("User says hello".to_string());
+        let pending_id = cache.create_pending_thread("User says hello".to_string(), ThreadType::Conversation);
 
         let messages = cache.get_messages(&pending_id).unwrap();
         assert_eq!(messages.len(), 2);
@@ -1212,7 +1216,7 @@ mod tests {
         let mut cache = ThreadCache::with_stub_data();
         let initial_count = cache.thread_count();
 
-        let pending_id = cache.create_pending_thread("New pending thread".to_string());
+        let pending_id = cache.create_pending_thread("New pending thread".to_string(), ThreadType::Conversation);
 
         assert_eq!(cache.thread_count(), initial_count + 1);
         assert_eq!(cache.threads()[0].id, pending_id);
@@ -1223,7 +1227,7 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Create pending thread
-        let pending_id = cache.create_pending_thread("What is Rust?".to_string());
+        let pending_id = cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Conversation);
         assert!(pending_id.starts_with("pending-"));
 
         // Stream some tokens
@@ -1266,7 +1270,7 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Create pending thread
-        let pending_id = cache.create_pending_thread("Hello".to_string());
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
         assert!(pending_id.starts_with("pending-"));
 
         // Simulate receiving user_message_saved which triggers reconciliation
@@ -1430,7 +1434,7 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Start conversation with pending thread
-        let pending_id = cache.create_pending_thread("What is Rust?".to_string());
+        let pending_id = cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Conversation);
 
         // Stream first response
         cache.append_to_message(&pending_id, "Rust is a systems programming language.");
@@ -1523,7 +1527,7 @@ mod tests {
     #[test]
     fn test_is_thread_streaming_with_reconciled_thread() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("Hello".to_string());
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
 
         // Reconcile to real ID
         cache.reconcile_thread_id(&pending_id, "real-thread-123", None);
@@ -1533,5 +1537,38 @@ mod tests {
 
         // Should also work with the old pending ID (redirected)
         assert!(cache.is_thread_streaming(&pending_id));
+    }
+
+    // ============= ThreadType Tests =============
+
+    #[test]
+    fn test_create_pending_thread_with_conversation_type() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
+
+        let thread = cache.get_thread(&pending_id).unwrap();
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
+    }
+
+    #[test]
+    fn test_create_pending_thread_with_programming_type() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Help me code".to_string(), ThreadType::Programming);
+
+        let thread = cache.get_thread(&pending_id).unwrap();
+        assert_eq!(thread.thread_type, ThreadType::Programming);
+    }
+
+    #[test]
+    fn test_create_pending_thread_preserves_type_after_reconciliation() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Programming task".to_string(), ThreadType::Programming);
+
+        // Reconcile with backend ID
+        cache.reconcile_thread_id(&pending_id, "real-backend-123", None);
+
+        // Thread type should be preserved
+        let thread = cache.get_thread("real-backend-123").unwrap();
+        assert_eq!(thread.thread_type, ThreadType::Programming);
     }
 }

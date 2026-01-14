@@ -1,7 +1,7 @@
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::events::SseEvent;
-use crate::models::StreamRequest;
+use crate::models::{ProgrammingStreamRequest, StreamRequest, ThreadType};
 use crate::state::{Task, Thread};
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
@@ -292,7 +292,7 @@ impl App {
         } else {
             // NEW thread - create pending, will reconcile when backend responds
             let request = StreamRequest::new(content.clone());
-            let pending_id = self.cache.create_pending_thread(content);
+            let pending_id = self.cache.create_pending_thread(content, ThreadType::default());
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
@@ -493,6 +493,16 @@ impl App {
     /// Increment the tick counter for animations
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
+    }
+
+    /// Check if the currently active thread is a Programming thread
+    pub fn is_active_thread_programming(&self) -> bool {
+        if let Some(thread_id) = &self.active_thread_id {
+            if let Some(thread) = self.cache.get_thread(thread_id) {
+                return thread.thread_type == crate::models::ThreadType::Programming;
+            }
+        }
+        false
     }
 }
 
@@ -1316,5 +1326,88 @@ mod tests {
             app.cycle_programming_mode(); // BypassPermissions → None
             assert_eq!(app.programming_mode, ProgrammingMode::None);
         }
+    }
+
+    // ============= is_active_thread_programming Tests =============
+
+    #[test]
+    fn test_is_active_thread_programming_returns_false_when_no_active_thread() {
+        let app = App::default();
+        assert!(app.active_thread_id.is_none());
+        assert!(!app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_is_active_thread_programming_returns_false_for_conversation_thread() {
+        let mut app = App::default();
+
+        // Create a conversation thread
+        let thread = crate::models::Thread {
+            id: "thread-conv".to_string(),
+            title: "Conversation Thread".to_string(),
+            preview: "Just talking".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("thread-conv".to_string());
+
+        assert!(!app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_is_active_thread_programming_returns_true_for_programming_thread() {
+        let mut app = App::default();
+
+        // Create a programming thread
+        let thread = crate::models::Thread {
+            id: "thread-prog".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "Code review".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("thread-prog".to_string());
+
+        assert!(app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_is_active_thread_programming_returns_false_for_nonexistent_thread() {
+        let mut app = App::default();
+        app.active_thread_id = Some("nonexistent-thread".to_string());
+
+        assert!(!app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_is_active_thread_programming_after_thread_type_change() {
+        let mut app = App::default();
+
+        // Create a conversation thread
+        let thread = crate::models::Thread {
+            id: "thread-1".to_string(),
+            title: "Thread".to_string(),
+            preview: "Content".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("thread-1".to_string());
+
+        assert!(!app.is_active_thread_programming());
+
+        // Update to programming thread
+        let thread = crate::models::Thread {
+            id: "thread-1".to_string(),
+            title: "Thread".to_string(),
+            preview: "Content".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread);
+
+        assert!(app.is_active_thread_programming());
     }
 }

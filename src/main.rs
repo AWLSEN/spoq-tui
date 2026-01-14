@@ -248,13 +248,18 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     app.cycle_focus();
                                 }
                                 KeyCode::BackTab => {
-                                    // Shift+Tab to go backwards
-                                    app.focus = match app.focus {
-                                        Focus::Notifications => Focus::Input,
-                                        Focus::Tasks => Focus::Notifications,
-                                        Focus::Threads => Focus::Tasks,
-                                        Focus::Input => Focus::Threads,
-                                    };
+                                    // Shift+Tab in Conversation screen with Programming thread: cycle mode
+                                    if app.screen == Screen::Conversation && app.is_active_thread_programming() {
+                                        app.cycle_programming_mode();
+                                    } else {
+                                        // Otherwise: cycle focus backwards
+                                        app.focus = match app.focus {
+                                            Focus::Notifications => Focus::Input,
+                                            Focus::Tasks => Focus::Notifications,
+                                            Focus::Threads => Focus::Tasks,
+                                            Focus::Input => Focus::Threads,
+                                        };
+                                    }
                                 }
                                 KeyCode::Esc if app.focus != Focus::Input => {
                                     // Escape when not in input: go back to CommandDeck
