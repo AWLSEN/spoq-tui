@@ -304,6 +304,19 @@ impl StreamRequest {
             plan_mode: None,
         }
     }
+
+    /// Set the thread type for this request (builder pattern)
+    pub fn with_type(mut self, thread_type: ThreadType) -> Self {
+        self.thread_type = Some(thread_type);
+        self
+    }
+
+    /// Set plan mode for this request (builder pattern)
+    #[allow(dead_code)]
+    pub fn with_plan_mode(mut self, plan_mode: bool) -> Self {
+        self.plan_mode = Some(plan_mode);
+        self
+    }
 }
 
 /// Request structure for programming stream API calls.

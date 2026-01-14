@@ -26,6 +26,16 @@ pub enum AppMessage {
         real_id: String,
         title: Option<String>,
     },
+    /// Messages loaded for a thread
+    MessagesLoaded {
+        thread_id: String,
+        messages: Vec<crate::models::Message>,
+    },
+    /// Error loading messages for a thread
+    MessagesLoadError {
+        thread_id: String,
+        error: String,
+    },
 }
 
 /// Represents which screen is currently active
@@ -261,8 +271,8 @@ impl App {
     /// 1. NEW thread: When `active_thread_id` is None, creates a new pending thread
     /// 2. CONTINUING thread: When `active_thread_id` exists, adds to the existing thread
     ///
-    /// For programming threads, uses the programming stream endpoint with the current
-    /// programming mode (plan_mode or bypass_permissions).
+    /// The unified stream endpoint routes based on thread_type parameter.
+    /// For programming threads, plan_mode is set based on the current programming mode.
     ///
     /// Edge case: If active_thread_id starts with "pending-", we block submission
     /// because we're still waiting for the backend to confirm the thread ID.
@@ -446,19 +456,41 @@ impl App {
 
     /// Open a specific thread by ID for conversation
     pub fn open_thread(&mut self, thread_id: String) {
-        // Set active thread
-        self.active_thread_id = Some(thread_id);
-
-        // Navigate to conversation
+        // Set active thread and navigate (existing logic)
+        self.active_thread_id = Some(thread_id.clone());
         self.screen = Screen::Conversation;
-
-        // Clear input box for fresh start
         self.input_box.clear();
-
-        // Reset scroll to show latest content
         self.conversation_scroll = 0;
 
-        // Messages should already be in cache from backend fetch
+        // Check if messages need to be fetched
+        if self.cache.get_messages(&thread_id).is_none() {
+            // Spawn async fetch task
+            let client = Arc::clone(&self.client);
+            let message_tx = self.message_tx.clone();
+            let tid = thread_id.clone();
+
+            tokio::spawn(async move {
+                match client.fetch_thread_with_messages(&tid).await {
+                    Ok(response) => {
+                        let messages: Vec<crate::models::Message> = response.messages
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, m)| m.to_client_message(&tid, i as i64 + 1))
+                            .collect();
+                        let _ = message_tx.send(AppMessage::MessagesLoaded {
+                            thread_id: tid,
+                            messages,
+                        });
+                    }
+                    Err(e) => {
+                        let _ = message_tx.send(AppMessage::MessagesLoadError {
+                            thread_id: tid,
+                            error: e.to_string(),
+                        });
+                    }
+                }
+            });
+        }
     }
 
     /// Open the currently selected thread from the threads panel
@@ -518,6 +550,12 @@ impl App {
                 if self.active_thread_id.as_ref() == Some(&pending_id) {
                     self.active_thread_id = Some(real_id);
                 }
+            }
+            AppMessage::MessagesLoaded { thread_id, messages } => {
+                self.cache.set_messages(thread_id, messages);
+            }
+            AppMessage::MessagesLoadError { thread_id: _, error } => {
+                self.stream_error = Some(error);
             }
         }
     }
@@ -1788,6 +1826,8 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread1);
+        // Pre-populate messages to avoid lazy fetch triggering tokio::spawn
+        app.cache.set_messages("prog-1".to_string(), vec![]);
         app.open_thread("prog-1".to_string());
 
         // Mode should persist
@@ -1806,6 +1846,8 @@ mod tests {
             created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread2);
+        // Pre-populate messages to avoid lazy fetch triggering tokio::spawn
+        app.cache.set_messages("prog-2".to_string(), vec![]);
         app.open_thread("prog-2".to_string());
 
         // Mode should still persist
