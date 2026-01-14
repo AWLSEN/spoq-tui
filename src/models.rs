@@ -51,6 +51,16 @@ where
     deserializer.deserialize_any(IdVisitor)
 }
 
+/// Type of thread - determines UI behavior and available features
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ThreadType {
+    /// Standard conversation thread (default)
+    #[default]
+    Conversation,
+    /// Programming-focused thread with code-specific features
+    Programming,
+}
+
 /// Represents a conversation thread from the backend API
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Thread {
@@ -66,6 +76,9 @@ pub struct Thread {
     /// When the thread was last updated
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
+    /// Type of thread (Conversation or Programming)
+    #[serde(default)]
+    pub thread_type: ThreadType,
 }
 
 /// Role of a message in a conversation
@@ -161,9 +174,117 @@ impl StreamRequest {
     }
 }
 
+/// Request structure for programming stream API calls.
+///
+/// Similar to StreamRequest but with additional fields for programming mode
+/// options like plan mode and permission bypassing. Used with the
+/// `/v1/programming/stream` endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProgrammingStreamRequest {
+    /// The thread ID to continue (required for programming streams)
+    pub thread_id: String,
+    /// The prompt/message content to send
+    pub content: String,
+    /// Whether to enable plan mode for this request
+    #[serde(default)]
+    pub plan_mode: bool,
+    /// Whether to bypass permission prompts
+    #[serde(default)]
+    pub bypass_permissions: bool,
+    /// Session ID for authentication
+    pub session_id: String,
+}
+
+impl ProgrammingStreamRequest {
+    /// Create a new ProgrammingStreamRequest with default options.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The ID of the thread to continue
+    /// * `content` - The message content to send
+    pub fn new(thread_id: String, content: String) -> Self {
+        Self {
+            thread_id,
+            content,
+            plan_mode: false,
+            bypass_permissions: false,
+            session_id: Uuid::new_v4().to_string(),
+        }
+    }
+
+    /// Create a ProgrammingStreamRequest with plan mode enabled.
+    #[allow(dead_code)]
+    pub fn with_plan_mode(thread_id: String, content: String) -> Self {
+        Self {
+            thread_id,
+            content,
+            plan_mode: true,
+            bypass_permissions: false,
+            session_id: Uuid::new_v4().to_string(),
+        }
+    }
+
+    /// Create a ProgrammingStreamRequest with bypass permissions enabled.
+    #[allow(dead_code)]
+    pub fn with_bypass_permissions(thread_id: String, content: String) -> Self {
+        Self {
+            thread_id,
+            content,
+            plan_mode: false,
+            bypass_permissions: true,
+            session_id: Uuid::new_v4().to_string(),
+        }
+    }
+
+    /// Create a ProgrammingStreamRequest with all options.
+    #[allow(dead_code)]
+    pub fn with_options(
+        thread_id: String,
+        content: String,
+        plan_mode: bool,
+        bypass_permissions: bool,
+    ) -> Self {
+        Self {
+            thread_id,
+            content,
+            plan_mode,
+            bypass_permissions,
+            session_id: Uuid::new_v4().to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_thread_type_default() {
+        assert_eq!(ThreadType::default(), ThreadType::Conversation);
+    }
+
+    #[test]
+    fn test_thread_type_variants() {
+        assert_eq!(ThreadType::Conversation, ThreadType::Conversation);
+        assert_eq!(ThreadType::Programming, ThreadType::Programming);
+        assert_ne!(ThreadType::Conversation, ThreadType::Programming);
+    }
+
+    #[test]
+    fn test_thread_type_serialization() {
+        // Test Conversation serialization
+        let conv = ThreadType::Conversation;
+        let json = serde_json::to_string(&conv).expect("Failed to serialize");
+        assert_eq!(json, "\"Conversation\"");
+        let deserialized: ThreadType = serde_json::from_str(&json).expect("Failed to deserialize");
+        assert_eq!(conv, deserialized);
+
+        // Test Programming serialization
+        let prog = ThreadType::Programming;
+        let json = serde_json::to_string(&prog).expect("Failed to serialize");
+        assert_eq!(json, "\"Programming\"");
+        let deserialized: ThreadType = serde_json::from_str(&json).expect("Failed to deserialize");
+        assert_eq!(prog, deserialized);
+    }
 
     #[test]
     fn test_thread_creation() {
@@ -172,11 +293,27 @@ mod tests {
             title: "Test Thread".to_string(),
             preview: "Hello, world!".to_string(),
             updated_at: Utc::now(),
+            thread_type: ThreadType::Conversation,
         };
 
         assert_eq!(thread.id, "thread-123");
         assert_eq!(thread.title, "Test Thread");
         assert_eq!(thread.preview, "Hello, world!");
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
+    }
+
+    #[test]
+    fn test_thread_creation_programming() {
+        let thread = Thread {
+            id: "thread-456".to_string(),
+            title: "Code Review".to_string(),
+            preview: "Let me review this code".to_string(),
+            updated_at: Utc::now(),
+            thread_type: ThreadType::Programming,
+        };
+
+        assert_eq!(thread.id, "thread-456");
+        assert_eq!(thread.thread_type, ThreadType::Programming);
     }
 
     #[test]
@@ -186,12 +323,66 @@ mod tests {
             title: "Serialization Test".to_string(),
             preview: "Testing JSON".to_string(),
             updated_at: Utc::now(),
+            thread_type: ThreadType::Conversation,
         };
 
         let json = serde_json::to_string(&thread).expect("Failed to serialize");
         let deserialized: Thread = serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(thread, deserialized);
+    }
+
+    #[test]
+    fn test_thread_serialization_programming() {
+        let thread = Thread {
+            id: "thread-789".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "Code discussion".to_string(),
+            updated_at: Utc::now(),
+            thread_type: ThreadType::Programming,
+        };
+
+        let json = serde_json::to_string(&thread).expect("Failed to serialize");
+        let deserialized: Thread = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(thread, deserialized);
+        assert_eq!(deserialized.thread_type, ThreadType::Programming);
+    }
+
+    #[test]
+    fn test_thread_deserialization_backward_compatibility() {
+        // Test backward compatibility - deserialize JSON without thread_type field
+        let json = r#"{
+            "id": "thread-legacy",
+            "title": "Legacy Thread",
+            "preview": "Old format",
+            "updated_at": "2024-01-01T00:00:00Z"
+        }"#;
+
+        let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(thread.id, "thread-legacy");
+        assert_eq!(thread.title, "Legacy Thread");
+        assert_eq!(thread.preview, "Old format");
+        // Should default to Conversation when thread_type is missing
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
+    }
+
+    #[test]
+    fn test_thread_deserialization_with_thread_type() {
+        // Test deserializing JSON with explicit thread_type
+        let json = r#"{
+            "id": "thread-new",
+            "title": "New Thread",
+            "preview": "New format",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "thread_type": "Programming"
+        }"#;
+
+        let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(thread.id, "thread-new");
+        assert_eq!(thread.thread_type, ThreadType::Programming);
     }
 
     #[test]
@@ -421,5 +612,141 @@ mod tests {
         let deserialized: StreamRequest = serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(request, deserialized);
+    }
+
+    // ProgrammingStreamRequest tests
+
+    #[test]
+    fn test_programming_stream_request_new() {
+        let request = ProgrammingStreamRequest::new(
+            "thread-123".to_string(),
+            "Help me write a function".to_string(),
+        );
+
+        assert_eq!(request.thread_id, "thread-123");
+        assert_eq!(request.content, "Help me write a function");
+        assert!(!request.plan_mode);
+        assert!(!request.bypass_permissions);
+        assert!(!request.session_id.is_empty());
+    }
+
+    #[test]
+    fn test_programming_stream_request_with_plan_mode() {
+        let request = ProgrammingStreamRequest::with_plan_mode(
+            "thread-456".to_string(),
+            "Plan the implementation".to_string(),
+        );
+
+        assert_eq!(request.thread_id, "thread-456");
+        assert_eq!(request.content, "Plan the implementation");
+        assert!(request.plan_mode);
+        assert!(!request.bypass_permissions);
+        assert!(!request.session_id.is_empty());
+    }
+
+    #[test]
+    fn test_programming_stream_request_with_bypass_permissions() {
+        let request = ProgrammingStreamRequest::with_bypass_permissions(
+            "thread-789".to_string(),
+            "Execute without prompts".to_string(),
+        );
+
+        assert_eq!(request.thread_id, "thread-789");
+        assert_eq!(request.content, "Execute without prompts");
+        assert!(!request.plan_mode);
+        assert!(request.bypass_permissions);
+        assert!(!request.session_id.is_empty());
+    }
+
+    #[test]
+    fn test_programming_stream_request_with_options() {
+        let request = ProgrammingStreamRequest::with_options(
+            "thread-abc".to_string(),
+            "Full options request".to_string(),
+            true,
+            true,
+        );
+
+        assert_eq!(request.thread_id, "thread-abc");
+        assert_eq!(request.content, "Full options request");
+        assert!(request.plan_mode);
+        assert!(request.bypass_permissions);
+        assert!(!request.session_id.is_empty());
+    }
+
+    #[test]
+    fn test_programming_stream_request_serialization() {
+        let request = ProgrammingStreamRequest {
+            thread_id: "thread-xyz".to_string(),
+            content: "Test content".to_string(),
+            plan_mode: true,
+            bypass_permissions: false,
+            session_id: "session-123".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).expect("Failed to serialize");
+        let deserialized: ProgrammingStreamRequest =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(request, deserialized);
+    }
+
+    #[test]
+    fn test_programming_stream_request_serialization_all_fields() {
+        let request = ProgrammingStreamRequest {
+            thread_id: "thread-full".to_string(),
+            content: "Full test".to_string(),
+            plan_mode: true,
+            bypass_permissions: true,
+            session_id: "session-full".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).expect("Failed to serialize");
+
+        // Verify all fields are present in JSON
+        assert!(json.contains("\"thread_id\":\"thread-full\""));
+        assert!(json.contains("\"content\":\"Full test\""));
+        assert!(json.contains("\"plan_mode\":true"));
+        assert!(json.contains("\"bypass_permissions\":true"));
+        assert!(json.contains("\"session_id\":\"session-full\""));
+
+        let deserialized: ProgrammingStreamRequest =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+        assert_eq!(request, deserialized);
+    }
+
+    #[test]
+    fn test_programming_stream_request_deserialization_with_defaults() {
+        // Test deserializing JSON without optional bool fields (should default to false)
+        let json = r#"{
+            "thread_id": "thread-minimal",
+            "content": "Minimal request",
+            "session_id": "session-minimal"
+        }"#;
+
+        let request: ProgrammingStreamRequest =
+            serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(request.thread_id, "thread-minimal");
+        assert_eq!(request.content, "Minimal request");
+        assert_eq!(request.session_id, "session-minimal");
+        // Default values should be applied
+        assert!(!request.plan_mode);
+        assert!(!request.bypass_permissions);
+    }
+
+    #[test]
+    fn test_programming_stream_request_unique_session_ids() {
+        let request1 = ProgrammingStreamRequest::new(
+            "thread-1".to_string(),
+            "Request 1".to_string(),
+        );
+        let request2 = ProgrammingStreamRequest::new(
+            "thread-2".to_string(),
+            "Request 2".to_string(),
+        );
+
+        // Each request should have a unique session ID
+        assert_ne!(request1.session_id, request2.session_id);
     }
 }

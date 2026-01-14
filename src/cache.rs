@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
-use crate::models::{Message, MessageRole, Thread};
+use crate::models::{Message, MessageRole, Thread, ThreadType};
 
 /// Local cache for threads and messages
 /// Will fetch from backend in future phases
@@ -109,6 +109,7 @@ impl ThreadCache {
             title,
             preview: first_message,
             updated_at: now,
+            thread_type: ThreadType::default(),
         };
 
         self.upsert_thread(thread);
@@ -163,6 +164,7 @@ impl ThreadCache {
             title,
             preview: first_message.clone(),
             updated_at: now,
+            thread_type: ThreadType::default(),
         };
 
         self.upsert_thread(thread);
@@ -325,6 +327,7 @@ impl ThreadCache {
             title,
             preview: first_message.clone(),
             updated_at: now,
+            thread_type: ThreadType::default(),
         };
 
         self.upsert_thread(thread);
@@ -453,6 +456,7 @@ impl ThreadCache {
             title: "Rust async patterns".to_string(),
             preview: "Here's how you can use tokio for async...".to_string(),
             updated_at: now - Duration::minutes(5),
+            thread_type: ThreadType::default(),
         };
 
         let messages1 = vec![
@@ -482,6 +486,7 @@ impl ThreadCache {
             title: "TUI design best practices".to_string(),
             preview: "For TUI apps, consider using ratatui...".to_string(),
             updated_at: now - Duration::hours(2),
+            thread_type: ThreadType::default(),
         };
 
         let messages2 = vec![
@@ -511,6 +516,7 @@ impl ThreadCache {
             title: "API integration help".to_string(),
             preview: "You can use reqwest for HTTP requests...".to_string(),
             updated_at: now - Duration::days(1),
+            thread_type: ThreadType::default(),
         };
 
         let messages3 = vec![
@@ -609,6 +615,7 @@ mod tests {
             title: "New Thread".to_string(),
             preview: "Preview text".to_string(),
             updated_at: Utc::now(),
+            thread_type: ThreadType::default(),
         };
 
         cache.upsert_thread(thread);
@@ -626,6 +633,7 @@ mod tests {
             title: "Updated Title".to_string(),
             preview: "Updated preview".to_string(),
             updated_at: Utc::now(),
+            thread_type: ThreadType::default(),
         };
 
         cache.upsert_thread(updated_thread);
@@ -708,6 +716,7 @@ mod tests {
                 title: format!("Thread {}", i),
                 preview: "Preview".to_string(),
                 updated_at: Utc::now(),
+                thread_type: ThreadType::default(),
             });
         }
 
@@ -720,6 +729,7 @@ mod tests {
             title: "Updated Thread 1".to_string(),
             preview: "New preview".to_string(),
             updated_at: Utc::now(),
+            thread_type: ThreadType::default(),
         });
 
         // Thread 1 should now be at front
