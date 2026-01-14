@@ -71,6 +71,15 @@ where
     Option::<ThreadType>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
 }
 
+/// Helper to deserialize nullable strings as empty string
+/// Handles both missing fields and explicit null values
+fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
+}
+
 /// Represents a conversation thread from the backend API
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Thread {
@@ -78,7 +87,7 @@ pub struct Thread {
     #[serde(deserialize_with = "deserialize_id")]
     pub id: String,
     /// Title derived from first message
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_nullable_string")]
     pub title: String,
     /// Preview of the last message
     #[serde(default)]
