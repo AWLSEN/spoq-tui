@@ -61,6 +61,15 @@ pub enum ThreadType {
     Programming,
 }
 
+/// Helper to deserialize ThreadType with null handling
+/// Returns Default (Conversation) if the field is null or missing
+fn deserialize_thread_type<'de, D>(deserializer: D) -> Result<ThreadType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Option::<ThreadType>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
+}
+
 /// Represents a conversation thread from the backend API
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Thread {
@@ -77,7 +86,7 @@ pub struct Thread {
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
     /// Type of thread (Conversation or Programming)
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_thread_type")]
     pub thread_type: ThreadType,
 }
 
@@ -383,6 +392,41 @@ mod tests {
 
         assert_eq!(thread.id, "thread-new");
         assert_eq!(thread.thread_type, ThreadType::Programming);
+    }
+
+    #[test]
+    fn test_thread_deserialization_with_null_thread_type() {
+        // Test backward compatibility - deserialize JSON with null thread_type field
+        let json = r#"{
+            "id": "thread-null-type",
+            "title": "Null Type Thread",
+            "preview": "Thread with null type",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "thread_type": null
+        }"#;
+
+        let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(thread.id, "thread-null-type");
+        assert_eq!(thread.title, "Null Type Thread");
+        // Should default to Conversation when thread_type is null
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
+    }
+
+    #[test]
+    fn test_thread_type_clone() {
+        let original = ThreadType::Programming;
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_thread_type_debug() {
+        // Verify Debug trait is implemented correctly
+        let conv = ThreadType::Conversation;
+        let prog = ThreadType::Programming;
+        assert_eq!(format!("{:?}", conv), "Conversation");
+        assert_eq!(format!("{:?}", prog), "Programming");
     }
 
     #[test]

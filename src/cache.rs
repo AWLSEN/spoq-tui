@@ -878,6 +878,28 @@ mod tests {
     }
 
     #[test]
+    fn test_create_streaming_thread_uses_default_thread_type() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        let thread = cache.get_thread(&thread_id).unwrap();
+        // create_streaming_thread should use default thread type (Conversation)
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        assert_eq!(thread.thread_type, ThreadType::default());
+    }
+
+    #[test]
+    fn test_create_stub_thread_uses_default_thread_type() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_stub_thread("Hello".to_string());
+
+        let thread = cache.get_thread(&thread_id).unwrap();
+        // create_stub_thread should use default thread type (Conversation)
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        assert_eq!(thread.thread_type, ThreadType::default());
+    }
+
+    #[test]
     fn test_append_to_message_accumulates_tokens() {
         let mut cache = ThreadCache::new();
         let thread_id = cache.create_streaming_thread("Hello".to_string());

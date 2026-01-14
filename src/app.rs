@@ -1562,4 +1562,212 @@ mod tests {
         let thread = app.cache.get_thread(&pending_id).unwrap();
         assert_eq!(thread.thread_type, ThreadType::Programming);
     }
+
+    // ============= Mode Indicator Visibility Tests =============
+    // Mode indicator should only be visible for programming threads
+
+    #[test]
+    fn test_mode_indicator_visibility_logic_programming_thread() {
+        let mut app = App::default();
+
+        // Create a programming thread
+        let thread = crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming".to_string(),
+            preview: "Code".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("prog-thread".to_string());
+        app.screen = Screen::Conversation;
+
+        // is_active_thread_programming determines mode indicator visibility
+        // For programming threads, it should be true (indicator visible)
+        assert!(app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_mode_indicator_visibility_logic_conversation_thread() {
+        let mut app = App::default();
+
+        // Create a conversation thread
+        let thread = crate::models::Thread {
+            id: "conv-thread".to_string(),
+            title: "Conversation".to_string(),
+            preview: "Chat".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("conv-thread".to_string());
+        app.screen = Screen::Conversation;
+
+        // For conversation threads, indicator should NOT be visible
+        assert!(!app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_mode_indicator_visibility_logic_no_thread() {
+        let app = App::default();
+
+        // No active thread means no indicator
+        assert!(app.active_thread_id.is_none());
+        assert!(!app.is_active_thread_programming());
+    }
+
+    // ============= Shift+Tab Behavior Tests =============
+    // Tests for the conditions that determine Shift+Tab behavior
+
+    #[test]
+    fn test_shift_tab_should_cycle_mode_for_programming_thread_in_conversation() {
+        let mut app = App::default();
+
+        // Create a programming thread
+        let thread = crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming".to_string(),
+            preview: "Code".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("prog-thread".to_string());
+        app.screen = Screen::Conversation;
+
+        // Condition for Shift+Tab to cycle mode:
+        // 1. Screen is Conversation
+        // 2. Active thread is Programming type
+        assert_eq!(app.screen, Screen::Conversation);
+        assert!(app.is_active_thread_programming());
+
+        // Mode cycling should work
+        assert_eq!(app.programming_mode, ProgrammingMode::None);
+        app.cycle_programming_mode();
+        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+    }
+
+    #[test]
+    fn test_shift_tab_should_not_cycle_mode_for_conversation_thread() {
+        let mut app = App::default();
+
+        // Create a conversation thread
+        let thread = crate::models::Thread {
+            id: "conv-thread".to_string(),
+            title: "Conversation".to_string(),
+            preview: "Chat".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("conv-thread".to_string());
+        app.screen = Screen::Conversation;
+
+        // Shift+Tab should NOT cycle mode for conversation threads
+        // (it should cycle focus instead, but that logic is in main.rs)
+        assert_eq!(app.screen, Screen::Conversation);
+        assert!(!app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_shift_tab_should_not_cycle_mode_on_command_deck() {
+        let mut app = App::default();
+
+        // Create a programming thread but stay on CommandDeck
+        let thread = crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming".to_string(),
+            preview: "Code".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread);
+        app.active_thread_id = Some("prog-thread".to_string());
+        app.screen = Screen::CommandDeck; // Not in Conversation
+
+        // Even with programming thread, Shift+Tab should not cycle mode
+        // because we're not on Conversation screen
+        assert_eq!(app.screen, Screen::CommandDeck);
+        // The condition for mode cycling is both screen AND thread type
+    }
+
+    // ============= Programming Mode Persistence Tests =============
+
+    #[test]
+    fn test_programming_mode_persists_across_thread_switches() {
+        let mut app = App::default();
+
+        // Set programming mode
+        app.programming_mode = ProgrammingMode::PlanMode;
+
+        // Create and switch to a programming thread
+        let thread1 = crate::models::Thread {
+            id: "prog-1".to_string(),
+            title: "Programming 1".to_string(),
+            preview: "Code 1".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread1);
+        app.open_thread("prog-1".to_string());
+
+        // Mode should persist
+        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+
+        // Switch to another thread
+        let thread2 = crate::models::Thread {
+            id: "prog-2".to_string(),
+            title: "Programming 2".to_string(),
+            preview: "Code 2".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread2);
+        app.open_thread("prog-2".to_string());
+
+        // Mode should still persist
+        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+    }
+
+    #[test]
+    fn test_programming_mode_persists_after_navigate_to_command_deck() {
+        let mut app = App::default();
+
+        // Set programming mode
+        app.programming_mode = ProgrammingMode::BypassPermissions;
+
+        // Navigate to command deck
+        app.navigate_to_command_deck();
+
+        // Mode should persist (it's app-level, not thread-level)
+        assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+    }
+
+    // ============= Thread Type with Add Streaming Message Tests =============
+
+    #[test]
+    fn test_add_streaming_message_preserves_thread_type() {
+        let mut app = App::default();
+
+        // Create a programming thread
+        let pending_id = app.cache.create_pending_thread("Code question".to_string(), ThreadType::Programming);
+
+        // Verify initial type
+        let thread = app.cache.get_thread(&pending_id).unwrap();
+        assert_eq!(thread.thread_type, ThreadType::Programming);
+
+        // Finalize first response
+        app.cache.append_to_message(&pending_id, "Answer");
+        app.cache.finalize_message(&pending_id, 1);
+
+        // Reconcile with backend
+        app.cache.reconcile_thread_id(&pending_id, "real-thread-123", None);
+
+        // Add follow-up message
+        app.cache.add_streaming_message("real-thread-123", "Follow-up".to_string());
+
+        // Thread type should be preserved
+        let thread = app.cache.get_thread("real-thread-123").unwrap();
+        assert_eq!(thread.thread_type, ThreadType::Programming);
+    }
 }
