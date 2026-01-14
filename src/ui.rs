@@ -1127,6 +1127,10 @@ mod tests {
             preview: "Test preview".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("test-thread".to_string());
 
@@ -1683,13 +1687,17 @@ mod tests {
         let mut app = create_test_app();
         app.screen = Screen::Conversation;
 
-        // Create a Conversation thread (not Programming)
+        // Create a Normal thread (not Programming)
         app.cache.upsert_thread(crate::models::Thread {
             id: "conv-thread".to_string(),
-            title: "Conversation Thread".to_string(),
+            title: "Normal Thread".to_string(),
             preview: "Just chatting".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Conversation,
+            thread_type: crate::models::ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("conv-thread".to_string());
         app.programming_mode = ProgrammingMode::PlanMode; // Set mode, but shouldn't show
@@ -1732,6 +1740,10 @@ mod tests {
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
         app.programming_mode = ProgrammingMode::PlanMode;
@@ -1769,6 +1781,10 @@ mod tests {
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
         app.programming_mode = ProgrammingMode::BypassPermissions;
@@ -1806,6 +1822,10 @@ mod tests {
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
         app.programming_mode = ProgrammingMode::None;

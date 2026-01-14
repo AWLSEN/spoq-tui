@@ -53,16 +53,17 @@ where
 
 /// Type of thread - determines UI behavior and available features
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum ThreadType {
-    /// Standard conversation thread (default)
+    /// Standard normal thread (default)
     #[default]
-    Conversation,
+    Normal,
     /// Programming-focused thread with code-specific features
     Programming,
 }
 
 /// Helper to deserialize ThreadType with null handling
-/// Returns Default (Conversation) if the field is null or missing
+/// Returns Default (Normal) if the field is null or missing
 fn deserialize_thread_type<'de, D>(deserializer: D) -> Result<ThreadType, D::Error>
 where
     D: Deserializer<'de>,
@@ -85,9 +86,94 @@ pub struct Thread {
     /// When the thread was last updated
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
-    /// Type of thread (Conversation or Programming)
-    #[serde(default, deserialize_with = "deserialize_thread_type")]
+    /// Type of thread (Normal or Programming)
+    #[serde(default, rename = "type", deserialize_with = "deserialize_thread_type")]
     pub thread_type: ThreadType,
+    /// Model used for this thread
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Permission mode for this thread
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+    /// Number of messages in this thread
+    #[serde(default)]
+    pub message_count: i32,
+    /// When the thread was created
+    #[serde(default = "Utc::now")]
+    pub created_at: DateTime<Utc>,
+}
+
+/// Response from the thread list endpoint
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThreadListResponse {
+    /// List of threads
+    pub threads: Vec<Thread>,
+    /// Total number of threads available
+    pub total: i32,
+}
+
+/// Response from the thread detail endpoint
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThreadDetailResponse {
+    /// Thread ID
+    #[serde(deserialize_with = "deserialize_id")]
+    pub id: String,
+    /// Type of thread
+    #[serde(default, rename = "type", deserialize_with = "deserialize_thread_type")]
+    pub thread_type: ThreadType,
+    /// Thread name/title
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Project path for programming threads
+    #[serde(default)]
+    pub project_path: Option<String>,
+    /// Provider used for this thread
+    #[serde(default)]
+    pub provider: Option<String>,
+    /// Messages in this thread
+    #[serde(default)]
+    pub messages: Vec<ServerMessage>,
+}
+
+/// Function details within a tool call
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolCallFunction {
+    /// Name of the function being called
+    pub name: String,
+    /// Arguments passed to the function (JSON string)
+    #[serde(default)]
+    pub arguments: String,
+}
+
+/// Represents a tool call made by the assistant
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolCall {
+    /// Unique identifier for this tool call
+    pub id: String,
+    /// Type of tool call (usually "function")
+    #[serde(rename = "type")]
+    pub call_type: String,
+    /// Function details
+    pub function: ToolCallFunction,
+}
+
+/// Message format from the server (different from client Message)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ServerMessage {
+    /// Role of the message sender
+    pub role: MessageRole,
+    /// Content of the message (may be empty for tool calls)
+    #[serde(default)]
+    pub content: Option<String>,
+    /// Tool calls made by the assistant
+    #[serde(default)]
+    pub tool_calls: Option<Vec<ToolCall>>,
+    /// ID of the tool call this message responds to
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
+    /// Name for tool responses
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 /// Role of a message in a conversation
@@ -147,6 +233,12 @@ pub struct StreamRequest {
     /// Message ID to reply to - for future stitching support
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<i64>,
+    /// Type of thread to create (normal or programming)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_type: Option<ThreadType>,
+    /// Whether to enable plan mode
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plan_mode: Option<bool>,
 }
 
 impl StreamRequest {
@@ -157,6 +249,8 @@ impl StreamRequest {
             session_id: Uuid::new_v4().to_string(),
             thread_id: None,
             reply_to: None,
+            thread_type: None,
+            plan_mode: None,
         }
     }
 
@@ -168,6 +262,8 @@ impl StreamRequest {
             session_id: Uuid::new_v4().to_string(),
             thread_id: Some(thread_id),
             reply_to: None,
+            thread_type: None,
+            plan_mode: None,
         }
     }
 
@@ -179,6 +275,8 @@ impl StreamRequest {
             session_id: Uuid::new_v4().to_string(),
             thread_id: Some(thread_id),
             reply_to: Some(reply_to),
+            thread_type: None,
+            plan_mode: None,
         }
     }
 }
@@ -268,29 +366,29 @@ mod tests {
 
     #[test]
     fn test_thread_type_default() {
-        assert_eq!(ThreadType::default(), ThreadType::Conversation);
+        assert_eq!(ThreadType::default(), ThreadType::Normal);
     }
 
     #[test]
     fn test_thread_type_variants() {
-        assert_eq!(ThreadType::Conversation, ThreadType::Conversation);
+        assert_eq!(ThreadType::Normal, ThreadType::Normal);
         assert_eq!(ThreadType::Programming, ThreadType::Programming);
-        assert_ne!(ThreadType::Conversation, ThreadType::Programming);
+        assert_ne!(ThreadType::Normal, ThreadType::Programming);
     }
 
     #[test]
     fn test_thread_type_serialization() {
-        // Test Conversation serialization
-        let conv = ThreadType::Conversation;
-        let json = serde_json::to_string(&conv).expect("Failed to serialize");
-        assert_eq!(json, "\"Conversation\"");
+        // Test Normal serialization (lowercase for server compatibility)
+        let normal = ThreadType::Normal;
+        let json = serde_json::to_string(&normal).expect("Failed to serialize");
+        assert_eq!(json, "\"normal\"");
         let deserialized: ThreadType = serde_json::from_str(&json).expect("Failed to deserialize");
-        assert_eq!(conv, deserialized);
+        assert_eq!(normal, deserialized);
 
-        // Test Programming serialization
+        // Test Programming serialization (lowercase for server compatibility)
         let prog = ThreadType::Programming;
         let json = serde_json::to_string(&prog).expect("Failed to serialize");
-        assert_eq!(json, "\"Programming\"");
+        assert_eq!(json, "\"programming\"");
         let deserialized: ThreadType = serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(prog, deserialized);
     }
@@ -302,13 +400,17 @@ mod tests {
             title: "Test Thread".to_string(),
             preview: "Hello, world!".to_string(),
             updated_at: Utc::now(),
-            thread_type: ThreadType::Conversation,
+            thread_type: ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
         };
 
         assert_eq!(thread.id, "thread-123");
         assert_eq!(thread.title, "Test Thread");
         assert_eq!(thread.preview, "Hello, world!");
-        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        assert_eq!(thread.thread_type, ThreadType::Normal);
     }
 
     #[test]
@@ -319,6 +421,10 @@ mod tests {
             preview: "Let me review this code".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Programming,
+            model: Some("gpt-4".to_string()),
+            permission_mode: Some("auto".to_string()),
+            message_count: 5,
+            created_at: Utc::now(),
         };
 
         assert_eq!(thread.id, "thread-456");
@@ -332,7 +438,11 @@ mod tests {
             title: "Serialization Test".to_string(),
             preview: "Testing JSON".to_string(),
             updated_at: Utc::now(),
-            thread_type: ThreadType::Conversation,
+            thread_type: ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
         };
 
         let json = serde_json::to_string(&thread).expect("Failed to serialize");
@@ -349,6 +459,10 @@ mod tests {
             preview: "Code discussion".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
         };
 
         let json = serde_json::to_string(&thread).expect("Failed to serialize");
@@ -373,19 +487,19 @@ mod tests {
         assert_eq!(thread.id, "thread-legacy");
         assert_eq!(thread.title, "Legacy Thread");
         assert_eq!(thread.preview, "Old format");
-        // Should default to Conversation when thread_type is missing
-        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        // Should default to Normal when thread_type is missing
+        assert_eq!(thread.thread_type, ThreadType::Normal);
     }
 
     #[test]
     fn test_thread_deserialization_with_thread_type() {
-        // Test deserializing JSON with explicit thread_type
+        // Test deserializing JSON with explicit thread_type (lowercase for server)
         let json = r#"{
             "id": "thread-new",
             "title": "New Thread",
             "preview": "New format",
             "updated_at": "2024-01-01T00:00:00Z",
-            "thread_type": "Programming"
+            "type": "programming"
         }"#;
 
         let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
@@ -396,21 +510,21 @@ mod tests {
 
     #[test]
     fn test_thread_deserialization_with_null_thread_type() {
-        // Test backward compatibility - deserialize JSON with null thread_type field
+        // Test backward compatibility - deserialize JSON with null type field
         let json = r#"{
             "id": "thread-null-type",
             "title": "Null Type Thread",
             "preview": "Thread with null type",
             "updated_at": "2024-01-01T00:00:00Z",
-            "thread_type": null
+            "type": null
         }"#;
 
         let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
 
         assert_eq!(thread.id, "thread-null-type");
         assert_eq!(thread.title, "Null Type Thread");
-        // Should default to Conversation when thread_type is null
-        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        // Should default to Normal when type is null
+        assert_eq!(thread.thread_type, ThreadType::Normal);
     }
 
     #[test]
@@ -423,9 +537,9 @@ mod tests {
     #[test]
     fn test_thread_type_debug() {
         // Verify Debug trait is implemented correctly
-        let conv = ThreadType::Conversation;
+        let normal = ThreadType::Normal;
         let prog = ThreadType::Programming;
-        assert_eq!(format!("{:?}", conv), "Conversation");
+        assert_eq!(format!("{:?}", normal), "Normal");
         assert_eq!(format!("{:?}", prog), "Programming");
     }
 
@@ -650,6 +764,8 @@ mod tests {
             session_id: "session-abc".to_string(),
             thread_id: Some("thread-xyz".to_string()),
             reply_to: Some(100),
+            thread_type: Some(ThreadType::Programming),
+            plan_mode: Some(true),
         };
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");

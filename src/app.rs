@@ -644,7 +644,7 @@ mod tests {
         let mut app = App::default();
         let initial_cache_count = app.cache.thread_count();
 
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Nothing should change with empty input
         assert_eq!(app.cache.thread_count(), initial_cache_count);
@@ -659,7 +659,7 @@ mod tests {
         app.input_box.insert_char(' ');
         let initial_cache_count = app.cache.thread_count();
 
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Whitespace-only input should be ignored
         assert_eq!(app.cache.thread_count(), initial_cache_count);
@@ -674,7 +674,7 @@ mod tests {
         app.input_box.insert_char('i');
         let initial_cache_count = app.cache.thread_count();
 
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should create a new thread
         assert_eq!(app.cache.thread_count(), initial_cache_count + 1);
@@ -695,7 +695,7 @@ mod tests {
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
 
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         let thread_id = app.active_thread_id.as_ref().unwrap();
         let messages = app.cache.get_messages(thread_id);
@@ -722,7 +722,7 @@ mod tests {
         app.input_box.insert_char('e');
         app.input_box.insert_char('w');
 
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         let thread_id = app.active_thread_id.as_ref().unwrap();
         // The new thread should be at the front of the list and have pending- prefix
@@ -739,7 +739,7 @@ mod tests {
         app.input_box.insert_char('H');
         app.input_box.insert_char('i');
 
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should create a pending thread
         let thread_id = app.active_thread_id.as_ref().unwrap();
@@ -760,6 +760,10 @@ mod tests {
             preview: "Previous message".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         });
         app.cache.add_message_simple(&existing_id, MessageRole::User, "Previous question".to_string());
         app.cache.add_message_simple(&existing_id, MessageRole::Assistant, "Previous answer".to_string());
@@ -777,7 +781,7 @@ mod tests {
         app.input_box.insert_char('l');
         app.input_box.insert_char('o');
         app.input_box.insert_char('w');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should NOT create a new thread
         assert_eq!(app.active_thread_id.as_ref().unwrap(), &existing_id);
@@ -800,7 +804,7 @@ mod tests {
         app.input_box.insert_char('r');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         let pending_id = app.active_thread_id.clone().unwrap();
         assert!(pending_id.starts_with("pending-"));
@@ -812,7 +816,7 @@ mod tests {
         app.input_box.insert_char('o');
         app.input_box.insert_char('n');
         app.input_box.insert_char('d');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should NOT create a new thread or add messages
         // Should set an error
@@ -837,7 +841,7 @@ mod tests {
         app.input_box.insert_char('r');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         let pending_id = app.active_thread_id.clone().unwrap();
 
@@ -863,7 +867,7 @@ mod tests {
         app.input_box.insert_char('n');
         app.input_box.insert_char('d');
         let before_count = app.cache.get_messages("real-backend-id").unwrap().len();
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should add to existing thread
         let messages = app.cache.get_messages("real-backend-id").unwrap();
@@ -883,7 +887,7 @@ mod tests {
         app.input_box.insert_char('e');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should show error about thread not existing
         assert!(app.stream_error.is_some());
@@ -900,7 +904,7 @@ mod tests {
         // === Turn 1: New thread ===
         app.input_box.insert_char('H');
         app.input_box.insert_char('i');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         let pending_id = app.active_thread_id.clone().unwrap();
         assert!(pending_id.starts_with("pending-"));
@@ -925,7 +929,7 @@ mod tests {
         app.input_box.insert_char(' ');
         app.input_box.insert_char('m');
         app.input_box.insert_char('e');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should still be on same thread
         assert_eq!(app.active_thread_id, Some("thread-abc".to_string()));
@@ -945,7 +949,7 @@ mod tests {
         app.input_box.insert_char('N');
         app.input_box.insert_char('e');
         app.input_box.insert_char('w');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should be a NEW pending thread
         let new_pending = app.active_thread_id.clone().unwrap();
@@ -1397,16 +1401,20 @@ mod tests {
     }
 
     #[test]
-    fn test_is_active_thread_programming_returns_false_for_conversation_thread() {
+    fn test_is_active_thread_programming_returns_false_for_normal_thread() {
         let mut app = App::default();
 
-        // Create a conversation thread
+        // Create a normal thread
         let thread = crate::models::Thread {
             id: "thread-conv".to_string(),
-            title: "Conversation Thread".to_string(),
+            title: "Normal Thread".to_string(),
             preview: "Just talking".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Conversation,
+            thread_type: crate::models::ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("thread-conv".to_string());
@@ -1425,6 +1433,10 @@ mod tests {
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("thread-prog".to_string());
@@ -1444,13 +1456,17 @@ mod tests {
     fn test_is_active_thread_programming_after_thread_type_change() {
         let mut app = App::default();
 
-        // Create a conversation thread
+        // Create a normal thread
         let thread = crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Thread".to_string(),
             preview: "Content".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Conversation,
+            thread_type: crate::models::ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("thread-1".to_string());
@@ -1464,6 +1480,10 @@ mod tests {
             preview: "Content".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
 
@@ -1483,6 +1503,10 @@ mod tests {
             preview: "Code discussion".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.cache.add_message_simple("prog-thread-123", MessageRole::User, "Previous".to_string());
@@ -1496,7 +1520,7 @@ mod tests {
         // Submit input
         app.input_box.insert_char('H');
         app.input_box.insert_char('i');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Should add streaming message to the thread
         let messages = app.cache.get_messages("prog-thread-123").unwrap();
@@ -1515,6 +1539,10 @@ mod tests {
             preview: "Code discussion".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.cache.add_message_simple("prog-thread-456", MessageRole::User, "Prev".to_string());
@@ -1530,7 +1558,7 @@ mod tests {
         app.input_box.insert_char('e');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // Input should be cleared (submission was accepted)
         assert!(app.input_box.is_empty());
@@ -1545,7 +1573,7 @@ mod tests {
         app.input_box.insert_char('N');
         app.input_box.insert_char('e');
         app.input_box.insert_char('w');
-        app.submit_input(ThreadType::Conversation);
+        app.submit_input(ThreadType::Normal);
 
         // New thread should be at front
         let thread_id = app.active_thread_id.as_ref().unwrap();
@@ -1605,6 +1633,10 @@ mod tests {
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1616,22 +1648,26 @@ mod tests {
     }
 
     #[test]
-    fn test_mode_indicator_visibility_logic_conversation_thread() {
+    fn test_mode_indicator_visibility_logic_normal_thread() {
         let mut app = App::default();
 
-        // Create a conversation thread
+        // Create a normal thread
         let thread = crate::models::Thread {
             id: "conv-thread".to_string(),
-            title: "Conversation".to_string(),
+            title: "Normal".to_string(),
             preview: "Chat".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Conversation,
+            thread_type: crate::models::ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("conv-thread".to_string());
         app.screen = Screen::Conversation;
 
-        // For conversation threads, indicator should NOT be visible
+        // For normal threads, indicator should NOT be visible
         assert!(!app.is_active_thread_programming());
     }
 
@@ -1658,6 +1694,10 @@ mod tests {
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1676,16 +1716,20 @@ mod tests {
     }
 
     #[test]
-    fn test_shift_tab_should_not_cycle_mode_for_conversation_thread() {
+    fn test_shift_tab_should_not_cycle_mode_for_normal_thread() {
         let mut app = App::default();
 
-        // Create a conversation thread
+        // Create a normal thread
         let thread = crate::models::Thread {
             id: "conv-thread".to_string(),
-            title: "Conversation".to_string(),
+            title: "Normal".to_string(),
             preview: "Chat".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Conversation,
+            thread_type: crate::models::ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("conv-thread".to_string());
@@ -1708,6 +1752,10 @@ mod tests {
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1735,6 +1783,10 @@ mod tests {
             preview: "Code 1".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread1);
         app.open_thread("prog-1".to_string());
@@ -1749,6 +1801,10 @@ mod tests {
             preview: "Code 2".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
         };
         app.cache.upsert_thread(thread2);
         app.open_thread("prog-2".to_string());

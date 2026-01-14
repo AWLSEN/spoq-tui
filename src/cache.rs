@@ -110,6 +110,10 @@ impl ThreadCache {
             preview: first_message,
             updated_at: now,
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: now,
         };
 
         self.upsert_thread(thread);
@@ -165,6 +169,10 @@ impl ThreadCache {
             preview: first_message.clone(),
             updated_at: now,
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: now,
         };
 
         self.upsert_thread(thread);
@@ -312,7 +320,7 @@ impl ThreadCache {
     ///
     /// # Arguments
     /// * `first_message` - The initial message content for the thread
-    /// * `thread_type` - The type of thread (Conversation or Programming)
+    /// * `thread_type` - The type of thread (Normal or Programming)
     ///
     /// Returns the pending thread_id for tracking.
     pub fn create_pending_thread(&mut self, first_message: String, thread_type: ThreadType) -> String {
@@ -332,6 +340,10 @@ impl ThreadCache {
             preview: first_message.clone(),
             updated_at: now,
             thread_type,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: now,
         };
 
         self.upsert_thread(thread);
@@ -461,6 +473,10 @@ impl ThreadCache {
             preview: "Here's how you can use tokio for async...".to_string(),
             updated_at: now - Duration::minutes(5),
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 2,
+            created_at: now - Duration::minutes(10),
         };
 
         let messages1 = vec![
@@ -491,6 +507,10 @@ impl ThreadCache {
             preview: "For TUI apps, consider using ratatui...".to_string(),
             updated_at: now - Duration::hours(2),
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 2,
+            created_at: now - Duration::hours(3),
         };
 
         let messages2 = vec![
@@ -521,6 +541,10 @@ impl ThreadCache {
             preview: "You can use reqwest for HTTP requests...".to_string(),
             updated_at: now - Duration::days(1),
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 2,
+            created_at: now - Duration::days(1) - Duration::hours(1),
         };
 
         let messages3 = vec![
@@ -620,6 +644,10 @@ mod tests {
             preview: "Preview text".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
         };
 
         cache.upsert_thread(thread);
@@ -638,6 +666,10 @@ mod tests {
             preview: "Updated preview".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
         };
 
         cache.upsert_thread(updated_thread);
@@ -721,6 +753,10 @@ mod tests {
                 preview: "Preview".to_string(),
                 updated_at: Utc::now(),
                 thread_type: ThreadType::default(),
+                model: None,
+                permission_mode: None,
+                message_count: 0,
+                created_at: Utc::now(),
             });
         }
 
@@ -734,6 +770,10 @@ mod tests {
             preview: "New preview".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::default(),
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
         });
 
         // Thread 1 should now be at front
@@ -883,8 +923,8 @@ mod tests {
         let thread_id = cache.create_streaming_thread("Hello".to_string());
 
         let thread = cache.get_thread(&thread_id).unwrap();
-        // create_streaming_thread should use default thread type (Conversation)
-        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        // create_streaming_thread should use default thread type (Normal)
+        assert_eq!(thread.thread_type, ThreadType::Normal);
         assert_eq!(thread.thread_type, ThreadType::default());
     }
 
@@ -894,8 +934,8 @@ mod tests {
         let thread_id = cache.create_stub_thread("Hello".to_string());
 
         let thread = cache.get_thread(&thread_id).unwrap();
-        // create_stub_thread should use default thread type (Conversation)
-        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        // create_stub_thread should use default thread type (Normal)
+        assert_eq!(thread.thread_type, ThreadType::Normal);
         assert_eq!(thread.thread_type, ThreadType::default());
     }
 
@@ -1172,7 +1212,7 @@ mod tests {
     #[test]
     fn test_create_pending_thread_returns_pending_prefixed_id() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Normal);
 
         // Should start with "pending-" prefix
         assert!(pending_id.starts_with("pending-"));
@@ -1185,7 +1225,7 @@ mod tests {
     #[test]
     fn test_create_pending_thread_creates_thread() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("Test message".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("Test message".to_string(), ThreadType::Normal);
 
         let thread = cache.get_thread(&pending_id);
         assert!(thread.is_some());
@@ -1201,7 +1241,7 @@ mod tests {
         let mut cache = ThreadCache::new();
         let long_message =
             "This is a very long message that should be truncated in the title field".to_string();
-        let pending_id = cache.create_pending_thread(long_message.clone(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread(long_message.clone(), ThreadType::Normal);
 
         let thread = cache.get_thread(&pending_id).unwrap();
         // Title should be truncated to 37 chars + "..."
@@ -1214,7 +1254,7 @@ mod tests {
     #[test]
     fn test_create_pending_thread_creates_messages() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("User says hello".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("User says hello".to_string(), ThreadType::Normal);
 
         let messages = cache.get_messages(&pending_id).unwrap();
         assert_eq!(messages.len(), 2);
@@ -1238,7 +1278,7 @@ mod tests {
         let mut cache = ThreadCache::with_stub_data();
         let initial_count = cache.thread_count();
 
-        let pending_id = cache.create_pending_thread("New pending thread".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("New pending thread".to_string(), ThreadType::Normal);
 
         assert_eq!(cache.thread_count(), initial_count + 1);
         assert_eq!(cache.threads()[0].id, pending_id);
@@ -1249,7 +1289,7 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Create pending thread
-        let pending_id = cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Normal);
         assert!(pending_id.starts_with("pending-"));
 
         // Stream some tokens
@@ -1292,7 +1332,7 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Create pending thread
-        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Normal);
         assert!(pending_id.starts_with("pending-"));
 
         // Simulate receiving user_message_saved which triggers reconciliation
@@ -1456,7 +1496,7 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Start conversation with pending thread
-        let pending_id = cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Normal);
 
         // Stream first response
         cache.append_to_message(&pending_id, "Rust is a systems programming language.");
@@ -1549,7 +1589,7 @@ mod tests {
     #[test]
     fn test_is_thread_streaming_with_reconciled_thread() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Normal);
 
         // Reconcile to real ID
         cache.reconcile_thread_id(&pending_id, "real-thread-123", None);
@@ -1566,10 +1606,10 @@ mod tests {
     #[test]
     fn test_create_pending_thread_with_conversation_type() {
         let mut cache = ThreadCache::new();
-        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Normal);
 
         let thread = cache.get_thread(&pending_id).unwrap();
-        assert_eq!(thread.thread_type, ThreadType::Conversation);
+        assert_eq!(thread.thread_type, ThreadType::Normal);
     }
 
     #[test]

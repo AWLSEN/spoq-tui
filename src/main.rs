@@ -166,6 +166,13 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     app.create_new_thread();
                                     continue;
                                 }
+                                // Ctrl+P to submit as Programming thread (from CommandDeck)
+                                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    if app.screen == Screen::CommandDeck && !app.input_box.is_empty() {
+                                        app.submit_input(models::ThreadType::Programming);
+                                    }
+                                    continue;
+                                }
                                 _ => {}
                             }
 
@@ -219,16 +226,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         continue;
                                     }
                                     KeyCode::Enter => {
-                                        // Shift+Enter on CommandDeck = new Programming thread
-                                        // Plain Enter = new Conversation thread (or continue existing)
-                                        let thread_type = if app.screen == Screen::CommandDeck
-                                            && key.modifiers.contains(KeyModifiers::SHIFT)
-                                        {
-                                            models::ThreadType::Programming
-                                        } else {
-                                            models::ThreadType::Conversation
-                                        };
-                                        app.submit_input(thread_type);
+                                        // Plain Enter = Normal thread (Shift+Enter handled above)
+                                        app.submit_input(models::ThreadType::Normal);
                                         continue;
                                     }
                                     KeyCode::Esc => {
