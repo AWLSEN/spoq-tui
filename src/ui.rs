@@ -1963,4 +1963,264 @@ mod tests {
             "Mode indicator should not be shown when there's no active thread"
         );
     }
+
+    // ========================================================================
+    // Tests for Phase 6: Thread Type Indicators and Model Names
+    // ========================================================================
+
+    #[test]
+    fn test_extract_short_model_name_opus() {
+        assert_eq!(extract_short_model_name("claude-opus-4-5-20250514"), "opus");
+        assert_eq!(extract_short_model_name("claude-opus-3-5"), "opus");
+        assert_eq!(extract_short_model_name("opus-anything"), "opus");
+    }
+
+    #[test]
+    fn test_extract_short_model_name_sonnet() {
+        assert_eq!(extract_short_model_name("claude-sonnet-4-5-20250514"), "sonnet");
+        assert_eq!(extract_short_model_name("claude-sonnet-3-5"), "sonnet");
+        assert_eq!(extract_short_model_name("sonnet-anything"), "sonnet");
+    }
+
+    #[test]
+    fn test_extract_short_model_name_other_models() {
+        assert_eq!(extract_short_model_name("gpt-4"), "gpt");
+        assert_eq!(extract_short_model_name("gpt-3.5-turbo"), "gpt");
+        assert_eq!(extract_short_model_name("llama-2-70b"), "llama");
+    }
+
+    #[test]
+    fn test_extract_short_model_name_simple_model() {
+        assert_eq!(extract_short_model_name("simple"), "simple");
+        assert_eq!(extract_short_model_name("model"), "model");
+    }
+
+    #[test]
+    fn test_thread_type_indicator_shown_for_normal_thread() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+
+        // Add a normal thread to the cache
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "thread-1".to_string(),
+            title: "Normal Thread".to_string(),
+            preview: "A normal conversation".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Normal,
+            model: Some("claude-sonnet-4-5".to_string()),
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should show [N] indicator for Normal thread
+        assert!(
+            buffer_str.contains("[N]"),
+            "Thread type indicator [N] should be shown for Normal threads"
+        );
+    }
+
+    #[test]
+    fn test_thread_type_indicator_shown_for_programming_thread() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+
+        // Add a programming thread to the cache
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "thread-1".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "A programming conversation".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+            model: Some("claude-opus-4-5".to_string()),
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should show [P] indicator for Programming thread
+        assert!(
+            buffer_str.contains("[P]"),
+            "Thread type indicator [P] should be shown for Programming threads"
+        );
+    }
+
+    #[test]
+    fn test_model_name_shown_with_thread_type_indicator() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+
+        // Add a thread with model information
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "thread-1".to_string(),
+            title: "Thread with Model".to_string(),
+            preview: "Testing model display".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Normal,
+            model: Some("claude-sonnet-4-5-20250514".to_string()),
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should show [N] and "sonnet" model name
+        assert!(
+            buffer_str.contains("[N]"),
+            "Thread type indicator should be shown"
+        );
+        assert!(
+            buffer_str.contains("sonnet"),
+            "Short model name should be shown next to type indicator"
+        );
+    }
+
+    #[test]
+    fn test_thread_type_indicator_without_model() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+
+        // Add a thread without model information
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "thread-1".to_string(),
+            title: "Thread without Model".to_string(),
+            preview: "No model info".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should show [P] indicator even without model
+        assert!(
+            buffer_str.contains("[P]"),
+            "Thread type indicator should be shown even without model information"
+        );
+    }
+
+    #[test]
+    fn test_multiple_threads_show_different_type_indicators() {
+        let backend = TestBackend::new(120, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+
+        // Add a normal thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "thread-1".to_string(),
+            title: "Normal".to_string(),
+            preview: "Normal thread".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Normal,
+            model: Some("claude-sonnet-4-5".to_string()),
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+
+        // Add a programming thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "thread-2".to_string(),
+            title: "Programming".to_string(),
+            preview: "Programming thread".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+            model: Some("claude-opus-4-5".to_string()),
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Both indicators should be present
+        assert!(
+            buffer_str.contains("[N]"),
+            "Should show [N] indicator for normal thread"
+        );
+        assert!(
+            buffer_str.contains("[P]"),
+            "Should show [P] indicator for programming thread"
+        );
+        assert!(
+            buffer_str.contains("sonnet"),
+            "Should show sonnet model name"
+        );
+        assert!(
+            buffer_str.contains("opus"),
+            "Should show opus model name"
+        );
+    }
 }
