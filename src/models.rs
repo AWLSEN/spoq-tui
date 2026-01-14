@@ -83,8 +83,8 @@ pub struct Thread {
     /// Preview of the last message
     #[serde(default)]
     pub preview: String,
-    /// When the thread was last updated
-    #[serde(default = "Utc::now")]
+    /// When the thread was last updated (server sends as "last_activity")
+    #[serde(default = "Utc::now", alias = "last_activity")]
     pub updated_at: DateTime<Utc>,
     /// Type of thread (Normal or Programming)
     #[serde(default, rename = "type", deserialize_with = "deserialize_thread_type")]
