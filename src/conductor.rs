@@ -6,6 +6,7 @@
 use crate::events::SseEvent;
 use crate::models::{Message, StreamRequest, Thread};
 use crate::sse::{SseParseError, SseParser};
+use crate::state::Task;
 use futures_util::stream::{self, Stream};
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -225,8 +226,41 @@ impl ConductorClient {
         Ok(())
     }
 
-    /// Fetch recent threads from the backend.
+    /// Fetch all threads from the backend.
     ///
+    /// TODO: Expected endpoint: GET /v1/threads
+    ///
+    /// # Returns
+    /// A vector of threads, or an error if the request fails
+    pub async fn fetch_threads(&self) -> Result<Vec<Thread>, ConductorError> {
+        // Stub: return empty vec for now
+        Ok(Vec::new())
+    }
+
+    /// Fetch all tasks from the backend.
+    ///
+    /// TODO: Expected endpoint: GET /v1/tasks
+    ///
+    /// # Returns
+    /// A vector of tasks, or an error if the request fails
+    pub async fn fetch_tasks(&self) -> Result<Vec<Task>, ConductorError> {
+        // Stub: return empty vec for now
+        Ok(Vec::new())
+    }
+
+    /// Fetch messages for a specific thread from the backend.
+    ///
+    /// TODO: Expected endpoint: GET /v1/threads/{id}/messages
+    ///
+    /// # Arguments
+    /// * `thread_id` - The ID of the thread to fetch messages for
+    ///
+    /// # Returns
+    /// A vector of messages for the specified thread, or an error if the request fails
+    pub async fn fetch_thread_messages(&self, _thread_id: &str) -> Result<Vec<Message>, ConductorError> {
+        // Stub: return empty vec for now
+        Ok(Vec::new())
+    }
 
     /// Get a thread by ID (stub - will implement with REST API)
     #[allow(dead_code)]
