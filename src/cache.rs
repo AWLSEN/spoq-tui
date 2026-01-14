@@ -419,6 +419,30 @@ impl ThreadCache {
         true
     }
 
+    /// Sync a thread to the server (future implementation)
+    ///
+    /// TODO: Implement when backend PUT /threads/:id endpoint exists
+    /// Expected to update thread title, preview, and updated_at on server
+    #[allow(dead_code)]
+    pub async fn sync_thread_to_server(&self, _thread: &Thread) -> Result<(), String> {
+        // Stub implementation - will be replaced when backend endpoint exists
+        // Expected endpoint: PUT /api/threads/:id
+        // Expected payload: { title, preview, updated_at }
+        Ok(())
+    }
+
+    /// Sync a message to the server (future implementation)
+    ///
+    /// TODO: Implement when backend POST /threads/:id/messages endpoint exists
+    /// Expected to create or update a message on the server
+    #[allow(dead_code)]
+    pub async fn sync_message_to_server(&self, _message: &Message) -> Result<(), String> {
+        // Stub implementation - will be replaced when backend endpoint exists
+        // Expected endpoint: POST /api/threads/:thread_id/messages
+        // Expected payload: { role, content, created_at }
+        Ok(())
+    }
+
     /// Populate with stub data for development/testing
     fn populate_stub_data(&mut self) {
         let now = Utc::now();
