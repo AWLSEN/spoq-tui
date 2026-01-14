@@ -618,8 +618,6 @@ async fn test_thread_reconciliation_complete() {
 /// - Verify: screen = Conversation
 #[tokio::test]
 async fn test_open_thread_flow() {
-    use spoq::app::Focus;
-
     let mut app = App::new().expect("Failed to create app");
 
     // Create first thread
