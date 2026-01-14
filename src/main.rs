@@ -219,7 +219,16 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         continue;
                                     }
                                     KeyCode::Enter => {
-                                        app.submit_input();
+                                        // Shift+Enter on CommandDeck = new Programming thread
+                                        // Plain Enter = new Conversation thread (or continue existing)
+                                        let thread_type = if app.screen == Screen::CommandDeck
+                                            && key.modifiers.contains(KeyModifiers::SHIFT)
+                                        {
+                                            models::ThreadType::Programming
+                                        } else {
+                                            models::ThreadType::Conversation
+                                        };
+                                        app.submit_input(thread_type);
                                         continue;
                                     }
                                     KeyCode::Esc => {

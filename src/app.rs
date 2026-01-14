@@ -266,7 +266,10 @@ impl App {
     ///
     /// Edge case: If active_thread_id starts with "pending-", we block submission
     /// because we're still waiting for the backend to confirm the thread ID.
-    pub fn submit_input(&mut self) {
+    ///
+    /// The `new_thread_type` parameter specifies what type of thread to create if this
+    /// is a NEW conversation. It's ignored when continuing an existing thread.
+    pub fn submit_input(&mut self, new_thread_type: ThreadType) {
         let content = self.input_box.content().to_string();
         if content.trim().is_empty() {
             return;
@@ -297,7 +300,8 @@ impl App {
             existing_id.clone()
         } else {
             // NEW thread - create pending, will reconcile when backend responds
-            let pending_id = self.cache.create_pending_thread(content.clone(), ThreadType::default());
+            // Use the specified thread type for new conversations
+            let pending_id = self.cache.create_pending_thread(content.clone(), new_thread_type);
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
@@ -640,7 +644,7 @@ mod tests {
         let mut app = App::default();
         let initial_cache_count = app.cache.thread_count();
 
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Nothing should change with empty input
         assert_eq!(app.cache.thread_count(), initial_cache_count);
@@ -655,7 +659,7 @@ mod tests {
         app.input_box.insert_char(' ');
         let initial_cache_count = app.cache.thread_count();
 
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Whitespace-only input should be ignored
         assert_eq!(app.cache.thread_count(), initial_cache_count);
@@ -670,7 +674,7 @@ mod tests {
         app.input_box.insert_char('i');
         let initial_cache_count = app.cache.thread_count();
 
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should create a new thread
         assert_eq!(app.cache.thread_count(), initial_cache_count + 1);
@@ -691,7 +695,7 @@ mod tests {
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
 
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         let thread_id = app.active_thread_id.as_ref().unwrap();
         let messages = app.cache.get_messages(thread_id);
@@ -718,7 +722,7 @@ mod tests {
         app.input_box.insert_char('e');
         app.input_box.insert_char('w');
 
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         let thread_id = app.active_thread_id.as_ref().unwrap();
         // The new thread should be at the front of the list and have pending- prefix
@@ -735,7 +739,7 @@ mod tests {
         app.input_box.insert_char('H');
         app.input_box.insert_char('i');
 
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should create a pending thread
         let thread_id = app.active_thread_id.as_ref().unwrap();
@@ -773,7 +777,7 @@ mod tests {
         app.input_box.insert_char('l');
         app.input_box.insert_char('o');
         app.input_box.insert_char('w');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should NOT create a new thread
         assert_eq!(app.active_thread_id.as_ref().unwrap(), &existing_id);
@@ -796,7 +800,7 @@ mod tests {
         app.input_box.insert_char('r');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         let pending_id = app.active_thread_id.clone().unwrap();
         assert!(pending_id.starts_with("pending-"));
@@ -808,7 +812,7 @@ mod tests {
         app.input_box.insert_char('o');
         app.input_box.insert_char('n');
         app.input_box.insert_char('d');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should NOT create a new thread or add messages
         // Should set an error
@@ -833,7 +837,7 @@ mod tests {
         app.input_box.insert_char('r');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         let pending_id = app.active_thread_id.clone().unwrap();
 
@@ -859,7 +863,7 @@ mod tests {
         app.input_box.insert_char('n');
         app.input_box.insert_char('d');
         let before_count = app.cache.get_messages("real-backend-id").unwrap().len();
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should add to existing thread
         let messages = app.cache.get_messages("real-backend-id").unwrap();
@@ -879,7 +883,7 @@ mod tests {
         app.input_box.insert_char('e');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should show error about thread not existing
         assert!(app.stream_error.is_some());
@@ -896,7 +900,7 @@ mod tests {
         // === Turn 1: New thread ===
         app.input_box.insert_char('H');
         app.input_box.insert_char('i');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         let pending_id = app.active_thread_id.clone().unwrap();
         assert!(pending_id.starts_with("pending-"));
@@ -921,7 +925,7 @@ mod tests {
         app.input_box.insert_char(' ');
         app.input_box.insert_char('m');
         app.input_box.insert_char('e');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should still be on same thread
         assert_eq!(app.active_thread_id, Some("thread-abc".to_string()));
@@ -941,7 +945,7 @@ mod tests {
         app.input_box.insert_char('N');
         app.input_box.insert_char('e');
         app.input_box.insert_char('w');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should be a NEW pending thread
         let new_pending = app.active_thread_id.clone().unwrap();
@@ -1492,7 +1496,7 @@ mod tests {
         // Submit input
         app.input_box.insert_char('H');
         app.input_box.insert_char('i');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Should add streaming message to the thread
         let messages = app.cache.get_messages("prog-thread-123").unwrap();
@@ -1526,7 +1530,7 @@ mod tests {
         app.input_box.insert_char('e');
         app.input_box.insert_char('s');
         app.input_box.insert_char('t');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // Input should be cleared (submission was accepted)
         assert!(app.input_box.is_empty());
@@ -1541,7 +1545,7 @@ mod tests {
         app.input_box.insert_char('N');
         app.input_box.insert_char('e');
         app.input_box.insert_char('w');
-        app.submit_input();
+        app.submit_input(ThreadType::Conversation);
 
         // New thread should be at front
         let thread_id = app.active_thread_id.as_ref().unwrap();
@@ -1560,6 +1564,30 @@ mod tests {
 
         // Thread should have programming type
         let thread = app.cache.get_thread(&pending_id).unwrap();
+        assert_eq!(thread.thread_type, ThreadType::Programming);
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_creates_programming_thread_when_specified() {
+        let mut app = App::default();
+        assert!(app.active_thread_id.is_none());
+
+        // Submit with Programming thread type (like Shift+Enter on CommandDeck)
+        app.input_box.insert_char('C');
+        app.input_box.insert_char('o');
+        app.input_box.insert_char('d');
+        app.input_box.insert_char('e');
+        app.submit_input(ThreadType::Programming);
+
+        // New thread should be created
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+        assert!(thread_id.starts_with("pending-"));
+
+        // The new thread SHOULD be a programming thread
+        assert!(app.is_active_thread_programming());
+
+        // Verify thread type in cache
+        let thread = app.cache.get_thread(thread_id).unwrap();
         assert_eq!(thread.thread_type, ThreadType::Programming);
     }
 
