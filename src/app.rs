@@ -1176,8 +1176,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_initialize_sets_connection_status() {
-        // Initialize just sets connection_status to true
-        // (Thread loading is skipped since /v1/messages/recent returns messages not threads)
+        // When server is unreachable, initialize sets connection_status to false
         let client = Arc::new(ConductorClient::with_base_url("http://127.0.0.1:1".to_string()));
         let mut app = App::with_client(client).unwrap();
 
@@ -1186,8 +1185,8 @@ mod tests {
 
         app.initialize().await;
 
-        // After initialization, connection_status should be true
-        assert!(app.connection_status);
+        // After initialization with unreachable server, connection_status should remain false
+        assert!(!app.connection_status);
     }
 
     #[tokio::test]
