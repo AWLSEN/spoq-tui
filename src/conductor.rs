@@ -4,7 +4,7 @@
 //! including streaming responses via Server-Sent Events (SSE).
 
 use crate::events::SseEvent;
-use crate::models::{Message, ProgrammingStreamRequest, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse};
+use crate::models::{Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse};
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
 use futures_util::stream::{self, Stream};
@@ -200,31 +200,6 @@ impl ConductorClient {
         Ok(Box::pin(event_stream))
     }
 
-    /// Stream a programming conversation response from the Conductor API.
-    ///
-    /// Sends a POST request to `/v1/programming/stream` and returns a stream of SSE events.
-    /// This endpoint supports programming-specific features like plan mode and permission bypassing.
-    ///
-    /// # Arguments
-    /// * `request` - The programming stream request containing content and mode options
-    ///
-    /// # Returns
-    /// A stream of `Result<SseEvent, ConductorError>` items
-    ///
-    /// # Errors
-    /// Currently returns `NotImplemented` error as the backend endpoint is not yet available.
-    #[allow(dead_code)]
-    pub async fn programming_stream(
-        &self,
-        _request: &ProgrammingStreamRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<SseEvent, ConductorError>> + Send>>, ConductorError>
-    {
-        // Stub: endpoint not yet implemented on backend
-        Err(ConductorError::NotImplemented(
-            "/v1/programming/stream".to_string(),
-        ))
-    }
-
     /// Check if the Conductor API is healthy and reachable.
     ///
     /// # Returns
@@ -389,7 +364,7 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ProgrammingStreamRequest, StreamRequest};
+    use crate::models::StreamRequest;
 
     #[test]
     fn test_conductor_client_new() {
@@ -510,25 +485,6 @@ mod tests {
         let result = client.stream(&request).await;
         // Should fail with HTTP error since server doesn't exist
         assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_programming_stream_returns_not_implemented() {
-        let client = ConductorClient::new();
-        let request = ProgrammingStreamRequest::new(
-            "thread-123".to_string(),
-            "Help me code".to_string(),
-        );
-        let result = client.programming_stream(&request).await;
-
-        // Should return NotImplemented error
-        match result {
-            Err(ConductorError::NotImplemented(endpoint)) => {
-                assert!(endpoint.contains("/v1/programming/stream"));
-            }
-            Err(e) => panic!("Expected NotImplemented error, got: {}", e),
-            Ok(_) => panic!("Expected error, got Ok"),
-        }
     }
 
     #[test]

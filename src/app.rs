@@ -1,7 +1,7 @@
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::events::SseEvent;
-use crate::models::{ProgrammingStreamRequest, StreamRequest, ThreadType};
+use crate::models::{StreamRequest, ThreadType};
 use crate::state::{Task, Thread};
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
@@ -285,12 +285,25 @@ impl App {
             return;
         }
 
-        // Check if this is a programming thread before we process
-        let is_programming = self.is_active_thread_programming();
-        let programming_mode = self.programming_mode;
+        // Determine thread_type based on active thread or new_thread_type parameter
+        let thread_type = if self.is_active_thread_programming() {
+            ThreadType::Programming
+        } else if self.active_thread_id.is_none() {
+            // New thread - use the specified type
+            new_thread_type
+        } else {
+            ThreadType::Normal
+        };
+
+        // Determine plan_mode for programming threads
+        let plan_mode = if thread_type == ThreadType::Programming {
+            matches!(self.programming_mode, ProgrammingMode::PlanMode)
+        } else {
+            false
+        };
 
         // CRITICAL: Determine if this is a NEW thread or CONTINUING existing
-        let thread_id = if let Some(existing_id) = &self.active_thread_id {
+        let (thread_id, is_new_thread) = if let Some(existing_id) = &self.active_thread_id {
             // Check if thread is still pending (waiting for backend ThreadInfo)
             if existing_id.starts_with("pending-") {
                 // Block rapid second message - still waiting for ThreadInfo
@@ -307,7 +320,7 @@ impl App {
                 self.stream_error = Some("Thread no longer exists.".to_string());
                 return;
             }
-            existing_id.clone()
+            (existing_id.clone(), false)
         } else {
             // NEW thread - create pending, will reconcile when backend responds
             // Use the specified thread type for new conversations
@@ -316,7 +329,7 @@ impl App {
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
             self.conversation_scroll = 0;
-            pending_id
+            (pending_id, true)
         };
 
         self.input_box.clear();
@@ -326,58 +339,34 @@ impl App {
         let message_tx = self.message_tx.clone();
         let thread_id_for_task = thread_id.clone();
 
-        // Determine whether to use programming or standard streaming endpoint
-        if is_programming {
-            // Build ProgrammingStreamRequest with current mode
-            let (plan_mode, bypass_permissions) = match programming_mode {
-                ProgrammingMode::PlanMode => (true, false),
-                ProgrammingMode::BypassPermissions => (false, true),
-                ProgrammingMode::None => (false, false),
-            };
-            let request = ProgrammingStreamRequest::with_options(
-                thread_id,
-                content,
-                plan_mode,
-                bypass_permissions,
-            );
-
-            // Spawn async task for programming stream
-            tokio::spawn(async move {
-                match client.programming_stream(&request).await {
-                    Ok(mut stream) => {
-                        Self::process_stream(&mut stream, &message_tx, &thread_id_for_task).await;
-                    }
-                    Err(e) => {
-                        let _ = message_tx.send(AppMessage::StreamError {
-                            thread_id: thread_id_for_task,
-                            error: e.to_string(),
-                        });
-                    }
-                }
-            });
+        // Build unified StreamRequest with thread_type
+        let request = if is_new_thread {
+            StreamRequest::new(content).with_type(thread_type)
         } else {
-            // Build standard StreamRequest
-            let request = if self.active_thread_id.as_ref().map(|id| !id.starts_with("pending-")).unwrap_or(false) {
-                StreamRequest::with_thread(content, thread_id)
-            } else {
-                StreamRequest::new(content)
-            };
+            StreamRequest::with_thread(content, thread_id).with_type(thread_type)
+        };
 
-            // Spawn async task for standard stream
-            tokio::spawn(async move {
-                match client.stream(&request).await {
-                    Ok(mut stream) => {
-                        Self::process_stream(&mut stream, &message_tx, &thread_id_for_task).await;
-                    }
-                    Err(e) => {
-                        let _ = message_tx.send(AppMessage::StreamError {
-                            thread_id: thread_id_for_task,
-                            error: e.to_string(),
-                        });
-                    }
+        // Apply plan_mode if needed
+        let request = if plan_mode {
+            request.with_plan_mode(true)
+        } else {
+            request
+        };
+
+        // Spawn async task for unified stream endpoint
+        tokio::spawn(async move {
+            match client.stream(&request).await {
+                Ok(mut stream) => {
+                    Self::process_stream(&mut stream, &message_tx, &thread_id_for_task).await;
                 }
-            });
-        }
+                Err(e) => {
+                    let _ = message_tx.send(AppMessage::StreamError {
+                        thread_id: thread_id_for_task,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
     }
 
     /// Process a stream of SSE events and send messages to the app.
