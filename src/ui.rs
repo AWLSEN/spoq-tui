@@ -53,6 +53,25 @@ pub const COLOR_PROGRESS: Color = Color::White;
 pub const COLOR_PROGRESS_BG: Color = Color::DarkGray;
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Extract a short model name from the full model string
+/// Examples:
+/// - "claude-opus-4-5-20250514" → "opus"
+/// - "claude-sonnet-3-5" → "sonnet"
+/// - "gpt-4" → "gpt"
+fn extract_short_model_name(full_name: &str) -> &str {
+    if full_name.contains("opus") {
+        "opus"
+    } else if full_name.contains("sonnet") {
+        "sonnet"
+    } else {
+        full_name.split('-').next().unwrap_or(full_name)
+    }
+}
+
+// ============================================================================
 // SPOQ ASCII Logo
 // ============================================================================
 
@@ -534,6 +553,40 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
         ));
 
         lines.push(Line::from(title_spans));
+
+        // Thread type indicator and model info (centered)
+        let thread = &cached_threads[i];
+        let type_indicator = match thread.thread_type {
+            crate::models::ThreadType::Normal => "[N]",
+            crate::models::ThreadType::Programming => "[P]",
+        };
+
+        let mut type_line_spans = vec![
+            Span::raw(padding_str.clone()),
+            Span::styled("│   ", Style::default().fg(card_border_color)),
+            Span::styled(type_indicator, Style::default().fg(COLOR_ACCENT)),
+        ];
+
+        // Add model name if present
+        if let Some(model) = &thread.model {
+            let short_model = extract_short_model_name(model);
+            type_line_spans.push(Span::styled(
+                format!(" {}", short_model),
+                Style::default().fg(COLOR_DIM),
+            ));
+            let type_info_len = type_indicator.len() + 1 + short_model.len();
+            type_line_spans.push(Span::styled(
+                format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + type_info_len)),
+                Style::default().fg(card_border_color),
+            ));
+        } else {
+            type_line_spans.push(Span::styled(
+                format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + type_indicator.len())),
+                Style::default().fg(card_border_color),
+            ));
+        }
+
+        lines.push(Line::from(type_line_spans));
 
         // Thread preview (centered)
         lines.push(Line::from(vec![
