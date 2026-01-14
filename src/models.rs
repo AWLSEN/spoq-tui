@@ -280,7 +280,6 @@ impl StreamRequest {
     }
 
     /// Create a StreamRequest for an existing thread
-    #[allow(dead_code)]
     pub fn with_thread(prompt: String, thread_id: String) -> Self {
         Self {
             prompt,
@@ -312,7 +311,6 @@ impl StreamRequest {
     }
 
     /// Set plan mode for this request (builder pattern)
-    #[allow(dead_code)]
     pub fn with_plan_mode(mut self, plan_mode: bool) -> Self {
         self.plan_mode = Some(plan_mode);
         self
