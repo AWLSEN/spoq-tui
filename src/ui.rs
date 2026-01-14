@@ -14,7 +14,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus, Screen};
+use crate::app::{App, Focus, ProgrammingMode, Screen};
 use crate::markdown::render_markdown;
 use crate::state::{Notification, TaskStatus};
 use crate::widgets::input_box::InputBoxWidget;
@@ -621,6 +621,40 @@ fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 // ============================================================================
+// Mode Indicator
+// ============================================================================
+
+/// Create the mode indicator line for programming threads.
+///
+/// Returns Some(Line) with the mode indicator styled appropriately:
+/// - PlanMode: '[PLAN MODE]' in yellow
+/// - BypassPermissions: '[BYPASS]' in red
+/// - None: returns None (no indicator shown)
+///
+/// This should only be called when the active thread is a Programming thread.
+fn create_mode_indicator_line(mode: ProgrammingMode) -> Option<Line<'static>> {
+    match mode {
+        ProgrammingMode::PlanMode => Some(Line::from(vec![
+            Span::styled(
+                " [PLAN MODE]",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])),
+        ProgrammingMode::BypassPermissions => Some(Line::from(vec![
+            Span::styled(
+                " [BYPASS]",
+                Style::default()
+                    .fg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])),
+        ProgrammingMode::None => None,
+    }
+}
+
+// ============================================================================
 // Conversation Screen
 // ============================================================================
 
@@ -635,20 +669,54 @@ fn render_conversation_screen(frame: &mut Frame, app: &App) {
         .border_style(Style::default().fg(COLOR_BORDER));
     frame.render_widget(outer_block, size);
 
-    // Create main layout sections
-    let inner = inner_rect(size, 1);
-    let main_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),  // Thread header
-            Constraint::Min(10),    // Messages area
-            Constraint::Length(8),  // Input area with keybinds
-        ])
-        .split(inner);
+    // Determine if we should show the mode indicator
+    let show_mode_indicator = app.is_active_thread_programming();
+    let mode_indicator_line = if show_mode_indicator {
+        create_mode_indicator_line(app.programming_mode)
+    } else {
+        None
+    };
 
-    render_conversation_header(frame, main_chunks[0], app);
-    render_messages_area(frame, main_chunks[1], app);
-    render_conversation_input(frame, main_chunks[2], app);
+    // Create main layout sections - conditionally include mode indicator
+    let inner = inner_rect(size, 1);
+
+    if let Some(mode_line) = mode_indicator_line {
+        // Layout with mode indicator (4 sections)
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),  // Thread header
+                Constraint::Min(10),    // Messages area
+                Constraint::Length(1),  // Mode indicator
+                Constraint::Length(8),  // Input area with keybinds
+            ])
+            .split(inner);
+
+        render_conversation_header(frame, main_chunks[0], app);
+        render_messages_area(frame, main_chunks[1], app);
+        render_mode_indicator(frame, main_chunks[2], mode_line);
+        render_conversation_input(frame, main_chunks[3], app);
+    } else {
+        // Layout without mode indicator (3 sections)
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),  // Thread header
+                Constraint::Min(10),    // Messages area
+                Constraint::Length(8),  // Input area with keybinds
+            ])
+            .split(inner);
+
+        render_conversation_header(frame, main_chunks[0], app);
+        render_messages_area(frame, main_chunks[1], app);
+        render_conversation_input(frame, main_chunks[2], app);
+    }
+}
+
+/// Render the mode indicator bar
+fn render_mode_indicator(frame: &mut Frame, area: Rect, mode_line: Line<'static>) {
+    let indicator = Paragraph::new(mode_line);
+    frame.render_widget(indicator, area);
 }
 
 /// Render the thread title header with connection status
@@ -1577,6 +1645,249 @@ mod tests {
         assert!(
             buffer_str.contains("You:"),
             "Conversation screen should show 'You:' label for user messages"
+        );
+    }
+
+    // ============= Mode Indicator Tests =============
+
+    #[test]
+    fn test_create_mode_indicator_line_plan_mode() {
+        let line = create_mode_indicator_line(ProgrammingMode::PlanMode);
+        assert!(line.is_some());
+        let line = line.unwrap();
+        // Check that the line contains "[PLAN MODE]"
+        let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(content.contains("[PLAN MODE]"));
+    }
+
+    #[test]
+    fn test_create_mode_indicator_line_bypass() {
+        let line = create_mode_indicator_line(ProgrammingMode::BypassPermissions);
+        assert!(line.is_some());
+        let line = line.unwrap();
+        // Check that the line contains "[BYPASS]"
+        let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(content.contains("[BYPASS]"));
+    }
+
+    #[test]
+    fn test_create_mode_indicator_line_none() {
+        let line = create_mode_indicator_line(ProgrammingMode::None);
+        assert!(line.is_none());
+    }
+
+    #[test]
+    fn test_mode_indicator_not_shown_for_conversation_thread() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a Conversation thread (not Programming)
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "conv-thread".to_string(),
+            title: "Conversation Thread".to_string(),
+            preview: "Just chatting".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+        });
+        app.active_thread_id = Some("conv-thread".to_string());
+        app.programming_mode = ProgrammingMode::PlanMode; // Set mode, but shouldn't show
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Mode indicator should NOT be shown for Conversation threads
+        assert!(
+            !buffer_str.contains("[PLAN MODE]"),
+            "Mode indicator should not be shown for Conversation threads"
+        );
+        assert!(
+            !buffer_str.contains("[BYPASS]"),
+            "Mode indicator should not be shown for Conversation threads"
+        );
+    }
+
+    #[test]
+    fn test_mode_indicator_shown_for_programming_thread_plan_mode() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a Programming thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "Code review".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        });
+        app.active_thread_id = Some("prog-thread".to_string());
+        app.programming_mode = ProgrammingMode::PlanMode;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        assert!(
+            buffer_str.contains("[PLAN MODE]"),
+            "Mode indicator should show '[PLAN MODE]' for Programming thread in PlanMode"
+        );
+    }
+
+    #[test]
+    fn test_mode_indicator_shown_for_programming_thread_bypass_mode() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a Programming thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "Code review".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        });
+        app.active_thread_id = Some("prog-thread".to_string());
+        app.programming_mode = ProgrammingMode::BypassPermissions;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        assert!(
+            buffer_str.contains("[BYPASS]"),
+            "Mode indicator should show '[BYPASS]' for Programming thread in BypassPermissions"
+        );
+    }
+
+    #[test]
+    fn test_mode_indicator_not_shown_for_programming_thread_none_mode() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a Programming thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "Code review".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+        });
+        app.active_thread_id = Some("prog-thread".to_string());
+        app.programming_mode = ProgrammingMode::None;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // When mode is None, no indicator should be shown
+        assert!(
+            !buffer_str.contains("[PLAN MODE]"),
+            "Mode indicator should not show '[PLAN MODE]' when mode is None"
+        );
+        assert!(
+            !buffer_str.contains("[BYPASS]"),
+            "Mode indicator should not show '[BYPASS]' when mode is None"
+        );
+    }
+
+    #[test]
+    fn test_mode_indicator_not_shown_on_command_deck() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck; // Not on Conversation screen
+        app.programming_mode = ProgrammingMode::PlanMode;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Mode indicator should not be shown on CommandDeck
+        assert!(
+            !buffer_str.contains("[PLAN MODE]"),
+            "Mode indicator should not be shown on CommandDeck screen"
+        );
+    }
+
+    #[test]
+    fn test_mode_indicator_not_shown_when_no_active_thread() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = None; // No active thread
+        app.programming_mode = ProgrammingMode::PlanMode;
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Mode indicator should not be shown when there's no active thread
+        assert!(
+            !buffer_str.contains("[PLAN MODE]"),
+            "Mode indicator should not be shown when there's no active thread"
         );
     }
 }
