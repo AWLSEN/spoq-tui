@@ -4,7 +4,7 @@
 //! including streaming responses via Server-Sent Events (SSE).
 
 use crate::events::SseEvent;
-use crate::models::{Message, StreamRequest, Thread};
+use crate::models::{Message, ProgrammingStreamRequest, StreamRequest, Thread};
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
 use futures_util::stream::{self, Stream};
@@ -25,6 +25,8 @@ pub enum ConductorError {
     Json(serde_json::Error),
     /// Server returned an error status
     ServerError { status: u16, message: String },
+    /// Endpoint not yet implemented
+    NotImplemented(String),
 }
 
 impl std::fmt::Display for ConductorError {
@@ -35,6 +37,9 @@ impl std::fmt::Display for ConductorError {
             ConductorError::Json(e) => write!(f, "JSON error: {}", e),
             ConductorError::ServerError { status, message } => {
                 write!(f, "Server error ({}): {}", status, message)
+            }
+            ConductorError::NotImplemented(endpoint) => {
+                write!(f, "Endpoint not implemented: {}", endpoint)
             }
         }
     }
@@ -47,6 +52,7 @@ impl std::error::Error for ConductorError {
             ConductorError::SseParse(e) => Some(e),
             ConductorError::Json(e) => Some(e),
             ConductorError::ServerError { .. } => None,
+            ConductorError::NotImplemented(_) => None,
         }
     }
 }
@@ -194,6 +200,31 @@ impl ConductorClient {
         Ok(Box::pin(event_stream))
     }
 
+    /// Stream a programming conversation response from the Conductor API.
+    ///
+    /// Sends a POST request to `/v1/programming/stream` and returns a stream of SSE events.
+    /// This endpoint supports programming-specific features like plan mode and permission bypassing.
+    ///
+    /// # Arguments
+    /// * `request` - The programming stream request containing content and mode options
+    ///
+    /// # Returns
+    /// A stream of `Result<SseEvent, ConductorError>` items
+    ///
+    /// # Errors
+    /// Currently returns `NotImplemented` error as the backend endpoint is not yet available.
+    #[allow(dead_code)]
+    pub async fn programming_stream(
+        &self,
+        _request: &ProgrammingStreamRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<SseEvent, ConductorError>> + Send>>, ConductorError>
+    {
+        // Stub: endpoint not yet implemented on backend
+        Err(ConductorError::NotImplemented(
+            "/v1/programming/stream".to_string(),
+        ))
+    }
+
     /// Check if the Conductor API is healthy and reachable.
     ///
     /// # Returns
@@ -320,7 +351,7 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::StreamRequest;
+    use crate::models::{ProgrammingStreamRequest, StreamRequest};
 
     #[test]
     fn test_conductor_client_new() {
@@ -441,6 +472,33 @@ mod tests {
         let result = client.stream(&request).await;
         // Should fail with HTTP error since server doesn't exist
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_programming_stream_returns_not_implemented() {
+        let client = ConductorClient::new();
+        let request = ProgrammingStreamRequest::new(
+            "thread-123".to_string(),
+            "Help me code".to_string(),
+        );
+        let result = client.programming_stream(&request).await;
+
+        // Should return NotImplemented error
+        match result {
+            Err(ConductorError::NotImplemented(endpoint)) => {
+                assert!(endpoint.contains("/v1/programming/stream"));
+            }
+            Err(e) => panic!("Expected NotImplemented error, got: {}", e),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_conductor_error_not_implemented_display() {
+        let err = ConductorError::NotImplemented("/v1/test/endpoint".to_string());
+        let display = format!("{}", err);
+        assert!(display.contains("not implemented"));
+        assert!(display.contains("/v1/test/endpoint"));
     }
 
 }

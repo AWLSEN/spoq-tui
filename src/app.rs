@@ -46,6 +46,18 @@ pub enum Focus {
     Input,
 }
 
+/// Represents the current programming mode for Claude interactions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProgrammingMode {
+    /// Plan mode - Claude creates plans before executing
+    PlanMode,
+    /// Bypass permissions - skip confirmation prompts
+    BypassPermissions,
+    /// No special mode active
+    #[default]
+    None,
+}
+
 /// Main application state
 pub struct App {
     /// List of conversation threads (legacy - for storage compatibility)
@@ -86,6 +98,8 @@ pub struct App {
     pub tick_count: u64,
     /// Scroll position for conversation view (0 = bottom/latest content)
     pub conversation_scroll: u16,
+    /// Current programming mode for Claude interactions
+    pub programming_mode: ProgrammingMode,
 }
 
 impl App {
@@ -123,6 +137,7 @@ impl App {
             client,
             tick_count: 0,
             conversation_scroll: 0,
+            programming_mode: ProgrammingMode::default(),
         })
     }
 
@@ -168,6 +183,15 @@ impl App {
             Focus::Tasks => Focus::Threads,
             Focus::Threads => Focus::Input,
             Focus::Input => Focus::Notifications,
+        };
+    }
+
+    /// Cycle programming mode: PlanMode → BypassPermissions → None → PlanMode
+    pub fn cycle_programming_mode(&mut self) {
+        self.programming_mode = match self.programming_mode {
+            ProgrammingMode::PlanMode => ProgrammingMode::BypassPermissions,
+            ProgrammingMode::BypassPermissions => ProgrammingMode::None,
+            ProgrammingMode::None => ProgrammingMode::PlanMode,
         };
     }
 
@@ -666,6 +690,7 @@ mod tests {
             title: "Existing Thread".to_string(),
             preview: "Previous message".to_string(),
             updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::default(),
         });
         app.cache.add_message_simple(&existing_id, MessageRole::User, "Previous question".to_string());
         app.cache.add_message_simple(&existing_id, MessageRole::Assistant, "Previous answer".to_string());
@@ -1191,5 +1216,105 @@ mod tests {
 
         // Scroll should be reset to 0
         assert_eq!(app.conversation_scroll, 0);
+    }
+
+    // ============= ProgrammingMode Tests =============
+
+    #[test]
+    fn test_programming_mode_default_is_none() {
+        assert_eq!(ProgrammingMode::default(), ProgrammingMode::None);
+    }
+
+    #[test]
+    fn test_programming_mode_equality() {
+        assert_eq!(ProgrammingMode::PlanMode, ProgrammingMode::PlanMode);
+        assert_eq!(ProgrammingMode::BypassPermissions, ProgrammingMode::BypassPermissions);
+        assert_eq!(ProgrammingMode::None, ProgrammingMode::None);
+        assert_ne!(ProgrammingMode::PlanMode, ProgrammingMode::None);
+        assert_ne!(ProgrammingMode::BypassPermissions, ProgrammingMode::PlanMode);
+    }
+
+    #[test]
+    fn test_programming_mode_copy() {
+        let mode = ProgrammingMode::PlanMode;
+        let copied = mode;
+        assert_eq!(mode, copied);
+    }
+
+    #[test]
+    fn test_app_initializes_with_no_programming_mode() {
+        let app = App::default();
+        assert_eq!(app.programming_mode, ProgrammingMode::None);
+    }
+
+    #[test]
+    fn test_cycle_programming_mode_from_none_to_plan() {
+        let mut app = App::default();
+        assert_eq!(app.programming_mode, ProgrammingMode::None);
+
+        app.cycle_programming_mode();
+
+        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+    }
+
+    #[test]
+    fn test_cycle_programming_mode_from_plan_to_bypass() {
+        let mut app = App::default();
+        app.programming_mode = ProgrammingMode::PlanMode;
+
+        app.cycle_programming_mode();
+
+        assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+    }
+
+    #[test]
+    fn test_cycle_programming_mode_from_bypass_to_none() {
+        let mut app = App::default();
+        app.programming_mode = ProgrammingMode::BypassPermissions;
+
+        app.cycle_programming_mode();
+
+        assert_eq!(app.programming_mode, ProgrammingMode::None);
+    }
+
+    #[test]
+    fn test_cycle_programming_mode_full_cycle() {
+        let mut app = App::default();
+
+        // Start at None (default)
+        assert_eq!(app.programming_mode, ProgrammingMode::None);
+
+        // Cycle: None → PlanMode
+        app.cycle_programming_mode();
+        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+
+        // Cycle: PlanMode → BypassPermissions
+        app.cycle_programming_mode();
+        assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+
+        // Cycle: BypassPermissions → None
+        app.cycle_programming_mode();
+        assert_eq!(app.programming_mode, ProgrammingMode::None);
+
+        // Cycle: None → PlanMode (wraps around)
+        app.cycle_programming_mode();
+        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+    }
+
+    #[test]
+    fn test_cycle_programming_mode_multiple_cycles() {
+        let mut app = App::default();
+
+        // Cycle through 3 complete cycles (9 transitions)
+        for _ in 0..3 {
+            app.cycle_programming_mode(); // None → PlanMode
+            assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+
+            app.cycle_programming_mode(); // PlanMode → BypassPermissions
+            assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+
+            app.cycle_programming_mode(); // BypassPermissions → None
+            assert_eq!(app.programming_mode, ProgrammingMode::None);
+        }
     }
 }

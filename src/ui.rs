@@ -959,6 +959,7 @@ fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::ProgrammingMode;
     use ratatui::{backend::TestBackend, Terminal};
 
     fn create_test_app() -> App {
@@ -983,6 +984,7 @@ mod tests {
             client: std::sync::Arc::new(crate::conductor::ConductorClient::new()),
             tick_count: 0,
             conversation_scroll: 0,
+            programming_mode: ProgrammingMode::default(),
         }
     }
 
@@ -1056,6 +1058,7 @@ mod tests {
             title: "Test Thread".to_string(),
             preview: "Test preview".to_string(),
             updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::default(),
         });
         app.active_thread_id = Some("test-thread".to_string());
 
