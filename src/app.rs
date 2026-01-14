@@ -3,7 +3,6 @@ use crate::conductor::ConductorClient;
 use crate::events::SseEvent;
 use crate::models::StreamRequest;
 use crate::state::{Task, Thread};
-use crate::storage;
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
 use futures_util::StreamExt;
@@ -97,13 +96,6 @@ impl App {
 
     /// Create a new App instance with a custom ConductorClient
     pub fn with_client(client: Arc<ConductorClient>) -> Result<Self> {
-        // Initialize storage directories
-        storage::init_storage()?;
-
-        // Load existing data
-        let threads = storage::load_threads().unwrap_or_default();
-        let tasks = storage::load_tasks().unwrap_or_default();
-
         // Initialize empty cache - will be populated by initialize()
         let cache = ThreadCache::new();
 
@@ -111,8 +103,9 @@ impl App {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
-            threads,
-            tasks,
+            // Start with empty vectors - will be populated from server in initialize()
+            threads: Vec::new(),
+            tasks: Vec::new(),
             should_quit: false,
             screen: Screen::default(),
             active_thread_id: None,
@@ -135,15 +128,37 @@ impl App {
 
     /// Initialize the app by fetching data from the backend.
     ///
-    /// Initialize the app by checking backend connectivity.
-    ///
-    /// Note: /v1/messages/recent returns individual messages, not threads.
-    /// For now, we skip loading and start with an empty thread list.
-    /// Threads will be created as the user sends messages.
+    /// Fetches threads and tasks from the server. If the server is unreachable
+    /// or returns an error, the app starts with empty state and sets connection
+    /// status to false.
     pub async fn initialize(&mut self) {
-        // Just set connection status - threads will be created on demand
-        // TODO: Add proper thread history endpoint or group messages by thread_id
-        self.connection_status = true;
+        // Fetch threads from server
+        match self.client.fetch_threads().await {
+            Ok(threads) => {
+                // Populate cache with threads from server
+                for thread in threads {
+                    self.cache.upsert_thread(thread);
+                }
+                self.connection_status = true;
+            }
+            Err(_) => {
+                // Server unreachable - start with empty state
+                self.connection_status = false;
+            }
+        }
+
+        // Fetch tasks from server (only if connected)
+        if self.connection_status {
+            match self.client.fetch_tasks().await {
+                Ok(tasks) => {
+                    self.tasks = tasks;
+                }
+                Err(_) => {
+                    // Failed to fetch tasks - continue with empty tasks
+                    self.tasks = Vec::new();
+                }
+            }
+        }
     }
 
     /// Cycle focus to the next panel
@@ -332,13 +347,6 @@ impl App {
                 }
             }
         });
-    }
-
-    /// Save all data to storage
-    pub fn save(&self) -> Result<()> {
-        storage::save_threads(&self.threads)?;
-        storage::save_tasks(&self.tasks)?;
-        Ok(())
     }
 
     /// Mark the app to quit

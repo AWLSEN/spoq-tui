@@ -10,6 +10,5 @@ pub mod markdown;
 pub mod models;
 pub mod sse;
 pub mod state;
-pub mod storage;
 pub mod ui;
 pub mod widgets;

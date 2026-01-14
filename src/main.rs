@@ -6,7 +6,6 @@ mod markdown;
 mod models;
 pub mod sse;
 mod state;
-mod storage;
 mod ui;
 mod widgets;
 
@@ -51,11 +50,6 @@ async fn main() -> Result<()> {
 
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;
-
-    // Save app state before exit
-    if let Err(e) = app.save() {
-        eprintln!("Failed to save app state: {}", e);
-    }
 
     // Restore terminal
     restore_terminal(&mut terminal)?;
