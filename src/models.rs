@@ -184,6 +184,31 @@ pub enum MessageRole {
     System,
 }
 
+impl ServerMessage {
+    /// Convert a ServerMessage to a client Message.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread ID to associate with the message
+    /// * `id` - The message ID to assign
+    pub fn to_client_message(self, thread_id: &str, id: i64) -> Message {
+        let role = match self.role {
+            MessageRole::User => MessageRole::User,
+            MessageRole::Assistant => MessageRole::Assistant,
+            MessageRole::System => MessageRole::System,
+        };
+
+        Message {
+            id,
+            thread_id: thread_id.to_string(),
+            role,
+            content: self.content.unwrap_or_default(),
+            created_at: Utc::now(),  // Server doesn't provide per-message timestamps
+            is_streaming: false,
+            partial_content: String::new(),
+        }
+    }
+}
+
 /// Represents a message within a thread from the backend API
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Message {

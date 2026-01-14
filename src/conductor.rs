@@ -4,7 +4,7 @@
 //! including streaming responses via Server-Sent Events (SSE).
 
 use crate::events::SseEvent;
-use crate::models::{Message, ProgrammingStreamRequest, StreamRequest, Thread};
+use crate::models::{Message, ProgrammingStreamRequest, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse};
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
 use futures_util::stream::{self, Stream};
@@ -259,13 +259,24 @@ impl ConductorClient {
 
     /// Fetch all threads from the backend.
     ///
-    /// TODO: Expected endpoint: GET /v1/threads
-    ///
     /// # Returns
     /// A vector of threads, or an error if the request fails
     pub async fn fetch_threads(&self) -> Result<Vec<Thread>, ConductorError> {
-        // Stub: return empty vec for now
-        Ok(Vec::new())
+        let url = format!("{}/v1/threads", self.base_url);
+
+        let response = self.client
+            .get(&url)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let data: ThreadListResponse = response.json().await?;
+        Ok(data.threads)
     }
 
     /// Fetch all tasks from the backend.
@@ -291,6 +302,33 @@ impl ConductorClient {
     pub async fn fetch_thread_messages(&self, _thread_id: &str) -> Result<Vec<Message>, ConductorError> {
         // Stub: return empty vec for now
         Ok(Vec::new())
+    }
+
+    /// Fetch a thread with its messages from the backend.
+    ///
+    /// GET /v1/threads/{id}?include_messages=true
+    pub async fn fetch_thread_with_messages(
+        &self,
+        thread_id: &str,
+    ) -> Result<ThreadDetailResponse, ConductorError> {
+        let url = format!(
+            "{}/v1/threads/{}?include_messages=true",
+            self.base_url, thread_id
+        );
+
+        let response = self.client
+            .get(&url)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let data: ThreadDetailResponse = response.json().await?;
+        Ok(data)
     }
 
     /// Get a thread by ID (stub - will implement with REST API)
