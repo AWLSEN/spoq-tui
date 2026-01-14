@@ -261,6 +261,9 @@ impl App {
     /// 1. NEW thread: When `active_thread_id` is None, creates a new pending thread
     /// 2. CONTINUING thread: When `active_thread_id` exists, adds to the existing thread
     ///
+    /// For programming threads, uses the programming stream endpoint with the current
+    /// programming mode (plan_mode or bypass_permissions).
+    ///
     /// Edge case: If active_thread_id starts with "pending-", we block submission
     /// because we're still waiting for the backend to confirm the thread ID.
     pub fn submit_input(&mut self) {
@@ -269,8 +272,12 @@ impl App {
             return;
         }
 
+        // Check if this is a programming thread before we process
+        let is_programming = self.is_active_thread_programming();
+        let programming_mode = self.programming_mode;
+
         // CRITICAL: Determine if this is a NEW thread or CONTINUING existing
-        let (request, thread_id) = if let Some(existing_id) = &self.active_thread_id {
+        let thread_id = if let Some(existing_id) = &self.active_thread_id {
             // Check if thread is still pending (waiting for backend ThreadInfo)
             if existing_id.starts_with("pending-") {
                 // Block rapid second message - still waiting for ThreadInfo
@@ -282,22 +289,20 @@ impl App {
             }
 
             // CONTINUING existing thread
-            let request = StreamRequest::with_thread(content.clone(), existing_id.clone());
-            if !self.cache.add_streaming_message(existing_id, content) {
+            if !self.cache.add_streaming_message(existing_id, content.clone()) {
                 // Thread doesn't exist in cache - might have been deleted
                 self.stream_error = Some("Thread no longer exists.".to_string());
                 return;
             }
-            (request, existing_id.clone())
+            existing_id.clone()
         } else {
             // NEW thread - create pending, will reconcile when backend responds
-            let request = StreamRequest::new(content.clone());
-            let pending_id = self.cache.create_pending_thread(content, ThreadType::default());
+            let pending_id = self.cache.create_pending_thread(content.clone(), ThreadType::default());
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
             self.conversation_scroll = 0;
-            (request, pending_id)
+            pending_id
         };
 
         self.input_box.clear();
@@ -305,72 +310,122 @@ impl App {
         // Clone what we need for the async task
         let client = Arc::clone(&self.client);
         let message_tx = self.message_tx.clone();
-        let thread_id_for_task = thread_id;
+        let thread_id_for_task = thread_id.clone();
 
-        // Spawn async task to stream the response
-        tokio::spawn(async move {
-            match client.stream(&request).await {
-                Ok(mut stream) => {
-                    while let Some(result) = stream.next().await {
-                        match result {
-                            Ok(event) => {
-                                match event {
-                                    SseEvent::Content(content_event) => {
-                                        let _ = message_tx.send(AppMessage::StreamToken {
-                                            thread_id: thread_id_for_task.clone(),
-                                            token: content_event.text,
-                                        });
-                                    }
-                                    SseEvent::Done(done_event) => {
-                                        // Parse message_id from string to i64
-                                        let message_id = done_event
-                                            .message_id
-                                            .parse::<i64>()
-                                            .unwrap_or(0);
-                                        let _ = message_tx.send(AppMessage::StreamComplete {
-                                            thread_id: thread_id_for_task.clone(),
-                                            message_id,
-                                        });
-                                        break;
-                                    }
-                                    SseEvent::Error(error_event) => {
-                                        let _ = message_tx.send(AppMessage::StreamError {
-                                            thread_id: thread_id_for_task.clone(),
-                                            error: error_event.message,
-                                        });
-                                        break;
-                                    }
-                                    SseEvent::UserMessageSaved(event) => {
-                                        // ThreadInfo event mapped to UserMessageSaved in conductor.rs
-                                        // This provides the real backend thread_id
-                                        let _ = message_tx.send(AppMessage::ThreadCreated {
-                                            pending_id: thread_id_for_task.clone(),
-                                            real_id: event.thread_id,
-                                            title: None, // Title not available in this event
-                                        });
-                                    }
-                                    // Ignore other event types for now (reasoning, tool calls, etc.)
-                                    _ => {}
-                                }
-                            }
-                            Err(e) => {
-                                let _ = message_tx.send(AppMessage::StreamError {
-                                    thread_id: thread_id_for_task.clone(),
-                                    error: e.to_string(),
-                                });
-                                break;
-                            }
+        // Determine whether to use programming or standard streaming endpoint
+        if is_programming {
+            // Build ProgrammingStreamRequest with current mode
+            let (plan_mode, bypass_permissions) = match programming_mode {
+                ProgrammingMode::PlanMode => (true, false),
+                ProgrammingMode::BypassPermissions => (false, true),
+                ProgrammingMode::None => (false, false),
+            };
+            let request = ProgrammingStreamRequest::with_options(
+                thread_id,
+                content,
+                plan_mode,
+                bypass_permissions,
+            );
+
+            // Spawn async task for programming stream
+            tokio::spawn(async move {
+                match client.programming_stream(&request).await {
+                    Ok(mut stream) => {
+                        Self::process_stream(&mut stream, &message_tx, &thread_id_for_task).await;
+                    }
+                    Err(e) => {
+                        let _ = message_tx.send(AppMessage::StreamError {
+                            thread_id: thread_id_for_task,
+                            error: e.to_string(),
+                        });
+                    }
+                }
+            });
+        } else {
+            // Build standard StreamRequest
+            let request = if self.active_thread_id.as_ref().map(|id| !id.starts_with("pending-")).unwrap_or(false) {
+                StreamRequest::with_thread(content, thread_id)
+            } else {
+                StreamRequest::new(content)
+            };
+
+            // Spawn async task for standard stream
+            tokio::spawn(async move {
+                match client.stream(&request).await {
+                    Ok(mut stream) => {
+                        Self::process_stream(&mut stream, &message_tx, &thread_id_for_task).await;
+                    }
+                    Err(e) => {
+                        let _ = message_tx.send(AppMessage::StreamError {
+                            thread_id: thread_id_for_task,
+                            error: e.to_string(),
+                        });
+                    }
+                }
+            });
+        }
+    }
+
+    /// Process a stream of SSE events and send messages to the app.
+    ///
+    /// This is a helper method extracted from submit_input to avoid code duplication
+    /// between the programming and standard streaming paths.
+    async fn process_stream(
+        stream: &mut std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<SseEvent, crate::conductor::ConductorError>> + Send>>,
+        message_tx: &mpsc::UnboundedSender<AppMessage>,
+        thread_id: &str,
+    ) {
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(event) => {
+                    match event {
+                        SseEvent::Content(content_event) => {
+                            let _ = message_tx.send(AppMessage::StreamToken {
+                                thread_id: thread_id.to_string(),
+                                token: content_event.text,
+                            });
                         }
+                        SseEvent::Done(done_event) => {
+                            // Parse message_id from string to i64
+                            let message_id = done_event
+                                .message_id
+                                .parse::<i64>()
+                                .unwrap_or(0);
+                            let _ = message_tx.send(AppMessage::StreamComplete {
+                                thread_id: thread_id.to_string(),
+                                message_id,
+                            });
+                            break;
+                        }
+                        SseEvent::Error(error_event) => {
+                            let _ = message_tx.send(AppMessage::StreamError {
+                                thread_id: thread_id.to_string(),
+                                error: error_event.message,
+                            });
+                            break;
+                        }
+                        SseEvent::UserMessageSaved(event) => {
+                            // ThreadInfo event mapped to UserMessageSaved in conductor.rs
+                            // This provides the real backend thread_id
+                            let _ = message_tx.send(AppMessage::ThreadCreated {
+                                pending_id: thread_id.to_string(),
+                                real_id: event.thread_id,
+                                title: None, // Title not available in this event
+                            });
+                        }
+                        // Ignore other event types for now (reasoning, tool calls, etc.)
+                        _ => {}
                     }
                 }
                 Err(e) => {
                     let _ = message_tx.send(AppMessage::StreamError {
-                        thread_id: thread_id_for_task,
+                        thread_id: thread_id.to_string(),
                         error: e.to_string(),
                     });
+                    break;
                 }
             }
-        });
+        }
     }
 
     /// Mark the app to quit
@@ -1409,5 +1464,102 @@ mod tests {
         app.cache.upsert_thread(thread);
 
         assert!(app.is_active_thread_programming());
+    }
+
+    // ============= Submit Input with Programming Thread Tests =============
+
+    #[tokio::test]
+    async fn test_submit_input_on_programming_thread_uses_programming_mode() {
+        let mut app = App::default();
+
+        // Create a programming thread
+        let thread = crate::models::Thread {
+            id: "prog-thread-123".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "Code discussion".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread);
+        app.cache.add_message_simple("prog-thread-123", MessageRole::User, "Previous".to_string());
+        app.cache.add_message_simple("prog-thread-123", MessageRole::Assistant, "Response".to_string());
+        app.active_thread_id = Some("prog-thread-123".to_string());
+        app.screen = Screen::Conversation;
+
+        // Set plan mode
+        app.programming_mode = ProgrammingMode::PlanMode;
+
+        // Submit input
+        app.input_box.insert_char('H');
+        app.input_box.insert_char('i');
+        app.submit_input();
+
+        // Should add streaming message to the thread
+        let messages = app.cache.get_messages("prog-thread-123").unwrap();
+        assert_eq!(messages.len(), 4); // 2 original + user + assistant streaming
+        assert!(messages[3].is_streaming);
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_programming_mode_none_sets_correct_flags() {
+        let mut app = App::default();
+
+        // Create a programming thread
+        let thread = crate::models::Thread {
+            id: "prog-thread-456".to_string(),
+            title: "Programming Thread".to_string(),
+            preview: "Code discussion".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: ThreadType::Programming,
+        };
+        app.cache.upsert_thread(thread);
+        app.cache.add_message_simple("prog-thread-456", MessageRole::User, "Prev".to_string());
+        app.cache.add_message_simple("prog-thread-456", MessageRole::Assistant, "Resp".to_string());
+        app.active_thread_id = Some("prog-thread-456".to_string());
+        app.screen = Screen::Conversation;
+
+        // Mode is None by default
+        assert_eq!(app.programming_mode, ProgrammingMode::None);
+
+        // Submit input
+        app.input_box.insert_char('T');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('s');
+        app.input_box.insert_char('t');
+        app.submit_input();
+
+        // Input should be cleared (submission was accepted)
+        assert!(app.input_box.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_new_thread_is_not_programming() {
+        let mut app = App::default();
+        assert!(app.active_thread_id.is_none());
+
+        // Submit creates a new non-programming thread
+        app.input_box.insert_char('N');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('w');
+        app.submit_input();
+
+        // New thread should be at front
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+        assert!(thread_id.starts_with("pending-"));
+
+        // The new thread should NOT be a programming thread
+        assert!(!app.is_active_thread_programming());
+    }
+
+    #[test]
+    fn test_create_pending_thread_uses_thread_type_parameter() {
+        let mut app = App::default();
+
+        // Create a programming pending thread via cache directly
+        let pending_id = app.cache.create_pending_thread("Code task".to_string(), ThreadType::Programming);
+
+        // Thread should have programming type
+        let thread = app.cache.get_thread(&pending_id).unwrap();
+        assert_eq!(thread.thread_type, ThreadType::Programming);
     }
 }
