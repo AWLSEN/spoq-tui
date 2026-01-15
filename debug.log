@@ -1,0 +1,60 @@
+warning: constant `COLOR_TOOL_RESULT` is never used
+  --> src/ui.rs:89:7
+   |
+89 | const COLOR_TOOL_RESULT: Color = Color::Rgb(100, 100, 100); // dim gray for preview
+   |       ^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `spoq` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running `target/debug/spoq`
+[DEBUG SSE] try_emit_event: type=Some("user_message_saved"), data_len=132
+[DEBUG] SSE event received: user_message_saved
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=115
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=124
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=143
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=115
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("tool_call_start"), data_len=178
+[DEBUG] SSE event received: tool_call_start
+[DEBUG] ToolStarted: id=toolu_01LSi2P8fELpMzsfWMzjWDCt, name=Glob
+[DEBUG] Adding tool to message in thread: 525
+[DEBUG] start_tool_in_message: thread=525, tool_id=toolu_01LSi2P8fELpMzsfWMzjWDCt, name=Glob
+[DEBUG] Found streaming message, adding tool. Segments before: 1
+[DEBUG] Segments after: 2
+[DEBUG SSE] try_emit_event: type=Some("tool_call_argument"), data_len=188
+[DEBUG] SSE event received: tool_call_argument
+[DEBUG SSE] try_emit_event: type=Some("tool_call_argument"), data_len=179
+[DEBUG] SSE event received: tool_call_argument
+[DEBUG SSE] try_emit_event: type=Some("tool_call_argument"), data_len=182
+[DEBUG] SSE event received: tool_call_argument
+[DEBUG SSE] try_emit_event: type=Some("tool_executing"), data_len=177
+[DEBUG] SSE event received: tool_executing
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=118
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=122
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=118
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=119
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=139
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=116
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=117
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=131
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=135
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=120
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("content"), data_len=125
+[DEBUG] SSE event received: content
+[DEBUG SSE] try_emit_event: type=Some("done"), data_len=121
+[DEBUG] SSE event received: done

@@ -1664,7 +1664,6 @@ pub fn render_tool_result_preview(tool: &ToolEvent) -> Option<Line<'static>> {
 ///
 /// Limits output to `max_chars` characters or `max_lines` newlines, whichever is reached first.
 /// Replaces newlines with spaces for single-line display and appends "..." if truncated.
-#[allow(dead_code)]
 pub fn truncate_preview(text: &str, max_chars: usize, max_lines: usize) -> String {
     let mut result = String::new();
     let mut char_count = 0;
