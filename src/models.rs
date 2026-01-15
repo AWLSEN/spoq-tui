@@ -221,6 +221,71 @@ pub enum MessageRole {
     System,
 }
 
+/// Status of a tool event for inline display
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ToolEventStatus {
+    /// Tool is currently running
+    Running,
+    /// Tool completed successfully
+    Complete,
+    /// Tool failed
+    Failed,
+}
+
+/// A tool event that can be displayed inline with message content
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ToolEvent {
+    /// The tool call ID from the backend
+    pub tool_call_id: String,
+    /// Name of the tool (e.g., "Bash", "Read", "Glob")
+    pub function_name: String,
+    /// Current status of the tool
+    pub status: ToolEventStatus,
+    /// When the tool started
+    pub started_at: DateTime<Utc>,
+    /// When the tool completed (if complete)
+    pub completed_at: Option<DateTime<Utc>>,
+    /// Duration in seconds (calculated when complete)
+    pub duration_secs: Option<f64>,
+}
+
+impl ToolEvent {
+    /// Create a new running tool event
+    pub fn new(tool_call_id: String, function_name: String) -> Self {
+        Self {
+            tool_call_id,
+            function_name,
+            status: ToolEventStatus::Running,
+            started_at: Utc::now(),
+            completed_at: None,
+            duration_secs: None,
+        }
+    }
+
+    /// Mark the tool as complete
+    pub fn complete(&mut self) {
+        self.status = ToolEventStatus::Complete;
+        self.completed_at = Some(Utc::now());
+        self.duration_secs = Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
+    }
+
+    /// Mark the tool as failed
+    pub fn fail(&mut self) {
+        self.status = ToolEventStatus::Failed;
+        self.completed_at = Some(Utc::now());
+        self.duration_secs = Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
+    }
+}
+
+/// A segment of message content - either text or a tool event
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MessageSegment {
+    /// Plain text content
+    Text(String),
+    /// An inline tool event
+    ToolEvent(ToolEvent),
+}
+
 impl ServerMessage {
     /// Convert a ServerMessage to a client Message.
     ///
@@ -244,6 +309,7 @@ impl ServerMessage {
             partial_content: String::new(),
             reasoning_content: String::new(),  // Server may not provide reasoning history
             reasoning_collapsed: true,
+            segments: Vec::new(),
         }
     }
 }
@@ -273,6 +339,9 @@ pub struct Message {
     /// Whether the reasoning block is collapsed in the UI
     #[serde(default)]
     pub reasoning_collapsed: bool,
+    /// Segments of content including inline tool events
+    #[serde(default)]
+    pub segments: Vec<MessageSegment>,
 }
 
 impl Message {
@@ -307,6 +376,65 @@ impl Message {
     pub fn reasoning_token_count(&self) -> usize {
         // Simple approximation: split on whitespace and count
         self.reasoning_content.split_whitespace().count()
+    }
+
+    /// Add a text segment to the message
+    pub fn add_text_segment(&mut self, text: String) {
+        // If the last segment is text, append to it instead of creating a new one
+        if let Some(MessageSegment::Text(last_text)) = self.segments.last_mut() {
+            last_text.push_str(&text);
+        } else if !text.is_empty() {
+            self.segments.push(MessageSegment::Text(text));
+        }
+    }
+
+    /// Start a new tool event
+    pub fn start_tool_event(&mut self, tool_call_id: String, function_name: String) {
+        let event = ToolEvent::new(tool_call_id, function_name);
+        self.segments.push(MessageSegment::ToolEvent(event));
+    }
+
+    /// Complete a tool event by its tool_call_id
+    pub fn complete_tool_event(&mut self, tool_call_id: &str) {
+        for segment in &mut self.segments {
+            if let MessageSegment::ToolEvent(event) = segment {
+                if event.tool_call_id == tool_call_id {
+                    event.complete();
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Fail a tool event by its tool_call_id
+    pub fn fail_tool_event(&mut self, tool_call_id: &str) {
+        for segment in &mut self.segments {
+            if let MessageSegment::ToolEvent(event) = segment {
+                if event.tool_call_id == tool_call_id {
+                    event.fail();
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Get a tool event by its tool_call_id
+    pub fn get_tool_event(&self, tool_call_id: &str) -> Option<&ToolEvent> {
+        for segment in &self.segments {
+            if let MessageSegment::ToolEvent(event) = segment {
+                if event.tool_call_id == tool_call_id {
+                    return Some(event);
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if there are any running tools
+    pub fn has_running_tools(&self) -> bool {
+        self.segments.iter().any(|s| {
+            matches!(s, MessageSegment::ToolEvent(e) if e.status == ToolEventStatus::Running)
+        })
     }
 }
 
@@ -639,6 +767,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: String::new(),
             reasoning_collapsed: true,
+            segments: Vec::new(),
         };
 
         assert_eq!(message.id, 1);
@@ -670,6 +799,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: String::new(),
             reasoning_collapsed: true,
+            segments: Vec::new(),
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
@@ -690,6 +820,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: String::new(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         message.append_token("Hello");
@@ -714,6 +845,7 @@ mod tests {
             partial_content: "Streamed content".to_string(),
             reasoning_content: String::new(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         assert!(message.is_streaming);
@@ -739,6 +871,7 @@ mod tests {
             partial_content: "Should not replace".to_string(),
             reasoning_content: String::new(),
             reasoning_collapsed: true,
+            segments: Vec::new(),
         };
 
         message.finalize();
@@ -761,6 +894,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: String::new(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         // Simulate streaming tokens
@@ -793,6 +927,7 @@ mod tests {
             partial_content: "Partial content".to_string(),
             reasoning_content: String::new(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
@@ -952,6 +1087,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: String::new(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         message.append_reasoning_token("Let me think...");
@@ -973,6 +1109,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: "Let me analyze this step by step".to_string(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         // "Let me analyze this step by step" = 7 words
@@ -994,6 +1131,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: "Some reasoning".to_string(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         assert!(!message.reasoning_collapsed);
@@ -1015,6 +1153,7 @@ mod tests {
             partial_content: "Response content".to_string(),
             reasoning_content: "Some reasoning".to_string(),
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         // Reasoning should not be collapsed while streaming
@@ -1040,6 +1179,7 @@ mod tests {
             partial_content: "Response content".to_string(),
             reasoning_content: String::new(), // No reasoning
             reasoning_collapsed: false,
+            segments: Vec::new(),
         };
 
         message.finalize();
@@ -1061,6 +1201,7 @@ mod tests {
             partial_content: String::new(),
             reasoning_content: "Let me think about this".to_string(),
             reasoning_collapsed: true,
+            segments: Vec::new(),
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
