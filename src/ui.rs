@@ -126,6 +126,109 @@ fn get_tool_icon(function_name: &str) -> &'static str {
     }
 }
 
+/// Truncate a string to max_len characters, adding "..." if truncated
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
+/// Format tool arguments into a human-readable display string
+///
+/// Parses JSON arguments and extracts the most relevant field based on tool name.
+/// Returns a concise description suitable for display in the UI.
+///
+/// # Examples
+/// - Read {"file_path": "/src/main.rs"} -> "Reading /src/main.rs"
+/// - Bash {"command": "npm install"} -> "Running: npm install"
+/// - Grep {"pattern": "TODO", "path": "src/"} -> "Searching 'TODO' in src/"
+pub fn format_tool_args(function_name: &str, args_json: &str) -> String {
+    // Try to parse JSON, fall back to function name on failure
+    let json: Value = match serde_json::from_str(args_json) {
+        Ok(v) => v,
+        Err(_) => return function_name.to_string(),
+    };
+
+    match function_name {
+        "Read" => {
+            if let Some(path) = json.get("file_path").and_then(|v| v.as_str()) {
+                format!("Reading {}", truncate_string(path, 60))
+            } else {
+                "Read".to_string()
+            }
+        }
+        "Write" => {
+            if let Some(path) = json.get("file_path").and_then(|v| v.as_str()) {
+                format!("Writing {}", truncate_string(path, 60))
+            } else {
+                "Write".to_string()
+            }
+        }
+        "Edit" => {
+            if let Some(path) = json.get("file_path").and_then(|v| v.as_str()) {
+                format!("Editing {}", truncate_string(path, 60))
+            } else {
+                "Edit".to_string()
+            }
+        }
+        "Grep" => {
+            let pattern = json.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+            let path = json.get("path").and_then(|v| v.as_str());
+            if let Some(p) = path {
+                format!("Searching '{}' in {}", truncate_string(pattern, 30), truncate_string(p, 25))
+            } else {
+                format!("Searching '{}'", truncate_string(pattern, 40))
+            }
+        }
+        "Glob" => {
+            if let Some(pattern) = json.get("pattern").and_then(|v| v.as_str()) {
+                format!("Finding {}", truncate_string(pattern, 50))
+            } else {
+                "Glob".to_string()
+            }
+        }
+        "Bash" => {
+            if let Some(cmd) = json.get("command").and_then(|v| v.as_str()) {
+                format!("Running: {}", truncate_string(cmd, 50))
+            } else {
+                "Bash".to_string()
+            }
+        }
+        "Task" => {
+            if let Some(desc) = json.get("description").and_then(|v| v.as_str()) {
+                format!("Spawning: {}", truncate_string(desc, 50))
+            } else {
+                "Task".to_string()
+            }
+        }
+        "WebFetch" => {
+            if let Some(url) = json.get("url").and_then(|v| v.as_str()) {
+                format!("Fetching {}", truncate_string(url, 55))
+            } else {
+                "WebFetch".to_string()
+            }
+        }
+        "WebSearch" => {
+            if let Some(query) = json.get("query").and_then(|v| v.as_str()) {
+                format!("Searching: {}", truncate_string(query, 50))
+            } else {
+                "WebSearch".to_string()
+            }
+        }
+        "TodoWrite" => "Updating todos".to_string(),
+        "NotebookEdit" => {
+            if let Some(path) = json.get("notebook_path").and_then(|v| v.as_str()) {
+                format!("Editing notebook {}", truncate_string(path, 45))
+            } else {
+                "NotebookEdit".to_string()
+            }
+        }
+        _ => function_name.to_string(),
+    }
+}
+
 // ============================================================================
 // SPOQ ASCII Logo
 // ============================================================================
