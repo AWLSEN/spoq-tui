@@ -481,6 +481,13 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
                 data,
             })
         }
+        crate::sse::SseEvent::ThreadUpdated { thread_id, title, description } => {
+            SseEvent::ThreadUpdated(crate::events::ThreadUpdatedEvent {
+                thread_id,
+                title,
+                description,
+            })
+        }
     }
 }
 
@@ -588,6 +595,24 @@ mod tests {
                 assert_eq!(err.code, Some("ERR001".to_string()));
             }
             _ => panic!("Expected Error event"),
+        }
+    }
+
+    #[test]
+    fn test_convert_sse_event_thread_updated() {
+        let sse_event = crate::sse::SseEvent::ThreadUpdated {
+            thread_id: "thread-123".to_string(),
+            title: Some("New Title".to_string()),
+            description: Some("New Description".to_string()),
+        };
+        let event = convert_sse_event(sse_event);
+        match event {
+            SseEvent::ThreadUpdated(thread_updated) => {
+                assert_eq!(thread_updated.thread_id, "thread-123");
+                assert_eq!(thread_updated.title, Some("New Title".to_string()));
+                assert_eq!(thread_updated.description, Some("New Description".to_string()));
+            }
+            _ => panic!("Expected ThreadUpdated event"),
         }
     }
 

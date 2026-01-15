@@ -219,6 +219,19 @@ pub struct OAuthConsentRequiredEvent {
     pub skill_name: Option<String>,
 }
 
+/// Thread updated event - sent when thread metadata is changed
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ThreadUpdatedEvent {
+    /// The ID of the thread that was updated
+    pub thread_id: String,
+    /// Updated title (if changed)
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Updated description (if changed)
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
 /// Wrapper enum for all possible SSE event types from Conductor.
 ///
 /// Use pattern matching to handle different event types during stream processing.
@@ -272,6 +285,8 @@ pub enum SseEvent {
     SkillsInjected(SkillsInjectedEvent),
     /// OAuth consent required
     OAuthConsentRequired(OAuthConsentRequiredEvent),
+    /// Thread updated
+    ThreadUpdated(ThreadUpdatedEvent),
 }
 
 /// Wraps an SSE event with its metadata.
@@ -749,6 +764,44 @@ mod tests {
                 assert_eq!(e.tokens_freed, 2500);
             }
             _ => panic!("Expected ContextCompacted event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_thread_updated() {
+        let json = r#"{
+            "type": "thread_updated",
+            "thread_id": "thread-abc-123",
+            "title": "Updated Title",
+            "description": "Updated Description"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::ThreadUpdated(e) => {
+                assert_eq!(e.thread_id, "thread-abc-123");
+                assert_eq!(e.title, Some("Updated Title".to_string()));
+                assert_eq!(e.description, Some("Updated Description".to_string()));
+            }
+            _ => panic!("Expected ThreadUpdated event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_thread_updated_partial() {
+        let json = r#"{
+            "type": "thread_updated",
+            "thread_id": "thread-xyz-789"
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::ThreadUpdated(e) => {
+                assert_eq!(e.thread_id, "thread-xyz-789");
+                assert_eq!(e.title, None);
+                assert_eq!(e.description, None);
+            }
+            _ => panic!("Expected ThreadUpdated event"),
         }
     }
 
