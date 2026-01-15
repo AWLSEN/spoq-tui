@@ -13,6 +13,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
+use serde_json::Value;
 
 use crate::app::{App, Focus, ProgrammingMode, Screen};
 use crate::markdown::render_markdown;
@@ -103,6 +104,25 @@ fn extract_short_model_name(full_name: &str) -> &str {
         "sonnet"
     } else {
         full_name.split('-').next().unwrap_or(full_name)
+    }
+}
+
+/// Returns the appropriate Unicode icon for a given tool function name
+fn get_tool_icon(function_name: &str) -> &'static str {
+    match function_name {
+        "Read" => "📄",
+        "Write" => "📝",
+        "Edit" => "✏️",
+        "Bash" => "$",
+        "Grep" => "🔍",
+        "Glob" => "🔍",
+        "Task" => "🤖",
+        "WebFetch" => "🌐",
+        "WebSearch" => "🌐",
+        "TodoWrite" => "📋",
+        "AskUserQuestion" => "❓",
+        "NotebookEdit" => "📓",
+        _ => "⚙️"
     }
 }
 
