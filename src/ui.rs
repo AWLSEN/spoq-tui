@@ -1625,6 +1625,88 @@ fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
     }
 }
 
+/// Render a result preview line for a tool event
+///
+/// Returns an indented, dim-colored line showing a truncated preview of the tool result.
+/// Success results are shown in dim gray, error results in red.
+///
+/// # Returns
+/// - `None` if the tool has no result preview or the preview is empty
+/// - `Some(Line)` with the formatted, truncated preview
+#[allow(dead_code)]
+pub fn render_tool_result_preview(tool: &ToolEvent) -> Option<Line<'static>> {
+    // Return None if no result preview
+    let preview = tool.result_preview.as_ref()?;
+
+    // Return None if preview is empty
+    if preview.trim().is_empty() {
+        return None;
+    }
+
+    // Truncate the preview:
+    // - Find first 2 newlines or ~150 chars, whichever comes first
+    // - Append '...' if truncated
+    let truncated = truncate_preview(preview, 150, 2);
+
+    // Choose color based on error state
+    let color = if tool.result_is_error {
+        COLOR_TOOL_ERROR
+    } else {
+        Color::Rgb(100, 100, 100) // dim gray for success
+    };
+
+    Some(Line::from(vec![
+        Span::styled("    ", Style::default()), // 4 spaces indentation
+        Span::styled(truncated, Style::default().fg(color)),
+    ]))
+}
+
+/// Truncate a preview string to fit display constraints
+///
+/// Limits output to `max_chars` characters or `max_lines` newlines, whichever is reached first.
+/// Replaces newlines with spaces for single-line display and appends "..." if truncated.
+#[allow(dead_code)]
+pub fn truncate_preview(text: &str, max_chars: usize, max_lines: usize) -> String {
+    let mut result = String::new();
+    let mut char_count = 0;
+    let mut line_count = 0;
+    let mut truncated = false;
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            line_count += 1;
+            if line_count >= max_lines {
+                truncated = true;
+                break;
+            }
+            // Replace newline with space for single-line display
+            result.push(' ');
+            char_count += 1;
+        } else {
+            result.push(ch);
+            char_count += 1;
+        }
+
+        if char_count >= max_chars {
+            truncated = true;
+            break;
+        }
+    }
+
+    // Check if there's more content after where we stopped
+    if !truncated && char_count < text.chars().count() {
+        truncated = true;
+    }
+
+    if truncated {
+        // Trim trailing whitespace before adding ellipsis
+        let trimmed = result.trim_end();
+        format!("{}...", trimmed)
+    } else {
+        result.trim_end().to_string()
+    }
+}
+
 /// Render the messages area with user messages and AI responses
 fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     use crate::models::MessageRole;
