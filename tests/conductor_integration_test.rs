@@ -122,7 +122,7 @@ fn test_conductor_error_display_formatting() {
 
 #[tokio::test]
 async fn test_stream_request_with_different_configurations() {
-    let client = ConductorClient::default();
+    let _client = ConductorClient::default();
 
     // Test with minimal request - validates the request can be created
     let request1 = StreamRequest {

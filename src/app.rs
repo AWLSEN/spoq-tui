@@ -2730,7 +2730,7 @@ mod tests {
     #[test]
     fn test_tool_tracker_independent_per_app() {
         let mut app1 = App::default();
-        let mut app2 = App::default();
+        let app2 = App::default();
 
         // Add tool to app1
         app1.tool_tracker.register_tool(
