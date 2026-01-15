@@ -3991,4 +3991,155 @@ mod tests {
         assert!(!preview.contains('\n'));
         assert!(preview.contains("line1 line2"));
     }
+
+    #[test]
+    fn test_format_tool_args_empty_json() {
+        // Empty JSON object should return just the tool name
+        assert_eq!(format_tool_args("Read", "{}"), "Read");
+        assert_eq!(format_tool_args("Bash", "{}"), "Bash");
+        assert_eq!(format_tool_args("Write", "{}"), "Write");
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_exactly_at_boundary() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
+        // Create text exactly at the 150 character boundary
+        let exactly_150 = "a".repeat(150);
+        tool.set_result(&exactly_150, false);
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_some());
+
+        let line = result.unwrap();
+        let preview = &line.spans[1].content;
+        // At exactly 150 chars, truncate_preview will still truncate (>= condition)
+        assert_eq!(preview.len(), 153); // 150 chars + "..."
+        assert!(preview.ends_with("..."));
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_one_char_over_boundary() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
+        // Create text one character over the boundary
+        let one_over = "a".repeat(151);
+        tool.set_result(&one_over, false);
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_some());
+
+        let line = result.unwrap();
+        let preview = &line.spans[1].content;
+        // Should truncate
+        assert_eq!(preview.len(), 153); // 150 chars + "..."
+        assert!(preview.ends_with("..."));
+    }
+
+    #[test]
+    fn test_render_tool_event_complete_with_all_fields() {
+        let mut tool = crate::models::ToolEvent::new("tool_456".to_string(), "Read".to_string());
+
+        // Set args
+        tool.args_json = r#"{"file_path": "/path/to/file.rs"}"#.to_string();
+        tool.args_display = Some("Reading /path/to/file.rs".to_string());
+
+        // Set result
+        tool.set_result("File contents here", false);
+
+        // Mark as done
+        tool.complete();
+
+        let line = render_tool_event(&tool, 0);
+
+        // Verify the line contains expected elements
+        let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain icon
+        assert!(line_text.contains("📄"));
+
+        // Should contain formatted args
+        assert!(line_text.contains("Reading /path/to/file.rs"));
+
+        // Should show completed status (checkmark)
+        assert!(line_text.contains("✓"));
+    }
+
+    #[test]
+    fn test_render_tool_event_with_error_result() {
+        let mut tool = crate::models::ToolEvent::new("tool_789".to_string(), "Bash".to_string());
+
+        // Set args
+        tool.args_json = r#"{"command": "invalid_command"}"#.to_string();
+        tool.args_display = Some("invalid_command".to_string());
+
+        // Set error result
+        tool.set_result("Command not found", true);
+
+        // Mark as done
+        tool.fail();
+
+        let line = render_tool_event(&tool, 0);
+
+        // Verify the line contains expected elements
+        let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain Bash icon ($ not ⚙️)
+        assert!(line_text.contains("$"));
+
+        // Should contain command
+        assert!(line_text.contains("invalid_command"));
+
+        // Should show error status
+        assert!(line_text.contains("✗"));
+    }
+
+    #[test]
+    fn test_render_tool_event_streaming_state() {
+        let mut tool = crate::models::ToolEvent::new("tool_streaming".to_string(), "Grep".to_string());
+
+        // Set args but don't finish
+        tool.args_json = r#"{"pattern": "test"}"#.to_string();
+        tool.args_display = Some("Searching 'test'".to_string());
+
+        // Tool is still running (not finished)
+        let line = render_tool_event(&tool, 0);
+
+        let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain icon
+        assert!(line_text.contains("🔍"));
+
+        // Should contain search pattern
+        assert!(line_text.contains("Searching 'test'"));
+
+        // Should show spinner or running indicator (not checkmark or X)
+        assert!(!line_text.contains("✓"));
+        assert!(!line_text.contains("✗"));
+    }
+
+    #[test]
+    fn test_render_tool_event_full_lifecycle() {
+        // Test the full flow: tool starts, args stream in, result comes back
+
+        // Step 1: Tool starts with no args yet
+        let mut tool = crate::models::ToolEvent::new("tool_lifecycle".to_string(), "Write".to_string());
+        let line1 = render_tool_event(&tool, 0);
+        let text1: String = line1.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text1.contains("📝"));  // Write icon is 📝 not ✍
+        assert!(text1.contains("Write")); // Default to tool name
+
+        // Step 2: Args stream in
+        tool.args_json = r#"{"file_path": "/tmp/test.txt", "content": "Hello"}"#.to_string();
+        tool.args_display = Some("Writing /tmp/test.txt".to_string());
+        let line2 = render_tool_event(&tool, 0);
+        let text2: String = line2.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text2.contains("Writing /tmp/test.txt"));
+
+        // Step 3: Result comes back
+        tool.set_result("File written successfully", false);
+        tool.complete();
+        let line3 = render_tool_event(&tool, 0);
+        let text3: String = line3.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text3.contains("✓")); // Success indicator
+        assert!(text3.contains("Writing /tmp/test.txt"));
+    }
 }
