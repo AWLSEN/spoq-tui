@@ -206,11 +206,24 @@ pub struct App {
 impl App {
     /// Create a new App instance
     pub fn new() -> Result<Self> {
-        Self::with_client(Arc::new(ConductorClient::new()))
+        Self::with_debug(None)
+    }
+
+    /// Create a new App instance with an optional debug event sender
+    pub fn with_debug(debug_tx: Option<DebugEventSender>) -> Result<Self> {
+        Self::with_client_and_debug(Arc::new(ConductorClient::new()), debug_tx)
     }
 
     /// Create a new App instance with a custom ConductorClient
     pub fn with_client(client: Arc<ConductorClient>) -> Result<Self> {
+        Self::with_client_and_debug(client, None)
+    }
+
+    /// Create a new App instance with a custom ConductorClient and optional debug sender
+    pub fn with_client_and_debug(
+        client: Arc<ConductorClient>,
+        debug_tx: Option<DebugEventSender>,
+    ) -> Result<Self> {
         // Initialize empty cache - will be populated by initialize()
         let cache = ThreadCache::new();
 
@@ -243,7 +256,7 @@ impl App {
             tool_tracker: ToolTracker::new(),
             subagent_tracker: SubagentTracker::new(),
             todos: Vec::new(),
-            debug_tx: None,
+            debug_tx,
         })
     }
 

@@ -1,4 +1,5 @@
 use spoq::app::{App, AppMessage, Focus, Screen};
+use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
 
@@ -16,6 +17,7 @@ use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,6 +25,14 @@ async fn main() -> Result<()> {
 
     // Setup panic hook to ensure terminal cleanup on panic
     setup_panic_hook();
+
+    // Create debug channel and start debug server (optional - continues without if fails)
+    let (debug_tx, debug_server_handle) = start_debug_system().await;
+
+    // Open debug dashboard in browser (fire and forget)
+    if debug_tx.is_some() {
+        let _ = open::that("http://localhost:3030");
+    }
 
     // Setup terminal
     enable_raw_mode()?;
@@ -34,8 +44,8 @@ async fn main() -> Result<()> {
     // Clear the terminal
     terminal.clear()?;
 
-    // Initialize application state
-    let mut app = App::new()?;
+    // Initialize application state with debug sender
+    let mut app = App::with_debug(debug_tx)?;
 
     // Load threads from backend (async initialization)
     app.initialize().await;
@@ -46,7 +56,34 @@ async fn main() -> Result<()> {
     // Restore terminal
     restore_terminal(&mut terminal)?;
 
+    // Cleanup debug server if it was started
+    if let Some(handle) = debug_server_handle {
+        handle.abort();
+    }
+
     result
+}
+
+/// Start the debug system (channel + server).
+///
+/// Returns the debug event sender and server handle if successful.
+/// If the debug server fails to start, returns None for both - the app continues without debug.
+async fn start_debug_system() -> (Option<spoq::debug::DebugEventSender>, Option<JoinHandle<()>>) {
+    // Create debug channel with capacity for 1000 events
+    let (debug_tx, _debug_rx) = create_debug_channel(1000);
+
+    // Try to start the debug server
+    match start_debug_server(debug_tx.clone()).await {
+        Ok((handle, _state_snapshot)) => {
+            // Server started successfully
+            (Some(debug_tx), Some(handle))
+        }
+        Err(_e) => {
+            // Server failed to start - continue without debug
+            // (e.g., port 3030 already in use)
+            (None, None)
+        }
+    }
 }
 
 /// Setup panic hook to restore terminal on panic
