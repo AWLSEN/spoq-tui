@@ -112,6 +112,7 @@ impl ThreadCache {
 
         let thread = Thread {
             id: thread_id.clone(),
+            description: None,
             title,
             preview: first_message,
             updated_at: now,
@@ -173,6 +174,7 @@ impl ThreadCache {
 
         let thread = Thread {
             id: thread_id.clone(),
+            description: None,
             title,
             preview: first_message.clone(),
             updated_at: now,
@@ -402,6 +404,7 @@ impl ThreadCache {
         let thread = Thread {
             id: pending_id.clone(),
             title,
+            description: None,
             preview: first_message.clone(),
             updated_at: now,
             thread_type,
@@ -638,6 +641,45 @@ impl ThreadCache {
         }
     }
 
+    /// Update thread metadata (title and/or description).
+    ///
+    /// This method updates the title and/or description of a thread.
+    /// It handles pending-to-real ID mapping automatically.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread ID (can be pending or real ID)
+    /// * `title` - Optional new title for the thread
+    /// * `description` - Optional new description for the thread
+    ///
+    /// # Returns
+    /// `true` if the thread was found and updated, `false` if the thread doesn't exist.
+    pub fn update_thread_metadata(
+        &mut self,
+        thread_id: &str,
+        title: Option<String>,
+        description: Option<String>,
+    ) -> bool {
+        // Resolve the thread_id in case it's a pending ID that was reconciled
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        // Try to get the thread
+        if let Some(thread) = self.threads.get_mut(&resolved_id) {
+            // Update title if provided
+            if let Some(new_title) = title {
+                thread.title = new_title;
+            }
+
+            // Update description if provided
+            if let Some(new_description) = description {
+                thread.description = Some(new_description);
+            }
+
+            true
+        } else {
+            false
+        }
+    }
+
     /// Populate with stub data for development/testing
     fn populate_stub_data(&mut self) {
         let now = Utc::now();
@@ -646,6 +688,7 @@ impl ThreadCache {
         let thread1 = Thread {
             id: "thread-001".to_string(),
             title: "Rust async patterns".to_string(),
+            description: None,
             preview: "Here's how you can use tokio for async...".to_string(),
             updated_at: now - Duration::minutes(5),
             thread_type: ThreadType::default(),
@@ -684,6 +727,7 @@ impl ThreadCache {
         let thread2 = Thread {
             id: "thread-002".to_string(),
             title: "TUI design best practices".to_string(),
+            description: None,
             preview: "For TUI apps, consider using ratatui...".to_string(),
             updated_at: now - Duration::hours(2),
             thread_type: ThreadType::default(),
@@ -722,6 +766,7 @@ impl ThreadCache {
         let thread3 = Thread {
             id: "thread-003".to_string(),
             title: "API integration help".to_string(),
+            description: None,
             preview: "You can use reqwest for HTTP requests...".to_string(),
             updated_at: now - Duration::days(1),
             thread_type: ThreadType::default(),
@@ -829,6 +874,7 @@ mod tests {
         let thread = Thread {
             id: "new-thread".to_string(),
             title: "New Thread".to_string(),
+            description: None,
             preview: "Preview text".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::default(),
@@ -851,6 +897,7 @@ mod tests {
         let updated_thread = Thread {
             id: "thread-001".to_string(),
             title: "Updated Title".to_string(),
+            description: None,
             preview: "Updated preview".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::default(),
@@ -959,6 +1006,7 @@ mod tests {
         cache.upsert_thread(Thread {
             id: "thread-1".to_string(),
             title: "Updated Thread 1".to_string(),
+            description: None,
             preview: "New preview".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::default(),
@@ -2191,5 +2239,285 @@ mod tests {
         // Should not find any message with reasoning
         let idx = cache.find_last_reasoning_message_index(&thread_id);
         assert!(idx.is_none());
+    }
+
+    // ============= update_thread_metadata Tests =============
+
+    #[test]
+    fn test_update_thread_metadata_title_only() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original title".to_string());
+
+        // Update only the title
+        let updated = cache.update_thread_metadata(
+            &thread_id,
+            Some("New title".to_string()),
+            None,
+        );
+
+        assert!(updated);
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "New title");
+        assert!(thread.description.is_none());
+    }
+
+    #[test]
+    fn test_update_thread_metadata_description_only() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original title".to_string());
+
+        // Update only the description
+        let updated = cache.update_thread_metadata(
+            &thread_id,
+            None,
+            Some("New description".to_string()),
+        );
+
+        assert!(updated);
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Original title");
+        assert_eq!(thread.description, Some("New description".to_string()));
+    }
+
+    #[test]
+    fn test_update_thread_metadata_both_fields() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original title".to_string());
+
+        // Update both title and description
+        let updated = cache.update_thread_metadata(
+            &thread_id,
+            Some("New title".to_string()),
+            Some("New description".to_string()),
+        );
+
+        assert!(updated);
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "New title");
+        assert_eq!(thread.description, Some("New description".to_string()));
+    }
+
+    #[test]
+    fn test_update_thread_metadata_neither_field() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original title".to_string());
+
+        // Call with both None (no-op)
+        let updated = cache.update_thread_metadata(&thread_id, None, None);
+
+        assert!(updated);
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Original title");
+        assert!(thread.description.is_none());
+    }
+
+    #[test]
+    fn test_update_thread_metadata_nonexistent_thread() {
+        let mut cache = ThreadCache::new();
+
+        // Try to update a thread that doesn't exist
+        let updated = cache.update_thread_metadata(
+            "nonexistent-thread",
+            Some("Title".to_string()),
+            Some("Description".to_string()),
+        );
+
+        assert!(!updated);
+    }
+
+    #[test]
+    fn test_update_thread_metadata_with_pending_id() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Original title".to_string(), ThreadType::Normal);
+
+        // Reconcile with backend ID
+        cache.reconcile_thread_id(&pending_id, "real-backend-123", None);
+
+        // Update using the old pending ID (should redirect to real ID)
+        let updated = cache.update_thread_metadata(
+            &pending_id,
+            Some("Updated title".to_string()),
+            Some("Updated description".to_string()),
+        );
+
+        assert!(updated);
+
+        // Check that the real thread was updated
+        let thread = cache.get_thread("real-backend-123").unwrap();
+        assert_eq!(thread.title, "Updated title");
+        assert_eq!(thread.description, Some("Updated description".to_string()));
+
+        // Old pending ID should not exist as a thread
+        assert!(cache.get_thread(&pending_id).is_none());
+    }
+
+    #[test]
+    fn test_update_thread_metadata_with_real_id() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Original title".to_string(), ThreadType::Normal);
+
+        // Reconcile with backend ID
+        cache.reconcile_thread_id(&pending_id, "real-backend-123", None);
+
+        // Update using the real backend ID
+        let updated = cache.update_thread_metadata(
+            "real-backend-123",
+            Some("Updated title".to_string()),
+            Some("Updated description".to_string()),
+        );
+
+        assert!(updated);
+
+        let thread = cache.get_thread("real-backend-123").unwrap();
+        assert_eq!(thread.title, "Updated title");
+        assert_eq!(thread.description, Some("Updated description".to_string()));
+    }
+
+    #[test]
+    fn test_update_thread_metadata_overwrites_existing_description() {
+        let mut cache = ThreadCache::new();
+        let now = Utc::now();
+
+        // Create a thread with an existing description
+        let thread = Thread {
+            id: "thread-123".to_string(),
+            title: "Original title".to_string(),
+            description: Some("Original description".to_string()),
+            preview: "Preview".to_string(),
+            updated_at: now,
+            thread_type: ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: now,
+        };
+        cache.upsert_thread(thread);
+
+        // Update the description
+        let updated = cache.update_thread_metadata(
+            "thread-123",
+            None,
+            Some("New description".to_string()),
+        );
+
+        assert!(updated);
+        let thread = cache.get_thread("thread-123").unwrap();
+        assert_eq!(thread.description, Some("New description".to_string()));
+    }
+
+    #[test]
+    fn test_update_thread_metadata_multiple_updates() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original title".to_string());
+
+        // First update: set title
+        cache.update_thread_metadata(
+            &thread_id,
+            Some("Title 1".to_string()),
+            None,
+        );
+
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Title 1");
+        assert!(thread.description.is_none());
+
+        // Second update: set description
+        cache.update_thread_metadata(
+            &thread_id,
+            None,
+            Some("Description 1".to_string()),
+        );
+
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Title 1");
+        assert_eq!(thread.description, Some("Description 1".to_string()));
+
+        // Third update: change both
+        cache.update_thread_metadata(
+            &thread_id,
+            Some("Title 2".to_string()),
+            Some("Description 2".to_string()),
+        );
+
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Title 2");
+        assert_eq!(thread.description, Some("Description 2".to_string()));
+    }
+
+    #[test]
+    fn test_update_thread_metadata_preserves_other_fields() {
+        let mut cache = ThreadCache::new();
+        let now = Utc::now();
+
+        // Create a thread with specific fields
+        let thread = Thread {
+            id: "thread-123".to_string(),
+            title: "Original title".to_string(),
+            description: None,
+            preview: "Preview text".to_string(),
+            updated_at: now,
+            thread_type: ThreadType::Programming,
+            model: Some("gpt-4".to_string()),
+            permission_mode: Some("auto".to_string()),
+            message_count: 42,
+            created_at: now,
+        };
+        cache.upsert_thread(thread);
+
+        // Update metadata
+        cache.update_thread_metadata(
+            "thread-123",
+            Some("New title".to_string()),
+            Some("New description".to_string()),
+        );
+
+        // Verify other fields are preserved
+        let thread = cache.get_thread("thread-123").unwrap();
+        assert_eq!(thread.preview, "Preview text");
+        assert_eq!(thread.thread_type, ThreadType::Programming);
+        assert_eq!(thread.model, Some("gpt-4".to_string()));
+        assert_eq!(thread.permission_mode, Some("auto".to_string()));
+        assert_eq!(thread.message_count, 42);
+    }
+
+    #[test]
+    fn test_update_thread_metadata_with_stub_data() {
+        let mut cache = ThreadCache::with_stub_data();
+
+        // Update one of the stub threads
+        let updated = cache.update_thread_metadata(
+            "thread-001",
+            Some("Updated Rust patterns".to_string()),
+            Some("Thread about async Rust".to_string()),
+        );
+
+        assert!(updated);
+
+        let thread = cache.get_thread("thread-001").unwrap();
+        assert_eq!(thread.title, "Updated Rust patterns");
+        assert_eq!(thread.description, Some("Thread about async Rust".to_string()));
+    }
+
+    #[test]
+    fn test_update_thread_metadata_during_streaming() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Original title".to_string());
+
+        // While streaming is in progress
+        cache.append_to_message(&thread_id, "Some content");
+
+        // Update metadata during streaming
+        let updated = cache.update_thread_metadata(
+            &thread_id,
+            Some("Updated title".to_string()),
+            Some("Updated description".to_string()),
+        );
+
+        assert!(updated);
+        assert!(cache.is_thread_streaming(&thread_id));
+
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Updated title");
+        assert_eq!(thread.description, Some("Updated description".to_string()));
     }
 }

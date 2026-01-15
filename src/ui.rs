@@ -578,8 +578,31 @@ fn render_right_panel(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 
         lines.push(Line::from(title_spans));
 
-        // Thread type indicator and model info (centered)
+        // Thread description (centered, if present)
         let thread = &cached_threads[i];
+        if let Some(description) = &thread.description {
+            if !description.is_empty() {
+                // Max description length is 35 chars (card inner width minus borders and padding)
+                let max_desc_len = 35;
+                let display_desc = if description.len() > max_desc_len {
+                    format!("{}...", &description[..max_desc_len.saturating_sub(3)])
+                } else {
+                    description.clone()
+                };
+
+                lines.push(Line::from(vec![
+                    Span::raw(padding_str.clone()),
+                    Span::styled("│   ", Style::default().fg(card_border_color)),
+                    Span::styled(display_desc.clone(), Style::default().fg(COLOR_DIM)),
+                    Span::styled(
+                        format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + display_desc.len())),
+                        Style::default().fg(card_border_color),
+                    ),
+                ]));
+            }
+        }
+
+        // Thread type indicator and model info (centered)
         let type_indicator = match thread.thread_type {
             crate::models::ThreadType::Normal => "[N]",
             crate::models::ThreadType::Programming => "[P]",
@@ -788,13 +811,17 @@ fn render_mode_indicator(frame: &mut Frame, area: Rect, mode_line: Line<'static>
 
 /// Render the thread title header with connection status
 fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
-    // Get thread title from cache or default
-    let thread_title = app
+    // Get thread title and description from cache or default
+    let thread_info = app
         .active_thread_id
         .as_ref()
-        .and_then(|id| app.cache.get_thread(id))
+        .and_then(|id| app.cache.get_thread(id));
+
+    let thread_title = thread_info
         .map(|t| t.title.as_str())
         .unwrap_or("New Conversation");
+
+    let thread_description = thread_info.and_then(|t| t.description.clone());
 
     // Connection status indicator
     let (status_icon, status_text, status_color) = if app.connection_status {
@@ -817,18 +844,30 @@ fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(area);
 
-    // Thread title (left side)
-    let title_text = Line::from(vec![
-        Span::styled("  Thread: ", Style::default().fg(COLOR_DIM)),
-        Span::styled(
-            thread_title,
-            Style::default()
-                .fg(COLOR_HEADER)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ]);
+    // Thread title and description (left side)
+    let mut title_lines = vec![
+        Line::from(vec![
+            Span::styled("  Thread: ", Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                thread_title,
+                Style::default()
+                    .fg(COLOR_HEADER)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    ];
 
-    let title_widget = Paragraph::new(title_text).block(header_block);
+    // Add description line if present and not empty
+    if let Some(description) = thread_description {
+        if !description.is_empty() {
+            title_lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(description, Style::default().fg(COLOR_DIM)),
+            ]));
+        }
+    }
+
+    let title_widget = Paragraph::new(title_lines).block(header_block);
     frame.render_widget(title_widget, header_chunks[0]);
 
     // Connection status (right side)
@@ -1792,6 +1831,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "test-thread".to_string(),
             title: "Test Thread".to_string(),
+            description: None,
             preview: "Test preview".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::default(),
@@ -2359,6 +2399,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "conv-thread".to_string(),
             title: "Normal Thread".to_string(),
+            description: None,
             preview: "Just chatting".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -2405,6 +2446,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "prog-thread".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2446,6 +2488,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "prog-thread".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2487,6 +2530,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "prog-thread".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2621,6 +2665,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Normal Thread".to_string(),
+            description: None,
             preview: "A normal conversation".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -2661,6 +2706,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "A programming conversation".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2701,6 +2747,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Thread with Model".to_string(),
+            description: None,
             preview: "Testing model display".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -2745,6 +2792,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Thread without Model".to_string(),
+            description: None,
             preview: "No model info".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2785,6 +2833,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Normal".to_string(),
+            description: None,
             preview: "Normal thread".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -2798,6 +2847,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "thread-2".to_string(),
             title: "Programming".to_string(),
+            description: None,
             preview: "Programming thread".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2879,6 +2929,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "prog-thread".to_string(),
             title: "Programming".to_string(),
+            description: None,
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2906,6 +2957,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: "conv-thread".to_string(),
             title: "Normal".to_string(),
+            description: None,
             preview: "Chat".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,

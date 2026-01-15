@@ -114,6 +114,9 @@ pub struct Thread {
     /// Title derived from first message (API sends as "name")
     #[serde(default, deserialize_with = "deserialize_nullable_string", alias = "name")]
     pub title: String,
+    /// Description of the thread
+    #[serde(default)]
+    pub description: Option<String>,
     /// Preview of the last message
     #[serde(default)]
     pub preview: String,
@@ -417,6 +420,7 @@ mod tests {
         let thread = Thread {
             id: "thread-123".to_string(),
             title: "Test Thread".to_string(),
+            description: None,
             preview: "Hello, world!".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Normal,
@@ -437,6 +441,7 @@ mod tests {
         let thread = Thread {
             id: "thread-456".to_string(),
             title: "Code Review".to_string(),
+            description: None,
             preview: "Let me review this code".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Programming,
@@ -455,6 +460,7 @@ mod tests {
         let thread = Thread {
             id: "thread-456".to_string(),
             title: "Serialization Test".to_string(),
+            description: None,
             preview: "Testing JSON".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Normal,
@@ -475,6 +481,7 @@ mod tests {
         let thread = Thread {
             id: "thread-789".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "Code discussion".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Programming,
@@ -563,6 +570,45 @@ mod tests {
         // "name" from API should map to "title" in struct
         assert_eq!(thread.title, "My Thread Title");
         assert_eq!(thread.thread_type, ThreadType::Normal);
+    }
+
+    #[test]
+    fn test_thread_deserialization_with_description() {
+        // Test deserializing thread with description field
+        let json = r#"{
+            "id": "thread-desc",
+            "name": "Thread with Description",
+            "description": "This is a thread description",
+            "preview": "Preview text",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "type": "normal"
+        }"#;
+
+        let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(thread.id, "thread-desc");
+        assert_eq!(thread.title, "Thread with Description");
+        assert_eq!(thread.description, Some("This is a thread description".to_string()));
+        assert_eq!(thread.preview, "Preview text");
+    }
+
+    #[test]
+    fn test_thread_deserialization_without_description() {
+        // Test backward compatibility - deserialize JSON without description field
+        let json = r#"{
+            "id": "thread-no-desc",
+            "name": "Thread without Description",
+            "preview": "Preview text",
+            "updated_at": "2024-01-01T00:00:00Z",
+            "type": "normal"
+        }"#;
+
+        let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(thread.id, "thread-no-desc");
+        assert_eq!(thread.title, "Thread without Description");
+        assert_eq!(thread.description, None);
+        assert_eq!(thread.preview, "Preview text");
     }
 
     #[test]

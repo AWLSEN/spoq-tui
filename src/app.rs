@@ -80,6 +80,12 @@ pub enum AppMessage {
         tokens_used: Option<u32>,
         token_limit: Option<u32>,
     },
+    /// Thread metadata updated
+    ThreadMetadataUpdated {
+        thread_id: String,
+        title: Option<String>,
+        description: Option<String>,
+    },
 }
 
 /// Represents which screen is currently active
@@ -557,6 +563,13 @@ impl App {
                                 });
                             }
                         }
+                        SseEvent::ThreadUpdated(thread_event) => {
+                            let _ = message_tx.send(AppMessage::ThreadMetadataUpdated {
+                                thread_id: thread_event.thread_id,
+                                title: thread_event.title,
+                                description: thread_event.description,
+                            });
+                        }
                         // Ignore other event types for now
                         _ => {}
                     }
@@ -765,6 +778,10 @@ impl App {
                 if let Some(limit) = token_limit {
                     self.session_state.set_context_token_limit(limit);
                 }
+            }
+            AppMessage::ThreadMetadataUpdated { thread_id, title, description } => {
+                // Update thread metadata in cache
+                self.cache.update_thread_metadata(&thread_id, title, description);
             }
         }
     }
@@ -1120,6 +1137,7 @@ mod tests {
         app.cache.upsert_thread(crate::models::Thread {
             id: existing_id.clone(),
             title: "Existing Thread".to_string(),
+            description: None,
             preview: "Previous message".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::default(),
@@ -1770,6 +1788,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "thread-conv".to_string(),
             title: "Normal Thread".to_string(),
+            description: None,
             preview: "Just talking".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -1792,6 +1811,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "thread-prog".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "Code review".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -1822,6 +1842,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Thread".to_string(),
+            description: None,
             preview: "Content".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -1839,6 +1860,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "thread-1".to_string(),
             title: "Thread".to_string(),
+            description: None,
             preview: "Content".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -1862,6 +1884,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "prog-thread-123".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "Code discussion".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
@@ -1898,6 +1921,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "prog-thread-456".to_string(),
             title: "Programming Thread".to_string(),
+            description: None,
             preview: "Code discussion".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
@@ -1992,6 +2016,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "prog-thread".to_string(),
             title: "Programming".to_string(),
+            description: None,
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2017,6 +2042,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "conv-thread".to_string(),
             title: "Normal".to_string(),
+            description: None,
             preview: "Chat".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -2053,6 +2079,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "prog-thread".to_string(),
             title: "Programming".to_string(),
+            description: None,
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2085,6 +2112,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "conv-thread".to_string(),
             title: "Normal".to_string(),
+            description: None,
             preview: "Chat".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Normal,
@@ -2111,6 +2139,7 @@ mod tests {
         let thread = crate::models::Thread {
             id: "prog-thread".to_string(),
             title: "Programming".to_string(),
+            description: None,
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
@@ -2142,6 +2171,7 @@ mod tests {
         let thread1 = crate::models::Thread {
             id: "prog-1".to_string(),
             title: "Programming 1".to_string(),
+            description: None,
             preview: "Code 1".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
@@ -2162,6 +2192,7 @@ mod tests {
         let thread2 = crate::models::Thread {
             id: "prog-2".to_string(),
             title: "Programming 2".to_string(),
+            description: None,
             preview: "Code 2".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: ThreadType::Programming,
