@@ -282,35 +282,50 @@ impl ThreadCache {
         }
     }
 
-    /// Complete a tool event in the streaming message
+    /// Complete a tool event in a message
+    /// Searches recent messages (not just streaming) since ToolCompleted can arrive after StreamDone
     pub fn complete_tool_in_message(&mut self, thread_id: &str, tool_call_id: &str) {
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
 
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
-            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
-                streaming_msg.complete_tool_event(tool_call_id);
+            // Search recent messages for the tool (ToolCompleted can arrive after message is finalized)
+            for msg in messages.iter_mut().rev().take(5) {
+                if msg.get_tool_event(tool_call_id).is_some() {
+                    msg.complete_tool_event(tool_call_id);
+                    return;
+                }
             }
         }
     }
 
-    /// Fail a tool event in the streaming message
+    /// Fail a tool event in a message
+    /// Searches recent messages (not just streaming) since ToolCompleted can arrive after StreamDone
     pub fn fail_tool_in_message(&mut self, thread_id: &str, tool_call_id: &str) {
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
 
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
-            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
-                streaming_msg.fail_tool_event(tool_call_id);
+            // Search recent messages for the tool
+            for msg in messages.iter_mut().rev().take(5) {
+                if msg.get_tool_event(tool_call_id).is_some() {
+                    msg.fail_tool_event(tool_call_id);
+                    return;
+                }
             }
         }
     }
 
-    /// Set the display_name for a tool event in the streaming message
+    /// Set the display_name for a tool event in a message
+    /// Searches recent messages (not just streaming) since events can arrive after StreamDone
     pub fn set_tool_display_name(&mut self, thread_id: &str, tool_call_id: &str, display_name: String) {
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
 
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
-            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
-                streaming_msg.set_tool_display_name(tool_call_id, display_name);
+            // Search recent messages for the tool
+            for msg in messages.iter_mut().rev().take(5) {
+                if msg.get_tool_event(tool_call_id).is_some() {
+                    msg.set_tool_display_name(tool_call_id, display_name);
+                    return;
+                }
             }
         }
     }
