@@ -3839,4 +3839,144 @@ mod tests {
         // Grep without pattern
         assert_eq!(format_tool_args("Grep", r#"{}"#), "Searching ''");
     }
+
+    #[test]
+    fn test_truncate_preview_no_truncation_needed() {
+        let text = "Short text";
+        let result = truncate_preview(text, 150, 2);
+        assert_eq!(result, "Short text");
+        assert!(!result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_preview_truncates_at_max_chars() {
+        let text = "a".repeat(200);
+        let result = truncate_preview(&text, 150, 2);
+        assert_eq!(result.len(), 153); // 150 chars + "..."
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_preview_truncates_at_max_lines() {
+        let text = "line1\nline2\nline3\nline4";
+        let result = truncate_preview(text, 150, 2);
+        // Should stop at 2nd newline
+        assert_eq!(result, "line1 line2...");
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_preview_replaces_newlines_with_spaces() {
+        let text = "line1\nline2";
+        let result = truncate_preview(text, 150, 10);
+        assert_eq!(result, "line1 line2");
+        assert!(!result.contains('\n'));
+    }
+
+    #[test]
+    fn test_truncate_preview_trims_trailing_whitespace() {
+        let text = "line1\nline2\n";
+        let result = truncate_preview(text, 150, 1);
+        assert_eq!(result, "line1...");
+        assert!(!result.ends_with(" ..."));
+    }
+
+    #[test]
+    fn test_truncate_preview_empty_text() {
+        let text = "";
+        let result = truncate_preview(text, 150, 2);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_truncate_preview_only_newlines() {
+        let text = "\n\n\n";
+        let result = truncate_preview(text, 150, 2);
+        assert_eq!(result, "...");
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_none_when_no_preview() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
+        tool.result_preview = None;
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_none_when_empty_preview() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
+        tool.result_preview = Some("   ".to_string());
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_success_result() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Read".to_string());
+        tool.set_result("File contents here", false);
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_some());
+
+        let line = result.unwrap();
+        assert_eq!(line.spans.len(), 2);
+        // First span is indentation
+        assert_eq!(line.spans[0].content, "    ");
+        // Second span contains the preview
+        assert_eq!(line.spans[1].content, "File contents here");
+        // Success results use dim gray color
+        assert_eq!(line.spans[1].style.fg, Some(Color::Rgb(100, 100, 100)));
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_error_result() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Read".to_string());
+        tool.set_result("File not found", true);
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_some());
+
+        let line = result.unwrap();
+        assert_eq!(line.spans.len(), 2);
+        // Second span contains the preview
+        assert_eq!(line.spans[1].content, "File not found");
+        // Error results use red color
+        assert_eq!(line.spans[1].style.fg, Some(COLOR_TOOL_ERROR));
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_truncates_long_content() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
+        let long_content = "a".repeat(200);
+        tool.set_result(&long_content, false);
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_some());
+
+        let line = result.unwrap();
+        let preview = &line.spans[1].content;
+        assert!(preview.len() <= 153); // 150 chars + "..."
+        assert!(preview.ends_with("..."));
+    }
+
+    #[test]
+    fn test_render_tool_result_preview_multiline_truncation() {
+        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
+        let multiline = "line1\nline2\nline3\nline4\nline5";
+        tool.set_result(multiline, false);
+
+        let result = render_tool_result_preview(&tool);
+        assert!(result.is_some());
+
+        let line = result.unwrap();
+        let preview = &line.spans[1].content;
+        // Should truncate at 2 lines
+        assert!(preview.ends_with("..."));
+        // Newlines should be replaced with spaces
+        assert!(!preview.contains('\n'));
+        assert!(preview.contains("line1 line2"));
+    }
 }
