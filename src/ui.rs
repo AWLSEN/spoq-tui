@@ -810,7 +810,7 @@ fn render_mode_indicator(frame: &mut Frame, area: Rect, mode_line: Line<'static>
     frame.render_widget(indicator, area);
 }
 
-/// Render the thread title header with connection status
+/// Render the thread title header with connection status and badges
 fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
     // Get thread title and description from cache or default
     let thread_info = app
@@ -824,24 +824,61 @@ fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
 
     let thread_description = thread_info.and_then(|t| t.description.clone());
 
-    // Connection status indicator
-    let (status_icon, status_text, status_color) = if app.connection_status {
-        ("●", "Connected", Color::LightGreen)
-    } else {
-        ("○", "Disconnected", Color::Red)
-    };
+    // Get model name from thread if available
+    let model_name = thread_info.and_then(|t| t.model.clone());
 
     let header_block = Block::default()
         .borders(Borders::BOTTOM)
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(COLOR_BORDER));
 
-    // Split header area to show title on left and connection status on right
+    // Build badges
+    let mut badges: Vec<Span> = Vec::new();
+
+    // Skills badge [skills: N]
+    let skills_count = app.session_state.skills.len();
+    if skills_count > 0 {
+        badges.push(Span::styled(
+            format!("[skills: {}] ", skills_count),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
+
+    // Context badge [ctx: 45K/100K] or [ctx: -/-]
+    let ctx_badge = match (app.session_state.context_tokens_used, app.session_state.context_token_limit) {
+        (Some(used), Some(limit)) => {
+            // Format as K if over 1000
+            let used_str = if used >= 1000 { format!("{}K", used / 1000) } else { format!("{}", used) };
+            let limit_str = if limit >= 1000 { format!("{}K", limit / 1000) } else { format!("{}", limit) };
+            format!("[ctx: {}/{}] ", used_str, limit_str)
+        }
+        _ => "[ctx: -/-] ".to_string(),
+    };
+    badges.push(Span::styled(ctx_badge, Style::default().fg(COLOR_DIM)));
+
+    // Model badge [sonnet] if available
+    if let Some(model) = model_name {
+        badges.push(Span::styled(
+            format!("[{}] ", model),
+            Style::default().fg(Color::Magenta),
+        ));
+    }
+
+    // Connection status badge
+    let (status_icon, status_color) = if app.connection_status {
+        ("●", Color::LightGreen)
+    } else {
+        ("○", Color::Red)
+    };
+    badges.push(Span::styled(status_icon, Style::default().fg(status_color)));
+
+    // Split header area to show title on left and badges on right
+    let badges_width = badges.iter().map(|s| s.content.len()).sum::<usize>() + 2;
     let header_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Min(20),     // Thread title (flexible)
-            Constraint::Length(20),  // Connection status (fixed)
+            Constraint::Min(20),                        // Thread title (flexible)
+            Constraint::Length(badges_width as u16),   // Badges (dynamic)
         ])
         .split(area);
 
@@ -871,17 +908,10 @@ fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
     let title_widget = Paragraph::new(title_lines).block(header_block);
     frame.render_widget(title_widget, header_chunks[0]);
 
-    // Connection status (right side)
-    let status_text_widget = Line::from(vec![
-        Span::styled("[", Style::default().fg(COLOR_DIM)),
-        Span::styled(status_icon, Style::default().fg(status_color)),
-        Span::styled("] ", Style::default().fg(COLOR_DIM)),
-        Span::styled(status_text, Style::default().fg(status_color)),
-    ]);
-
-    let status_widget = Paragraph::new(status_text_widget)
+    // Badges (right side)
+    let badges_widget = Paragraph::new(Line::from(badges))
         .alignment(ratatui::layout::Alignment::Right);
-    frame.render_widget(status_widget, header_chunks[1]);
+    frame.render_widget(badges_widget, header_chunks[1]);
 }
 
 /// Maximum number of inline error banners to display
@@ -2106,8 +2136,8 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(
-            buffer_str.contains("Disconnected"),
-            "Conversation screen should show Disconnected status"
+            buffer_str.contains("○"),
+            "Conversation screen should show disconnected status icon (○)"
         );
     }
 
@@ -2132,8 +2162,8 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(
-            buffer_str.contains("Connected"),
-            "Conversation screen should show Connected status"
+            buffer_str.contains("●"),
+            "Conversation screen should show connected status icon (●)"
         );
     }
 
