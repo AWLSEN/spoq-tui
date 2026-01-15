@@ -270,6 +270,40 @@ impl ThreadCache {
         }
     }
 
+    /// Start a tool event in the streaming message
+    /// Adds a new running ToolEvent to the message's segments
+    pub fn start_tool_in_message(&mut self, thread_id: &str, tool_call_id: String, function_name: String) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.start_tool_event(tool_call_id, function_name);
+            }
+        }
+    }
+
+    /// Complete a tool event in the streaming message
+    pub fn complete_tool_in_message(&mut self, thread_id: &str, tool_call_id: &str) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.complete_tool_event(tool_call_id);
+            }
+        }
+    }
+
+    /// Fail a tool event in the streaming message
+    pub fn fail_tool_in_message(&mut self, thread_id: &str, tool_call_id: &str) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.fail_tool_event(tool_call_id);
+            }
+        }
+    }
+
     /// Toggle reasoning collapsed state for a specific message in a thread
     /// Used by 't' key handler to expand/collapse thinking blocks
     pub fn toggle_message_reasoning(&mut self, thread_id: &str, message_index: usize) -> bool {

@@ -737,10 +737,14 @@ impl App {
             AppMessage::ToolStarted { tool_call_id, tool_name } => {
                 // Register tool in tracker with display status for UI
                 self.tool_tracker.register_tool_started(
-                    tool_call_id,
-                    tool_name,
+                    tool_call_id.clone(),
+                    tool_name.clone(),
                     self.tick_count,
                 );
+                // Also add tool event inline to the streaming message
+                if let Some(thread_id) = &self.active_thread_id {
+                    self.cache.start_tool_in_message(thread_id, tool_call_id, tool_name);
+                }
             }
             AppMessage::ToolExecuting { tool_call_id, display_name } => {
                 // Update tool to executing state with display info
@@ -754,6 +758,14 @@ impl App {
                     summary,
                     self.tick_count,
                 );
+                // Also update the inline tool event in the streaming message
+                if let Some(thread_id) = &self.active_thread_id {
+                    if success {
+                        self.cache.complete_tool_in_message(thread_id, &tool_call_id);
+                    } else {
+                        self.cache.fail_tool_in_message(thread_id, &tool_call_id);
+                    }
+                }
             }
             AppMessage::SkillsInjected { skills } => {
                 // Update session state with injected skills
