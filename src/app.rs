@@ -548,7 +548,16 @@ impl App {
                                 token_limit: context_event.token_limit,
                             });
                         }
-                        // Ignore other event types for now (reasoning, etc.)
+                        SseEvent::Reasoning(reasoning_event) => {
+                            // Send reasoning tokens to be displayed in collapsible block
+                            if !reasoning_event.text.is_empty() {
+                                let _ = message_tx.send(AppMessage::ReasoningToken {
+                                    thread_id: thread_id.to_string(),
+                                    token: reasoning_event.text,
+                                });
+                            }
+                        }
+                        // Ignore other event types for now
                         _ => {}
                     }
                 }
@@ -635,6 +644,13 @@ impl App {
             AppMessage::StreamToken { thread_id, token } => {
                 self.cache.append_to_message(&thread_id, &token);
                 // Auto-scroll to bottom when new content arrives, but only for the active thread
+                if self.active_thread_id.as_ref() == Some(&thread_id) {
+                    self.conversation_scroll = 0;
+                }
+            }
+            AppMessage::ReasoningToken { thread_id, token } => {
+                self.cache.append_reasoning_to_message(&thread_id, &token);
+                // Auto-scroll to bottom when new reasoning content arrives, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
                     self.conversation_scroll = 0;
                 }
