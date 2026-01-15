@@ -2640,4 +2640,129 @@ mod tests {
             "Input should use solid border when not streaming"
         );
     }
+
+    // ============= Permission Prompt Tests =============
+
+    #[test]
+    fn test_get_permission_preview_returns_context() {
+        use crate::state::session::PermissionRequest;
+
+        let perm = PermissionRequest {
+            permission_id: "perm-test".to_string(),
+            tool_name: "Write".to_string(),
+            description: "Write file".to_string(),
+            context: Some("/home/user/test.rs".to_string()),
+            tool_input: None,
+        };
+
+        let preview = get_permission_preview(&perm);
+        assert_eq!(preview, "/home/user/test.rs");
+    }
+
+    #[test]
+    fn test_get_permission_preview_extracts_file_path() {
+        use crate::state::session::PermissionRequest;
+
+        let perm = PermissionRequest {
+            permission_id: "perm-test".to_string(),
+            tool_name: "Read".to_string(),
+            description: "Read file".to_string(),
+            context: None,
+            tool_input: Some(serde_json::json!({"file_path": "/var/log/test.log"})),
+        };
+
+        let preview = get_permission_preview(&perm);
+        assert_eq!(preview, "/var/log/test.log");
+    }
+
+    #[test]
+    fn test_get_permission_preview_extracts_command() {
+        use crate::state::session::PermissionRequest;
+
+        let perm = PermissionRequest {
+            permission_id: "perm-test".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: Some(serde_json::json!({"command": "npm install"})),
+        };
+
+        let preview = get_permission_preview(&perm);
+        assert_eq!(preview, "npm install");
+    }
+
+    #[test]
+    fn test_get_permission_preview_truncates_long_content() {
+        use crate::state::session::PermissionRequest;
+
+        let long_content = "a".repeat(150);
+        let perm = PermissionRequest {
+            permission_id: "perm-test".to_string(),
+            tool_name: "Write".to_string(),
+            description: "Write file".to_string(),
+            context: None,
+            tool_input: Some(serde_json::json!({"content": long_content})),
+        };
+
+        let preview = get_permission_preview(&perm);
+        assert!(preview.len() < 110); // Should be truncated
+        assert!(preview.ends_with("..."));
+    }
+
+    #[test]
+    fn test_get_permission_preview_empty_when_no_info() {
+        use crate::state::session::PermissionRequest;
+
+        let perm = PermissionRequest {
+            permission_id: "perm-test".to_string(),
+            tool_name: "Custom".to_string(),
+            description: "Custom action".to_string(),
+            context: None,
+            tool_input: None,
+        };
+
+        let preview = get_permission_preview(&perm);
+        assert!(preview.is_empty());
+    }
+
+    #[test]
+    fn test_permission_prompt_renders_with_pending_permission() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Set up a pending permission
+        use crate::state::session::PermissionRequest;
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-render".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run npm install".to_string(),
+            context: Some("npm install".to_string()),
+            tool_input: None,
+        });
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Check that permission prompt elements are rendered
+        assert!(
+            buffer_str.contains("Permission Required"),
+            "Should show 'Permission Required' title"
+        );
+        assert!(
+            buffer_str.contains("Bash"),
+            "Should show tool name"
+        );
+    }
 }
