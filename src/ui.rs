@@ -1106,6 +1106,8 @@ mod tests {
             tick_count: 0,
             conversation_scroll: 0,
             programming_mode: ProgrammingMode::default(),
+            session_state: crate::state::SessionState::new(),
+            tool_tracker: crate::state::ToolTracker::new(),
         }
     }
 

@@ -2,7 +2,7 @@ use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::events::SseEvent;
 use crate::models::{StreamRequest, ThreadType};
-use crate::state::{Task, Thread};
+use crate::state::{SessionState, Task, Thread, ToolTracker};
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
 use futures_util::StreamExt;
@@ -110,6 +110,10 @@ pub struct App {
     pub conversation_scroll: u16,
     /// Current programming mode for Claude interactions
     pub programming_mode: ProgrammingMode,
+    /// Session-level state (skills, permissions, oauth, tokens)
+    pub session_state: SessionState,
+    /// Tool execution tracking per-thread (cleared on done event)
+    pub tool_tracker: ToolTracker,
 }
 
 impl App {
@@ -148,6 +152,8 @@ impl App {
             tick_count: 0,
             conversation_scroll: 0,
             programming_mode: ProgrammingMode::default(),
+            session_state: SessionState::new(),
+            tool_tracker: ToolTracker::new(),
         })
     }
 
@@ -157,9 +163,23 @@ impl App {
     /// or returns an error, the app starts with empty state and sets connection
     /// status to false.
     pub async fn initialize(&mut self) {
+        // DEBUG: Log to file
+        use std::io::Write;
+        let mut log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/spoq_debug.log")
+            .unwrap();
+        writeln!(log_file, "=== initialize() called ===").ok();
+
         // Fetch threads from server
         match self.client.fetch_threads().await {
             Ok(threads) => {
+                // DEBUG: Log each thread's fields
+                for thread in &threads {
+                    writeln!(log_file, "Thread id={}, title='{}', preview='{}'",
+                        thread.id, thread.title, thread.preview).ok();
+                }
                 // Populate cache with threads from server
                 for thread in threads {
                     self.cache.upsert_thread(thread);
@@ -383,6 +403,11 @@ impl App {
                 Ok(event) => {
                     match event {
                         SseEvent::Content(content_event) => {
+                            // Skip empty tokens (from ping/skills_injected/etc)
+                            if content_event.text.is_empty() {
+                                continue;
+                            }
+
                             let _ = message_tx.send(AppMessage::StreamToken {
                                 thread_id: thread_id.to_string(),
                                 token: content_event.text,

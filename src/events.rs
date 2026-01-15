@@ -8,17 +8,22 @@ use serde::Deserialize;
 /// Metadata included with every SSE event.
 ///
 /// Contains sequencing and identification information for event ordering
-/// and session/thread association.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+/// and session/thread association. Backend sends these fields flattened
+/// at root level of each event JSON.
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
 pub struct EventMeta {
     /// Sequence number for ordering events within a stream
-    pub seq: u64,
+    #[serde(default)]
+    pub seq: Option<u64>,
     /// Session ID for the current streaming session
-    pub session_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
     /// Thread ID this event belongs to
-    pub thread_id: String,
-    /// ISO 8601 timestamp of when the event was generated
-    pub timestamp: String,
+    #[serde(default)]
+    pub thread_id: Option<String>,
+    /// Unix timestamp in milliseconds of when the event was generated
+    #[serde(default)]
+    pub timestamp: Option<u64>,
 }
 
 /// Content streaming event containing assistant text output.
@@ -28,6 +33,9 @@ pub struct EventMeta {
 pub struct ContentEvent {
     /// A chunk of text content from the assistant's response
     pub text: String,
+    /// Event metadata (seq, timestamp, session_id, thread_id)
+    #[serde(flatten, default)]
+    pub meta: EventMeta,
 }
 
 /// Reasoning/thinking event containing assistant's internal reasoning.
@@ -58,7 +66,8 @@ pub struct ToolCallArgumentEvent {
     /// The tool call this argument chunk belongs to
     pub tool_call_id: String,
     /// A chunk of the argument JSON being built
-    pub argument_chunk: String,
+    #[serde(alias = "argument_chunk")]
+    pub chunk: String,
 }
 
 /// Event indicating tool execution has begun.
@@ -68,6 +77,12 @@ pub struct ToolCallArgumentEvent {
 pub struct ToolExecutingEvent {
     /// The tool call that is now executing
     pub tool_call_id: String,
+    /// Human-readable display name for the tool
+    #[serde(default)]
+    pub display_name: Option<String>,
+    /// Optional URL associated with the tool execution
+    #[serde(default)]
+    pub url: Option<String>,
 }
 
 /// Event containing the result of a tool execution.
@@ -154,7 +169,25 @@ pub struct PermissionRequestEvent {
     /// Human-readable description of what permission is being requested
     pub description: String,
     /// The tool that requires permission to execute
-    pub tool: String,
+    #[serde(alias = "tool")]
+    pub tool_name: String,
+    /// The input parameters for the tool call
+    #[serde(default)]
+    pub tool_input: Option<serde_json::Value>,
+    /// The specific tool call ID that needs permission
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
+}
+
+/// Event indicating context has been compacted.
+///
+/// Sent when the conversation context is compacted to free up space.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ContextCompactedEvent {
+    /// Number of messages removed during compaction
+    pub messages_removed: u32,
+    /// Number of tokens freed by the compaction
+    pub tokens_freed: u32,
 }
 
 /// Wrapper enum for all possible SSE event types from Conductor.
@@ -204,6 +237,8 @@ pub enum SseEvent {
     Subagent(SubagentEvent),
     /// Permission request
     PermissionRequest(PermissionRequestEvent),
+    /// Context compacted
+    ContextCompacted(ContextCompactedEvent),
 }
 
 /// Wraps an SSE event with its metadata.
@@ -229,14 +264,14 @@ mod tests {
             "seq": 42,
             "session_id": "sess-abc123",
             "thread_id": "thread-xyz789",
-            "timestamp": "2024-01-15T10:30:00Z"
+            "timestamp": 1736956800000
         }"#;
 
         let meta: EventMeta = serde_json::from_str(json).unwrap();
-        assert_eq!(meta.seq, 42);
-        assert_eq!(meta.session_id, "sess-abc123");
-        assert_eq!(meta.thread_id, "thread-xyz789");
-        assert_eq!(meta.timestamp, "2024-01-15T10:30:00Z");
+        assert_eq!(meta.seq, Some(42));
+        assert_eq!(meta.session_id, Some("sess-abc123".to_string()));
+        assert_eq!(meta.thread_id, Some("thread-xyz789".to_string()));
+        assert_eq!(meta.timestamp, Some(1736956800000));
     }
 
     #[test]
@@ -269,12 +304,25 @@ mod tests {
     fn test_parse_tool_call_argument_event() {
         let json = r#"{
             "tool_call_id": "tc-12345",
+            "chunk": "{\"path\": \"/src"
+        }"#;
+
+        let event: ToolCallArgumentEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.tool_call_id, "tc-12345");
+        assert_eq!(event.chunk, "{\"path\": \"/src");
+    }
+
+    #[test]
+    fn test_parse_tool_call_argument_event_with_alias() {
+        // Test backward compatibility with old field name
+        let json = r#"{
+            "tool_call_id": "tc-12345",
             "argument_chunk": "{\"path\": \"/src"
         }"#;
 
         let event: ToolCallArgumentEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.tool_call_id, "tc-12345");
-        assert_eq!(event.argument_chunk, "{\"path\": \"/src");
+        assert_eq!(event.chunk, "{\"path\": \"/src");
     }
 
     #[test]
@@ -282,6 +330,21 @@ mod tests {
         let json = r#"{"tool_call_id": "tc-12345"}"#;
         let event: ToolExecutingEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.tool_call_id, "tc-12345");
+        assert_eq!(event.display_name, None);
+        assert_eq!(event.url, None);
+    }
+
+    #[test]
+    fn test_parse_tool_executing_event_with_fields() {
+        let json = r#"{
+            "tool_call_id": "tc-12345",
+            "display_name": "Read File",
+            "url": "https://example.com/tool"
+        }"#;
+        let event: ToolExecutingEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.tool_call_id, "tc-12345");
+        assert_eq!(event.display_name, Some("Read File".to_string()));
+        assert_eq!(event.url, Some("https://example.com/tool".to_string()));
     }
 
     #[test]
@@ -373,13 +436,60 @@ mod tests {
         let json = r#"{
             "permission_id": "perm-55555",
             "description": "Execute shell command: ls -la",
+            "tool_name": "bash"
+        }"#;
+
+        let event: PermissionRequestEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.permission_id, "perm-55555");
+        assert_eq!(event.description, "Execute shell command: ls -la");
+        assert_eq!(event.tool_name, "bash");
+        assert_eq!(event.tool_input, None);
+        assert_eq!(event.tool_call_id, None);
+    }
+
+    #[test]
+    fn test_parse_permission_request_event_with_tool_alias() {
+        // Test backward compatibility with old field name
+        let json = r#"{
+            "permission_id": "perm-55555",
+            "description": "Execute shell command: ls -la",
             "tool": "bash"
         }"#;
 
         let event: PermissionRequestEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.permission_id, "perm-55555");
         assert_eq!(event.description, "Execute shell command: ls -la");
-        assert_eq!(event.tool, "bash");
+        assert_eq!(event.tool_name, "bash");
+    }
+
+    #[test]
+    fn test_parse_permission_request_event_with_all_fields() {
+        let json = r#"{
+            "permission_id": "perm-55555",
+            "description": "Execute shell command: ls -la",
+            "tool_name": "bash",
+            "tool_input": {"command": "ls -la"},
+            "tool_call_id": "tc-99999"
+        }"#;
+
+        let event: PermissionRequestEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.permission_id, "perm-55555");
+        assert_eq!(event.description, "Execute shell command: ls -la");
+        assert_eq!(event.tool_name, "bash");
+        assert!(event.tool_input.is_some());
+        assert_eq!(event.tool_call_id, Some("tc-99999".to_string()));
+    }
+
+    #[test]
+    fn test_parse_context_compacted_event() {
+        let json = r#"{
+            "messages_removed": 5,
+            "tokens_freed": 1500
+        }"#;
+
+        let event: ContextCompactedEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.messages_removed, 5);
+        assert_eq!(event.tokens_freed, 1500);
     }
 
     #[test]
@@ -437,14 +547,14 @@ mod tests {
         let json = r#"{
             "type": "tool_call_argument",
             "tool_call_id": "tc-99999",
-            "argument_chunk": "partial_arg"
+            "chunk": "partial_arg"
         }"#;
 
         let event: SseEvent = serde_json::from_str(json).unwrap();
         match event {
             SseEvent::ToolCallArgument(e) => {
                 assert_eq!(e.tool_call_id, "tc-99999");
-                assert_eq!(e.argument_chunk, "partial_arg");
+                assert_eq!(e.chunk, "partial_arg");
             }
             _ => panic!("Expected ToolCallArgument event"),
         }
@@ -577,7 +687,7 @@ mod tests {
             "type": "permission_request",
             "permission_id": "perm-001",
             "description": "Allow file write",
-            "tool": "write"
+            "tool_name": "write"
         }"#;
 
         let event: SseEvent = serde_json::from_str(json).unwrap();
@@ -585,9 +695,27 @@ mod tests {
             SseEvent::PermissionRequest(e) => {
                 assert_eq!(e.permission_id, "perm-001");
                 assert_eq!(e.description, "Allow file write");
-                assert_eq!(e.tool, "write");
+                assert_eq!(e.tool_name, "write");
             }
             _ => panic!("Expected PermissionRequest event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_context_compacted() {
+        let json = r#"{
+            "type": "context_compacted",
+            "messages_removed": 10,
+            "tokens_freed": 2500
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::ContextCompacted(e) => {
+                assert_eq!(e.messages_removed, 10);
+                assert_eq!(e.tokens_freed, 2500);
+            }
+            _ => panic!("Expected ContextCompacted event"),
         }
     }
 
@@ -600,7 +728,7 @@ mod tests {
                 "seq": 1,
                 "session_id": "sess-123",
                 "thread_id": "thread-456",
-                "timestamp": "2024-01-15T12:00:00Z"
+                "timestamp": 1736956800000
             }
         }"#;
 
@@ -613,10 +741,10 @@ mod tests {
             _ => panic!("Expected Content event"),
         }
 
-        assert_eq!(event_with_meta.meta.seq, 1);
-        assert_eq!(event_with_meta.meta.session_id, "sess-123");
-        assert_eq!(event_with_meta.meta.thread_id, "thread-456");
-        assert_eq!(event_with_meta.meta.timestamp, "2024-01-15T12:00:00Z");
+        assert_eq!(event_with_meta.meta.seq, Some(1));
+        assert_eq!(event_with_meta.meta.session_id, Some("sess-123".to_string()));
+        assert_eq!(event_with_meta.meta.thread_id, Some("thread-456".to_string()));
+        assert_eq!(event_with_meta.meta.timestamp, Some(1736956800000));
     }
 
     #[test]
@@ -631,6 +759,7 @@ mod tests {
     fn test_content_event_clone() {
         let event = ContentEvent {
             text: "Hello".to_string(),
+            meta: EventMeta::default(),
         };
         let cloned = event.clone();
         assert_eq!(event, cloned);
@@ -651,12 +780,15 @@ mod tests {
     fn test_sse_event_equality() {
         let event1 = SseEvent::Content(ContentEvent {
             text: "Hello".to_string(),
+            meta: EventMeta::default(),
         });
         let event2 = SseEvent::Content(ContentEvent {
             text: "Hello".to_string(),
+            meta: EventMeta::default(),
         });
         let event3 = SseEvent::Content(ContentEvent {
             text: "World".to_string(),
+            meta: EventMeta::default(),
         });
 
         assert_eq!(event1, event2);
