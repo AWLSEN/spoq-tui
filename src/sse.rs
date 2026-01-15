@@ -83,6 +83,48 @@ pub enum SseEvent {
         tokens_used: Option<u32>,
         token_limit: Option<u32>,
     },
+    /// Tool call started
+    ToolCallStart {
+        tool_name: String,
+        tool_call_id: String,
+    },
+    /// Tool call argument chunk
+    ToolCallArgument {
+        tool_call_id: String,
+        chunk: String,
+    },
+    /// Tool executing with display info
+    ToolExecuting {
+        tool_call_id: String,
+        display_name: Option<String>,
+        url: Option<String>,
+    },
+    /// Tool result
+    ToolResult {
+        tool_call_id: String,
+        result: String,
+    },
+    /// Reasoning/thinking content
+    Reasoning {
+        text: String,
+    },
+    /// Permission request
+    PermissionRequest {
+        permission_id: String,
+        tool_name: String,
+        description: String,
+        tool_call_id: Option<String>,
+        tool_input: Option<serde_json::Value>,
+    },
+    /// Todos updated
+    TodosUpdated {
+        todos: serde_json::Value,
+    },
+    /// Subagent event - stores raw data for flexibility
+    Subagent {
+        subagent_type: String,
+        data: serde_json::Value,
+    },
 }
 
 /// Raw data payload from SSE data lines
@@ -323,6 +365,108 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
             Ok(SseEvent::Error {
                 message: payload.message,
                 code: payload.code,
+            })
+        }
+        "tool_call_start" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::ToolCallStart {
+                tool_name: v.get("tool_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            })
+        }
+        "tool_call_argument" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::ToolCallArgument {
+                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                chunk: v.get("chunk").or(v.get("argument_chunk")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            })
+        }
+        "tool_executing" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::ToolExecuting {
+                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                display_name: v.get("display_name").and_then(|v| v.as_str()).map(String::from),
+                url: v.get("url").and_then(|v| v.as_str()).map(String::from),
+            })
+        }
+        "tool_result" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            let result = v.get("result")
+                .map(|r| if r.is_string() { r.as_str().unwrap().to_string() } else { r.to_string() })
+                .unwrap_or_default();
+            Ok(SseEvent::ToolResult {
+                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                result,
+            })
+        }
+        "reasoning" | "thinking" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            let text = v.get("text")
+                .or(v.get("content"))
+                .or(v.get("data"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Ok(SseEvent::Reasoning { text })
+        }
+        "permission_request" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::PermissionRequest {
+                permission_id: v.get("permission_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                tool_name: v.get("tool_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                description: v.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).map(String::from),
+                tool_input: v.get("tool_input").cloned(),
+            })
+        }
+        "todos_updated" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            let todos = v.get("todos").cloned().unwrap_or(serde_json::Value::Array(vec![]));
+            Ok(SseEvent::TodosUpdated { todos })
+        }
+        "subagent" | "subagent_started" | "subagent_progress" | "subagent_completed" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            // Determine subagent_type - either from JSON field or from event type name
+            let subagent_type = v.get("subagent_type")
+                .or(v.get("event_type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(event_type)
+                .to_string();
+            Ok(SseEvent::Subagent {
+                subagent_type,
+                data: v,
             })
         }
         // Ignore unknown events instead of erroring (more resilient)

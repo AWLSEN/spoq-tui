@@ -428,6 +428,59 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
             tokens_used,
             token_limit,
         }),
+        crate::sse::SseEvent::ToolCallStart { tool_name, tool_call_id } => {
+            SseEvent::ToolCallStart(crate::events::ToolCallStartEvent {
+                tool_name,
+                tool_call_id,
+            })
+        }
+        crate::sse::SseEvent::ToolCallArgument { tool_call_id, chunk } => {
+            SseEvent::ToolCallArgument(crate::events::ToolCallArgumentEvent {
+                tool_call_id,
+                chunk,
+            })
+        }
+        crate::sse::SseEvent::ToolExecuting { tool_call_id, display_name, url } => {
+            SseEvent::ToolExecuting(crate::events::ToolExecutingEvent {
+                tool_call_id,
+                display_name,
+                url,
+            })
+        }
+        crate::sse::SseEvent::ToolResult { tool_call_id, result } => {
+            SseEvent::ToolResult(crate::events::ToolResultEvent {
+                tool_call_id,
+                result,
+            })
+        }
+        crate::sse::SseEvent::Reasoning { text } => {
+            SseEvent::Reasoning(crate::events::ReasoningEvent { text })
+        }
+        crate::sse::SseEvent::PermissionRequest {
+            permission_id,
+            tool_name,
+            description,
+            tool_call_id,
+            tool_input,
+        } => SseEvent::PermissionRequest(crate::events::PermissionRequestEvent {
+            permission_id,
+            tool_name,
+            description,
+            tool_call_id,
+            tool_input,
+        }),
+        crate::sse::SseEvent::TodosUpdated { todos } => {
+            // Parse todos from Value to Vec<TodoItem>
+            let todo_items: Vec<crate::events::TodoItem> = serde_json::from_value(todos)
+                .unwrap_or_default();
+            SseEvent::TodosUpdated(crate::events::TodosUpdatedEvent { todos: todo_items })
+        }
+        crate::sse::SseEvent::Subagent { subagent_type, data } => {
+            SseEvent::Subagent(crate::events::SubagentEvent {
+                subagent_type,
+                data,
+            })
+        }
     }
 }
 
