@@ -69,6 +69,25 @@ fn format_tokens(tokens: u32) -> String {
 pub const COLOR_PROGRESS_BG: Color = Color::DarkGray;
 
 // ============================================================================
+// Claude Code Tool Colors
+// ============================================================================
+
+/// Tool icon color - Claude Code blue
+const COLOR_TOOL_ICON: Color = Color::Rgb(0, 122, 204); // blue #007ACC
+
+/// Tool running state - gray
+const COLOR_TOOL_RUNNING: Color = Color::Rgb(128, 128, 128); // gray for running state
+
+/// Tool success state - Claude Code green
+const COLOR_TOOL_SUCCESS: Color = Color::Rgb(4, 181, 117); // green #04B575
+
+/// Tool error state - red
+const COLOR_TOOL_ERROR: Color = Color::Red;
+
+/// Tool result preview - dim gray
+const COLOR_TOOL_RESULT: Color = Color::Rgb(100, 100, 100); // dim gray for preview
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
