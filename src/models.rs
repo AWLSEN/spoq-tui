@@ -1215,4 +1215,318 @@ mod tests {
         assert_eq!(message.reasoning_content, deserialized.reasoning_content);
         assert_eq!(message.reasoning_collapsed, deserialized.reasoning_collapsed);
     }
+
+    // ============================================================================
+    // ToolEvent Tests
+    // ============================================================================
+
+    #[test]
+    fn test_tool_event_new() {
+        let event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        assert_eq!(event.tool_call_id, "tool-123");
+        assert_eq!(event.function_name, "Read");
+        assert_eq!(event.display_name, None);
+        assert_eq!(event.status, ToolEventStatus::Running);
+        assert!(event.completed_at.is_none());
+        assert!(event.duration_secs.is_none());
+    }
+
+    #[test]
+    fn test_tool_event_complete() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Bash".to_string());
+
+        assert_eq!(event.status, ToolEventStatus::Running);
+        assert!(event.completed_at.is_none());
+        assert!(event.duration_secs.is_none());
+
+        event.complete();
+
+        assert_eq!(event.status, ToolEventStatus::Complete);
+        assert!(event.completed_at.is_some());
+        assert!(event.duration_secs.is_some());
+    }
+
+    #[test]
+    fn test_tool_event_fail() {
+        let mut event = ToolEvent::new("tool-456".to_string(), "Grep".to_string());
+
+        assert_eq!(event.status, ToolEventStatus::Running);
+
+        event.fail();
+
+        assert_eq!(event.status, ToolEventStatus::Failed);
+        assert!(event.completed_at.is_some());
+        assert!(event.duration_secs.is_some());
+    }
+
+    #[test]
+    fn test_tool_event_with_display_name() {
+        let mut event = ToolEvent::new("tool-789".to_string(), "Read".to_string());
+        event.display_name = Some("Read src/main.rs".to_string());
+
+        assert_eq!(event.function_name, "Read");
+        assert_eq!(event.display_name, Some("Read src/main.rs".to_string()));
+    }
+
+    #[test]
+    fn test_tool_event_serialization() {
+        let event = ToolEvent::new("tool-999".to_string(), "Write".to_string());
+
+        let json = serde_json::to_string(&event).expect("Failed to serialize");
+        let deserialized: ToolEvent = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(event.tool_call_id, deserialized.tool_call_id);
+        assert_eq!(event.function_name, deserialized.function_name);
+        assert_eq!(event.display_name, deserialized.display_name);
+        assert_eq!(event.status, deserialized.status);
+    }
+
+    #[test]
+    fn test_tool_event_serialization_with_display_name() {
+        let mut event = ToolEvent::new("tool-111".to_string(), "Bash".to_string());
+        event.display_name = Some("cd /path && ls".to_string());
+
+        let json = serde_json::to_string(&event).expect("Failed to serialize");
+        let deserialized: ToolEvent = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(event.display_name, deserialized.display_name);
+        assert_eq!(deserialized.display_name, Some("cd /path && ls".to_string()));
+    }
+
+    #[test]
+    fn test_message_segment_text() {
+        let segment = MessageSegment::Text("Hello, world!".to_string());
+
+        if let MessageSegment::Text(text) = segment {
+            assert_eq!(text, "Hello, world!");
+        } else {
+            panic!("Expected MessageSegment::Text");
+        }
+    }
+
+    #[test]
+    fn test_message_segment_tool_event() {
+        let event = ToolEvent::new("tool-222".to_string(), "Glob".to_string());
+        let segment = MessageSegment::ToolEvent(event);
+
+        if let MessageSegment::ToolEvent(e) = segment {
+            assert_eq!(e.tool_call_id, "tool-222");
+            assert_eq!(e.function_name, "Glob");
+        } else {
+            panic!("Expected MessageSegment::ToolEvent");
+        }
+    }
+
+    #[test]
+    fn test_message_start_tool_event() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.start_tool_event("tool-333".to_string(), "Read".to_string());
+
+        assert_eq!(message.segments.len(), 1);
+        if let MessageSegment::ToolEvent(event) = &message.segments[0] {
+            assert_eq!(event.tool_call_id, "tool-333");
+            assert_eq!(event.function_name, "Read");
+            assert_eq!(event.status, ToolEventStatus::Running);
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+    }
+
+    #[test]
+    fn test_message_complete_tool_event() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.start_tool_event("tool-444".to_string(), "Bash".to_string());
+        message.complete_tool_event("tool-444");
+
+        if let MessageSegment::ToolEvent(event) = &message.segments[0] {
+            assert_eq!(event.status, ToolEventStatus::Complete);
+            assert!(event.completed_at.is_some());
+            assert!(event.duration_secs.is_some());
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+    }
+
+    #[test]
+    fn test_message_fail_tool_event() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.start_tool_event("tool-555".to_string(), "Write".to_string());
+        message.fail_tool_event("tool-555");
+
+        if let MessageSegment::ToolEvent(event) = &message.segments[0] {
+            assert_eq!(event.status, ToolEventStatus::Failed);
+            assert!(event.completed_at.is_some());
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+    }
+
+    #[test]
+    fn test_message_get_tool_event() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.start_tool_event("tool-666".to_string(), "Grep".to_string());
+
+        let event = message.get_tool_event("tool-666");
+        assert!(event.is_some());
+        assert_eq!(event.unwrap().function_name, "Grep");
+
+        let nonexistent = message.get_tool_event("tool-999");
+        assert!(nonexistent.is_none());
+    }
+
+    #[test]
+    fn test_message_has_running_tools() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        assert!(!message.has_running_tools());
+
+        message.start_tool_event("tool-777".to_string(), "Read".to_string());
+        assert!(message.has_running_tools());
+
+        message.complete_tool_event("tool-777");
+        assert!(!message.has_running_tools());
+    }
+
+    #[test]
+    fn test_message_multiple_tool_events() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.start_tool_event("tool-1".to_string(), "Read".to_string());
+        message.start_tool_event("tool-2".to_string(), "Bash".to_string());
+        message.start_tool_event("tool-3".to_string(), "Write".to_string());
+
+        assert_eq!(message.segments.len(), 3);
+        assert!(message.has_running_tools());
+
+        message.complete_tool_event("tool-1");
+        message.complete_tool_event("tool-2");
+        assert!(message.has_running_tools()); // tool-3 still running
+
+        message.complete_tool_event("tool-3");
+        assert!(!message.has_running_tools());
+    }
+
+    #[test]
+    fn test_message_add_text_segment() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.add_text_segment("Hello".to_string());
+        message.add_text_segment(" world".to_string());
+
+        assert_eq!(message.segments.len(), 1);
+        if let MessageSegment::Text(text) = &message.segments[0] {
+            assert_eq!(text, "Hello world");
+        } else {
+            panic!("Expected Text segment");
+        }
+    }
+
+    #[test]
+    fn test_message_mixed_segments() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.add_text_segment("Let me check that file...".to_string());
+        message.start_tool_event("tool-888".to_string(), "Read".to_string());
+        message.add_text_segment("The file contains:".to_string());
+
+        assert_eq!(message.segments.len(), 3);
+
+        // Verify segment types
+        assert!(matches!(&message.segments[0], MessageSegment::Text(_)));
+        assert!(matches!(&message.segments[1], MessageSegment::ToolEvent(_)));
+        assert!(matches!(&message.segments[2], MessageSegment::Text(_)));
+    }
 }
