@@ -768,39 +768,81 @@ fn render_conversation_screen(frame: &mut Frame, app: &App) {
         None
     };
 
-    // Create main layout sections - conditionally include mode indicator
+    // Determine if we should show the streaming indicator
+    let show_streaming_indicator = app.is_streaming();
+
+    // Create main layout sections - conditionally include mode and streaming indicators
     let inner = inner_rect(size, 1);
 
-    if let Some(mode_line) = mode_indicator_line {
-        // Layout with mode indicator (4 sections)
-        let main_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),  // Thread header
-                Constraint::Min(10),    // Messages area
-                Constraint::Length(1),  // Mode indicator
-                Constraint::Length(8),  // Input area with keybinds
-            ])
-            .split(inner);
+    match (mode_indicator_line, show_streaming_indicator) {
+        (Some(mode_line), true) => {
+            // Layout with both mode and streaming indicators (5 sections)
+            let main_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // Thread header
+                    Constraint::Min(10),    // Messages area
+                    Constraint::Length(1),  // Streaming indicator
+                    Constraint::Length(1),  // Mode indicator
+                    Constraint::Length(8),  // Input area with keybinds
+                ])
+                .split(inner);
 
-        render_conversation_header(frame, main_chunks[0], app);
-        render_messages_area(frame, main_chunks[1], app);
-        render_mode_indicator(frame, main_chunks[2], mode_line);
-        render_conversation_input(frame, main_chunks[3], app);
-    } else {
-        // Layout without mode indicator (3 sections)
-        let main_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),  // Thread header
-                Constraint::Min(10),    // Messages area
-                Constraint::Length(8),  // Input area with keybinds
-            ])
-            .split(inner);
+            render_conversation_header(frame, main_chunks[0], app);
+            render_messages_area(frame, main_chunks[1], app);
+            render_streaming_indicator(frame, main_chunks[2], app);
+            render_mode_indicator(frame, main_chunks[3], mode_line);
+            render_conversation_input(frame, main_chunks[4], app);
+        }
+        (Some(mode_line), false) => {
+            // Layout with mode indicator only (4 sections)
+            let main_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // Thread header
+                    Constraint::Min(10),    // Messages area
+                    Constraint::Length(1),  // Mode indicator
+                    Constraint::Length(8),  // Input area with keybinds
+                ])
+                .split(inner);
 
-        render_conversation_header(frame, main_chunks[0], app);
-        render_messages_area(frame, main_chunks[1], app);
-        render_conversation_input(frame, main_chunks[2], app);
+            render_conversation_header(frame, main_chunks[0], app);
+            render_messages_area(frame, main_chunks[1], app);
+            render_mode_indicator(frame, main_chunks[2], mode_line);
+            render_conversation_input(frame, main_chunks[3], app);
+        }
+        (None, true) => {
+            // Layout with streaming indicator only (4 sections)
+            let main_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // Thread header
+                    Constraint::Min(10),    // Messages area
+                    Constraint::Length(1),  // Streaming indicator
+                    Constraint::Length(8),  // Input area with keybinds
+                ])
+                .split(inner);
+
+            render_conversation_header(frame, main_chunks[0], app);
+            render_messages_area(frame, main_chunks[1], app);
+            render_streaming_indicator(frame, main_chunks[2], app);
+            render_conversation_input(frame, main_chunks[3], app);
+        }
+        (None, false) => {
+            // Layout without indicators (3 sections)
+            let main_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // Thread header
+                    Constraint::Min(10),    // Messages area
+                    Constraint::Length(8),  // Input area with keybinds
+                ])
+                .split(inner);
+
+            render_conversation_header(frame, main_chunks[0], app);
+            render_messages_area(frame, main_chunks[1], app);
+            render_conversation_input(frame, main_chunks[2], app);
+        }
     }
 }
 
@@ -808,6 +850,53 @@ fn render_conversation_screen(frame: &mut Frame, app: &App) {
 fn render_mode_indicator(frame: &mut Frame, area: Rect, mode_line: Line<'static>) {
     let indicator = Paragraph::new(mode_line);
     frame.render_widget(indicator, area);
+}
+
+/// Render the streaming indicator bar
+fn render_streaming_indicator(frame: &mut Frame, area: Rect, app: &App) {
+    // Get messages from cache if we have an active thread
+    let cached_messages = app
+        .active_thread_id
+        .as_ref()
+        .and_then(|id| app.cache.get_messages(id));
+
+    // Check if any message is currently streaming
+    let streaming_message = cached_messages
+        .as_ref()
+        .and_then(|msgs| msgs.iter().find(|m| m.is_streaming));
+
+    if let Some(streaming_msg) = streaming_message {
+        // Use dots spinner
+        let spinner_index = (app.tick_count % 10) as usize;
+        let spinner = SPINNER_FRAMES[spinner_index];
+
+        // Find the last running tool event in the message
+        let running_tool_name = streaming_msg.segments.iter().rev().find_map(|seg| {
+            if let MessageSegment::ToolEvent(event) = seg {
+                if event.status == ToolEventStatus::Running {
+                    return Some(event.function_name.clone());
+                }
+            }
+            None
+        });
+
+        let status_text = if let Some(tool_name) = running_tool_name {
+            format!("Using {}...", tool_name)
+        } else {
+            "Responding...".to_string()
+        };
+
+        let indicator_line = Line::from(vec![
+            Span::styled(
+                format!("  {} {}", spinner, status_text),
+                Style::default()
+                    .fg(Color::DarkGray),
+            ),
+        ]);
+
+        let indicator = Paragraph::new(indicator_line);
+        frame.render_widget(indicator, area);
+    }
 }
 
 /// Render the thread title header with connection status and badges
@@ -1141,7 +1230,7 @@ fn render_thinking_block(
 }
 
 /// Spinner frames for tool status animation
-const SPINNER_FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// Render tool status indicators inline (LEGACY - kept for potential future use)
 /// Shows: ◐ Reading src/main.rs...  (executing, with spinner)
@@ -1169,18 +1258,18 @@ fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
         let line = match display_status {
             ToolDisplayStatus::Started { .. } | ToolDisplayStatus::Executing { .. } => {
                 // Animate spinner based on tick count
-                let spinner_idx = (app.tick_count / 2) as usize % SPINNER_FRAMES.len();
+                let spinner_idx = (app.tick_count % 10) as usize;
                 let spinner = SPINNER_FRAMES[spinner_idx];
                 let text = display_status.display_text();
 
                 Line::from(vec![
                     Span::styled(
                         format!("  {} ", spinner),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(Color::DarkGray),
                     ),
                     Span::styled(
                         text,
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(Color::DarkGray),
                     ),
                 ])
             }
@@ -1189,11 +1278,11 @@ fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
                     Line::from(vec![
                         Span::styled(
                             "  ✓ ",
-                            Style::default().fg(Color::Green),
+                            Style::default().fg(Color::DarkGray),
                         ),
                         Span::styled(
                             summary.clone(),
-                            Style::default().fg(Color::Green),
+                            Style::default().fg(Color::DarkGray),
                         ),
                     ])
                 } else {
@@ -1248,23 +1337,23 @@ fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
             SubagentDisplayStatus::Started { description, .. } |
             SubagentDisplayStatus::Progress { description, .. } => {
                 // Animate spinner based on tick count
-                let spinner_idx = (app.tick_count / 2) as usize % SPINNER_FRAMES.len();
+                let spinner_idx = (app.tick_count % 10) as usize;
                 let spinner = SPINNER_FRAMES[spinner_idx];
 
                 Line::from(vec![
                     Span::styled(
                         format!("┌ {} ", spinner),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(Color::DarkGray),
                     ),
                     Span::styled(
                         description.clone(),
-                        Style::default().fg(Color::Cyan),
+                        Style::default().fg(Color::DarkGray),
                     ),
                 ])
             }
             SubagentDisplayStatus::Completed { success, summary, .. } => {
                 let (prefix, color) = if *success {
-                    ("└ ✓ ", Color::Green)
+                    ("└ ✓ ", Color::DarkGray)
                 } else {
                     ("└ ✗ ", Color::Red)
                 };
@@ -1309,14 +1398,14 @@ fn render_inline_tool_events(message: &Message, tick_count: u64) -> Vec<Line<'st
         if let MessageSegment::ToolEvent(event) = segment {
             let line = match event.status {
                 ToolEventStatus::Running => {
-                    // Animated spinner - cycle through frames ~250ms per frame (assuming 10 ticks/sec)
-                    let frame_index = ((tick_count / 2) % 4) as usize;
+                    // Animated spinner - cycle through frames ~100ms per frame (assuming 10 ticks/sec)
+                    let frame_index = (tick_count % 10) as usize;
                     let spinner = SPINNER_FRAMES[frame_index];
                     Line::from(vec![
                         Span::styled("  ", Style::default()),
                         Span::styled(
                             format!("{} {}", spinner, event.function_name),
-                            Style::default().fg(Color::Cyan),
+                            Style::default().fg(Color::DarkGray),
                         ),
                     ])
                 }
@@ -1396,44 +1485,6 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         .active_thread_id
         .as_ref()
         .and_then(|id| app.cache.get_messages(id));
-
-    // Check if any message is currently streaming
-    let streaming_message = cached_messages
-        .as_ref()
-        .and_then(|msgs| msgs.iter().find(|m| m.is_streaming));
-
-    // Show contextual spinner if streaming
-    if let Some(streaming_msg) = streaming_message {
-        // Check for running tool to show contextual status
-        let spinner_index = ((app.tick_count / 2) % 4) as usize;
-        let spinner = SPINNER_FRAMES[spinner_index];
-
-        // Find the last running tool event in the message
-        let running_tool_name = streaming_msg.segments.iter().rev().find_map(|seg| {
-            if let MessageSegment::ToolEvent(event) = seg {
-                if event.status == ToolEventStatus::Running {
-                    return Some(event.function_name.clone());
-                }
-            }
-            None
-        });
-
-        let status_text = if let Some(tool_name) = running_tool_name {
-            format!("Using {}...", tool_name)
-        } else {
-            "Responding...".to_string()
-        };
-
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("  {} {}", spinner, status_text),
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Line::from(""));
-    }
 
     if let Some(messages) = cached_messages {
         for message in messages {
