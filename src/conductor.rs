@@ -250,20 +250,7 @@ impl ConductorClient {
             return Err(ConductorError::ServerError { status, message });
         }
 
-        // DEBUG: Log raw response
-        let raw_text = response.text().await?;
-        {
-            use std::io::Write;
-            let mut log_file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open("/tmp/spoq_debug.log")
-                .unwrap();
-            writeln!(log_file, "=== RAW /v1/threads response ===").ok();
-            writeln!(log_file, "{}", &raw_text[..raw_text.len().min(2000)]).ok();
-        }
-        let data: ThreadListResponse = serde_json::from_str(&raw_text)
-            .map_err(|e| ConductorError::ServerError { status: 0, message: e.to_string() })?;
+        let data: ThreadListResponse = response.json().await?;
         Ok(data.threads)
     }
 

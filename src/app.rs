@@ -163,23 +163,9 @@ impl App {
     /// or returns an error, the app starts with empty state and sets connection
     /// status to false.
     pub async fn initialize(&mut self) {
-        // DEBUG: Log to file
-        use std::io::Write;
-        let mut log_file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open("/tmp/spoq_debug.log")
-            .unwrap();
-        writeln!(log_file, "=== initialize() called ===").ok();
-
         // Fetch threads from server
         match self.client.fetch_threads().await {
             Ok(threads) => {
-                // DEBUG: Log each thread's fields
-                for thread in &threads {
-                    writeln!(log_file, "Thread id={}, title='{}', preview='{}'",
-                        thread.id, thread.title, thread.preview).ok();
-                }
                 // Populate cache with threads from server
                 for thread in threads {
                     self.cache.upsert_thread(thread);
