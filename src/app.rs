@@ -480,7 +480,8 @@ impl App {
                                 thread_id: thread_id.to_string(),
                                 message_id,
                             });
-                            break;
+                            // Don't break here - continue processing to receive thread_updated
+                            // which arrives ~3 seconds after done. Stream will close naturally.
                         }
                         SseEvent::Error(error_event) => {
                             let _ = message_tx.send(AppMessage::StreamError {
