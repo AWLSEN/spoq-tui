@@ -687,4 +687,331 @@ mod tests {
 
         assert_eq!(state, deserialized);
     }
+
+    // ============= ToolDisplayStatus Tests =============
+
+    #[test]
+    fn test_tool_display_status_started_should_render() {
+        let status = ToolDisplayStatus::Started {
+            function: "Bash".to_string(),
+            started_at: 10,
+        };
+        // Started status always renders regardless of current tick
+        assert!(status.should_render(10));
+        assert!(status.should_render(50));
+        assert!(status.should_render(100));
+    }
+
+    #[test]
+    fn test_tool_display_status_executing_should_render() {
+        let status = ToolDisplayStatus::Executing {
+            display_name: "Running npm install".to_string(),
+        };
+        // Executing status always renders
+        assert!(status.should_render(0));
+        assert!(status.should_render(100));
+    }
+
+    #[test]
+    fn test_tool_display_status_completed_success_fades() {
+        let status = ToolDisplayStatus::Completed {
+            success: true,
+            summary: "Success".to_string(),
+            completed_at: 100,
+        };
+        // Success should render within 30 ticks
+        assert!(status.should_render(100)); // At completion
+        assert!(status.should_render(120)); // 20 ticks later
+        assert!(status.should_render(129)); // 29 ticks later
+        // Should not render after 30 ticks
+        assert!(!status.should_render(130)); // 30 ticks later
+        assert!(!status.should_render(150)); // 50 ticks later
+    }
+
+    #[test]
+    fn test_tool_display_status_completed_failure_persists() {
+        let status = ToolDisplayStatus::Completed {
+            success: false,
+            summary: "Error: File not found".to_string(),
+            completed_at: 100,
+        };
+        // Failures always persist regardless of tick
+        assert!(status.should_render(100));
+        assert!(status.should_render(130)); // 30 ticks later
+        assert!(status.should_render(200)); // 100 ticks later
+        assert!(status.should_render(1000)); // 900 ticks later
+    }
+
+    #[test]
+    fn test_tool_display_status_display_text_started() {
+        let status = ToolDisplayStatus::Started {
+            function: "Bash".to_string(),
+            started_at: 10,
+        };
+        assert_eq!(status.display_text(), "Bash...");
+    }
+
+    #[test]
+    fn test_tool_display_status_display_text_executing() {
+        let status = ToolDisplayStatus::Executing {
+            display_name: "Installing packages".to_string(),
+        };
+        assert_eq!(status.display_text(), "Installing packages");
+    }
+
+    #[test]
+    fn test_tool_display_status_display_text_completed() {
+        let status = ToolDisplayStatus::Completed {
+            success: true,
+            summary: "Installed 42 packages".to_string(),
+            completed_at: 100,
+        };
+        assert_eq!(status.display_text(), "Installed 42 packages");
+    }
+
+    #[test]
+    fn test_tool_display_status_is_success() {
+        let success = ToolDisplayStatus::Completed {
+            success: true,
+            summary: "Done".to_string(),
+            completed_at: 100,
+        };
+        assert!(success.is_success());
+
+        let failure = ToolDisplayStatus::Completed {
+            success: false,
+            summary: "Error".to_string(),
+            completed_at: 100,
+        };
+        assert!(!failure.is_success());
+
+        let started = ToolDisplayStatus::Started {
+            function: "Bash".to_string(),
+            started_at: 10,
+        };
+        assert!(!started.is_success());
+    }
+
+    #[test]
+    fn test_tool_display_status_is_failure() {
+        let failure = ToolDisplayStatus::Completed {
+            success: false,
+            summary: "Error".to_string(),
+            completed_at: 100,
+        };
+        assert!(failure.is_failure());
+
+        let success = ToolDisplayStatus::Completed {
+            success: true,
+            summary: "Done".to_string(),
+            completed_at: 100,
+        };
+        assert!(!success.is_failure());
+
+        let executing = ToolDisplayStatus::Executing {
+            display_name: "Running".to_string(),
+        };
+        assert!(!executing.is_failure());
+    }
+
+    #[test]
+    fn test_tool_display_status_is_in_progress() {
+        let started = ToolDisplayStatus::Started {
+            function: "Bash".to_string(),
+            started_at: 10,
+        };
+        assert!(started.is_in_progress());
+
+        let executing = ToolDisplayStatus::Executing {
+            display_name: "Running".to_string(),
+        };
+        assert!(executing.is_in_progress());
+
+        let completed = ToolDisplayStatus::Completed {
+            success: true,
+            summary: "Done".to_string(),
+            completed_at: 100,
+        };
+        assert!(!completed.is_in_progress());
+    }
+
+    #[test]
+    fn test_tool_call_state_with_display() {
+        let display = ToolDisplayStatus::Started {
+            function: "Read".to_string(),
+            started_at: 50,
+        };
+        let state = ToolCallState::with_display("Read".to_string(), display.clone());
+
+        assert_eq!(state.tool_name, "Read");
+        assert_eq!(state.status, ToolCallStatus::Pending);
+        assert!(state.display_status.is_some());
+        assert_eq!(state.display_status.unwrap(), display);
+    }
+
+    #[test]
+    fn test_tool_call_state_set_display_status() {
+        let mut state = ToolCallState::new("Write".to_string());
+        assert!(state.display_status.is_none());
+
+        let display = ToolDisplayStatus::Executing {
+            display_name: "Writing file".to_string(),
+        };
+        state.set_display_status(display.clone());
+
+        assert!(state.display_status.is_some());
+        assert_eq!(state.display_status.unwrap(), display);
+    }
+
+    #[test]
+    fn test_tool_tracker_set_display_status() {
+        let mut tracker = ToolTracker::new();
+        tracker.register_tool("call-1".to_string(), ToolCallState::new("Bash".to_string()));
+
+        let display = ToolDisplayStatus::Executing {
+            display_name: "Running tests".to_string(),
+        };
+        tracker.set_display_status("call-1", display.clone());
+
+        let state = tracker.get_tool("call-1").unwrap();
+        assert!(state.display_status.is_some());
+        assert_eq!(state.display_status.as_ref().unwrap(), &display);
+    }
+
+    #[test]
+    fn test_tool_tracker_tools_to_render() {
+        let mut tracker = ToolTracker::new();
+
+        // Add a started tool
+        let mut state1 = ToolCallState::new("Bash".to_string());
+        state1.set_display_status(ToolDisplayStatus::Started {
+            function: "Bash".to_string(),
+            started_at: 10,
+        });
+        tracker.register_tool("call-1".to_string(), state1);
+
+        // Add a completed success (within fade window)
+        let mut state2 = ToolCallState::new("Read".to_string());
+        state2.set_display_status(ToolDisplayStatus::Completed {
+            success: true,
+            summary: "Read file".to_string(),
+            completed_at: 50,
+        });
+        tracker.register_tool("call-2".to_string(), state2);
+
+        // Add a completed failure
+        let mut state3 = ToolCallState::new("Write".to_string());
+        state3.set_display_status(ToolDisplayStatus::Completed {
+            success: false,
+            summary: "Error writing".to_string(),
+            completed_at: 30,
+        });
+        tracker.register_tool("call-3".to_string(), state3);
+
+        // At tick 60, all three should render (success is at tick 50+30=80, so still visible)
+        let to_render = tracker.tools_to_render(60);
+        assert_eq!(to_render.len(), 3); // started, success, and failure
+
+        // At tick 90, only started and failure should render (success has faded at tick 80)
+        let to_render = tracker.tools_to_render(90);
+        assert_eq!(to_render.len(), 2); // started and failure
+    }
+
+    #[test]
+    fn test_tool_tracker_tools_to_render_ordering() {
+        let mut tracker = ToolTracker::new();
+
+        // Add completed success
+        let mut state1 = ToolCallState::new("Read".to_string());
+        state1.set_display_status(ToolDisplayStatus::Completed {
+            success: true,
+            summary: "Done".to_string(),
+            completed_at: 50,
+        });
+        tracker.register_tool("call-1".to_string(), state1);
+
+        // Add in-progress
+        let mut state2 = ToolCallState::new("Bash".to_string());
+        state2.set_display_status(ToolDisplayStatus::Executing {
+            display_name: "Running".to_string(),
+        });
+        tracker.register_tool("call-2".to_string(), state2);
+
+        let to_render = tracker.tools_to_render(60);
+        assert_eq!(to_render.len(), 2);
+
+        // In-progress should be first
+        let first_tool = to_render[0].1;
+        assert!(first_tool.display_status.as_ref().unwrap().is_in_progress());
+    }
+
+    #[test]
+    fn test_tool_tracker_register_tool_started() {
+        let mut tracker = ToolTracker::new();
+        tracker.register_tool_started("call-1".to_string(), "Bash".to_string(), 42);
+
+        let state = tracker.get_tool("call-1").unwrap();
+        assert_eq!(state.tool_name, "Bash");
+        assert!(state.display_status.is_some());
+
+        let display = state.display_status.as_ref().unwrap();
+        assert!(display.is_in_progress());
+        assert_eq!(display.display_text(), "Bash...");
+    }
+
+    #[test]
+    fn test_tool_tracker_set_tool_executing() {
+        let mut tracker = ToolTracker::new();
+        tracker.register_tool("call-1".to_string(), ToolCallState::new("Bash".to_string()));
+
+        tracker.set_tool_executing("call-1", "Installing dependencies".to_string());
+
+        let state = tracker.get_tool("call-1").unwrap();
+        assert_eq!(state.status, ToolCallStatus::Running);
+        assert!(state.display_status.is_some());
+        assert_eq!(state.display_status.as_ref().unwrap().display_text(), "Installing dependencies");
+    }
+
+    #[test]
+    fn test_tool_tracker_complete_tool_with_summary() {
+        let mut tracker = ToolTracker::new();
+        tracker.register_tool("call-1".to_string(), ToolCallState::new("Bash".to_string()));
+
+        tracker.complete_tool_with_summary("call-1", true, "Installed 5 packages".to_string(), 100);
+
+        let state = tracker.get_tool("call-1").unwrap();
+        assert_eq!(state.status, ToolCallStatus::Completed);
+
+        let display = state.display_status.as_ref().unwrap();
+        assert!(display.is_success());
+        assert_eq!(display.display_text(), "Installed 5 packages");
+    }
+
+    #[test]
+    fn test_tool_tracker_complete_tool_with_summary_failure() {
+        let mut tracker = ToolTracker::new();
+        tracker.register_tool("call-1".to_string(), ToolCallState::new("Bash".to_string()));
+
+        tracker.complete_tool_with_summary("call-1", false, "Command failed".to_string(), 100);
+
+        let state = tracker.get_tool("call-1").unwrap();
+        assert_eq!(state.status, ToolCallStatus::Failed);
+
+        let display = state.display_status.as_ref().unwrap();
+        assert!(display.is_failure());
+        assert_eq!(display.display_text(), "Command failed");
+    }
+
+    #[test]
+    fn test_tool_display_status_serialization() {
+        let status = ToolDisplayStatus::Executing {
+            display_name: "Running test".to_string(),
+        };
+
+        let json = serde_json::to_string(&status).expect("Failed to serialize");
+        let deserialized: ToolDisplayStatus =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(status, deserialized);
+    }
 }
