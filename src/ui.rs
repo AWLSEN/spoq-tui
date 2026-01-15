@@ -3572,4 +3572,148 @@ mod tests {
         assert_eq!(format_tokens(5_000_000), "5M");
         assert_eq!(format_tokens(10_000_000), "10M");
     }
+
+    #[test]
+    fn test_truncate_string_no_truncation() {
+        assert_eq!(truncate_string("hello", 10), "hello");
+        assert_eq!(truncate_string("test", 4), "test");
+    }
+
+    #[test]
+    fn test_truncate_string_with_truncation() {
+        assert_eq!(truncate_string("hello world", 8), "hello...");
+        assert_eq!(truncate_string("very long string that needs truncation", 15), "very long st...");
+    }
+
+    #[test]
+    fn test_truncate_string_edge_cases() {
+        assert_eq!(truncate_string("", 10), "");
+        assert_eq!(truncate_string("abc", 3), "abc");
+        assert_eq!(truncate_string("abcd", 3), "...");
+    }
+
+    #[test]
+    fn test_get_tool_icon_known_tools() {
+        assert_eq!(get_tool_icon("Read"), "📄");
+        assert_eq!(get_tool_icon("Write"), "📝");
+        assert_eq!(get_tool_icon("Edit"), "✏️");
+        assert_eq!(get_tool_icon("Bash"), "$");
+        assert_eq!(get_tool_icon("Grep"), "🔍");
+        assert_eq!(get_tool_icon("Glob"), "🔍");
+        assert_eq!(get_tool_icon("Task"), "🤖");
+        assert_eq!(get_tool_icon("WebFetch"), "🌐");
+        assert_eq!(get_tool_icon("WebSearch"), "🌐");
+        assert_eq!(get_tool_icon("TodoWrite"), "📋");
+        assert_eq!(get_tool_icon("AskUserQuestion"), "❓");
+        assert_eq!(get_tool_icon("NotebookEdit"), "📓");
+    }
+
+    #[test]
+    fn test_get_tool_icon_unknown_tool() {
+        assert_eq!(get_tool_icon("UnknownTool"), "⚙️");
+        assert_eq!(get_tool_icon("CustomFunction"), "⚙️");
+    }
+
+    #[test]
+    fn test_format_tool_args_read() {
+        let args = r#"{"file_path": "/src/main.rs"}"#;
+        assert_eq!(format_tool_args("Read", args), "Reading /src/main.rs");
+    }
+
+    #[test]
+    fn test_format_tool_args_write() {
+        let args = r#"{"file_path": "/src/models.rs"}"#;
+        assert_eq!(format_tool_args("Write", args), "Writing /src/models.rs");
+    }
+
+    #[test]
+    fn test_format_tool_args_edit() {
+        let args = r#"{"file_path": "/tests/integration.rs"}"#;
+        assert_eq!(format_tool_args("Edit", args), "Editing /tests/integration.rs");
+    }
+
+    #[test]
+    fn test_format_tool_args_bash() {
+        let args = r#"{"command": "npm install"}"#;
+        assert_eq!(format_tool_args("Bash", args), "Running: npm install");
+    }
+
+    #[test]
+    fn test_format_tool_args_grep_with_path() {
+        let args = r#"{"pattern": "TODO", "path": "src/"}"#;
+        assert_eq!(format_tool_args("Grep", args), "Searching 'TODO' in src/");
+    }
+
+    #[test]
+    fn test_format_tool_args_grep_without_path() {
+        let args = r#"{"pattern": "FIXME"}"#;
+        assert_eq!(format_tool_args("Grep", args), "Searching 'FIXME'");
+    }
+
+    #[test]
+    fn test_format_tool_args_glob() {
+        let args = r#"{"pattern": "**/*.rs"}"#;
+        assert_eq!(format_tool_args("Glob", args), "Finding **/*.rs");
+    }
+
+    #[test]
+    fn test_format_tool_args_task() {
+        let args = r#"{"description": "Run all tests"}"#;
+        assert_eq!(format_tool_args("Task", args), "Spawning: Run all tests");
+    }
+
+    #[test]
+    fn test_format_tool_args_webfetch() {
+        let args = r#"{"url": "https://example.com"}"#;
+        assert_eq!(format_tool_args("WebFetch", args), "Fetching https://example.com");
+    }
+
+    #[test]
+    fn test_format_tool_args_websearch() {
+        let args = r#"{"query": "rust async"}"#;
+        assert_eq!(format_tool_args("WebSearch", args), "Searching: rust async");
+    }
+
+    #[test]
+    fn test_format_tool_args_todowrite() {
+        let args = r#"{}"#;
+        assert_eq!(format_tool_args("TodoWrite", args), "Updating todos");
+    }
+
+    #[test]
+    fn test_format_tool_args_notebookedit() {
+        let args = r#"{"notebook_path": "/notebooks/analysis.ipynb"}"#;
+        assert_eq!(format_tool_args("NotebookEdit", args), "Editing notebook /notebooks/analysis.ipynb");
+    }
+
+    #[test]
+    fn test_format_tool_args_unknown_tool() {
+        let args = r#"{"some": "data"}"#;
+        assert_eq!(format_tool_args("CustomTool", args), "CustomTool");
+    }
+
+    #[test]
+    fn test_format_tool_args_invalid_json() {
+        assert_eq!(format_tool_args("Read", "{invalid json"), "Read");
+    }
+
+    #[test]
+    fn test_format_tool_args_truncates_long_paths() {
+        let long_path = "/very/long/path/that/should/be/truncated/because/it/exceeds/the/maximum/length/allowed/for/display.rs";
+        let args = format!(r#"{{"file_path": "{}"}}"#, long_path);
+        let result = format_tool_args("Read", &args);
+        assert!(result.starts_with("Reading "));
+        assert!(result.ends_with("..."));
+        assert!(result.len() < long_path.len() + 20);
+    }
+
+    #[test]
+    fn test_format_tool_args_missing_expected_fields() {
+        // Read without file_path
+        assert_eq!(format_tool_args("Read", r#"{}"#), "Read");
+        // Bash without command
+        assert_eq!(format_tool_args("Bash", r#"{}"#), "Bash");
+        // Grep without pattern
+        assert_eq!(format_tool_args("Grep", r#"{}"#), "Searching ''");
+    }
 }
