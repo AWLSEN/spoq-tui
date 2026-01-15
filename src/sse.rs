@@ -391,7 +391,7 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
                     source: e.to_string(),
                 })?;
             Ok(SseEvent::ToolCallStart {
-                tool_name: v.get("tool_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                tool_name: v.get("function").or(v.get("tool_name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             })
         }
@@ -414,7 +414,7 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
                 })?;
             Ok(SseEvent::ToolExecuting {
                 tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                display_name: v.get("display_name").and_then(|v| v.as_str()).map(String::from),
+                display_name: v.get("display_name").or(v.get("function")).and_then(|v| v.as_str()).map(String::from),
                 url: v.get("url").and_then(|v| v.as_str()).map(String::from),
             })
         }
