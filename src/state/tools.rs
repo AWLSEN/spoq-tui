@@ -6,6 +6,75 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Display status for tool UI rendering with timing info
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ToolDisplayStatus {
+    /// Tool call started, showing function name
+    Started {
+        function: String,
+        started_at: u64,
+    },
+    /// Tool is executing, showing display name
+    Executing {
+        display_name: String,
+    },
+    /// Tool completed (success or failure)
+    Completed {
+        success: bool,
+        summary: String,
+        completed_at: u64,
+    },
+}
+
+impl ToolDisplayStatus {
+    /// Check if this status should still be rendered given the current tick
+    /// Success fades after 30 ticks (~3 seconds), failures persist
+    pub fn should_render(&self, current_tick: u64) -> bool {
+        match self {
+            ToolDisplayStatus::Started { .. } => true,
+            ToolDisplayStatus::Executing { .. } => true,
+            ToolDisplayStatus::Completed { success, completed_at, .. } => {
+                // Failures always persist
+                if !success {
+                    return true;
+                }
+                // Success fades after 30 ticks
+                current_tick < completed_at.saturating_add(30)
+            }
+        }
+    }
+
+    /// Get the display text for this status
+    pub fn display_text(&self) -> String {
+        match self {
+            ToolDisplayStatus::Started { function, .. } => {
+                format!("{function}...")
+            }
+            ToolDisplayStatus::Executing { display_name } => {
+                display_name.clone()
+            }
+            ToolDisplayStatus::Completed { summary, .. } => {
+                summary.clone()
+            }
+        }
+    }
+
+    /// Check if this is a completed success
+    pub fn is_success(&self) -> bool {
+        matches!(self, ToolDisplayStatus::Completed { success: true, .. })
+    }
+
+    /// Check if this is a completed failure
+    pub fn is_failure(&self) -> bool {
+        matches!(self, ToolDisplayStatus::Completed { success: false, .. })
+    }
+
+    /// Check if still in progress (started or executing)
+    pub fn is_in_progress(&self) -> bool {
+        matches!(self, ToolDisplayStatus::Started { .. } | ToolDisplayStatus::Executing { .. })
+    }
+}
+
 /// State of a single tool call
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCallState {
@@ -19,6 +88,8 @@ pub struct ToolCallState {
     pub output: Option<String>,
     /// Error message if the tool failed
     pub error: Option<String>,
+    /// Display status for UI rendering (with timing)
+    pub display_status: Option<ToolDisplayStatus>,
 }
 
 /// Status of a tool call
@@ -44,6 +115,7 @@ impl ToolCallState {
             input: None,
             output: None,
             error: None,
+            display_status: None,
         }
     }
 
@@ -55,7 +127,25 @@ impl ToolCallState {
             input: Some(input),
             output: None,
             error: None,
+            display_status: None,
         }
+    }
+
+    /// Create a tool call state with display status (for UI)
+    pub fn with_display(tool_name: String, display_status: ToolDisplayStatus) -> Self {
+        Self {
+            tool_name,
+            status: ToolCallStatus::Pending,
+            input: None,
+            output: None,
+            error: None,
+            display_status: Some(display_status),
+        }
+    }
+
+    /// Set the display status
+    pub fn set_display_status(&mut self, status: ToolDisplayStatus) {
+        self.display_status = Some(status);
     }
 
     /// Mark the tool as running
@@ -189,6 +279,77 @@ impl ToolTracker {
     /// Check if a specific tool is being tracked
     pub fn contains(&self, tool_call_id: &str) -> bool {
         self.active_tools.contains_key(tool_call_id)
+    }
+
+    /// Update display status for a tool
+    pub fn set_display_status(&mut self, tool_call_id: &str, status: ToolDisplayStatus) {
+        if let Some(state) = self.active_tools.get_mut(tool_call_id) {
+            state.set_display_status(status);
+        }
+    }
+
+    /// Get tools that should be rendered at the given tick
+    /// Returns tools in order: in-progress first, then completed (newest first)
+    pub fn tools_to_render(&self, current_tick: u64) -> Vec<(&String, &ToolCallState)> {
+        let mut tools: Vec<_> = self
+            .active_tools
+            .iter()
+            .filter(|(_, state)| {
+                state
+                    .display_status
+                    .as_ref()
+                    .is_some_and(|ds| ds.should_render(current_tick))
+            })
+            .collect();
+
+        // Sort: in-progress first, then by recency (for completed)
+        tools.sort_by(|(_, a), (_, b)| {
+            let a_in_progress = a.display_status.as_ref().is_some_and(|ds| ds.is_in_progress());
+            let b_in_progress = b.display_status.as_ref().is_some_and(|ds| ds.is_in_progress());
+
+            match (a_in_progress, b_in_progress) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+
+        tools
+    }
+
+    /// Register a tool with display status for started state
+    pub fn register_tool_started(&mut self, tool_call_id: String, tool_name: String, current_tick: u64) {
+        let display_status = ToolDisplayStatus::Started {
+            function: tool_name.clone(),
+            started_at: current_tick,
+        };
+        let mut state = ToolCallState::new(tool_name);
+        state.set_display_status(display_status);
+        self.active_tools.insert(tool_call_id, state);
+    }
+
+    /// Update tool to executing state with display name
+    pub fn set_tool_executing(&mut self, tool_call_id: &str, display_name: String) {
+        if let Some(state) = self.active_tools.get_mut(tool_call_id) {
+            state.status = ToolCallStatus::Running;
+            state.set_display_status(ToolDisplayStatus::Executing { display_name });
+        }
+    }
+
+    /// Complete tool with summary for display
+    pub fn complete_tool_with_summary(&mut self, tool_call_id: &str, success: bool, summary: String, current_tick: u64) {
+        if let Some(state) = self.active_tools.get_mut(tool_call_id) {
+            if success {
+                state.status = ToolCallStatus::Completed;
+            } else {
+                state.status = ToolCallStatus::Failed;
+            }
+            state.set_display_status(ToolDisplayStatus::Completed {
+                success,
+                summary,
+                completed_at: current_tick,
+            });
+        }
     }
 }
 

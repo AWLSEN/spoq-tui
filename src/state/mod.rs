@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export new state types at module level
 pub use session::{PermissionRequest, SessionState};
-pub use tools::{ToolCallState, ToolTracker};
+pub use tools::{ToolCallState, ToolDisplayStatus, ToolTracker};
 
 /// Represents a conversation thread
 #[derive(Debug, Clone, Serialize, Deserialize)]

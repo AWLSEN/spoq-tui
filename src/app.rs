@@ -47,6 +47,22 @@ pub enum AppMessage {
         description: String,
         tool_input: Option<serde_json::Value>,
     },
+    /// Tool call started
+    ToolStarted {
+        tool_call_id: String,
+        tool_name: String,
+    },
+    /// Tool is executing with display info
+    ToolExecuting {
+        tool_call_id: String,
+        display_name: String,
+    },
+    /// Tool completed with result
+    ToolCompleted {
+        tool_call_id: String,
+        success: bool,
+        summary: String,
+    },
 }
 
 /// Represents which screen is currently active
@@ -457,7 +473,44 @@ impl App {
                                 tool_input: perm_event.tool_input,
                             });
                         }
-                        // Ignore other event types for now (reasoning, tool calls, etc.)
+                        SseEvent::ToolCallStart(tool_event) => {
+                            let _ = message_tx.send(AppMessage::ToolStarted {
+                                tool_call_id: tool_event.tool_call_id,
+                                tool_name: tool_event.tool_name,
+                            });
+                        }
+                        SseEvent::ToolExecuting(tool_event) => {
+                            let display_name = tool_event.display_name
+                                .or(tool_event.url)
+                                .unwrap_or_else(|| "Executing...".to_string());
+                            let _ = message_tx.send(AppMessage::ToolExecuting {
+                                tool_call_id: tool_event.tool_call_id,
+                                display_name,
+                            });
+                        }
+                        SseEvent::ToolResult(tool_event) => {
+                            // Check if result looks like an error (starts with "Error:")
+                            let result = &tool_event.result;
+                            let (success, summary) = if result.starts_with("Error:") || result.starts_with("error:") {
+                                (false, result.clone())
+                            } else {
+                                // Summarize successful result
+                                let summary = if result.len() > 50 {
+                                    format!("{}...", &result[..47])
+                                } else if result.is_empty() {
+                                    "Complete".to_string()
+                                } else {
+                                    result.clone()
+                                };
+                                (true, summary)
+                            };
+                            let _ = message_tx.send(AppMessage::ToolCompleted {
+                                tool_call_id: tool_event.tool_call_id,
+                                success,
+                                summary,
+                            });
+                        }
+                        // Ignore other event types for now (reasoning, etc.)
                         _ => {}
                     }
                 }
@@ -553,6 +606,8 @@ impl App {
                 message_id,
             } => {
                 self.cache.finalize_message(&thread_id, message_id);
+                // Clear tool tracker when stream completes (ephemeral state)
+                self.tool_tracker.clear();
                 // Auto-scroll to bottom when stream completes, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
                     self.conversation_scroll = 0;
@@ -611,6 +666,27 @@ impl App {
                         tool_input,
                     });
                 }
+            }
+            AppMessage::ToolStarted { tool_call_id, tool_name } => {
+                // Register tool in tracker with display status for UI
+                self.tool_tracker.register_tool_started(
+                    tool_call_id,
+                    tool_name,
+                    self.tick_count,
+                );
+            }
+            AppMessage::ToolExecuting { tool_call_id, display_name } => {
+                // Update tool to executing state with display info
+                self.tool_tracker.set_tool_executing(&tool_call_id, display_name);
+            }
+            AppMessage::ToolCompleted { tool_call_id, success, summary } => {
+                // Mark tool as completed with summary for fade display
+                self.tool_tracker.complete_tool_with_summary(
+                    &tool_call_id,
+                    success,
+                    summary,
+                    self.tick_count,
+                );
             }
         }
     }

@@ -890,6 +890,85 @@ fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+/// Spinner frames for tool status animation
+const SPINNER_FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
+
+/// Render tool status indicators inline
+/// Shows: ◐ Reading src/main.rs...  (executing, with spinner)
+///        ✓ Read complete           (success, fades after 30 ticks)
+///        ✗ Write failed: error     (failure, persists)
+fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
+    use crate::state::ToolDisplayStatus;
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Get tools that should be rendered at current tick
+    let tools = app.tool_tracker.tools_to_render(app.tick_count);
+
+    if tools.is_empty() {
+        return lines;
+    }
+
+    for (_tool_id, state) in tools {
+        let Some(ref display_status) = state.display_status else {
+            continue;
+        };
+
+        let line = match display_status {
+            ToolDisplayStatus::Started { .. } | ToolDisplayStatus::Executing { .. } => {
+                // Animate spinner based on tick count
+                let spinner_idx = (app.tick_count / 2) as usize % SPINNER_FRAMES.len();
+                let spinner = SPINNER_FRAMES[spinner_idx];
+                let text = display_status.display_text();
+
+                Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", spinner),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::styled(
+                        text,
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ])
+            }
+            ToolDisplayStatus::Completed { success, summary, .. } => {
+                if *success {
+                    Line::from(vec![
+                        Span::styled(
+                            "  ✓ ",
+                            Style::default().fg(Color::Green),
+                        ),
+                        Span::styled(
+                            summary.clone(),
+                            Style::default().fg(Color::Green),
+                        ),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled(
+                            "  ✗ ",
+                            Style::default().fg(Color::Red),
+                        ),
+                        Span::styled(
+                            summary.clone(),
+                            Style::default().fg(Color::Red),
+                        ),
+                    ])
+                }
+            }
+        };
+
+        lines.push(line);
+    }
+
+    if !lines.is_empty() {
+        lines.push(Line::from("")); // Add spacing after tool status
+    }
+
+    lines
+}
+
 /// Render the messages area with user messages and AI responses
 fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     use crate::models::MessageRole;
@@ -899,6 +978,9 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
 
     // Show inline error banners for the thread
     lines.extend(render_inline_error_banners(app));
+
+    // Show tool status indicators
+    lines.extend(render_tool_status_lines(app));
 
     // Show stream error banner if there's a stream error (legacy, for non-thread errors)
     if let Some(error) = &app.stream_error {
