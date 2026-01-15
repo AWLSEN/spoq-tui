@@ -989,6 +989,7 @@ mod tests {
             cache.upsert_thread(Thread {
                 id: format!("thread-{}", i),
                 title: format!("Thread {}", i),
+                description: None,
                 preview: "Preview".to_string(),
                 updated_at: Utc::now(),
                 thread_type: ThreadType::default(),

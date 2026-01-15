@@ -319,7 +319,6 @@ impl App {
         let new_thread = Thread {
             id: format!("thread-{}", self.threads.len() + 1),
             title: "New Thread".to_string(),
-            description: None,
             preview: "No messages yet...".to_string(),
             created_at: Utc::now(),
         };
