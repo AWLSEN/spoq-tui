@@ -18,3 +18,8 @@ eventsource-client = "0.12"
 futures-util = "0.3"
 pulldown-cmark = "0.12"
 open = "5"
+axum = { version = "0.7", features = ["ws"] }
+tracing = "0.1"
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tokio-tungstenite = "0.21"
+tower-http = { version = "0.5", features = ["cors"] }

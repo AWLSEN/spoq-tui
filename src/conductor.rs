@@ -3,6 +3,7 @@
 //! This module provides the HTTP client for interacting with the Conductor backend,
 //! including streaming responses via Server-Sent Events (SSE).
 
+use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;
 use crate::models::{Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse};
 use crate::sse::{SseParseError, SseParser};
@@ -108,12 +109,32 @@ impl ConductorClient {
     ///
     /// # Arguments
     /// * `request` - The stream request containing the prompt and optional thread info
+    /// * `debug_tx` - Optional debug event sender for emitting raw SSE events
     ///
     /// # Returns
     /// A stream of `Result<SseEvent, ConductorError>` items
     pub async fn stream(
         &self,
         request: &StreamRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<SseEvent, ConductorError>> + Send>>, ConductorError>
+    {
+        self.stream_with_debug(request, None).await
+    }
+
+    /// Stream a conversation response from the Conductor API with optional debug events.
+    ///
+    /// This is the internal implementation that supports debug event emission.
+    ///
+    /// # Arguments
+    /// * `request` - The stream request containing the prompt and optional thread info
+    /// * `debug_tx` - Optional debug event sender for emitting raw SSE events
+    ///
+    /// # Returns
+    /// A stream of `Result<SseEvent, ConductorError>` items
+    pub async fn stream_with_debug(
+        &self,
+        request: &StreamRequest,
+        debug_tx: Option<DebugEventSender>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<SseEvent, ConductorError>> + Send>>, ConductorError>
     {
         let url = format!("{}/v1/stream", self.base_url);
@@ -137,9 +158,10 @@ impl ConductorClient {
         let bytes_stream = response.bytes_stream();
 
         // Create an SSE parser and process the byte stream
+        // Include debug_tx in the state tuple for emitting debug events
         let event_stream = stream::unfold(
-            (bytes_stream, SseParser::new(), String::new()),
-            |(mut bytes_stream, mut parser, mut buffer)| async move {
+            (bytes_stream, SseParser::new(), String::new(), debug_tx),
+            |(mut bytes_stream, mut parser, mut buffer, debug_tx)| async move {
                 loop {
                     // First, try to process any complete lines in the buffer
                     if let Some(newline_pos) = buffer.find('\n') {
@@ -148,16 +170,26 @@ impl ConductorClient {
 
                         match parser.feed_line(&line) {
                             Ok(Some(sse_event)) => {
+                                // Emit raw SSE debug event if debug channel is available
+                                if let Some(ref tx) = debug_tx {
+                                    let raw_data = RawSseEventData::new(
+                                        sse_event.event_type_name(),
+                                        format!("{:?}", sse_event),
+                                    );
+                                    let debug_event = DebugEvent::new(DebugEventKind::RawSseEvent(raw_data));
+                                    let _ = tx.send(debug_event);
+                                }
+
                                 // Convert the sse::SseEvent to events::SseEvent
                                 let event = convert_sse_event(sse_event);
-                                return Some((Ok(event), (bytes_stream, parser, buffer)));
+                                return Some((Ok(event), (bytes_stream, parser, buffer, debug_tx)));
                             }
                             Ok(None) => {
                                 // Continue processing buffer
                                 continue;
                             }
                             Err(e) => {
-                                return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, buffer)));
+                                return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, buffer, debug_tx)));
                             }
                         }
                     }
@@ -172,7 +204,7 @@ impl ConductorClient {
                             // Loop back to process the buffer
                         }
                         Some(Err(e)) => {
-                            return Some((Err(ConductorError::Http(e)), (bytes_stream, parser, buffer)));
+                            return Some((Err(ConductorError::Http(e)), (bytes_stream, parser, buffer, debug_tx)));
                         }
                         None => {
                             // Stream ended - process any remaining data in buffer
@@ -181,12 +213,22 @@ impl ConductorClient {
                                 buffer.clear();
                                 match parser.feed_line(&line) {
                                     Ok(Some(sse_event)) => {
+                                        // Emit raw SSE debug event if debug channel is available
+                                        if let Some(ref tx) = debug_tx {
+                                            let raw_data = RawSseEventData::new(
+                                                sse_event.event_type_name(),
+                                                format!("{:?}", sse_event),
+                                            );
+                                            let debug_event = DebugEvent::new(DebugEventKind::RawSseEvent(raw_data));
+                                            let _ = tx.send(debug_event);
+                                        }
+
                                         let event = convert_sse_event(sse_event);
-                                        return Some((Ok(event), (bytes_stream, parser, buffer)));
+                                        return Some((Ok(event), (bytes_stream, parser, buffer, debug_tx)));
                                     }
                                     Ok(None) => {}
                                     Err(e) => {
-                                        return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, buffer)));
+                                        return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, buffer, debug_tx)));
                                     }
                                 }
                             }

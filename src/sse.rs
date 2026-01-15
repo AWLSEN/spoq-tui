@@ -135,6 +135,32 @@ pub enum SseEvent {
     },
 }
 
+impl SseEvent {
+    /// Returns the event type name as a string for debugging purposes.
+    pub fn event_type_name(&self) -> &'static str {
+        match self {
+            SseEvent::Content { .. } => "content",
+            SseEvent::ThreadInfo { .. } => "thread_info",
+            SseEvent::MessageInfo { .. } => "message_info",
+            SseEvent::Done => "done",
+            SseEvent::Error { .. } => "error",
+            SseEvent::Ping => "ping",
+            SseEvent::SkillsInjected { .. } => "skills_injected",
+            SseEvent::OAuthConsentRequired { .. } => "oauth_consent_required",
+            SseEvent::ContextCompacted { .. } => "context_compacted",
+            SseEvent::ToolCallStart { .. } => "tool_call_start",
+            SseEvent::ToolCallArgument { .. } => "tool_call_argument",
+            SseEvent::ToolExecuting { .. } => "tool_executing",
+            SseEvent::ToolResult { .. } => "tool_result",
+            SseEvent::Reasoning { .. } => "reasoning",
+            SseEvent::PermissionRequest { .. } => "permission_request",
+            SseEvent::TodosUpdated { .. } => "todos_updated",
+            SseEvent::Subagent { .. } => "subagent",
+            SseEvent::ThreadUpdated { .. } => "thread_updated",
+        }
+    }
+}
+
 /// Raw data payload from SSE data lines
 /// Supports multiple field names that backends might use for content
 /// Also captures flattened metadata fields from the backend

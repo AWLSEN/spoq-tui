@@ -1874,6 +1874,7 @@ mod tests {
             session_state: crate::state::SessionState::new(),
             tool_tracker: crate::state::ToolTracker::new(),
             subagent_tracker: crate::state::SubagentTracker::new(),
+            debug_tx: None,
         }
     }
 

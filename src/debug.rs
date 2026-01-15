@@ -39,7 +39,7 @@ pub fn create_debug_channel(capacity: usize) -> (DebugEventSender, broadcast::Re
 ///
 /// All events include common metadata (timestamp, thread_id, session_id)
 /// along with event-specific data.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DebugEvent {
     /// When the event occurred
     pub timestamp: DateTime<Utc>,
@@ -78,7 +78,7 @@ impl DebugEvent {
 }
 
 /// The specific kind of debug event.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DebugEventKind {
     /// Raw SSE event received from conductor
@@ -94,7 +94,7 @@ pub enum DebugEventKind {
 }
 
 /// Raw SSE event data as received from the conductor.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawSseEventData {
     /// The raw event type from SSE (e.g., "content", "tool_call_start")
     pub event_type: String,
@@ -129,7 +129,7 @@ impl RawSseEventData {
 }
 
 /// Processed event data after conversion to AppMessage.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessedEventData {
     /// The type of AppMessage that was generated
     pub message_type: String,
@@ -148,7 +148,7 @@ impl ProcessedEventData {
 }
 
 /// State change data capturing updates to cache or app state.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateChangeData {
     /// The type of state that changed
     pub state_type: StateType,
@@ -192,7 +192,7 @@ impl StateChangeData {
 }
 
 /// Types of state that can change.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StateType {
     /// Thread cache update
@@ -210,7 +210,7 @@ pub enum StateType {
 }
 
 /// Stream lifecycle event data.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamLifecycleData {
     /// The lifecycle phase
     pub phase: StreamPhase,
@@ -237,7 +237,7 @@ impl StreamLifecycleData {
 }
 
 /// Phases of a stream's lifecycle.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamPhase {
     /// Stream connection initiated
@@ -253,7 +253,7 @@ pub enum StreamPhase {
 }
 
 /// Error data for debugging.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorData {
     /// Error code if available
     pub code: Option<String>,
@@ -288,7 +288,7 @@ impl ErrorData {
 }
 
 /// Source of an error.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ErrorSource {
     /// Error from SSE connection

@@ -1,5 +1,9 @@
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
+use crate::debug::{
+    DebugEvent, DebugEventKind, DebugEventSender, ErrorData, ErrorSource, ProcessedEventData,
+    StateChangeData, StateType, StreamLifecycleData, StreamPhase,
+};
 use crate::events::SseEvent;
 use crate::models::{StreamRequest, ThreadType};
 use crate::state::{SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker};
@@ -12,15 +16,27 @@ use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// Truncate a string for debug output, adding "..." if truncated.
+fn truncate_for_debug(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
 /// Log thread metadata updates to a dedicated file for debugging
 fn log_thread_update(message: &str) {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let log_path = format!("{}/spoq_thread.log", home);
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("/tmp/tui_spoq_thread.log")
+        .open(&log_path)
     {
         let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
         let _ = writeln!(file, "[{}] {}", timestamp, message);
+        let _ = file.flush();
     }
 }
 
@@ -183,6 +199,8 @@ pub struct App {
     /// Subagent activity tracking (cleared on done event)
     pub subagent_tracker: SubagentTracker,
     pub todos: Vec<Todo>,
+    /// Debug event sender for emitting internal events to debug server
+    pub debug_tx: Option<DebugEventSender>,
 }
 
 impl App {
@@ -225,6 +243,7 @@ impl App {
             tool_tracker: ToolTracker::new(),
             subagent_tracker: SubagentTracker::new(),
             todos: Vec::new(),
+            debug_tx: None,
         })
     }
 
@@ -411,10 +430,21 @@ impl App {
 
         self.input_box.clear();
 
+        // Emit StreamLifecycle connecting event
+        Self::emit_debug(
+            &self.debug_tx,
+            DebugEventKind::StreamLifecycle(StreamLifecycleData::with_details(
+                StreamPhase::Connecting,
+                format!("thread: {}, new: {}", thread_id, is_new_thread),
+            )),
+            Some(&thread_id),
+        );
+
         // Clone what we need for the async task
         let client = Arc::clone(&self.client);
         let message_tx = self.message_tx.clone();
         let thread_id_for_task = thread_id.clone();
+        let debug_tx = self.debug_tx.clone();
 
         // Build unified StreamRequest with thread_type
         let request = if is_new_thread {
@@ -434,9 +464,24 @@ impl App {
         tokio::spawn(async move {
             match client.stream(&request).await {
                 Ok(mut stream) => {
-                    Self::process_stream(&mut stream, &message_tx, &thread_id_for_task).await;
+                    // Emit StreamLifecycle connected event
+                    Self::emit_debug(
+                        &debug_tx,
+                        DebugEventKind::StreamLifecycle(StreamLifecycleData::new(StreamPhase::Connected)),
+                        Some(&thread_id_for_task),
+                    );
+                    Self::process_stream(&mut stream, &message_tx, &thread_id_for_task, debug_tx).await;
                 }
                 Err(e) => {
+                    // Emit error debug event
+                    Self::emit_debug(
+                        &debug_tx,
+                        DebugEventKind::Error(ErrorData::new(
+                            ErrorSource::ConductorApi,
+                            &e.to_string(),
+                        )),
+                        Some(&thread_id_for_task),
+                    );
                     let _ = message_tx.send(AppMessage::StreamError {
                         thread_id: thread_id_for_task,
                         error: e.to_string(),
@@ -444,6 +489,14 @@ impl App {
                 }
             }
         });
+    }
+
+    /// Helper to emit a debug event if debug channel is available.
+    fn emit_debug(debug_tx: &Option<DebugEventSender>, kind: DebugEventKind, thread_id: Option<&str>) {
+        if let Some(ref tx) = debug_tx {
+            let event = DebugEvent::with_context(kind, thread_id.map(String::from), None);
+            let _ = tx.send(event);
+        }
     }
 
     /// Process a stream of SSE events and send messages to the app.
@@ -454,6 +507,7 @@ impl App {
         stream: &mut std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<SseEvent, crate::conductor::ConductorError>> + Send>>,
         message_tx: &mpsc::UnboundedSender<AppMessage>,
         thread_id: &str,
+        debug_tx: Option<DebugEventSender>,
     ) {
         while let Some(result) = stream.next().await {
             match result {
@@ -464,6 +518,16 @@ impl App {
                             if content_event.text.is_empty() {
                                 continue;
                             }
+
+                            // Emit ProcessedEvent
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "StreamToken",
+                                    format!("token: '{}'", truncate_for_debug(&content_event.text, 50)),
+                                )),
+                                Some(thread_id),
+                            );
 
                             let _ = message_tx.send(AppMessage::StreamToken {
                                 thread_id: thread_id.to_string(),
@@ -476,6 +540,24 @@ impl App {
                                 .message_id
                                 .parse::<i64>()
                                 .unwrap_or(0);
+
+                            // Emit ProcessedEvent
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "StreamComplete",
+                                    format!("message_id: {}", message_id),
+                                )),
+                                Some(thread_id),
+                            );
+
+                            // Emit StreamLifecycle completed
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::StreamLifecycle(StreamLifecycleData::new(StreamPhase::Completed)),
+                                Some(thread_id),
+                            );
+
                             let _ = message_tx.send(AppMessage::StreamComplete {
                                 thread_id: thread_id.to_string(),
                                 message_id,
@@ -484,6 +566,16 @@ impl App {
                             // which arrives ~3 seconds after done. Stream will close naturally.
                         }
                         SseEvent::Error(error_event) => {
+                            // Emit Error debug event
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::Error(ErrorData::new(
+                                    ErrorSource::SseConnection,
+                                    &error_event.message,
+                                )),
+                                Some(thread_id),
+                            );
+
                             let _ = message_tx.send(AppMessage::StreamError {
                                 thread_id: thread_id.to_string(),
                                 error: error_event.message,
@@ -493,6 +585,14 @@ impl App {
                         SseEvent::UserMessageSaved(event) => {
                             // ThreadInfo event mapped to UserMessageSaved in conductor.rs
                             // This provides the real backend thread_id
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "ThreadCreated",
+                                    format!("real_id: {}", event.thread_id),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::ThreadCreated {
                                 pending_id: thread_id.to_string(),
                                 real_id: event.thread_id,
@@ -501,12 +601,28 @@ impl App {
                         }
                         SseEvent::TodosUpdated(todos_event) => {
                             // Convert SSE TodoItems to our Todo type
-                            let todos = todos_event.todos.iter()
+                            let todos: Vec<Todo> = todos_event.todos.iter()
                                 .map(Todo::from_sse)
                                 .collect();
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "TodosUpdated",
+                                    format!("{} todos", todos.len()),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::TodosUpdated { todos });
                         }
                         SseEvent::PermissionRequest(perm_event) => {
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "PermissionRequested",
+                                    format!("tool: {}", perm_event.tool_name),
+                                )),
+                                Some(thread_id),
+                            );
                             // Send permission request to app for user approval
                             let _ = message_tx.send(AppMessage::PermissionRequested {
                                 permission_id: perm_event.permission_id,
@@ -516,6 +632,14 @@ impl App {
                             });
                         }
                         SseEvent::ToolCallStart(tool_event) => {
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "ToolStarted",
+                                    format!("tool: {}", tool_event.tool_name),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::ToolStarted {
                                 tool_call_id: tool_event.tool_call_id,
                                 tool_name: tool_event.tool_name,
@@ -525,6 +649,14 @@ impl App {
                             let display_name = tool_event.display_name
                                 .or(tool_event.url)
                                 .unwrap_or_else(|| "Executing...".to_string());
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "ToolExecuting",
+                                    format!("display: {}", truncate_for_debug(&display_name, 40)),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::ToolExecuting {
                                 tool_call_id: tool_event.tool_call_id,
                                 display_name,
@@ -546,6 +678,14 @@ impl App {
                                 };
                                 (true, summary)
                             };
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "ToolCompleted",
+                                    format!("success: {}, summary: {}", success, truncate_for_debug(&summary, 30)),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::ToolCompleted {
                                 tool_call_id: tool_event.tool_call_id,
                                 success,
@@ -553,11 +693,27 @@ impl App {
                             });
                         }
                         SseEvent::SkillsInjected(skills_event) => {
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "SkillsInjected",
+                                    format!("{} skills", skills_event.skills.len()),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::SkillsInjected {
                                 skills: skills_event.skills,
                             });
                         }
                         SseEvent::OAuthConsentRequired(oauth_event) => {
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "OAuthConsentRequired",
+                                    format!("provider: {}", oauth_event.provider),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::OAuthConsentRequired {
                                 provider: oauth_event.provider,
                                 url: oauth_event.url,
@@ -565,6 +721,14 @@ impl App {
                             });
                         }
                         SseEvent::ContextCompacted(context_event) => {
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "ContextCompacted",
+                                    format!("tokens: {:?}/{:?}", context_event.tokens_used, context_event.token_limit),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::ContextCompacted {
                                 tokens_used: context_event.tokens_used,
                                 token_limit: context_event.token_limit,
@@ -573,6 +737,14 @@ impl App {
                         SseEvent::Reasoning(reasoning_event) => {
                             // Send reasoning tokens to be displayed in collapsible block
                             if !reasoning_event.text.is_empty() {
+                                Self::emit_debug(
+                                    &debug_tx,
+                                    DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                        "ReasoningToken",
+                                        format!("token: '{}'", truncate_for_debug(&reasoning_event.text, 50)),
+                                    )),
+                                    Some(thread_id),
+                                );
                                 let _ = message_tx.send(AppMessage::ReasoningToken {
                                     thread_id: thread_id.to_string(),
                                     token: reasoning_event.text,
@@ -586,6 +758,14 @@ impl App {
                                 thread_event.title,
                                 thread_event.description
                             ));
+                            Self::emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "ThreadMetadataUpdated",
+                                    format!("title: {:?}", thread_event.title),
+                                )),
+                                Some(thread_id),
+                            );
                             let _ = message_tx.send(AppMessage::ThreadMetadataUpdated {
                                 thread_id: thread_event.thread_id,
                                 title: thread_event.title,
@@ -597,6 +777,15 @@ impl App {
                     }
                 }
                 Err(e) => {
+                    // Emit Error debug event for stream errors
+                    Self::emit_debug(
+                        &debug_tx,
+                        DebugEventKind::Error(ErrorData::new(
+                            ErrorSource::SseConnection,
+                            &e.to_string(),
+                        )),
+                        Some(thread_id),
+                    );
                     let _ = message_tx.send(AppMessage::StreamError {
                         thread_id: thread_id.to_string(),
                         error: e.to_string(),
@@ -678,6 +867,16 @@ impl App {
         match msg {
             AppMessage::StreamToken { thread_id, token } => {
                 self.cache.append_to_message(&thread_id, &token);
+                // Emit StateChange for message cache update
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Message content appended",
+                        format!("token: '{}'", truncate_for_debug(&token, 30)),
+                    )),
+                    Some(&thread_id),
+                );
                 // Auto-scroll to bottom when new content arrives, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
                     self.conversation_scroll = 0;
@@ -685,6 +884,16 @@ impl App {
             }
             AppMessage::ReasoningToken { thread_id, token } => {
                 self.cache.append_reasoning_to_message(&thread_id, &token);
+                // Emit StateChange for reasoning update
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Reasoning content appended",
+                        format!("token: '{}'", truncate_for_debug(&token, 30)),
+                    )),
+                    Some(&thread_id),
+                );
                 // Auto-scroll to bottom when new reasoning content arrives, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
                     self.conversation_scroll = 0;
@@ -695,17 +904,55 @@ impl App {
                 message_id,
             } => {
                 self.cache.finalize_message(&thread_id, message_id);
+                // Emit StateChange for message finalization
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Message finalized",
+                        format!("message_id: {}", message_id),
+                    )),
+                    Some(&thread_id),
+                );
                 // Clear tool tracker when stream completes (ephemeral state)
                 self.tool_tracker.clear();
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::ToolTracker,
+                        "Tool tracker cleared",
+                        "cleared",
+                    )),
+                    Some(&thread_id),
+                );
                 // Auto-scroll to bottom when stream completes, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
                     self.conversation_scroll = 0;
                 }
             }
             AppMessage::StreamError { thread_id: _, error } => {
+                // Emit Error debug event
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(
+                        ErrorSource::AppState,
+                        &error,
+                    )),
+                    None,
+                );
                 self.stream_error = Some(error);
             }
             AppMessage::ConnectionStatus(connected) => {
+                // Emit StateChange for connection status
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Connection status changed",
+                        format!("connected: {}", connected),
+                    )),
+                    None,
+                );
                 self.connection_status = connected;
                 if connected {
                     // Clear any previous error when reconnected
@@ -719,20 +966,62 @@ impl App {
             } => {
                 // Reconcile the pending local thread ID with the real backend ID
                 self.cache
-                    .reconcile_thread_id(&pending_id, &real_id, title);
+                    .reconcile_thread_id(&pending_id, &real_id, title.clone());
+                // Emit StateChange for thread reconciliation
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::with_previous(
+                        StateType::ThreadCache,
+                        "Thread ID reconciled",
+                        pending_id.clone(),
+                        format!("real_id: {}, title: {:?}", real_id, title),
+                    )),
+                    Some(&real_id),
+                );
                 // Update active_thread_id if it matches the pending ID
                 if self.active_thread_id.as_ref() == Some(&pending_id) {
                     self.active_thread_id = Some(real_id);
                 }
             }
             AppMessage::MessagesLoaded { thread_id, messages } => {
-                self.cache.set_messages(thread_id, messages);
+                let count = messages.len();
+                self.cache.set_messages(thread_id.clone(), messages);
+                // Emit StateChange for messages loaded
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Messages loaded",
+                        format!("{} messages", count),
+                    )),
+                    Some(&thread_id),
+                );
             }
             AppMessage::MessagesLoadError { thread_id: _, error } => {
+                // Emit Error debug event
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(
+                        ErrorSource::Cache,
+                        &error,
+                    )),
+                    None,
+                );
                 self.stream_error = Some(error);
             }
             AppMessage::TodosUpdated { todos } => {
+                let count = todos.len();
                 self.todos = todos;
+                // Emit StateChange for todos update
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::Todos,
+                        "Todos updated",
+                        format!("{} items", count),
+                    )),
+                    None,
+                );
             }
             AppMessage::PermissionRequested {
                 permission_id,
@@ -748,12 +1037,22 @@ impl App {
                     // Store permission request for user approval
                     use crate::state::PermissionRequest;
                     self.session_state.set_pending_permission(PermissionRequest {
-                        permission_id,
-                        tool_name,
+                        permission_id: permission_id.clone(),
+                        tool_name: tool_name.clone(),
                         description,
                         context: None, // Context will be extracted from tool_input in UI
                         tool_input,
                     });
+                    // Emit StateChange for pending permission
+                    Self::emit_debug(
+                        &self.debug_tx,
+                        DebugEventKind::StateChange(StateChangeData::new(
+                            StateType::SessionState,
+                            "Permission pending",
+                            format!("tool: {}, id: {}", tool_name, permission_id),
+                        )),
+                        None,
+                    );
                 }
             }
             AppMessage::ToolStarted { tool_call_id, tool_name } => {
@@ -763,6 +1062,16 @@ impl App {
                     tool_name.clone(),
                     self.tick_count,
                 );
+                // Emit StateChange for tool tracker
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::ToolTracker,
+                        "Tool started",
+                        format!("tool: {}", tool_name),
+                    )),
+                    self.active_thread_id.as_deref(),
+                );
                 // Also add tool event inline to the streaming message
                 if let Some(thread_id) = &self.active_thread_id {
                     self.cache.start_tool_in_message(thread_id, tool_call_id, tool_name);
@@ -770,15 +1079,35 @@ impl App {
             }
             AppMessage::ToolExecuting { tool_call_id, display_name } => {
                 // Update tool to executing state with display info
-                self.tool_tracker.set_tool_executing(&tool_call_id, display_name);
+                self.tool_tracker.set_tool_executing(&tool_call_id, display_name.clone());
+                // Emit StateChange for tool executing
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::ToolTracker,
+                        "Tool executing",
+                        format!("display: {}", truncate_for_debug(&display_name, 40)),
+                    )),
+                    self.active_thread_id.as_deref(),
+                );
             }
             AppMessage::ToolCompleted { tool_call_id, success, summary } => {
                 // Mark tool as completed with summary for fade display
                 self.tool_tracker.complete_tool_with_summary(
                     &tool_call_id,
                     success,
-                    summary,
+                    summary.clone(),
                     self.tick_count,
+                );
+                // Emit StateChange for tool completion
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::ToolTracker,
+                        "Tool completed",
+                        format!("success: {}, summary: {}", success, truncate_for_debug(&summary, 30)),
+                    )),
+                    self.active_thread_id.as_deref(),
                 );
                 // Also update the inline tool event in the streaming message
                 if let Some(thread_id) = &self.active_thread_id {
@@ -790,19 +1119,40 @@ impl App {
                 }
             }
             AppMessage::SkillsInjected { skills } => {
+                let count = skills.len();
                 // Update session state with injected skills
                 for skill in skills {
                     self.session_state.add_skill(skill);
                 }
+                // Emit StateChange for skills injection
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Skills injected",
+                        format!("{} skills", count),
+                    )),
+                    None,
+                );
             }
             AppMessage::OAuthConsentRequired { provider, url, skill_name } => {
                 // Store OAuth requirement in session state
                 if let Some(skill) = skill_name {
-                    self.session_state.set_oauth_required(provider, skill);
+                    self.session_state.set_oauth_required(provider.clone(), skill);
                 }
                 if let Some(consent_url) = url {
                     self.session_state.set_oauth_url(consent_url);
                 }
+                // Emit StateChange for OAuth requirement
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "OAuth consent required",
+                        format!("provider: {}", provider),
+                    )),
+                    None,
+                );
             }
             AppMessage::ContextCompacted { tokens_used, token_limit } => {
                 // Update context tracking in session state
@@ -812,6 +1162,16 @@ impl App {
                 if let Some(limit) = token_limit {
                     self.session_state.set_context_token_limit(limit);
                 }
+                // Emit StateChange for context compaction
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Context compacted",
+                        format!("tokens: {:?}/{:?}", tokens_used, token_limit),
+                    )),
+                    None,
+                );
             }
             AppMessage::ThreadMetadataUpdated { thread_id, title, description } => {
                 log_thread_update(&format!(
@@ -823,6 +1183,16 @@ impl App {
                     "Cache update result: id={}, success={}",
                     thread_id, updated
                 ));
+                // Emit StateChange for thread metadata update
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::ThreadCache,
+                        "Thread metadata updated",
+                        format!("title: {:?}, updated: {}", title, updated),
+                    )),
+                    Some(&thread_id),
+                );
             }
         }
     }
