@@ -135,6 +135,15 @@ pub struct ProcessedEventData {
     pub message_type: String,
     /// Summary of the message content (truncated for large payloads)
     pub summary: String,
+    /// Cumulative token count (for token events)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_count: Option<u64>,
+    /// Tokens per second rate
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tokens_per_second: Option<f64>,
+    /// Latency in milliseconds since last event
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latency_ms: Option<u64>,
 }
 
 impl ProcessedEventData {
@@ -143,6 +152,26 @@ impl ProcessedEventData {
         Self {
             message_type: message_type.into(),
             summary: summary.into(),
+            token_count: None,
+            tokens_per_second: None,
+            latency_ms: None,
+        }
+    }
+
+    /// Create a new processed event with statistics.
+    pub fn with_stats(
+        message_type: impl Into<String>,
+        summary: impl Into<String>,
+        token_count: Option<u64>,
+        tokens_per_second: Option<f64>,
+        latency_ms: Option<u64>,
+    ) -> Self {
+        Self {
+            message_type: message_type.into(),
+            summary: summary.into(),
+            token_count,
+            tokens_per_second,
+            latency_ms,
         }
     }
 }
@@ -962,6 +991,10 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                         <span class="stat-value" id="statTokensPerSec">0.0</span>
                     </div>
                     <div class="stat-item">
+                        <span class="stat-label">Peak Tokens/sec</span>
+                        <span class="stat-value" id="statPeakTokensPerSec">0.0</span>
+                    </div>
+                    <div class="stat-item">
                         <span class="stat-label">Avg Latency</span>
                         <span class="stat-value" id="statAvgLatency">0ms</span>
                     </div>
@@ -1037,7 +1070,9 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             contentEvents: 0,
             toolEvents: 0,
             errorEvents: 0,
-            totalEvents: 0
+            totalEvents: 0,
+            currentTokensPerSecond: 0,
+            peakTokensPerSecond: 0
         };
         let state = {
             thread: null,
@@ -1095,17 +1130,34 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
 
             // Update stats based on event type
             const eventType = event.event ? event.event.type : null;
-            if (eventType === 'raw_sse_event') {
+            if (eventType === 'processed_event') {
+                // Extract statistics from ProcessedEvent
+                const processedEvent = event.event;
+                if (processedEvent.message_type === 'StreamToken') {
+                    // Use token statistics from the event if available
+                    if (processedEvent.token_count !== undefined && processedEvent.token_count !== null) {
+                        stats.tokensReceived = processedEvent.token_count;
+                    }
+                    if (processedEvent.tokens_per_second !== undefined && processedEvent.tokens_per_second !== null) {
+                        stats.currentTokensPerSecond = processedEvent.tokens_per_second;
+                        // Track peak tokens/second
+                        if (stats.peakTokensPerSecond === undefined || processedEvent.tokens_per_second > stats.peakTokensPerSecond) {
+                            stats.peakTokensPerSecond = processedEvent.tokens_per_second;
+                        }
+                    }
+                    if (processedEvent.latency_ms !== undefined && processedEvent.latency_ms !== null) {
+                        stats.latencies.push(processedEvent.latency_ms);
+                        if (stats.latencies.length > 100) stats.latencies.shift();
+                    }
+                }
+            } else if (eventType === 'raw_sse_event') {
                 const sseType = event.event.event_type;
                 if (sseType === 'content') {
                     stats.contentEvents++;
-                    // Estimate tokens (rough approximation)
+                    // Accumulate content for display
                     try {
                         const payload = JSON.parse(event.event.payload);
                         if (payload.text) {
-                            const tokens = Math.ceil(payload.text.length / 4);
-                            stats.tokensReceived += tokens;
-                            stats.tokenTimestamps.push(Date.now());
                             state.accumulatedContent += payload.text;
                         }
                     } catch (e) {}
@@ -1116,14 +1168,6 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                     } else if (sseType === 'tool_call_end' || sseType === 'tool_result') {
                         state.activeTools = Math.max(0, state.activeTools - 1);
                     }
-                }
-
-                // Track latency
-                const now = Date.now();
-                const eventTime = new Date(event.timestamp).getTime();
-                if (!isNaN(eventTime)) {
-                    stats.latencies.push(now - eventTime);
-                    if (stats.latencies.length > 100) stats.latencies.shift();
                 }
             } else if (eventType === 'error') {
                 stats.errorEvents++;
@@ -1237,13 +1281,19 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             document.getElementById('statErrorEvents').textContent = stats.errorEvents;
             document.getElementById('statTotalEvents').textContent = stats.totalEvents;
 
-            // Tokens per second (last 10 seconds)
-            const now = Date.now();
-            let recentTokens = 0;
-            for (let i = 0; i < stats.tokenTimestamps.length; i++) {
-                if (now - stats.tokenTimestamps[i] < 10000) recentTokens++;
+            // Tokens per second (use current rate from statistics)
+            if (stats.currentTokensPerSecond > 0) {
+                document.getElementById('statTokensPerSec').textContent = stats.currentTokensPerSecond.toFixed(1);
+            } else {
+                document.getElementById('statTokensPerSec').textContent = '0.0';
             }
-            document.getElementById('statTokensPerSec').textContent = (recentTokens / 10).toFixed(1);
+
+            // Peak tokens per second
+            if (stats.peakTokensPerSecond > 0) {
+                document.getElementById('statPeakTokensPerSec').textContent = stats.peakTokensPerSecond.toFixed(1);
+            } else {
+                document.getElementById('statPeakTokensPerSec').textContent = '0.0';
+            }
 
             // Average latency
             if (stats.latencies.length > 0) {
@@ -1251,6 +1301,8 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                 for (let i = 0; i < stats.latencies.length; i++) sum += stats.latencies[i];
                 const avg = sum / stats.latencies.length;
                 document.getElementById('statAvgLatency').textContent = Math.round(avg) + 'ms';
+            } else {
+                document.getElementById('statAvgLatency').textContent = '0ms';
             }
 
             // Duration
@@ -1401,7 +1453,9 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                 contentEvents: 0,
                 toolEvents: 0,
                 errorEvents: 0,
-                totalEvents: 0
+                totalEvents: 0,
+                currentTokensPerSecond: 0,
+                peakTokensPerSecond: 0
             };
             state = {
                 thread: null,

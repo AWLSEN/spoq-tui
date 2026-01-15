@@ -201,6 +201,12 @@ pub struct App {
     pub todos: Vec<Todo>,
     /// Debug event sender for emitting internal events to debug server
     pub debug_tx: Option<DebugEventSender>,
+    /// Timestamp when the current stream started
+    pub stream_start_time: Option<std::time::Instant>,
+    /// Timestamp of the last event
+    pub last_event_time: Option<std::time::Instant>,
+    /// Cumulative token count for the current stream
+    pub cumulative_token_count: u64,
 }
 
 impl App {
@@ -257,6 +263,9 @@ impl App {
             subagent_tracker: SubagentTracker::new(),
             todos: Vec::new(),
             debug_tx,
+            stream_start_time: None,
+            last_event_time: None,
+            cumulative_token_count: 0,
         })
     }
 
@@ -879,7 +888,48 @@ impl App {
     pub fn handle_message(&mut self, msg: AppMessage) {
         match msg {
             AppMessage::StreamToken { thread_id, token } => {
+                // Initialize stream start time if this is the first token
+                let now = std::time::Instant::now();
+                if self.stream_start_time.is_none() {
+                    self.stream_start_time = Some(now);
+                }
+
+                // Calculate latency since last event
+                let latency_ms = self.last_event_time
+                    .map(|last| now.duration_since(last).as_millis() as u64);
+                self.last_event_time = Some(now);
+
+                // Estimate token count (rough approximation: 4 chars per token)
+                let estimated_tokens = (token.len() as f64 / 4.0).ceil() as u64;
+                self.cumulative_token_count += estimated_tokens;
+
+                // Calculate tokens per second
+                let tokens_per_second = if let Some(start) = self.stream_start_time {
+                    let elapsed_secs = now.duration_since(start).as_secs_f64();
+                    if elapsed_secs > 0.0 {
+                        Some(self.cumulative_token_count as f64 / elapsed_secs)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
                 self.cache.append_to_message(&thread_id, &token);
+
+                // Emit ProcessedEvent with statistics
+                Self::emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::ProcessedEvent(ProcessedEventData::with_stats(
+                        "StreamToken",
+                        format!("token: '{}'", truncate_for_debug(&token, 50)),
+                        Some(self.cumulative_token_count),
+                        tokens_per_second,
+                        latency_ms,
+                    )),
+                    Some(&thread_id),
+                );
+
                 // Emit StateChange for message cache update
                 Self::emit_debug(
                     &self.debug_tx,
@@ -917,6 +967,12 @@ impl App {
                 message_id,
             } => {
                 self.cache.finalize_message(&thread_id, message_id);
+
+                // Reset stream statistics
+                self.stream_start_time = None;
+                self.last_event_time = None;
+                self.cumulative_token_count = 0;
+
                 // Emit StateChange for message finalization
                 Self::emit_debug(
                     &self.debug_tx,
@@ -944,6 +1000,11 @@ impl App {
                 }
             }
             AppMessage::StreamError { thread_id: _, error } => {
+                // Reset stream statistics on error
+                self.stream_start_time = None;
+                self.last_event_time = None;
+                self.cumulative_token_count = 0;
+
                 // Emit Error debug event
                 Self::emit_debug(
                     &self.debug_tx,
