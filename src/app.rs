@@ -4,10 +4,25 @@ use crate::events::SseEvent;
 use crate::models::{StreamRequest, ThreadType};
 use crate::state::{SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker};
 use crate::widgets::input_box::InputBox;
+use chrono::Utc;
 use color_eyre::Result;
 use futures_util::StreamExt;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+
+/// Log thread metadata updates to a dedicated file for debugging
+fn log_thread_update(message: &str) {
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/tui_spoq_thread.log")
+    {
+        let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let _ = writeln!(file, "[{}] {}", timestamp, message);
+    }
+}
 
 /// Messages received from async operations (streaming, connection status)
 #[derive(Debug, Clone)]
@@ -564,6 +579,12 @@ impl App {
                             }
                         }
                         SseEvent::ThreadUpdated(thread_event) => {
+                            log_thread_update(&format!(
+                                "SSE received thread_updated: id={}, title={:?}, description={:?}",
+                                thread_event.thread_id,
+                                thread_event.title,
+                                thread_event.description
+                            ));
                             let _ = message_tx.send(AppMessage::ThreadMetadataUpdated {
                                 thread_id: thread_event.thread_id,
                                 title: thread_event.title,
@@ -792,8 +813,15 @@ impl App {
                 }
             }
             AppMessage::ThreadMetadataUpdated { thread_id, title, description } => {
-                // Update thread metadata in cache
-                self.cache.update_thread_metadata(&thread_id, title, description);
+                log_thread_update(&format!(
+                    "Updating cache: id={}, title={:?}, description={:?}",
+                    thread_id, title, description
+                ));
+                let updated = self.cache.update_thread_metadata(&thread_id, title.clone(), description.clone());
+                log_thread_update(&format!(
+                    "Cache update result: id={}, success={}",
+                    thread_id, updated
+                ));
             }
         }
     }
