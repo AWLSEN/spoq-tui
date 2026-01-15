@@ -1366,16 +1366,35 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         .and_then(|id| app.cache.get_messages(id));
 
     // Check if any message is currently streaming
-    let has_streaming_message = cached_messages
+    let streaming_message = cached_messages
         .as_ref()
-        .map(|msgs| msgs.iter().any(|m| m.is_streaming))
-        .unwrap_or(false);
+        .and_then(|msgs| msgs.iter().find(|m| m.is_streaming));
 
-    // Show "AI is responding..." indicator if streaming
-    if has_streaming_message {
+    // Show contextual spinner if streaming
+    if let Some(streaming_msg) = streaming_message {
+        // Check for running tool to show contextual status
+        let spinner_index = ((app.tick_count / 2) % 4) as usize;
+        let spinner = SPINNER_FRAMES[spinner_index];
+
+        // Find the last running tool event in the message
+        let running_tool_name = streaming_msg.segments.iter().rev().find_map(|seg| {
+            if let MessageSegment::ToolEvent(event) = seg {
+                if event.status == ToolEventStatus::Running {
+                    return Some(event.function_name.clone());
+                }
+            }
+            None
+        });
+
+        let status_text = if let Some(tool_name) = running_tool_name {
+            format!("Using {}...", tool_name)
+        } else {
+            "Responding...".to_string()
+        };
+
         lines.push(Line::from(vec![
             Span::styled(
-                "  AI is responding...",
+                format!("  {} {}", spinner, status_text),
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -2198,8 +2217,8 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(
-            buffer_str.contains("AI is responding"),
-            "Conversation screen should show 'AI is responding...' when a message is streaming"
+            buffer_str.contains("Responding"),
+            "Conversation screen should show spinner with 'Responding...' when a message is streaming"
         );
     }
 
@@ -2349,8 +2368,8 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(
-            !buffer_str.contains("AI is responding"),
-            "Conversation screen should NOT show 'AI is responding...' for completed messages"
+            !buffer_str.contains("Responding..."),
+            "Conversation screen should NOT show 'Responding...' spinner for completed messages"
         );
     }
 
