@@ -250,6 +250,18 @@ pub struct ToolEvent {
     pub completed_at: Option<DateTime<Utc>>,
     /// Duration in seconds (calculated when complete)
     pub duration_secs: Option<f64>,
+    /// Accumulated JSON arguments from streaming chunks
+    #[serde(default)]
+    pub args_json: String,
+    /// Formatted display string for arguments (e.g., "Reading /src/main.rs")
+    #[serde(default)]
+    pub args_display: Option<String>,
+    /// Truncated result preview (max ~500 chars)
+    #[serde(default)]
+    pub result_preview: Option<String>,
+    /// Whether the result was an error
+    #[serde(default)]
+    pub result_is_error: bool,
 }
 
 impl ToolEvent {
@@ -263,6 +275,10 @@ impl ToolEvent {
             started_at: Utc::now(),
             completed_at: None,
             duration_secs: None,
+            args_json: String::new(),
+            args_display: None,
+            result_preview: None,
+            result_is_error: false,
         }
     }
 
@@ -278,6 +294,41 @@ impl ToolEvent {
         self.status = ToolEventStatus::Failed;
         self.completed_at = Some(Utc::now());
         self.duration_secs = Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
+    }
+
+    /// Append a chunk of JSON arguments from streaming
+    pub fn append_arg_chunk(&mut self, chunk: &str) {
+        self.args_json.push_str(chunk);
+    }
+
+    /// Set the result preview, truncating if necessary
+    ///
+    /// # Arguments
+    /// * `content` - The full result content
+    /// * `is_error` - Whether the result represents an error
+    pub fn set_result(&mut self, content: &str, is_error: bool) {
+        const MAX_PREVIEW_LEN: usize = 500;
+
+        self.result_is_error = is_error;
+
+        if content.len() <= MAX_PREVIEW_LEN {
+            self.result_preview = Some(content.to_string());
+        } else {
+            // Truncate and add ellipsis
+            let truncated = &content[..MAX_PREVIEW_LEN];
+            // Try to truncate at a word boundary
+            let preview = if let Some(last_space) = truncated.rfind(char::is_whitespace) {
+                if last_space > MAX_PREVIEW_LEN - 50 {
+                    // Only use word boundary if we're not cutting off too much
+                    &truncated[..last_space]
+                } else {
+                    truncated
+                }
+            } else {
+                truncated
+            };
+            self.result_preview = Some(format!("{}...", preview));
+        }
     }
 }
 
@@ -1340,6 +1391,154 @@ mod tests {
 
         assert_eq!(event.display_name, deserialized.display_name);
         assert_eq!(deserialized.display_name, Some("cd /path && ls".to_string()));
+    }
+
+    #[test]
+    fn test_tool_event_new_initializes_new_fields() {
+        let event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        assert!(event.args_json.is_empty());
+        assert_eq!(event.args_display, None);
+        assert_eq!(event.result_preview, None);
+        assert!(!event.result_is_error);
+    }
+
+    #[test]
+    fn test_tool_event_append_arg_chunk() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        assert!(event.args_json.is_empty());
+
+        event.append_arg_chunk("{\"file_path\":");
+        assert_eq!(event.args_json, "{\"file_path\":");
+
+        event.append_arg_chunk("\"/src/main.rs\"}");
+        assert_eq!(event.args_json, "{\"file_path\":\"/src/main.rs\"}");
+    }
+
+    #[test]
+    fn test_tool_event_append_arg_chunk_empty() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        event.append_arg_chunk("");
+        assert!(event.args_json.is_empty());
+    }
+
+    #[test]
+    fn test_tool_event_set_result_short() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        let content = "File contents here";
+        event.set_result(content, false);
+
+        assert_eq!(event.result_preview, Some("File contents here".to_string()));
+        assert!(!event.result_is_error);
+    }
+
+    #[test]
+    fn test_tool_event_set_result_error() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        event.set_result("File not found", true);
+
+        assert_eq!(event.result_preview, Some("File not found".to_string()));
+        assert!(event.result_is_error);
+    }
+
+    #[test]
+    fn test_tool_event_set_result_truncates_long_content() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Bash".to_string());
+
+        // Create content longer than 500 chars
+        let long_content = "x".repeat(600);
+        event.set_result(&long_content, false);
+
+        let preview = event.result_preview.unwrap();
+        assert!(preview.len() <= 503); // 500 + "..."
+        assert!(preview.ends_with("..."));
+        assert!(!event.result_is_error);
+    }
+
+    #[test]
+    fn test_tool_event_set_result_truncates_at_word_boundary() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Bash".to_string());
+
+        // Create content with words, where a word boundary falls within the last 50 chars of the 500-char limit
+        let mut content = "word ".repeat(99); // 495 chars
+        content.push_str("end"); // 498 chars total, then more
+        content.push_str(" extra words that go beyond the limit and should be truncated nicely");
+
+        event.set_result(&content, false);
+
+        let preview = event.result_preview.unwrap();
+        assert!(preview.ends_with("..."));
+        // Should truncate at a word boundary
+        assert!(!preview.contains(" extra"));
+    }
+
+    #[test]
+    fn test_tool_event_set_result_exactly_500_chars() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        let content = "x".repeat(500);
+        event.set_result(&content, false);
+
+        let preview = event.result_preview.unwrap();
+        assert_eq!(preview.len(), 500);
+        assert!(!preview.ends_with("..."));
+    }
+
+    #[test]
+    fn test_tool_event_set_result_501_chars() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+
+        let content = "x".repeat(501);
+        event.set_result(&content, false);
+
+        let preview = event.result_preview.unwrap();
+        assert!(preview.ends_with("..."));
+        // 500 x's + "..."
+        assert_eq!(preview.len(), 503);
+    }
+
+    #[test]
+    fn test_tool_event_serialization_with_new_fields() {
+        let mut event = ToolEvent::new("tool-123".to_string(), "Read".to_string());
+        event.args_json = "{\"file_path\":\"/src/main.rs\"}".to_string();
+        event.args_display = Some("Reading /src/main.rs".to_string());
+        event.set_result("fn main() { }", false);
+
+        let json = serde_json::to_string(&event).expect("Failed to serialize");
+        let deserialized: ToolEvent = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(event.args_json, deserialized.args_json);
+        assert_eq!(event.args_display, deserialized.args_display);
+        assert_eq!(event.result_preview, deserialized.result_preview);
+        assert_eq!(event.result_is_error, deserialized.result_is_error);
+    }
+
+    #[test]
+    fn test_tool_event_deserialization_without_new_fields() {
+        // Test backward compatibility - deserialize JSON without new fields
+        let json = r#"{
+            "tool_call_id": "tool-legacy",
+            "function_name": "Read",
+            "display_name": null,
+            "status": "Running",
+            "started_at": "2024-01-01T00:00:00Z",
+            "completed_at": null,
+            "duration_secs": null
+        }"#;
+
+        let event: ToolEvent = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(event.tool_call_id, "tool-legacy");
+        assert_eq!(event.function_name, "Read");
+        // New fields should default to their empty/false values
+        assert!(event.args_json.is_empty());
+        assert_eq!(event.args_display, None);
+        assert_eq!(event.result_preview, None);
+        assert!(!event.result_is_error);
     }
 
     #[test]
