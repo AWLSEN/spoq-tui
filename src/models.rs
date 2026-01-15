@@ -504,6 +504,18 @@ impl Message {
             }
         }
     }
+
+    /// Append a chunk of JSON arguments to a tool event by its tool_call_id
+    pub fn append_tool_arg_chunk(&mut self, tool_call_id: &str, chunk: &str) {
+        for segment in &mut self.segments {
+            if let MessageSegment::ToolEvent(event) = segment {
+                if event.tool_call_id == tool_call_id {
+                    event.append_arg_chunk(chunk);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// Request structure for streaming API calls

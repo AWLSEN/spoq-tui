@@ -274,11 +274,18 @@ impl ThreadCache {
     /// Adds a new running ToolEvent to the message's segments
     pub fn start_tool_in_message(&mut self, thread_id: &str, tool_call_id: String, function_name: String) {
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
+        eprintln!("[DEBUG] start_tool_in_message: thread={}, tool_id={}, name={}", resolved_id, tool_call_id, function_name);
 
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
             if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                eprintln!("[DEBUG] Found streaming message, adding tool. Segments before: {}", streaming_msg.segments.len());
                 streaming_msg.start_tool_event(tool_call_id, function_name);
+                eprintln!("[DEBUG] Segments after: {}", streaming_msg.segments.len());
+            } else {
+                eprintln!("[DEBUG] WARNING: No streaming message found for tool start!");
             }
+        } else {
+            eprintln!("[DEBUG] WARNING: No messages found for thread {}", resolved_id);
         }
     }
 
@@ -286,15 +293,22 @@ impl ThreadCache {
     /// Searches recent messages (not just streaming) since ToolCompleted can arrive after StreamDone
     pub fn complete_tool_in_message(&mut self, thread_id: &str, tool_call_id: &str) {
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
+        eprintln!("[DEBUG] complete_tool_in_message: thread={}, tool_id={}", resolved_id, tool_call_id);
 
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            eprintln!("[DEBUG] Found {} messages in thread", messages.len());
             // Search recent messages for the tool (ToolCompleted can arrive after message is finalized)
-            for msg in messages.iter_mut().rev().take(5) {
+            for (i, msg) in messages.iter_mut().rev().take(5).enumerate() {
+                eprintln!("[DEBUG] Checking message {} (is_streaming={}), segments={}", i, msg.is_streaming, msg.segments.len());
                 if msg.get_tool_event(tool_call_id).is_some() {
+                    eprintln!("[DEBUG] Found tool! Completing it now.");
                     msg.complete_tool_event(tool_call_id);
                     return;
                 }
             }
+            eprintln!("[DEBUG] WARNING: Tool {} not found in any recent message!", tool_call_id);
+        } else {
+            eprintln!("[DEBUG] WARNING: No messages found for thread {}", resolved_id);
         }
     }
 
@@ -314,6 +328,32 @@ impl ThreadCache {
         }
     }
 
+    /// Set the result preview for a tool event in a message
+    /// Searches recent messages (not just streaming) since ToolResult can arrive after StreamDone
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread ID containing the message
+    /// * `tool_call_id` - The tool call ID to update
+    /// * `content` - The full result content (will be truncated by ToolEvent::set_result)
+    /// * `is_error` - Whether the result represents an error
+    pub fn set_tool_result(&mut self, thread_id: &str, tool_call_id: &str, content: &str, is_error: bool) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            // Search recent messages for the tool
+            for msg in messages.iter_mut().rev().take(5) {
+                for segment in &mut msg.segments {
+                    if let crate::models::MessageSegment::ToolEvent(event) = segment {
+                        if event.tool_call_id == tool_call_id {
+                            event.set_result(content, is_error);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Set the display_name for a tool event in a message
     /// Searches recent messages (not just streaming) since events can arrive after StreamDone
     pub fn set_tool_display_name(&mut self, thread_id: &str, tool_call_id: &str, display_name: String) {
@@ -324,6 +364,22 @@ impl ThreadCache {
             for msg in messages.iter_mut().rev().take(5) {
                 if msg.get_tool_event(tool_call_id).is_some() {
                     msg.set_tool_display_name(tool_call_id, display_name);
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Append argument chunk to a tool event in a message
+    /// Searches recent messages (not just streaming) since events can arrive after StreamDone
+    pub fn append_tool_argument(&mut self, thread_id: &str, tool_call_id: &str, chunk: &str) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            // Search recent messages for the tool
+            for msg in messages.iter_mut().rev().take(5) {
+                if msg.get_tool_event(tool_call_id).is_some() {
+                    msg.append_tool_arg_chunk(tool_call_id, chunk);
                     return;
                 }
             }
