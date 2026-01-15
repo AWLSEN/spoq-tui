@@ -70,11 +70,11 @@ async fn main() -> Result<()> {
 /// If the debug server fails to start, returns None for both - the app continues without debug.
 async fn start_debug_system() -> (Option<spoq::debug::DebugEventSender>, Option<JoinHandle<()>>) {
     // Create debug channel with capacity for 1000 events
-    let (debug_tx, _debug_rx) = create_debug_channel(1000);
+    let (debug_tx, _) = create_debug_channel(1000);
 
     // Try to start the debug server
     match start_debug_server(debug_tx.clone()).await {
-        Ok((handle, _state_snapshot)) => {
+        Ok((handle, _)) => {
             // Server started successfully
             (Some(debug_tx), Some(handle))
         }
