@@ -1943,8 +1943,15 @@ mod tests {
         // Errors should be accessible by new ID
         assert_eq!(cache.error_count("real-backend-123"), 2);
 
-        // Errors should NOT be accessible by old pending ID
-        assert!(cache.get_errors(&pending_id).is_none());
+        // The old pending ID should now redirect to the real ID
+        // (this is intentional for token redirection during streaming)
+        // So errors are still accessible via the pending ID (redirected)
+        assert_eq!(cache.error_count(&pending_id), 2);
+
+        // Verify errors have correct content
+        let errors = cache.get_errors("real-backend-123").unwrap();
+        assert_eq!(errors[0].error_code, "error1");
+        assert_eq!(errors[1].error_code, "error2");
     }
 
     #[test]

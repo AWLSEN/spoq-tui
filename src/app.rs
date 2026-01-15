@@ -696,12 +696,15 @@ impl App {
 
     /// Approve the current pending permission (user pressed 'y')
     pub fn approve_permission(&mut self, permission_id: &str) {
-        // Send approval to backend (spawns async task)
-        let client = Arc::clone(&self.client);
-        let perm_id = permission_id.to_string();
-        tokio::spawn(async move {
-            let _ = client.respond_to_permission(&perm_id, true).await;
-        });
+        // Send approval to backend (spawns async task if runtime available)
+        // This check allows unit tests to run without a Tokio runtime
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let client = Arc::clone(&self.client);
+            let perm_id = permission_id.to_string();
+            handle.spawn(async move {
+                let _ = client.respond_to_permission(&perm_id, true).await;
+            });
+        }
 
         // Clear the pending permission
         self.session_state.clear_pending_permission();
@@ -709,12 +712,15 @@ impl App {
 
     /// Deny the current pending permission (user pressed 'n')
     pub fn deny_permission(&mut self, permission_id: &str) {
-        // Send denial to backend (spawns async task)
-        let client = Arc::clone(&self.client);
-        let perm_id = permission_id.to_string();
-        tokio::spawn(async move {
-            let _ = client.respond_to_permission(&perm_id, false).await;
-        });
+        // Send denial to backend (spawns async task if runtime available)
+        // This check allows unit tests to run without a Tokio runtime
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let client = Arc::clone(&self.client);
+            let perm_id = permission_id.to_string();
+            handle.spawn(async move {
+                let _ = client.respond_to_permission(&perm_id, false).await;
+            });
+        }
 
         // Clear the pending permission
         self.session_state.clear_pending_permission();
@@ -2443,5 +2449,210 @@ mod tests {
 
         assert_eq!(app.cache.error_count(&thread_id), 3);
         assert!(app.has_errors());
+    }
+
+    // ============= Permission Handling Tests =============
+
+    #[test]
+    fn test_handle_permission_key_returns_false_when_no_pending() {
+        let mut app = App::default();
+        assert!(!app.session_state.has_pending_permission());
+
+        // Should return false when no permission is pending
+        assert!(!app.handle_permission_key('y'));
+        assert!(!app.handle_permission_key('a'));
+        assert!(!app.handle_permission_key('n'));
+    }
+
+    #[test]
+    fn test_handle_permission_key_y_approves_and_clears() {
+        let mut app = App::default();
+
+        // Set up a pending permission
+        use crate::state::PermissionRequest;
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-123".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run npm install".to_string(),
+            context: None,
+            tool_input: None,
+        });
+        assert!(app.session_state.has_pending_permission());
+
+        // Press 'y' to approve
+        let handled = app.handle_permission_key('y');
+        assert!(handled);
+
+        // Permission should be cleared
+        assert!(!app.session_state.has_pending_permission());
+        // Tool should NOT be added to allowed list (that's only for 'a')
+        assert!(!app.session_state.is_tool_allowed("Bash"));
+    }
+
+    #[test]
+    fn test_handle_permission_key_a_allows_always_and_clears() {
+        let mut app = App::default();
+
+        // Set up a pending permission
+        use crate::state::PermissionRequest;
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-456".to_string(),
+            tool_name: "Write".to_string(),
+            description: "Write file".to_string(),
+            context: Some("/home/user/test.rs".to_string()),
+            tool_input: None,
+        });
+        assert!(app.session_state.has_pending_permission());
+
+        // Press 'a' to allow always
+        let handled = app.handle_permission_key('a');
+        assert!(handled);
+
+        // Permission should be cleared
+        assert!(!app.session_state.has_pending_permission());
+        // Tool SHOULD be added to allowed list
+        assert!(app.session_state.is_tool_allowed("Write"));
+    }
+
+    #[test]
+    fn test_handle_permission_key_n_denies_and_clears() {
+        let mut app = App::default();
+
+        // Set up a pending permission
+        use crate::state::PermissionRequest;
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-789".to_string(),
+            tool_name: "Edit".to_string(),
+            description: "Edit file".to_string(),
+            context: None,
+            tool_input: None,
+        });
+        assert!(app.session_state.has_pending_permission());
+
+        // Press 'n' to deny
+        let handled = app.handle_permission_key('n');
+        assert!(handled);
+
+        // Permission should be cleared
+        assert!(!app.session_state.has_pending_permission());
+        // Tool should NOT be added to allowed list
+        assert!(!app.session_state.is_tool_allowed("Edit"));
+    }
+
+    #[test]
+    fn test_handle_permission_key_uppercase_works() {
+        let mut app = App::default();
+
+        use crate::state::PermissionRequest;
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-abc".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+        });
+
+        // Uppercase 'Y' should also work
+        let handled = app.handle_permission_key('Y');
+        assert!(handled);
+        assert!(!app.session_state.has_pending_permission());
+    }
+
+    #[test]
+    fn test_handle_permission_key_invalid_returns_false() {
+        let mut app = App::default();
+
+        use crate::state::PermissionRequest;
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-def".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+        });
+
+        // Invalid keys should return false and NOT clear permission
+        assert!(!app.handle_permission_key('x'));
+        assert!(!app.handle_permission_key('q'));
+        assert!(!app.handle_permission_key(' '));
+
+        // Permission should still be pending
+        assert!(app.session_state.has_pending_permission());
+    }
+
+    #[test]
+    fn test_permission_auto_approve_when_tool_allowed() {
+        let mut app = App::default();
+
+        // Pre-allow the Bash tool
+        app.session_state.allow_tool("Bash".to_string());
+        assert!(app.session_state.is_tool_allowed("Bash"));
+
+        // Receive a permission request for Bash
+        app.handle_message(AppMessage::PermissionRequested {
+            permission_id: "perm-auto".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run npm install".to_string(),
+            tool_input: None,
+        });
+
+        // Permission should NOT be set as pending (auto-approved)
+        assert!(!app.session_state.has_pending_permission());
+    }
+
+    #[test]
+    fn test_permission_request_stored_when_tool_not_allowed() {
+        let mut app = App::default();
+
+        // Bash is NOT pre-allowed
+        assert!(!app.session_state.is_tool_allowed("Bash"));
+
+        // Receive a permission request for Bash
+        app.handle_message(AppMessage::PermissionRequested {
+            permission_id: "perm-store".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run npm install".to_string(),
+            tool_input: Some(serde_json::json!({"command": "npm install"})),
+        });
+
+        // Permission SHOULD be set as pending
+        assert!(app.session_state.has_pending_permission());
+
+        // Verify the stored permission data
+        let perm = app.session_state.pending_permission.as_ref().unwrap();
+        assert_eq!(perm.permission_id, "perm-store");
+        assert_eq!(perm.tool_name, "Bash");
+        assert_eq!(perm.description, "Run npm install");
+        assert!(perm.tool_input.is_some());
+    }
+
+    #[test]
+    fn test_allow_always_persists_for_subsequent_requests() {
+        let mut app = App::default();
+
+        // First request: user presses 'a' to allow always
+        use crate::state::PermissionRequest;
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-first".to_string(),
+            tool_name: "Read".to_string(),
+            description: "Read file".to_string(),
+            context: None,
+            tool_input: None,
+        });
+        app.handle_permission_key('a');
+
+        // Verify Read is now allowed
+        assert!(app.session_state.is_tool_allowed("Read"));
+
+        // Second request for Read tool (simulated)
+        app.handle_message(AppMessage::PermissionRequested {
+            permission_id: "perm-second".to_string(),
+            tool_name: "Read".to_string(),
+            description: "Read another file".to_string(),
+            tool_input: None,
+        });
+
+        // Should be auto-approved (no pending permission)
+        assert!(!app.session_state.has_pending_permission());
     }
 }
