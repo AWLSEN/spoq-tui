@@ -239,6 +239,8 @@ impl ServerMessage {
             created_at: Utc::now(),  // Server doesn't provide per-message timestamps
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),  // Server may not provide reasoning history
+            reasoning_collapsed: true,
         }
     }
 }
@@ -262,6 +264,12 @@ pub struct Message {
     /// Partial content accumulated during streaming
     #[serde(default)]
     pub partial_content: String,
+    /// Reasoning/thinking content from the assistant
+    #[serde(default)]
+    pub reasoning_content: String,
+    /// Whether the reasoning block is collapsed in the UI
+    #[serde(default)]
+    pub reasoning_collapsed: bool,
 }
 
 impl Message {
@@ -270,12 +278,32 @@ impl Message {
         self.partial_content.push_str(token);
     }
 
+    /// Append a token to the reasoning content during streaming
+    pub fn append_reasoning_token(&mut self, token: &str) {
+        self.reasoning_content.push_str(token);
+    }
+
     /// Finalize the message by moving partial_content to content and marking as not streaming
     pub fn finalize(&mut self) {
         if self.is_streaming {
             self.content = std::mem::take(&mut self.partial_content);
             self.is_streaming = false;
+            // Collapse reasoning by default when message is finalized
+            if !self.reasoning_content.is_empty() {
+                self.reasoning_collapsed = true;
+            }
         }
+    }
+
+    /// Toggle the reasoning collapsed state
+    pub fn toggle_reasoning_collapsed(&mut self) {
+        self.reasoning_collapsed = !self.reasoning_collapsed;
+    }
+
+    /// Count tokens in the reasoning content (approximation using whitespace)
+    pub fn reasoning_token_count(&self) -> usize {
+        // Simple approximation: split on whitespace and count
+        self.reasoning_content.split_whitespace().count()
     }
 }
 
@@ -563,6 +591,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
 
         assert_eq!(message.id, 1);
@@ -571,6 +601,8 @@ mod tests {
         assert_eq!(message.content, "Hello!");
         assert!(!message.is_streaming);
         assert!(message.partial_content.is_empty());
+        assert!(message.reasoning_content.is_empty());
+        assert!(message.reasoning_collapsed);
     }
 
     #[test]
@@ -590,6 +622,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
@@ -608,6 +642,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: true,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
         };
 
         message.append_token("Hello");
@@ -630,6 +666,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: true,
             partial_content: "Streamed content".to_string(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
         };
 
         assert!(message.is_streaming);
@@ -653,6 +691,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: false,
             partial_content: "Should not replace".to_string(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
 
         message.finalize();
@@ -673,6 +713,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: true,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
         };
 
         // Simulate streaming tokens
@@ -703,6 +745,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: true,
             partial_content: "Partial content".to_string(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
@@ -844,5 +888,139 @@ mod tests {
         assert_eq!(error.id, cloned.id);
         assert_eq!(error.error_code, cloned.error_code);
         assert_eq!(error.message, cloned.message);
+    }
+
+    // ============================================================================
+    // Reasoning/Thinking Tests
+    // ============================================================================
+
+    #[test]
+    fn test_message_append_reasoning_token() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+        };
+
+        message.append_reasoning_token("Let me think...");
+        assert_eq!(message.reasoning_content, "Let me think...");
+
+        message.append_reasoning_token(" Step 1.");
+        assert_eq!(message.reasoning_content, "Let me think... Step 1.");
+    }
+
+    #[test]
+    fn test_message_reasoning_token_count() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: "Let me analyze this step by step".to_string(),
+            reasoning_collapsed: false,
+        };
+
+        // "Let me analyze this step by step" = 7 words
+        assert_eq!(message.reasoning_token_count(), 7);
+
+        message.reasoning_content = String::new();
+        assert_eq!(message.reasoning_token_count(), 0);
+    }
+
+    #[test]
+    fn test_message_toggle_reasoning_collapsed() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: "Some reasoning".to_string(),
+            reasoning_collapsed: false,
+        };
+
+        assert!(!message.reasoning_collapsed);
+        message.toggle_reasoning_collapsed();
+        assert!(message.reasoning_collapsed);
+        message.toggle_reasoning_collapsed();
+        assert!(!message.reasoning_collapsed);
+    }
+
+    #[test]
+    fn test_message_finalize_collapses_reasoning() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: "Response content".to_string(),
+            reasoning_content: "Some reasoning".to_string(),
+            reasoning_collapsed: false,
+        };
+
+        // Reasoning should not be collapsed while streaming
+        assert!(!message.reasoning_collapsed);
+
+        message.finalize();
+
+        // After finalize, reasoning should be collapsed by default
+        assert!(message.reasoning_collapsed);
+        assert!(!message.is_streaming);
+        assert_eq!(message.content, "Response content");
+    }
+
+    #[test]
+    fn test_message_finalize_no_reasoning_stays_uncollapsed() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: "Response content".to_string(),
+            reasoning_content: String::new(), // No reasoning
+            reasoning_collapsed: false,
+        };
+
+        message.finalize();
+
+        // If there's no reasoning content, collapsed state shouldn't change
+        // (the flag is not set to true because there's nothing to collapse)
+        assert!(!message.reasoning_collapsed);
+    }
+
+    #[test]
+    fn test_message_reasoning_serialization() {
+        let message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: "Response".to_string(),
+            created_at: Utc::now(),
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: "Let me think about this".to_string(),
+            reasoning_collapsed: true,
+        };
+
+        let json = serde_json::to_string(&message).expect("Failed to serialize");
+        let deserialized: Message = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(message.reasoning_content, deserialized.reasoning_content);
+        assert_eq!(message.reasoning_collapsed, deserialized.reasoning_collapsed);
     }
 }

@@ -400,12 +400,34 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
         }
         crate::sse::SseEvent::Ping => {
             // Ping/keepalive - emit empty content that will be filtered
-            // This is a no-op event (skills_injected, ping, etc.)
             SseEvent::Content(crate::events::ContentEvent {
                 text: String::new(),
                 meta: crate::events::EventMeta::default(),
             })
         }
+        crate::sse::SseEvent::SkillsInjected { skills } => {
+            SseEvent::SkillsInjected(crate::events::SkillsInjectedEvent { skills })
+        }
+        crate::sse::SseEvent::OAuthConsentRequired {
+            provider,
+            url,
+            skill_name,
+        } => SseEvent::OAuthConsentRequired(crate::events::OAuthConsentRequiredEvent {
+            provider,
+            url,
+            skill_name,
+        }),
+        crate::sse::SseEvent::ContextCompacted {
+            messages_removed,
+            tokens_freed,
+            tokens_used,
+            token_limit,
+        } => SseEvent::ContextCompacted(crate::events::ContextCompactedEvent {
+            messages_removed,
+            tokens_freed,
+            tokens_used,
+            token_limit,
+        }),
     }
 }
 

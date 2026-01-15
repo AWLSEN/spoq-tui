@@ -151,6 +151,8 @@ impl ThreadCache {
             created_at: now,
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
 
         self.add_message(message);
@@ -192,6 +194,8 @@ impl ThreadCache {
             created_at: now,
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
         self.add_message(user_message);
 
@@ -204,6 +208,8 @@ impl ThreadCache {
             created_at: now,
             is_streaming: true,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false, // Show reasoning while streaming
         };
         self.add_message(assistant_message);
 
@@ -242,6 +248,53 @@ impl ThreadCache {
             if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
                 streaming_msg.append_token(token);
             }
+        }
+    }
+
+    /// Append a reasoning token to the streaming message in a thread
+    /// Finds the last message with is_streaming=true and appends to its reasoning content
+    pub fn append_reasoning_to_message(&mut self, thread_id: &str, token: &str) {
+        // Resolve the thread_id in case it's a pending ID that was reconciled
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            // Find the last streaming message
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.append_reasoning_token(token);
+            }
+        }
+    }
+
+    /// Toggle reasoning collapsed state for a specific message in a thread
+    /// Used by 't' key handler to expand/collapse thinking blocks
+    pub fn toggle_message_reasoning(&mut self, thread_id: &str, message_index: usize) -> bool {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            if let Some(message) = messages.get_mut(message_index) {
+                if !message.reasoning_content.is_empty() {
+                    message.toggle_reasoning_collapsed();
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Find the index of the last assistant message with reasoning content
+    pub fn find_last_reasoning_message_index(&self, thread_id: &str) -> Option<usize> {
+        let resolved_id = self.resolve_thread_id(thread_id);
+
+        if let Some(messages) = self.messages.get(resolved_id) {
+            // Find last assistant message with reasoning content
+            messages
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, m)| m.role == MessageRole::Assistant && !m.reasoning_content.is_empty())
+                .map(|(idx, _)| idx)
+        } else {
+            None
         }
     }
 
@@ -369,6 +422,8 @@ impl ThreadCache {
             created_at: now,
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
         self.add_message(user_message);
 
@@ -381,6 +436,8 @@ impl ThreadCache {
             created_at: now,
             is_streaming: true,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false, // Show reasoning while streaming
         };
         self.add_message(assistant_message);
 
@@ -422,6 +479,8 @@ impl ThreadCache {
             created_at: now,
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
         self.add_message(user_message);
 
@@ -434,6 +493,8 @@ impl ThreadCache {
             created_at: now,
             is_streaming: true,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false, // Show reasoning while streaming
         };
         self.add_message(assistant_message);
 
@@ -603,6 +664,8 @@ impl ThreadCache {
                 created_at: now - Duration::minutes(10),
                 is_streaming: false,
                 partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
             },
             Message {
                 id: 2,
@@ -612,6 +675,8 @@ impl ThreadCache {
                 created_at: now - Duration::minutes(5),
                 is_streaming: false,
                 partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
             },
         ];
 
@@ -637,6 +702,8 @@ impl ThreadCache {
                 created_at: now - Duration::hours(3),
                 is_streaming: false,
                 partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
             },
             Message {
                 id: 4,
@@ -646,6 +713,8 @@ impl ThreadCache {
                 created_at: now - Duration::hours(2),
                 is_streaming: false,
                 partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
             },
         ];
 
@@ -671,6 +740,8 @@ impl ThreadCache {
                 created_at: now - Duration::days(1) - Duration::hours(1),
                 is_streaming: false,
                 partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
             },
             Message {
                 id: 6,
@@ -680,6 +751,8 @@ impl ThreadCache {
                 created_at: now - Duration::days(1),
                 is_streaming: false,
                 partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
             },
         ];
 
@@ -812,6 +885,8 @@ mod tests {
             created_at: Utc::now(),
             is_streaming: false,
             partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
         };
 
         cache.add_message(message);
@@ -834,6 +909,8 @@ mod tests {
                 created_at: Utc::now(),
                 is_streaming: false,
                 partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
             },
         ];
 
@@ -2006,5 +2083,113 @@ mod tests {
         // Trying to dismiss when no errors should return false
         let dismissed = cache.dismiss_focused_error(&thread_id);
         assert!(!dismissed);
+    }
+
+    // ============= Reasoning Tests =============
+
+    #[test]
+    fn test_append_reasoning_to_message() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Append reasoning tokens to the streaming message
+        cache.append_reasoning_to_message(&thread_id, "Let me think");
+        cache.append_reasoning_to_message(&thread_id, " about this.");
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = &messages[1]; // Second message is assistant
+
+        assert_eq!(assistant_msg.reasoning_content, "Let me think about this.");
+    }
+
+    #[test]
+    fn test_append_reasoning_to_message_with_pending_id() {
+        let mut cache = ThreadCache::new();
+        let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Normal);
+
+        // Append reasoning tokens
+        cache.append_reasoning_to_message(&pending_id, "Reasoning token");
+
+        // Reconcile with backend ID
+        cache.reconcile_thread_id(&pending_id, "real-id-123", None);
+
+        // Check reasoning content is accessible via real ID
+        let messages = cache.get_messages("real-id-123").unwrap();
+        let assistant_msg = &messages[1];
+        assert_eq!(assistant_msg.reasoning_content, "Reasoning token");
+    }
+
+    #[test]
+    fn test_toggle_message_reasoning() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Add reasoning content
+        cache.append_reasoning_to_message(&thread_id, "Some reasoning");
+
+        // Finalize the message
+        cache.finalize_message(&thread_id, 100);
+
+        // After finalize, reasoning should be collapsed
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert!(messages[1].reasoning_collapsed);
+
+        // Toggle should return true and uncollapse
+        let toggled = cache.toggle_message_reasoning(&thread_id, 1);
+        assert!(toggled);
+
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert!(!messages[1].reasoning_collapsed);
+
+        // Toggle again should collapse
+        cache.toggle_message_reasoning(&thread_id, 1);
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert!(messages[1].reasoning_collapsed);
+    }
+
+    #[test]
+    fn test_toggle_message_reasoning_no_content() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Finalize without adding reasoning content
+        cache.finalize_message(&thread_id, 100);
+
+        // Toggle should return false (no reasoning to toggle)
+        let toggled = cache.toggle_message_reasoning(&thread_id, 1);
+        assert!(!toggled);
+    }
+
+    #[test]
+    fn test_find_last_reasoning_message_index() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Add reasoning and finalize first message
+        cache.append_reasoning_to_message(&thread_id, "Reasoning 1");
+        cache.finalize_message(&thread_id, 100);
+
+        // Add another exchange
+        cache.add_streaming_message(&thread_id, "Second question".to_string());
+        cache.append_reasoning_to_message(&thread_id, "Reasoning 2");
+        cache.finalize_message(&thread_id, 101);
+
+        // Should find the last assistant message with reasoning (index 3)
+        let idx = cache.find_last_reasoning_message_index(&thread_id);
+        assert!(idx.is_some());
+        assert_eq!(idx.unwrap(), 3); // Index of second assistant message
+    }
+
+    #[test]
+    fn test_find_last_reasoning_message_index_none() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_streaming_thread("Hello".to_string());
+
+        // Finalize without adding reasoning
+        cache.finalize_message(&thread_id, 100);
+
+        // Should not find any message with reasoning
+        let idx = cache.find_last_reasoning_message_index(&thread_id);
+        assert!(idx.is_none());
     }
 }

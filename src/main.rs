@@ -180,6 +180,18 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 continue;
                             }
 
+                            // Handle OAuth consent 'o' key to open URL in browser
+                            if let KeyCode::Char('o') = key.code {
+                                if let Some(url) = &app.session_state.oauth_url {
+                                    // Open URL in browser using the 'open' crate
+                                    if let Err(_e) = open::that(url) {
+                                        // Silently ignore errors - user can manually copy URL from UI
+                                    }
+                                    // Don't clear the URL yet - leave it until OAuth is completed
+                                    continue;
+                                }
+                            }
+
                             // Auto-focus to Input when user starts typing
                             // (printable characters only, not Ctrl combinations)
                             if let KeyCode::Char(_) = key.code {
@@ -299,6 +311,10 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     if app.has_errors() {
                                         app.dismiss_focused_error();
                                     }
+                                }
+                                // 't' to toggle thinking/reasoning block in Conversation screen
+                                KeyCode::Char('t') if app.focus != Focus::Input && app.screen == Screen::Conversation => {
+                                    app.toggle_reasoning();
                                 }
                                 _ => {}
                             }

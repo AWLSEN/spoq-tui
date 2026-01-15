@@ -191,6 +191,32 @@ pub struct ContextCompactedEvent {
     pub messages_removed: u32,
     /// Number of tokens freed by the compaction
     pub tokens_freed: u32,
+    /// Current context token usage (after compaction)
+    #[serde(default)]
+    pub tokens_used: Option<u32>,
+    /// Context token limit
+    #[serde(default)]
+    pub token_limit: Option<u32>,
+}
+
+/// Skills injected event - sent when skills are loaded in the session
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SkillsInjectedEvent {
+    /// List of skill names that were injected
+    pub skills: Vec<String>,
+}
+
+/// OAuth consent required event
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct OAuthConsentRequiredEvent {
+    /// OAuth provider name
+    pub provider: String,
+    /// Consent URL to open in browser
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Skill name that requires OAuth
+    #[serde(default)]
+    pub skill_name: Option<String>,
 }
 
 /// Wrapper enum for all possible SSE event types from Conductor.
@@ -242,6 +268,10 @@ pub enum SseEvent {
     PermissionRequest(PermissionRequestEvent),
     /// Context compacted
     ContextCompacted(ContextCompactedEvent),
+    /// Skills injected
+    SkillsInjected(SkillsInjectedEvent),
+    /// OAuth consent required
+    OAuthConsentRequired(OAuthConsentRequiredEvent),
 }
 
 /// Wraps an SSE event with its metadata.

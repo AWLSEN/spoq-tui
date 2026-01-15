@@ -41,12 +41,18 @@ pub struct SessionState {
     /// None if no compaction has occurred yet
     pub context_tokens_used: Option<u32>,
 
+    /// Context token limit (max capacity)
+    pub context_token_limit: Option<u32>,
+
     /// Current permission request awaiting user input
     pub pending_permission: Option<PermissionRequest>,
 
     /// OAuth requirement: (provider, skill_name)
     /// Set when a skill requires OAuth authentication
     pub oauth_required: Option<(String, String)>,
+
+    /// OAuth consent URL for opening in browser
+    pub oauth_url: Option<String>,
 
     /// Tools that have been allowed for the session ("allow always")
     /// When a user presses 'a' on a permission prompt, the tool is added here
@@ -80,6 +86,21 @@ impl SessionState {
     /// Update context tokens used
     pub fn set_context_tokens(&mut self, tokens: u32) {
         self.context_tokens_used = Some(tokens);
+    }
+
+    /// Set context token limit
+    pub fn set_context_token_limit(&mut self, limit: u32) {
+        self.context_token_limit = Some(limit);
+    }
+
+    /// Set OAuth consent URL
+    pub fn set_oauth_url(&mut self, url: String) {
+        self.oauth_url = Some(url);
+    }
+
+    /// Clear OAuth URL (after opening or when no longer needed)
+    pub fn clear_oauth_url(&mut self) {
+        self.oauth_url = None;
     }
 
     /// Set a pending permission request
@@ -131,8 +152,10 @@ impl SessionState {
     pub fn reset(&mut self) {
         self.skills.clear();
         self.context_tokens_used = None;
+        self.context_token_limit = None;
         self.pending_permission = None;
         self.oauth_required = None;
+        self.oauth_url = None;
         self.allowed_tools.clear();
     }
 }
@@ -414,5 +437,79 @@ mod tests {
 
         assert_eq!(state.skills, deserialized.skills);
         assert_eq!(state.context_tokens_used, deserialized.context_tokens_used);
+    }
+
+    #[test]
+    fn test_set_context_token_limit() {
+        let mut state = SessionState::new();
+        assert!(state.context_token_limit.is_none());
+
+        state.set_context_token_limit(100_000);
+        assert_eq!(state.context_token_limit, Some(100_000));
+
+        state.set_context_token_limit(200_000);
+        assert_eq!(state.context_token_limit, Some(200_000));
+    }
+
+    #[test]
+    fn test_oauth_url_handling() {
+        let mut state = SessionState::new();
+        assert!(state.oauth_url.is_none());
+
+        state.set_oauth_url("https://oauth.example.com/consent".to_string());
+        assert_eq!(
+            state.oauth_url,
+            Some("https://oauth.example.com/consent".to_string())
+        );
+
+        state.clear_oauth_url();
+        assert!(state.oauth_url.is_none());
+    }
+
+    #[test]
+    fn test_reset_clears_all_new_fields() {
+        let mut state = SessionState::new();
+        state.add_skill("test-skill".to_string());
+        state.set_context_tokens(5000);
+        state.set_context_token_limit(100_000);
+        state.set_oauth_url("https://example.com".to_string());
+        state.set_oauth_required("github".to_string(), "skill".to_string());
+        state.allow_tool("Bash".to_string());
+
+        state.reset();
+
+        assert!(state.skills.is_empty());
+        assert!(state.context_tokens_used.is_none());
+        assert!(state.context_token_limit.is_none());
+        assert!(state.oauth_url.is_none());
+        assert!(state.oauth_required.is_none());
+        assert!(state.allowed_tools.is_empty());
+    }
+
+    #[test]
+    fn test_context_tokens_and_limit_together() {
+        let mut state = SessionState::new();
+        state.set_context_tokens(45_000);
+        state.set_context_token_limit(100_000);
+
+        assert_eq!(state.context_tokens_used, Some(45_000));
+        assert_eq!(state.context_token_limit, Some(100_000));
+    }
+
+    #[test]
+    fn test_oauth_with_url() {
+        let mut state = SessionState::new();
+        state.set_oauth_required("google".to_string(), "calendar".to_string());
+        state.set_oauth_url("https://accounts.google.com/consent".to_string());
+
+        assert!(state.needs_oauth());
+        assert_eq!(
+            state.oauth_required,
+            Some(("google".to_string(), "calendar".to_string()))
+        );
+        assert_eq!(
+            state.oauth_url,
+            Some("https://accounts.google.com/consent".to_string())
+        );
     }
 }

@@ -66,6 +66,23 @@ pub enum SseEvent {
     },
     /// Heartbeat/keepalive
     Ping,
+    /// Skills injected event
+    SkillsInjected {
+        skills: Vec<String>,
+    },
+    /// OAuth consent required
+    OAuthConsentRequired {
+        provider: String,
+        url: Option<String>,
+        skill_name: Option<String>,
+    },
+    /// Context compacted
+    ContextCompacted {
+        messages_removed: u32,
+        tokens_freed: u32,
+        tokens_used: Option<u32>,
+        token_limit: Option<u32>,
+    },
 }
 
 /// Raw data payload from SSE data lines
@@ -129,6 +146,30 @@ struct ErrorPayload {
     message: String,
     #[serde(default)]
     code: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct SkillsInjectedPayload {
+    skills: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct OAuthConsentRequiredPayload {
+    provider: String,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    skill_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ContextCompactedPayload {
+    messages_removed: u32,
+    tokens_freed: u32,
+    #[serde(default)]
+    tokens_used: Option<u32>,
+    #[serde(default)]
+    token_limit: Option<u32>,
 }
 
 /// Parse a single SSE line into its component type
@@ -238,8 +279,41 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
             }
         }
         "ping" => Ok(SseEvent::Ping),
-        // Conductor sends skills_injected - ignore it
-        "skills_injected" => Ok(SseEvent::Ping), // Treat as no-op
+        "skills_injected" => {
+            let payload: SkillsInjectedPayload = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::SkillsInjected {
+                skills: payload.skills,
+            })
+        }
+        "oauth_consent_required" => {
+            let payload: OAuthConsentRequiredPayload = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::OAuthConsentRequired {
+                provider: payload.provider,
+                url: payload.url,
+                skill_name: payload.skill_name,
+            })
+        }
+        "context_compacted" => {
+            let payload: ContextCompactedPayload = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::ContextCompacted {
+                messages_removed: payload.messages_removed,
+                tokens_freed: payload.tokens_freed,
+                tokens_used: payload.tokens_used,
+                token_limit: payload.token_limit,
+            })
+        }
         "error" => {
             let payload: ErrorPayload = serde_json::from_str(data)
                 .map_err(|e| SseParseError::InvalidJson {

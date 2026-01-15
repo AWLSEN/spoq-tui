@@ -2,7 +2,7 @@ use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::events::SseEvent;
 use crate::models::{StreamRequest, ThreadType};
-use crate::state::{SessionState, Task, Thread, Todo, ToolTracker};
+use crate::state::{SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker};
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
 use futures_util::StreamExt;
@@ -14,6 +14,8 @@ use tokio::sync::mpsc;
 pub enum AppMessage {
     /// A token received during streaming
     StreamToken { thread_id: String, token: String },
+    /// A reasoning/thinking token received during streaming
+    ReasoningToken { thread_id: String, token: String },
     /// Streaming completed successfully
     StreamComplete { thread_id: String, message_id: i64 },
     /// An error occurred during streaming
@@ -62,6 +64,21 @@ pub enum AppMessage {
         tool_call_id: String,
         success: bool,
         summary: String,
+    },
+    /// Skills injected into the session
+    SkillsInjected {
+        skills: Vec<String>,
+    },
+    /// OAuth consent required
+    OAuthConsentRequired {
+        provider: String,
+        url: Option<String>,
+        skill_name: Option<String>,
+    },
+    /// Context compacted
+    ContextCompacted {
+        tokens_used: Option<u32>,
+        token_limit: Option<u32>,
     },
 }
 
@@ -142,6 +159,8 @@ pub struct App {
     /// Tool execution tracking per-thread (cleared on done event)
     pub tool_tracker: ToolTracker,
     /// Session-level todos from the assistant
+    /// Subagent activity tracking (cleared on done event)
+    pub subagent_tracker: SubagentTracker,
     pub todos: Vec<Todo>,
 }
 
@@ -183,6 +202,7 @@ impl App {
             programming_mode: ProgrammingMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
+            subagent_tracker: SubagentTracker::new(),
             todos: Vec::new(),
         })
     }
@@ -510,6 +530,24 @@ impl App {
                                 summary,
                             });
                         }
+                        SseEvent::SkillsInjected(skills_event) => {
+                            let _ = message_tx.send(AppMessage::SkillsInjected {
+                                skills: skills_event.skills,
+                            });
+                        }
+                        SseEvent::OAuthConsentRequired(oauth_event) => {
+                            let _ = message_tx.send(AppMessage::OAuthConsentRequired {
+                                provider: oauth_event.provider,
+                                url: oauth_event.url,
+                                skill_name: oauth_event.skill_name,
+                            });
+                        }
+                        SseEvent::ContextCompacted(context_event) => {
+                            let _ = message_tx.send(AppMessage::ContextCompacted {
+                                tokens_used: context_event.tokens_used,
+                                token_limit: context_event.token_limit,
+                            });
+                        }
                         // Ignore other event types for now (reasoning, etc.)
                         _ => {}
                     }
@@ -688,6 +726,30 @@ impl App {
                     self.tick_count,
                 );
             }
+            AppMessage::SkillsInjected { skills } => {
+                // Update session state with injected skills
+                for skill in skills {
+                    self.session_state.add_skill(skill);
+                }
+            }
+            AppMessage::OAuthConsentRequired { provider, url, skill_name } => {
+                // Store OAuth requirement in session state
+                if let Some(skill) = skill_name {
+                    self.session_state.set_oauth_required(provider, skill);
+                }
+                if let Some(consent_url) = url {
+                    self.session_state.set_oauth_url(consent_url);
+                }
+            }
+            AppMessage::ContextCompacted { tokens_used, token_limit } => {
+                // Update context tracking in session state
+                if let Some(used) = tokens_used {
+                    self.session_state.set_context_tokens(used);
+                }
+                if let Some(limit) = token_limit {
+                    self.session_state.set_context_token_limit(limit);
+                }
+            }
         }
     }
 
@@ -740,6 +802,17 @@ impl App {
         } else {
             false
         }
+    }
+
+    /// Toggle reasoning collapsed state for the last message with reasoning
+    /// Returns true if a reasoning block was toggled
+    pub fn toggle_reasoning(&mut self) -> bool {
+        if let Some(thread_id) = &self.active_thread_id {
+            if let Some(idx) = self.cache.find_last_reasoning_message_index(thread_id) {
+                return self.cache.toggle_message_reasoning(thread_id, idx);
+            }
+        }
+        false
     }
 
     /// Dismiss the currently focused error for the active thread
@@ -2730,5 +2803,100 @@ mod tests {
 
         // Should be auto-approved (no pending permission)
         assert!(!app.session_state.has_pending_permission());
+    }
+
+    #[test]
+    fn test_skills_injected_message() {
+        let mut app = App::default();
+        assert!(app.session_state.skills.is_empty());
+
+        app.handle_message(AppMessage::SkillsInjected {
+            skills: vec!["commit".to_string(), "review".to_string()],
+        });
+
+        assert_eq!(app.session_state.skills.len(), 2);
+        assert!(app.session_state.has_skill("commit"));
+        assert!(app.session_state.has_skill("review"));
+    }
+
+    #[test]
+    fn test_skills_injected_deduplication() {
+        let mut app = App::default();
+
+        app.handle_message(AppMessage::SkillsInjected {
+            skills: vec!["commit".to_string()],
+        });
+        app.handle_message(AppMessage::SkillsInjected {
+            skills: vec!["commit".to_string(), "review".to_string()],
+        });
+
+        assert_eq!(app.session_state.skills.len(), 2);
+    }
+
+    #[test]
+    fn test_oauth_consent_required_message() {
+        let mut app = App::default();
+        assert!(!app.session_state.needs_oauth());
+        assert!(app.session_state.oauth_url.is_none());
+
+        app.handle_message(AppMessage::OAuthConsentRequired {
+            provider: "github".to_string(),
+            url: Some("https://github.com/oauth".to_string()),
+            skill_name: Some("git-commit".to_string()),
+        });
+
+        assert!(app.session_state.needs_oauth());
+        assert_eq!(
+            app.session_state.oauth_required,
+            Some(("github".to_string(), "git-commit".to_string()))
+        );
+        assert_eq!(
+            app.session_state.oauth_url,
+            Some("https://github.com/oauth".to_string())
+        );
+    }
+
+    #[test]
+    fn test_oauth_consent_without_url() {
+        let mut app = App::default();
+
+        app.handle_message(AppMessage::OAuthConsentRequired {
+            provider: "google".to_string(),
+            url: None,
+            skill_name: Some("calendar".to_string()),
+        });
+
+        assert!(app.session_state.needs_oauth());
+        assert!(app.session_state.oauth_url.is_none());
+    }
+
+    #[test]
+    fn test_context_compacted_message() {
+        let mut app = App::default();
+        assert!(app.session_state.context_tokens_used.is_none());
+        assert!(app.session_state.context_token_limit.is_none());
+
+        app.handle_message(AppMessage::ContextCompacted {
+            tokens_used: Some(45_000),
+            token_limit: Some(100_000),
+        });
+
+        assert_eq!(app.session_state.context_tokens_used, Some(45_000));
+        assert_eq!(app.session_state.context_token_limit, Some(100_000));
+    }
+
+    #[test]
+    fn test_context_compacted_updates_existing() {
+        let mut app = App::default();
+        app.session_state.set_context_tokens(30_000);
+        app.session_state.set_context_token_limit(100_000);
+
+        app.handle_message(AppMessage::ContextCompacted {
+            tokens_used: Some(50_000),
+            token_limit: None, // Don't update limit
+        });
+
+        assert_eq!(app.session_state.context_tokens_used, Some(50_000));
+        assert_eq!(app.session_state.context_token_limit, Some(100_000));
     }
 }
