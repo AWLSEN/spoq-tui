@@ -851,6 +851,42 @@ mod tests {
     }
 
     #[test]
+    fn test_message_append_token_creates_segments() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        // append_token should add to both partial_content AND segments
+        message.append_token("Hello");
+        assert_eq!(message.partial_content, "Hello");
+        assert_eq!(message.segments.len(), 1);
+        if let MessageSegment::Text(text) = &message.segments[0] {
+            assert_eq!(text, "Hello");
+        } else {
+            panic!("Expected Text segment");
+        }
+
+        // Subsequent tokens should be merged into the same text segment
+        message.append_token(" world");
+        assert_eq!(message.partial_content, "Hello world");
+        assert_eq!(message.segments.len(), 1);
+        if let MessageSegment::Text(text) = &message.segments[0] {
+            assert_eq!(text, "Hello world");
+        } else {
+            panic!("Expected Text segment");
+        }
+    }
+
+    #[test]
     fn test_message_finalize() {
         let mut message = Message {
             id: 1,
@@ -1641,5 +1677,100 @@ mod tests {
             assert_eq!(event.tool_call_id, "tool-123");
             assert_eq!(event.display_name, None);
         }
+    }
+
+    #[test]
+    fn test_message_segments_maintain_order() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        // Simulate a realistic interleaved streaming scenario
+        message.append_token("Let me ");
+        message.append_token("check that file.");
+        message.start_tool_event("tool-1".to_string(), "Read".to_string());
+        message.complete_tool_event("tool-1");
+        message.append_token("The file ");
+        message.append_token("contains important data.");
+
+        // Verify segment order: text -> tool -> text
+        assert_eq!(message.segments.len(), 3);
+
+        // First segment: text
+        if let MessageSegment::Text(text) = &message.segments[0] {
+            assert_eq!(text, "Let me check that file.");
+        } else {
+            panic!("Expected Text segment at position 0");
+        }
+
+        // Second segment: tool event
+        if let MessageSegment::ToolEvent(event) = &message.segments[1] {
+            assert_eq!(event.tool_call_id, "tool-1");
+            assert_eq!(event.function_name, "Read");
+            assert_eq!(event.status, ToolEventStatus::Complete);
+        } else {
+            panic!("Expected ToolEvent segment at position 1");
+        }
+
+        // Third segment: text
+        if let MessageSegment::Text(text) = &message.segments[2] {
+            assert_eq!(text, "The file contains important data.");
+        } else {
+            panic!("Expected Text segment at position 2");
+        }
+
+        // Verify partial_content accumulated correctly
+        assert_eq!(
+            message.partial_content,
+            "Let me check that file.The file contains important data."
+        );
+    }
+
+    #[test]
+    fn test_message_finalize_with_segments() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        // Build up content with interleaved text and tools
+        message.append_token("Starting task.");
+        message.start_tool_event("tool-1".to_string(), "Bash".to_string());
+        message.complete_tool_event("tool-1");
+        message.append_token("Task completed.");
+
+        // Verify streaming state before finalization
+        assert!(message.is_streaming);
+        assert!(!message.partial_content.is_empty());
+        assert!(message.content.is_empty());
+        assert_eq!(message.segments.len(), 3);
+
+        // Finalize the message
+        message.finalize();
+
+        // Verify finalized state
+        assert!(!message.is_streaming);
+        assert!(message.partial_content.is_empty());
+        assert_eq!(message.content, "Starting task.Task completed.");
+
+        // Segments should be preserved after finalization
+        assert_eq!(message.segments.len(), 3);
     }
 }
