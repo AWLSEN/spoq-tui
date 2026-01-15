@@ -441,6 +441,18 @@ impl Message {
             matches!(s, MessageSegment::ToolEvent(e) if e.status == ToolEventStatus::Running)
         })
     }
+
+    /// Set the display_name for a tool event by its tool_call_id
+    pub fn set_tool_display_name(&mut self, tool_call_id: &str, display_name: String) {
+        for segment in &mut self.segments {
+            if let MessageSegment::ToolEvent(event) = segment {
+                if event.tool_call_id == tool_call_id {
+                    event.display_name = Some(display_name);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 /// Request structure for streaming API calls
@@ -1528,5 +1540,106 @@ mod tests {
         assert!(matches!(&message.segments[0], MessageSegment::Text(_)));
         assert!(matches!(&message.segments[1], MessageSegment::ToolEvent(_)));
         assert!(matches!(&message.segments[2], MessageSegment::Text(_)));
+    }
+
+    #[test]
+    fn test_message_set_tool_display_name() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        // Start a tool event
+        message.start_tool_event("tool-999".to_string(), "Read".to_string());
+
+        // Initially display_name should be None
+        if let MessageSegment::ToolEvent(event) = &message.segments[0] {
+            assert_eq!(event.display_name, None);
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+
+        // Set the display_name
+        message.set_tool_display_name("tool-999", "Read src/main.rs".to_string());
+
+        // Verify display_name was set
+        if let MessageSegment::ToolEvent(event) = &message.segments[0] {
+            assert_eq!(event.display_name, Some("Read src/main.rs".to_string()));
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+    }
+
+    #[test]
+    fn test_message_set_tool_display_name_multiple_tools() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        // Start multiple tool events
+        message.start_tool_event("tool-1".to_string(), "Read".to_string());
+        message.start_tool_event("tool-2".to_string(), "Bash".to_string());
+        message.start_tool_event("tool-3".to_string(), "Write".to_string());
+
+        // Set display_name for the second tool
+        message.set_tool_display_name("tool-2", "Run tests".to_string());
+
+        // Verify only tool-2 was updated
+        if let MessageSegment::ToolEvent(event) = &message.segments[0] {
+            assert_eq!(event.tool_call_id, "tool-1");
+            assert_eq!(event.display_name, None);
+        }
+        if let MessageSegment::ToolEvent(event) = &message.segments[1] {
+            assert_eq!(event.tool_call_id, "tool-2");
+            assert_eq!(event.display_name, Some("Run tests".to_string()));
+        }
+        if let MessageSegment::ToolEvent(event) = &message.segments[2] {
+            assert_eq!(event.tool_call_id, "tool-3");
+            assert_eq!(event.display_name, None);
+        }
+    }
+
+    #[test]
+    fn test_message_set_tool_display_name_nonexistent() {
+        let mut message = Message {
+            id: 1,
+            thread_id: "thread-123".to_string(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+        };
+
+        message.start_tool_event("tool-123".to_string(), "Read".to_string());
+
+        // Try to set display_name for a nonexistent tool
+        message.set_tool_display_name("tool-999", "Nonexistent".to_string());
+
+        // Verify the existing tool was not affected
+        if let MessageSegment::ToolEvent(event) = &message.segments[0] {
+            assert_eq!(event.tool_call_id, "tool-123");
+            assert_eq!(event.display_name, None);
+        }
     }
 }

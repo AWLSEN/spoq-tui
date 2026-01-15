@@ -304,6 +304,17 @@ impl ThreadCache {
         }
     }
 
+    /// Set the display_name for a tool event in the streaming message
+    pub fn set_tool_display_name(&mut self, thread_id: &str, tool_call_id: &str, display_name: String) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.set_tool_display_name(tool_call_id, display_name);
+            }
+        }
+    }
+
     /// Toggle reasoning collapsed state for a specific message in a thread
     /// Used by 't' key handler to expand/collapse thinking blocks
     pub fn toggle_message_reasoning(&mut self, thread_id: &str, message_index: usize) -> bool {
