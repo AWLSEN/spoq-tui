@@ -1533,11 +1533,23 @@ fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
 }
 
 /// Render a single tool event as a Line
+///
+/// Uses tool-specific icons, color-coded status indicators, and formatted arguments
+/// to provide rich visual feedback about tool execution status.
+///
+/// # Display format
+/// - Running:  `[icon] [spinner] [tool_name]: [args_display]` (gray)
+/// - Complete: `[icon] ✓ [tool_name]: [args_display] (duration)` (green)
+/// - Failed:   `[icon] ✗ [tool_name]: [args_display]` (red)
 fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
-    // Use display_name if available, otherwise fall back to function_name
-    let tool_name = event.display_name.as_ref()
-        .unwrap_or(&event.function_name)
-        .clone();
+    // Get the appropriate icon for this tool
+    let icon = get_tool_icon(&event.function_name);
+
+    // Format the arguments display
+    // Use pre-computed args_display if available, otherwise format from JSON
+    let args_display = event.args_display.clone().unwrap_or_else(|| {
+        format_tool_args(&event.function_name, &event.args_json)
+    });
 
     match event.status {
         ToolEventStatus::Running => {
@@ -1547,8 +1559,20 @@ fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
             Line::from(vec![
                 Span::styled("  ", Style::default()),
                 Span::styled(
-                    format!("{} {}", spinner, tool_name),
-                    Style::default().fg(Color::DarkGray),
+                    format!("{} ", icon),
+                    Style::default().fg(COLOR_TOOL_ICON),
+                ),
+                Span::styled(
+                    format!("{} ", spinner),
+                    Style::default().fg(COLOR_TOOL_RUNNING),
+                ),
+                Span::styled(
+                    format!("{}: ", event.function_name),
+                    Style::default().fg(COLOR_TOOL_RUNNING),
+                ),
+                Span::styled(
+                    args_display,
+                    Style::default().fg(COLOR_TOOL_RUNNING),
                 ),
             ])
         }
@@ -1559,12 +1583,24 @@ fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
             Line::from(vec![
                 Span::styled("  ", Style::default()),
                 Span::styled(
-                    "✓ ",
-                    Style::default().fg(Color::DarkGray),
+                    format!("{} ", icon),
+                    Style::default().fg(COLOR_TOOL_ICON),
                 ),
                 Span::styled(
-                    format!("{}{}", tool_name, duration_str),
-                    Style::default().fg(Color::DarkGray),
+                    "✓ ",
+                    Style::default().fg(COLOR_TOOL_SUCCESS),
+                ),
+                Span::styled(
+                    format!("{}: ", event.function_name),
+                    Style::default().fg(COLOR_TOOL_SUCCESS),
+                ),
+                Span::styled(
+                    args_display,
+                    Style::default().fg(COLOR_TOOL_SUCCESS),
+                ),
+                Span::styled(
+                    duration_str,
+                    Style::default().fg(COLOR_TOOL_RUNNING),
                 ),
             ])
         }
@@ -1572,12 +1608,20 @@ fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
             Line::from(vec![
                 Span::styled("  ", Style::default()),
                 Span::styled(
-                    "✗ ",
-                    Style::default().fg(Color::Red),
+                    format!("{} ", icon),
+                    Style::default().fg(COLOR_TOOL_ICON),
                 ),
                 Span::styled(
-                    format!("{} failed", tool_name),
-                    Style::default().fg(Color::Red),
+                    "✗ ",
+                    Style::default().fg(COLOR_TOOL_ERROR),
+                ),
+                Span::styled(
+                    format!("{}: ", event.function_name),
+                    Style::default().fg(COLOR_TOOL_ERROR),
+                ),
+                Span::styled(
+                    args_display,
+                    Style::default().fg(COLOR_TOOL_ERROR),
                 ),
             ])
         }
