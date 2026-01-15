@@ -5,6 +5,7 @@
 pub mod app;
 pub mod cache;
 pub mod conductor;
+pub mod debug;
 pub mod events;
 pub mod markdown;
 pub mod models;
