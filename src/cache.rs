@@ -274,18 +274,11 @@ impl ThreadCache {
     /// Adds a new running ToolEvent to the message's segments
     pub fn start_tool_in_message(&mut self, thread_id: &str, tool_call_id: String, function_name: String) {
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
-        eprintln!("[DEBUG] start_tool_in_message: thread={}, tool_id={}, name={}", resolved_id, tool_call_id, function_name);
 
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
             if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
-                eprintln!("[DEBUG] Found streaming message, adding tool. Segments before: {}", streaming_msg.segments.len());
                 streaming_msg.start_tool_event(tool_call_id, function_name);
-                eprintln!("[DEBUG] Segments after: {}", streaming_msg.segments.len());
-            } else {
-                eprintln!("[DEBUG] WARNING: No streaming message found for tool start!");
             }
-        } else {
-            eprintln!("[DEBUG] WARNING: No messages found for thread {}", resolved_id);
         }
     }
 
@@ -293,22 +286,15 @@ impl ThreadCache {
     /// Searches recent messages (not just streaming) since ToolCompleted can arrive after StreamDone
     pub fn complete_tool_in_message(&mut self, thread_id: &str, tool_call_id: &str) {
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
-        eprintln!("[DEBUG] complete_tool_in_message: thread={}, tool_id={}", resolved_id, tool_call_id);
 
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
-            eprintln!("[DEBUG] Found {} messages in thread", messages.len());
             // Search recent messages for the tool (ToolCompleted can arrive after message is finalized)
-            for (i, msg) in messages.iter_mut().rev().take(5).enumerate() {
-                eprintln!("[DEBUG] Checking message {} (is_streaming={}), segments={}", i, msg.is_streaming, msg.segments.len());
+            for msg in messages.iter_mut().rev().take(5) {
                 if msg.get_tool_event(tool_call_id).is_some() {
-                    eprintln!("[DEBUG] Found tool! Completing it now.");
                     msg.complete_tool_event(tool_call_id);
                     return;
                 }
             }
-            eprintln!("[DEBUG] WARNING: Tool {} not found in any recent message!", tool_call_id);
-        } else {
-            eprintln!("[DEBUG] WARNING: No messages found for thread {}", resolved_id);
         }
     }
 

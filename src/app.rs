@@ -552,25 +552,6 @@ impl App {
         while let Some(result) = stream.next().await {
             match result {
                 Ok(event) => {
-                    let event_name = match &event {
-                        SseEvent::Content(_) => "content",
-                        SseEvent::Reasoning(_) => "reasoning",
-                        SseEvent::ToolCallStart(_) => "tool_call_start",
-                        SseEvent::ToolCallArgument(_) => "tool_call_argument",
-                        SseEvent::ToolExecuting(_) => "tool_executing",
-                        SseEvent::ToolResult(_) => "tool_result",
-                        SseEvent::Done(_) => "done",
-                        SseEvent::Error(_) => "error",
-                        SseEvent::UserMessageSaved(_) => "user_message_saved",
-                        SseEvent::TodosUpdated(_) => "todos_updated",
-                        SseEvent::Subagent(_) => "subagent",
-                        SseEvent::PermissionRequest(_) => "permission_request",
-                        SseEvent::ContextCompacted(_) => "context_compacted",
-                        SseEvent::SkillsInjected(_) => "skills_injected",
-                        SseEvent::OAuthConsentRequired(_) => "oauth_consent_required",
-                        SseEvent::ThreadUpdated(_) => "thread_updated",
-                    };
-                    eprintln!("[DEBUG] SSE event received: {}", event_name);
                     match event {
                         SseEvent::Content(content_event) => {
                             // Skip empty tokens (from ping/skills_injected/etc)
@@ -1195,7 +1176,6 @@ impl App {
                 }
             }
             AppMessage::ToolStarted { tool_call_id, tool_name } => {
-                eprintln!("[DEBUG] ToolStarted: id={}, name={}", tool_call_id, tool_name);
                 // Register tool in tracker with display status for UI
                 self.tool_tracker.register_tool_started(
                     tool_call_id.clone(),
@@ -1214,7 +1194,6 @@ impl App {
                 );
                 // Also add tool event inline to the streaming message
                 if let Some(thread_id) = &self.active_thread_id {
-                    eprintln!("[DEBUG] Adding tool to message in thread: {}", thread_id);
                     self.cache.start_tool_in_message(thread_id, tool_call_id, tool_name);
                 }
             }
@@ -1237,7 +1216,6 @@ impl App {
                 );
             }
             AppMessage::ToolCompleted { tool_call_id, success, summary, result } => {
-                eprintln!("[DEBUG] ToolCompleted: id={}, success={}", tool_call_id, success);
                 // Mark tool as completed with summary for fade display
                 self.tool_tracker.complete_tool_with_summary(
                     &tool_call_id,
@@ -1257,7 +1235,6 @@ impl App {
                 );
                 // Also update the inline tool event in the streaming message
                 if let Some(thread_id) = &self.active_thread_id {
-                    eprintln!("[DEBUG] Completing tool in message, thread: {}", thread_id);
                     // Store the result content in the tool event
                     self.cache.set_tool_result(thread_id, &tool_call_id, &result, !success);
                     if success {
@@ -1265,8 +1242,6 @@ impl App {
                     } else {
                         self.cache.fail_tool_in_message(thread_id, &tool_call_id);
                     }
-                } else {
-                    eprintln!("[DEBUG] WARNING: No active_thread_id when completing tool!");
                 }
             }
             AppMessage::ToolArgumentChunk { tool_call_id, chunk } => {
