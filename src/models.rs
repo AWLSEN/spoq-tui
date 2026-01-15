@@ -80,6 +80,31 @@ where
     Option::<String>::deserialize(deserializer).map(|opt| opt.unwrap_or_default())
 }
 
+/// Represents an inline error to be displayed in a thread
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ErrorInfo {
+    /// Unique identifier for this error (for dismiss tracking)
+    pub id: String,
+    /// Error code (e.g., "tool_execution_failed", "rate_limit_exceeded")
+    pub error_code: String,
+    /// Human-readable error message
+    pub message: String,
+    /// When the error occurred
+    pub timestamp: DateTime<Utc>,
+}
+
+impl ErrorInfo {
+    /// Create a new ErrorInfo with a generated ID
+    pub fn new(error_code: String, message: String) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            error_code,
+            message,
+            timestamp: Utc::now(),
+        }
+    }
+}
+
 /// Represents a conversation thread from the backend API
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Thread {
@@ -757,5 +782,67 @@ mod tests {
         let deserialized: StreamRequest = serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(request, deserialized);
+    }
+
+    // ============= ErrorInfo Tests =============
+
+    #[test]
+    fn test_error_info_new() {
+        let error = ErrorInfo::new("tool_execution_failed".to_string(), "File not found".to_string());
+
+        assert_eq!(error.error_code, "tool_execution_failed");
+        assert_eq!(error.message, "File not found");
+        assert!(!error.id.is_empty());
+        // ID should be UUID format (36 chars)
+        assert_eq!(error.id.len(), 36);
+    }
+
+    #[test]
+    fn test_error_info_unique_ids() {
+        let error1 = ErrorInfo::new("error1".to_string(), "msg1".to_string());
+        let error2 = ErrorInfo::new("error2".to_string(), "msg2".to_string());
+
+        // Each error should have a unique ID
+        assert_ne!(error1.id, error2.id);
+    }
+
+    #[test]
+    fn test_error_info_serialization() {
+        let error = ErrorInfo::new("test_error".to_string(), "Test message".to_string());
+
+        let json = serde_json::to_string(&error).expect("Failed to serialize");
+        let deserialized: ErrorInfo = serde_json::from_str(&json).expect("Failed to deserialize");
+
+        assert_eq!(error.id, deserialized.id);
+        assert_eq!(error.error_code, deserialized.error_code);
+        assert_eq!(error.message, deserialized.message);
+    }
+
+    #[test]
+    fn test_error_info_equality() {
+        let error1 = ErrorInfo {
+            id: "test-id".to_string(),
+            error_code: "code".to_string(),
+            message: "msg".to_string(),
+            timestamp: Utc::now(),
+        };
+        let error2 = ErrorInfo {
+            id: "test-id".to_string(),
+            error_code: "code".to_string(),
+            message: "msg".to_string(),
+            timestamp: error1.timestamp,
+        };
+
+        assert_eq!(error1, error2);
+    }
+
+    #[test]
+    fn test_error_info_clone() {
+        let error = ErrorInfo::new("code".to_string(), "message".to_string());
+        let cloned = error.clone();
+
+        assert_eq!(error.id, cloned.id);
+        assert_eq!(error.error_code, cloned.error_code);
+        assert_eq!(error.message, cloned.message);
     }
 }

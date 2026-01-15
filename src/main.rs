@@ -168,6 +168,18 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 _ => {}
                             }
 
+                            // Handle permission prompt keys (y/a/n) when a permission is pending
+                            // This takes priority over all other key handling
+                            if app.session_state.has_pending_permission() {
+                                if let KeyCode::Char(c) = key.code {
+                                    if app.handle_permission_key(c) {
+                                        continue;
+                                    }
+                                }
+                                // When permission is pending, ignore all other keys except Ctrl+C
+                                continue;
+                            }
+
                             // Auto-focus to Input when user starts typing
                             // (printable characters only, not Ctrl combinations)
                             if let KeyCode::Char(_) = key.code {
@@ -281,6 +293,12 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 KeyCode::Char('q') if app.focus != Focus::Input => {
                                     app.quit();
                                     return Ok(());
+                                }
+                                // 'd' to dismiss focused error in Conversation screen
+                                KeyCode::Char('d') if app.focus != Focus::Input && app.screen == Screen::Conversation => {
+                                    if app.has_errors() {
+                                        app.dismiss_focused_error();
+                                    }
                                 }
                                 _ => {}
                             }

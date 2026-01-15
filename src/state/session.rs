@@ -5,16 +5,22 @@
 //! pending permissions, and OAuth requirements.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// A permission request waiting for user approval
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PermissionRequest {
+    /// Unique ID for this permission request (for responding to backend)
+    pub permission_id: String,
     /// Tool that requires permission
     pub tool_name: String,
     /// Description of what the tool wants to do
     pub description: String,
-    /// Additional context about the request
+    /// Additional context about the request (e.g., file path, command)
     pub context: Option<String>,
+    /// Raw tool input parameters for preview display
+    #[serde(default)]
+    pub tool_input: Option<serde_json::Value>,
 }
 
 /// Session-level state that persists across threads
@@ -25,6 +31,7 @@ pub struct PermissionRequest {
 /// - Context token usage from compaction events
 /// - Pending permission prompts that need user input
 /// - OAuth requirements for certain skills
+/// - Tools that have been allowed for the session ("allow always")
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionState {
     /// Active skills loaded in this session
@@ -40,6 +47,11 @@ pub struct SessionState {
     /// OAuth requirement: (provider, skill_name)
     /// Set when a skill requires OAuth authentication
     pub oauth_required: Option<(String, String)>,
+
+    /// Tools that have been allowed for the session ("allow always")
+    /// When a user presses 'a' on a permission prompt, the tool is added here
+    #[serde(default)]
+    pub allowed_tools: HashSet<String>,
 }
 
 impl SessionState {
@@ -100,12 +112,28 @@ impl SessionState {
         self.oauth_required.is_some()
     }
 
+    /// Add a tool to the allowed tools set (for "allow always" behavior)
+    pub fn allow_tool(&mut self, tool_name: String) {
+        self.allowed_tools.insert(tool_name);
+    }
+
+    /// Check if a tool is allowed (user has previously selected "allow always")
+    pub fn is_tool_allowed(&self, tool_name: &str) -> bool {
+        self.allowed_tools.contains(tool_name)
+    }
+
+    /// Remove a tool from the allowed set
+    pub fn disallow_tool(&mut self, tool_name: &str) {
+        self.allowed_tools.remove(tool_name);
+    }
+
     /// Reset all session state (for new session)
     pub fn reset(&mut self) {
         self.skills.clear();
         self.context_tokens_used = None;
         self.pending_permission = None;
         self.oauth_required = None;
+        self.allowed_tools.clear();
     }
 }
 
@@ -120,6 +148,7 @@ mod tests {
         assert!(state.context_tokens_used.is_none());
         assert!(state.pending_permission.is_none());
         assert!(state.oauth_required.is_none());
+        assert!(state.allowed_tools.is_empty());
     }
 
     #[test]
@@ -127,6 +156,7 @@ mod tests {
         let state = SessionState::default();
         assert!(state.skills.is_empty());
         assert!(state.context_tokens_used.is_none());
+        assert!(state.allowed_tools.is_empty());
     }
 
     #[test]
@@ -205,9 +235,11 @@ mod tests {
         assert!(!state.has_pending_permission());
 
         let request = PermissionRequest {
+            permission_id: "perm-001".to_string(),
             tool_name: "Bash".to_string(),
             description: "Run npm install".to_string(),
             context: None,
+            tool_input: None,
         };
         state.set_pending_permission(request.clone());
 
@@ -219,9 +251,11 @@ mod tests {
     fn test_clear_pending_permission() {
         let mut state = SessionState::new();
         let request = PermissionRequest {
+            permission_id: "perm-002".to_string(),
             tool_name: "Bash".to_string(),
             description: "Run npm install".to_string(),
             context: Some("Installing dependencies".to_string()),
+            tool_input: None,
         };
         state.set_pending_permission(request);
         assert!(state.has_pending_permission());
@@ -262,11 +296,14 @@ mod tests {
         state.add_skill("review".to_string());
         state.set_context_tokens(5000);
         state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-003".to_string(),
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: None,
+            tool_input: None,
         });
         state.set_oauth_required("github".to_string(), "skill".to_string());
+        state.allow_tool("Bash".to_string());
 
         state.reset();
 
@@ -274,28 +311,95 @@ mod tests {
         assert!(state.context_tokens_used.is_none());
         assert!(state.pending_permission.is_none());
         assert!(state.oauth_required.is_none());
+        assert!(state.allowed_tools.is_empty());
     }
 
     #[test]
     fn test_permission_request_equality() {
         let req1 = PermissionRequest {
+            permission_id: "perm-a".to_string(),
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: Some("context".to_string()),
+            tool_input: None,
         };
         let req2 = PermissionRequest {
+            permission_id: "perm-a".to_string(),
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: Some("context".to_string()),
+            tool_input: None,
         };
         let req3 = PermissionRequest {
+            permission_id: "perm-b".to_string(),
             tool_name: "Read".to_string(),
             description: "Read file".to_string(),
             context: None,
+            tool_input: None,
         };
 
         assert_eq!(req1, req2);
         assert_ne!(req1, req3);
+    }
+
+    // ============= Allowed Tools Tests =============
+
+    #[test]
+    fn test_allow_tool() {
+        let mut state = SessionState::new();
+        assert!(!state.is_tool_allowed("Bash"));
+
+        state.allow_tool("Bash".to_string());
+        assert!(state.is_tool_allowed("Bash"));
+    }
+
+    #[test]
+    fn test_allow_tool_deduplication() {
+        let mut state = SessionState::new();
+        state.allow_tool("Bash".to_string());
+        state.allow_tool("Bash".to_string());
+        assert_eq!(state.allowed_tools.len(), 1);
+    }
+
+    #[test]
+    fn test_allow_multiple_tools() {
+        let mut state = SessionState::new();
+        state.allow_tool("Bash".to_string());
+        state.allow_tool("Read".to_string());
+        state.allow_tool("Write".to_string());
+
+        assert!(state.is_tool_allowed("Bash"));
+        assert!(state.is_tool_allowed("Read"));
+        assert!(state.is_tool_allowed("Write"));
+        assert!(!state.is_tool_allowed("Edit"));
+    }
+
+    #[test]
+    fn test_disallow_tool() {
+        let mut state = SessionState::new();
+        state.allow_tool("Bash".to_string());
+        assert!(state.is_tool_allowed("Bash"));
+
+        state.disallow_tool("Bash");
+        assert!(!state.is_tool_allowed("Bash"));
+    }
+
+    #[test]
+    fn test_disallow_nonexistent_tool() {
+        let mut state = SessionState::new();
+        // Should not panic when disallowing a tool that wasn't allowed
+        state.disallow_tool("Nonexistent");
+        assert!(!state.is_tool_allowed("Nonexistent"));
+    }
+
+    #[test]
+    fn test_allowed_tools_persists() {
+        let mut state = SessionState::new();
+        state.allow_tool("Bash".to_string());
+
+        // Clone state (simulates persistence)
+        let state2 = state.clone();
+        assert!(state2.is_tool_allowed("Bash"));
     }
 
     #[test]

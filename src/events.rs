@@ -132,6 +132,9 @@ pub struct UserMessageSavedEvent {
 pub struct TodoItem {
     /// The todo item content/description
     pub content: String,
+    /// Active form shown when in_progress (e.g., "Running tests")
+    #[serde(default)]
+    pub active_form: Option<String>,
     /// Status: "pending", "in_progress", or "completed"
     pub status: String,
 }
@@ -753,6 +756,16 @@ mod tests {
         let item: TodoItem = serde_json::from_str(json).unwrap();
         assert_eq!(item.content, "Write documentation");
         assert_eq!(item.status, "pending");
+        assert_eq!(item.active_form, None);
+    }
+
+    #[test]
+    fn test_todo_item_parsing_with_active_form() {
+        let json = r#"{"content": "Run tests", "active_form": "Running tests", "status": "in_progress"}"#;
+        let item: TodoItem = serde_json::from_str(json).unwrap();
+        assert_eq!(item.content, "Run tests");
+        assert_eq!(item.active_form, Some("Running tests".to_string()));
+        assert_eq!(item.status, "in_progress");
     }
 
     #[test]

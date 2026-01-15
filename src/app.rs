@@ -2,7 +2,7 @@ use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::events::SseEvent;
 use crate::models::{StreamRequest, ThreadType};
-use crate::state::{SessionState, Task, Thread, ToolTracker};
+use crate::state::{SessionState, Task, Thread, Todo, ToolTracker};
 use crate::widgets::input_box::InputBox;
 use color_eyre::Result;
 use futures_util::StreamExt;
@@ -35,6 +35,17 @@ pub enum AppMessage {
     MessagesLoadError {
         thread_id: String,
         error: String,
+    },
+    /// Todos updated from the assistant
+    TodosUpdated {
+        todos: Vec<Todo>,
+    },
+    /// Permission request from the assistant - needs user approval
+    PermissionRequested {
+        permission_id: String,
+        tool_name: String,
+        description: String,
+        tool_input: Option<serde_json::Value>,
     },
 }
 
@@ -114,6 +125,8 @@ pub struct App {
     pub session_state: SessionState,
     /// Tool execution tracking per-thread (cleared on done event)
     pub tool_tracker: ToolTracker,
+    /// Session-level todos from the assistant
+    pub todos: Vec<Todo>,
 }
 
 impl App {
@@ -154,6 +167,7 @@ impl App {
             programming_mode: ProgrammingMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
+            todos: Vec::new(),
         })
     }
 
@@ -427,6 +441,22 @@ impl App {
                                 title: None, // Title not available in this event
                             });
                         }
+                        SseEvent::TodosUpdated(todos_event) => {
+                            // Convert SSE TodoItems to our Todo type
+                            let todos = todos_event.todos.iter()
+                                .map(Todo::from_sse)
+                                .collect();
+                            let _ = message_tx.send(AppMessage::TodosUpdated { todos });
+                        }
+                        SseEvent::PermissionRequest(perm_event) => {
+                            // Send permission request to app for user approval
+                            let _ = message_tx.send(AppMessage::PermissionRequested {
+                                permission_id: perm_event.permission_id,
+                                tool_name: perm_event.tool_name,
+                                description: perm_event.description,
+                                tool_input: perm_event.tool_input,
+                            });
+                        }
                         // Ignore other event types for now (reasoning, tool calls, etc.)
                         _ => {}
                     }
@@ -557,6 +587,31 @@ impl App {
             AppMessage::MessagesLoadError { thread_id: _, error } => {
                 self.stream_error = Some(error);
             }
+            AppMessage::TodosUpdated { todos } => {
+                self.todos = todos;
+            }
+            AppMessage::PermissionRequested {
+                permission_id,
+                tool_name,
+                description,
+                tool_input,
+            } => {
+                // Check if this tool is already allowed (user previously chose "Always")
+                if self.session_state.is_tool_allowed(&tool_name) {
+                    // Auto-approve - send approval back to backend
+                    self.approve_permission(&permission_id);
+                } else {
+                    // Store permission request for user approval
+                    use crate::state::PermissionRequest;
+                    self.session_state.set_pending_permission(PermissionRequest {
+                        permission_id,
+                        tool_name,
+                        description,
+                        context: None, // Context will be extracted from tool_input in UI
+                        tool_input,
+                    });
+                }
+            }
         }
     }
 
@@ -600,6 +655,105 @@ impl App {
             }
         }
         false
+    }
+
+    /// Check if there is currently an active streaming message
+    pub fn is_streaming(&self) -> bool {
+        if let Some(thread_id) = &self.active_thread_id {
+            self.cache.is_thread_streaming(thread_id)
+        } else {
+            false
+        }
+    }
+
+    /// Dismiss the currently focused error for the active thread
+    /// Returns true if an error was dismissed
+    pub fn dismiss_focused_error(&mut self) -> bool {
+        if let Some(thread_id) = &self.active_thread_id {
+            self.cache.dismiss_focused_error(thread_id)
+        } else {
+            false
+        }
+    }
+
+    /// Check if the active thread has any errors
+    pub fn has_errors(&self) -> bool {
+        if let Some(thread_id) = &self.active_thread_id {
+            self.cache.error_count(thread_id) > 0
+        } else {
+            false
+        }
+    }
+
+    /// Add an error to the active thread
+    pub fn add_error_to_active_thread(&mut self, error_code: String, message: String) {
+        if let Some(thread_id) = &self.active_thread_id {
+            self.cache.add_error_simple(thread_id, error_code, message);
+        }
+    }
+
+    // ============= Permission Response Methods =============
+
+    /// Approve the current pending permission (user pressed 'y')
+    pub fn approve_permission(&mut self, permission_id: &str) {
+        // Send approval to backend (spawns async task)
+        let client = Arc::clone(&self.client);
+        let perm_id = permission_id.to_string();
+        tokio::spawn(async move {
+            let _ = client.respond_to_permission(&perm_id, true).await;
+        });
+
+        // Clear the pending permission
+        self.session_state.clear_pending_permission();
+    }
+
+    /// Deny the current pending permission (user pressed 'n')
+    pub fn deny_permission(&mut self, permission_id: &str) {
+        // Send denial to backend (spawns async task)
+        let client = Arc::clone(&self.client);
+        let perm_id = permission_id.to_string();
+        tokio::spawn(async move {
+            let _ = client.respond_to_permission(&perm_id, false).await;
+        });
+
+        // Clear the pending permission
+        self.session_state.clear_pending_permission();
+    }
+
+    /// Allow the tool always for this session and approve (user pressed 'a')
+    pub fn allow_tool_always(&mut self, tool_name: &str, permission_id: &str) {
+        // Add tool to allowed list
+        self.session_state.allow_tool(tool_name.to_string());
+
+        // Approve the current permission
+        self.approve_permission(permission_id);
+    }
+
+    /// Handle a permission response key press ('y', 'a', or 'n')
+    /// Returns true if a permission was handled, false if no pending permission
+    pub fn handle_permission_key(&mut self, key: char) -> bool {
+        if let Some(ref perm) = self.session_state.pending_permission.clone() {
+            match key {
+                'y' | 'Y' => {
+                    // Allow once
+                    self.approve_permission(&perm.permission_id);
+                    true
+                }
+                'a' | 'A' => {
+                    // Allow always
+                    self.allow_tool_always(&perm.tool_name, &perm.permission_id);
+                    true
+                }
+                'n' | 'N' => {
+                    // Deny
+                    self.deny_permission(&perm.permission_id);
+                    true
+                }
+                _ => false,
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -1974,5 +2128,320 @@ mod tests {
         // app2 should not see it
         assert_eq!(app1.tool_tracker.total_count(), 1);
         assert_eq!(app2.tool_tracker.total_count(), 0);
+    }
+
+    // ============= is_streaming() Tests =============
+
+    #[test]
+    fn test_is_streaming_returns_false_when_no_active_thread() {
+        let app = App::default();
+        assert!(app.active_thread_id.is_none());
+        assert!(!app.is_streaming());
+    }
+
+    #[test]
+    fn test_is_streaming_returns_true_when_thread_is_streaming() {
+        let mut app = App::default();
+
+        // Create a streaming thread
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Should detect streaming
+        assert!(app.is_streaming());
+    }
+
+    #[test]
+    fn test_is_streaming_returns_false_when_thread_not_streaming() {
+        let mut app = App::default();
+
+        // Create a streaming thread and finalize it
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        app.cache.append_to_message(&thread_id, "Response");
+        app.cache.finalize_message(&thread_id, 1);
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Should NOT detect streaming (message is finalized)
+        assert!(!app.is_streaming());
+    }
+
+    #[test]
+    fn test_is_streaming_returns_false_for_nonexistent_thread() {
+        let mut app = App::default();
+        app.active_thread_id = Some("nonexistent-thread".to_string());
+
+        assert!(!app.is_streaming());
+    }
+
+    #[test]
+    fn test_is_streaming_updates_when_stream_completes() {
+        let mut app = App::default();
+
+        // Create a streaming thread
+        let thread_id = app.cache.create_streaming_thread("Question".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Initially streaming
+        assert!(app.is_streaming());
+
+        // Finalize the stream
+        app.cache.append_to_message(&thread_id, "Answer");
+        app.cache.finalize_message(&thread_id, 42);
+
+        // Should no longer be streaming
+        assert!(!app.is_streaming());
+    }
+
+    // ============= TodosUpdated Tests =============
+
+    #[test]
+    fn test_app_initializes_with_empty_todos() {
+        let app = App::default();
+        assert!(app.todos.is_empty());
+    }
+
+    #[test]
+    fn test_handle_message_todos_updated() {
+        use crate::state::{Todo, TodoStatus};
+
+        let mut app = App::default();
+
+        let todos = vec![
+            Todo {
+                content: "Fix the bug".to_string(),
+                active_form: "Fixing the bug".to_string(),
+                status: TodoStatus::Pending,
+            },
+            Todo {
+                content: "Run tests".to_string(),
+                active_form: "Running tests".to_string(),
+                status: TodoStatus::InProgress,
+            },
+        ];
+
+        app.handle_message(AppMessage::TodosUpdated {
+            todos: todos.clone(),
+        });
+
+        assert_eq!(app.todos.len(), 2);
+        assert_eq!(app.todos[0].content, "Fix the bug");
+        assert_eq!(app.todos[0].status, TodoStatus::Pending);
+        assert_eq!(app.todos[1].content, "Run tests");
+        assert_eq!(app.todos[1].status, TodoStatus::InProgress);
+    }
+
+    #[test]
+    fn test_todos_updated_replaces_previous_todos() {
+        use crate::state::{Todo, TodoStatus};
+
+        let mut app = App::default();
+
+        // Set initial todos
+        let initial_todos = vec![
+            Todo {
+                content: "Old task 1".to_string(),
+                active_form: "Old task 1".to_string(),
+                status: TodoStatus::Pending,
+            },
+            Todo {
+                content: "Old task 2".to_string(),
+                active_form: "Old task 2".to_string(),
+                status: TodoStatus::Pending,
+            },
+        ];
+        app.handle_message(AppMessage::TodosUpdated {
+            todos: initial_todos,
+        });
+        assert_eq!(app.todos.len(), 2);
+
+        // Update with new todos
+        let new_todos = vec![Todo {
+            content: "New task".to_string(),
+            active_form: "New task".to_string(),
+            status: TodoStatus::InProgress,
+        }];
+        app.handle_message(AppMessage::TodosUpdated { todos: new_todos });
+
+        // Should replace the old todos
+        assert_eq!(app.todos.len(), 1);
+        assert_eq!(app.todos[0].content, "New task");
+        assert_eq!(app.todos[0].status, TodoStatus::InProgress);
+    }
+
+    #[test]
+    fn test_todos_updated_with_empty_list() {
+        use crate::state::{Todo, TodoStatus};
+
+        let mut app = App::default();
+
+        // Set initial todos
+        let initial_todos = vec![Todo {
+            content: "Task".to_string(),
+            active_form: "Task".to_string(),
+            status: TodoStatus::Pending,
+        }];
+        app.handle_message(AppMessage::TodosUpdated {
+            todos: initial_todos,
+        });
+        assert_eq!(app.todos.len(), 1);
+
+        // Clear todos
+        app.handle_message(AppMessage::TodosUpdated { todos: Vec::new() });
+
+        assert!(app.todos.is_empty());
+    }
+
+    #[test]
+    fn test_todos_updated_preserves_active_form() {
+        use crate::state::{Todo, TodoStatus};
+
+        let mut app = App::default();
+
+        let todos = vec![Todo {
+            content: "Build the project".to_string(),
+            active_form: "Building the project".to_string(),
+            status: TodoStatus::InProgress,
+        }];
+
+        app.handle_message(AppMessage::TodosUpdated {
+            todos: todos.clone(),
+        });
+
+        assert_eq!(app.todos[0].content, "Build the project");
+        assert_eq!(app.todos[0].active_form, "Building the project");
+    }
+
+    // ============= Inline Error Management Tests =============
+
+    #[test]
+    fn test_has_errors_returns_false_when_no_active_thread() {
+        let app = App::default();
+        assert!(app.active_thread_id.is_none());
+        assert!(!app.has_errors());
+    }
+
+    #[test]
+    fn test_has_errors_returns_false_when_no_errors() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Hello".to_string());
+        app.active_thread_id = Some(thread_id);
+
+        assert!(!app.has_errors());
+    }
+
+    #[test]
+    fn test_has_errors_returns_true_when_errors_exist() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Hello".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        app.cache.add_error_simple(&thread_id, "error".to_string(), "message".to_string());
+
+        assert!(app.has_errors());
+    }
+
+    #[test]
+    fn test_add_error_to_active_thread() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Hello".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        app.add_error_to_active_thread("test_error".to_string(), "Test message".to_string());
+
+        assert!(app.has_errors());
+        let errors = app.cache.get_errors(&thread_id).unwrap();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].error_code, "test_error");
+        assert_eq!(errors[0].message, "Test message");
+    }
+
+    #[test]
+    fn test_add_error_to_active_thread_when_no_active_thread() {
+        let mut app = App::default();
+        assert!(app.active_thread_id.is_none());
+
+        // Should not panic
+        app.add_error_to_active_thread("error".to_string(), "message".to_string());
+
+        // No errors should be added anywhere
+        assert!(!app.has_errors());
+    }
+
+    #[test]
+    fn test_dismiss_focused_error_when_no_active_thread() {
+        let mut app = App::default();
+        assert!(app.active_thread_id.is_none());
+
+        let dismissed = app.dismiss_focused_error();
+        assert!(!dismissed);
+    }
+
+    #[test]
+    fn test_dismiss_focused_error_when_no_errors() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Hello".to_string());
+        app.active_thread_id = Some(thread_id);
+
+        let dismissed = app.dismiss_focused_error();
+        assert!(!dismissed);
+    }
+
+    #[test]
+    fn test_dismiss_focused_error_removes_error() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Hello".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        app.cache.add_error_simple(&thread_id, "error1".to_string(), "First".to_string());
+        app.cache.add_error_simple(&thread_id, "error2".to_string(), "Second".to_string());
+        assert!(app.has_errors());
+        assert_eq!(app.cache.error_count(&thread_id), 2);
+
+        let dismissed = app.dismiss_focused_error();
+        assert!(dismissed);
+        assert_eq!(app.cache.error_count(&thread_id), 1);
+
+        // Should still have one error
+        assert!(app.has_errors());
+
+        // Dismiss the remaining error
+        let dismissed = app.dismiss_focused_error();
+        assert!(dismissed);
+        assert_eq!(app.cache.error_count(&thread_id), 0);
+
+        // No more errors
+        assert!(!app.has_errors());
+    }
+
+    #[test]
+    fn test_error_persists_across_navigate_to_command_deck() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Hello".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+        app.screen = Screen::Conversation;
+
+        app.add_error_to_active_thread("error".to_string(), "message".to_string());
+        assert!(app.has_errors());
+
+        // Navigate away
+        app.navigate_to_command_deck();
+        assert!(app.active_thread_id.is_none());
+
+        // Error should still exist in cache
+        assert_eq!(app.cache.error_count(&thread_id), 1);
+    }
+
+    #[test]
+    fn test_multiple_errors_on_active_thread() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Hello".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        app.add_error_to_active_thread("error1".to_string(), "First error".to_string());
+        app.add_error_to_active_thread("error2".to_string(), "Second error".to_string());
+        app.add_error_to_active_thread("error3".to_string(), "Third error".to_string());
+
+        assert_eq!(app.cache.error_count(&thread_id), 3);
+        assert!(app.has_errors());
     }
 }

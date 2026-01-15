@@ -330,6 +330,8 @@ fn render_notifications(frame: &mut Frame, area: Rect, app: &App, focused: bool)
 }
 
 fn render_tasks(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
+    use crate::state::TodoStatus;
+
     let border_color = if focused { COLOR_ACCENT } else { COLOR_DIM };
     let task_block = Block::default()
         .borders(Borders::ALL)
@@ -339,92 +341,55 @@ fn render_tasks(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
 
     let inner = inner_rect(area, 1);
 
-    // Split into saved and active columns
-    let task_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
-        .split(inner);
-
-    render_saved_tasks(frame, task_chunks[0], app, focused);
-    render_active_tasks(frame, task_chunks[1], app, focused);
-}
-
-fn render_saved_tasks(frame: &mut Frame, area: Rect, app: &App, focused: bool) {
-    let header_style = Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD);
+    let header_style = if focused {
+        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+    };
 
     let mut lines = vec![
         Line::from(Span::styled(
-            if focused { "◇ SAVED ◄" } else { "◇ SAVED" },
+            if focused { "◈ TODOS ◄" } else { "◈ TODOS" },
             header_style,
         )),
-        Line::from(Span::styled("────────────", Style::default().fg(if focused { COLOR_ACCENT } else { COLOR_DIM }))),
+        Line::from(Span::styled(
+            "─────────────────────────────",
+            Style::default().fg(if focused { COLOR_ACCENT } else { COLOR_DIM }),
+        )),
     ];
 
-    // Mock saved tasks for static render
-    let saved_tasks = ["task-001", "task-002", "task-003"];
-    for (i, task) in saved_tasks.iter().enumerate() {
-        let is_selected = focused && i == app.tasks_index;
-        let marker = if is_selected { "▶ " } else { "□ " };
-        let marker_style = if is_selected {
-            Style::default().fg(COLOR_HEADER)
-        } else {
-            Style::default().fg(COLOR_DIM)
-        };
+    // Render todos from app state
+    if app.todos.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No todos yet",
+            Style::default().fg(COLOR_DIM),
+        )));
+    } else {
+        for todo in &app.todos {
+            let (icon, color, text) = match todo.status {
+                TodoStatus::Pending => ("[ ] ", COLOR_DIM, &todo.content),
+                TodoStatus::InProgress => ("[◐] ", Color::Cyan, &todo.active_form),
+                TodoStatus::Completed => ("[✓] ", Color::Green, &todo.content),
+            };
 
-        lines.push(Line::from(vec![
-            Span::styled(marker, marker_style),
-            Span::styled(
-                *task,
-                if is_selected {
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                },
-            ),
-        ]));
+            lines.push(Line::from(vec![
+                Span::styled(icon, Style::default().fg(color)),
+                Span::styled(
+                    text,
+                    if todo.status == TodoStatus::Pending {
+                        Style::default().fg(COLOR_DIM)
+                    } else {
+                        Style::default().fg(color)
+                    },
+                ),
+            ]));
+        }
     }
 
-    let saved = Paragraph::new(lines);
-    frame.render_widget(saved, area);
+    let todos_widget = Paragraph::new(lines);
+    frame.render_widget(todos_widget, inner);
 }
 
-fn render_active_tasks(frame: &mut Frame, area: Rect, _app: &App, _focused: bool) {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "◆ ACTIVE",
-            Style::default().fg(COLOR_ACTIVE).add_modifier(Modifier::BOLD),
-        )),
-        Line::from(Span::styled("─────────────", Style::default().fg(COLOR_DIM))),
-    ];
-
-    // Mock active task with progress
-    lines.push(Line::from(vec![
-        Span::styled("▶ ", Style::default().fg(COLOR_ACTIVE)),
-        Span::raw("task-004"),
-    ]));
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        Span::styled("░░░░░░░", Style::default().fg(COLOR_PROGRESS)),
-        Span::styled(" 23%", Style::default().fg(COLOR_ACCENT)),
-    ]));
-    lines.push(Line::from(""));
-
-    // Mock queued task
-    lines.push(Line::from(vec![
-        Span::styled("◌ ", Style::default().fg(COLOR_QUEUED)),
-        Span::raw("task-005"),
-    ]));
-    lines.push(Line::from(Span::styled(
-        "  [QUEUED]",
-        Style::default().fg(COLOR_QUEUED),
-    )));
-
-    let active = Paragraph::new(lines);
-    frame.render_widget(active, area);
-}
 
 // ============================================================================
 // Right Panel: Threads
@@ -652,22 +617,12 @@ fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget
+    // Render the InputBox widget (never streaming on CommandDeck)
     let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
     frame.render_widget(input_widget, input_chunks[0]);
 
-    // Keybind hints
-    let keybinds = Line::from(vec![
-        Span::raw(" "),
-        Span::styled("[ENTER]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Send   "),
-        Span::styled("[TAB]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Switch   "),
-        Span::styled("[CTRL+C]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Exit   "),
-        Span::styled("[ESC]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Back"),
-    ]);
+    // Build contextual keybind hints
+    let keybinds = build_contextual_keybinds(app);
 
     let keybinds_widget = Paragraph::new(keybinds);
     frame.render_widget(keybinds_widget, input_chunks[1]);
@@ -830,6 +785,111 @@ fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(status_widget, header_chunks[1]);
 }
 
+/// Maximum number of inline error banners to display
+const MAX_VISIBLE_ERRORS: usize = 2;
+
+/// Render inline error banners for a thread
+/// Returns the lines to be added to the messages area
+fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Get errors for the active thread
+    let errors = app
+        .active_thread_id
+        .as_ref()
+        .and_then(|id| app.cache.get_errors(id));
+
+    let Some(errors) = errors else {
+        return lines;
+    };
+
+    if errors.is_empty() {
+        return lines;
+    }
+
+    let focused_index = app.cache.focused_error_index();
+    let total_errors = errors.len();
+
+    // Only show up to MAX_VISIBLE_ERRORS
+    for (i, error) in errors.iter().take(MAX_VISIBLE_ERRORS).enumerate() {
+        let is_focused = i == focused_index;
+        let border_color = if is_focused { Color::Red } else { Color::DarkGray };
+        let border_char_top = if is_focused { "═" } else { "─" };
+        let border_char_bottom = if is_focused { "═" } else { "─" };
+
+        // Top border with error code
+        let header = format!("─[!] {} ", error.error_code);
+        let remaining_width = 50_usize.saturating_sub(header.len());
+        let top_border = format!(
+            "┌{}{}┐",
+            header,
+            border_char_top.repeat(remaining_width)
+        );
+        lines.push(Line::from(Span::styled(
+            top_border,
+            Style::default().fg(border_color),
+        )));
+
+        // Error message line
+        let msg_display = if error.message.len() > 46 {
+            format!("{}...", &error.message[..43])
+        } else {
+            error.message.clone()
+        };
+        let msg_padding = 48_usize.saturating_sub(msg_display.len());
+        lines.push(Line::from(vec![
+            Span::styled("│ ", Style::default().fg(border_color)),
+            Span::styled(msg_display, Style::default().fg(Color::White)),
+            Span::styled(
+                format!("{:>width$}│", "", width = msg_padding),
+                Style::default().fg(border_color),
+            ),
+        ]));
+
+        // Dismiss hint line
+        let dismiss_text = "[d]ismiss";
+        let dismiss_padding = 48_usize.saturating_sub(dismiss_text.len());
+        lines.push(Line::from(vec![
+            Span::styled("│ ", Style::default().fg(border_color)),
+            Span::styled(
+                format!("{:>width$}", "", width = dismiss_padding),
+                Style::default().fg(border_color),
+            ),
+            Span::styled(
+                dismiss_text,
+                Style::default().fg(COLOR_DIM),
+            ),
+            Span::styled(" │", Style::default().fg(border_color)),
+        ]));
+
+        // Bottom border
+        let bottom_border = format!(
+            "└{}┘",
+            border_char_bottom.repeat(48)
+        );
+        lines.push(Line::from(Span::styled(
+            bottom_border,
+            Style::default().fg(border_color),
+        )));
+
+        lines.push(Line::from(""));
+    }
+
+    // Show "+N more" if there are more errors
+    if total_errors > MAX_VISIBLE_ERRORS {
+        let more_count = total_errors - MAX_VISIBLE_ERRORS;
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  +{} more error{}", more_count, if more_count > 1 { "s" } else { "" }),
+                Style::default().fg(Color::Red).add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    lines
+}
+
 /// Render the messages area with user messages and AI responses
 fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     use crate::models::MessageRole;
@@ -837,7 +897,10 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
 
-    // Show error banner if there's a stream error
+    // Show inline error banners for the thread
+    lines.extend(render_inline_error_banners(app));
+
+    // Show stream error banner if there's a stream error (legacy, for non-thread errors)
     if let Some(error) = &app.stream_error {
         lines.push(Line::from(vec![
             Span::styled(
@@ -1032,11 +1095,58 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         .wrap(Wrap { trim: false })
         .scroll((actual_scroll, 0));
     frame.render_widget(messages_widget, inner);
+
+    // Render inline permission prompt if pending (overlays on top of messages)
+    if app.session_state.has_pending_permission() {
+        render_permission_prompt(frame, inner, app);
+    }
+}
+
+/// Build contextual keybind hints based on application state
+fn build_contextual_keybinds(app: &App) -> Line<'static> {
+    let mut spans = vec![Span::raw(" ")];
+
+    // Check for visible elements that need special keybinds
+    let has_error = app.stream_error.is_some();
+
+    // Always show basic navigation
+    if app.screen == Screen::Conversation {
+        if app.is_active_thread_programming() {
+            // Programming thread: show mode cycling hint
+            spans.push(Span::styled("[Shift+Tab]", Style::default().fg(COLOR_ACCENT)));
+            spans.push(Span::raw(" cycle mode │ "));
+        }
+
+        if has_error {
+            // Error visible: show dismiss hint
+            spans.push(Span::styled("d", Style::default().fg(COLOR_ACCENT)));
+            spans.push(Span::raw(": dismiss error │ "));
+        }
+
+        spans.push(Span::styled("[Enter]", Style::default().fg(COLOR_ACCENT)));
+        spans.push(Span::raw(" send │ "));
+
+        spans.push(Span::styled("[Esc]", Style::default().fg(COLOR_ACCENT)));
+        spans.push(Span::raw(" back"));
+    } else {
+        // CommandDeck screen
+        spans.push(Span::styled("[Tab]", Style::default().fg(COLOR_ACCENT)));
+        spans.push(Span::raw(" switch focus │ "));
+
+        spans.push(Span::styled("[Enter]", Style::default().fg(COLOR_ACCENT)));
+        spans.push(Span::raw(" send │ "));
+
+        spans.push(Span::styled("[Esc]", Style::default().fg(COLOR_ACCENT)));
+        spans.push(Span::raw(" back"));
+    }
+
+    Line::from(spans)
 }
 
 /// Render the input area for conversation screen
 fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
     let input_focused = app.focus == Focus::Input;
+    let is_streaming = app.is_streaming();
     let border_color = if input_focused { COLOR_HEADER } else { COLOR_BORDER };
 
     let input_outer = Block::default()
@@ -1060,21 +1170,174 @@ fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget
-    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
+    // Render the InputBox widget with appropriate border style
+    let input_widget = if is_streaming {
+        InputBoxWidget::dashed(&app.input_box, "", input_focused)
+    } else {
+        InputBoxWidget::new(&app.input_box, "", input_focused)
+    };
     frame.render_widget(input_widget, input_chunks[0]);
 
-    // Conversation-specific keybind hints
-    let keybinds = Line::from(vec![
-        Span::raw(" "),
-        Span::styled("[ENTER]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Send   "),
-        Span::styled("[Shift+ESC]", Style::default().fg(COLOR_ACCENT)),
-        Span::raw(" Back to CommandDeck"),
-    ]);
+    // Build contextual keybind hints
+    let keybinds = build_contextual_keybinds(app);
 
     let keybinds_widget = Paragraph::new(keybinds);
     frame.render_widget(keybinds_widget, input_chunks[1]);
+}
+
+// ============================================================================
+// Inline Permission Prompt
+// ============================================================================
+
+/// Render an inline permission prompt in the message flow.
+///
+/// Shows a Claude Code-style permission box with:
+/// - Tool name and description
+/// - Preview of the action (file path, command, etc.)
+/// - Keyboard options: [y] Yes, [a] Always, [n] No
+pub fn render_permission_prompt(frame: &mut Frame, area: Rect, app: &App) {
+    if let Some(ref perm) = app.session_state.pending_permission {
+        render_permission_box(frame, area, perm);
+    }
+}
+
+/// Render the permission request box.
+fn render_permission_box(frame: &mut Frame, area: Rect, perm: &crate::state::session::PermissionRequest) {
+    // Calculate box dimensions - center in the given area
+    let box_width = 60u16.min(area.width.saturating_sub(4));
+    let box_height = 10u16.min(area.height.saturating_sub(2));
+
+    // Center the box
+    let x = area.x + (area.width.saturating_sub(box_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(box_height)) / 2;
+
+    let box_area = Rect {
+        x,
+        y,
+        width: box_width,
+        height: box_height,
+    };
+
+    // Create the permission box with border
+    let block = Block::default()
+        .title(Span::styled(
+            " Permission Required ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    // Render the block first
+    frame.render_widget(block, box_area);
+
+    // Inner area for content
+    let inner = Rect {
+        x: box_area.x + 2,
+        y: box_area.y + 1,
+        width: box_area.width.saturating_sub(4),
+        height: box_area.height.saturating_sub(2),
+    };
+
+    // Build content lines
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Tool name line
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("{}: ", perm.tool_name),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(&perm.description, Style::default().fg(Color::White)),
+    ]));
+
+    lines.push(Line::from("")); // Empty line
+
+    // Preview box - show context or tool_input
+    let preview_content = get_permission_preview(perm);
+    if !preview_content.is_empty() {
+        // Preview border top
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("┌{}┐", "─".repeat((inner.width as usize).saturating_sub(2))),
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+
+        // Preview content (truncated if needed)
+        let max_preview_width = (inner.width as usize).saturating_sub(4);
+        for line in preview_content.lines().take(3) {
+            let truncated = if line.len() > max_preview_width {
+                format!("{}...", &line[..max_preview_width.saturating_sub(3)])
+            } else {
+                line.to_string()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(COLOR_DIM)),
+                Span::styled(truncated, Style::default().fg(Color::Gray)),
+                Span::raw(" "),
+            ]));
+        }
+
+        // Preview border bottom
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("└{}┘", "─".repeat((inner.width as usize).saturating_sub(2))),
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from("")); // Empty line
+
+    // Keyboard options
+    lines.push(Line::from(vec![
+        Span::styled("[y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::raw(" Yes  "),
+        Span::styled("[a]", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+        Span::raw(" Always  "),
+        Span::styled("[n]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::raw(" No"),
+    ]));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+}
+
+/// Extract preview content from a PermissionRequest.
+fn get_permission_preview(perm: &crate::state::session::PermissionRequest) -> String {
+    // First try context (human-readable description)
+    if let Some(ref ctx) = perm.context {
+        return ctx.clone();
+    }
+
+    // Fall back to tool_input if available
+    if let Some(ref input) = perm.tool_input {
+        // Try to extract common fields
+        if let Some(path) = input.get("file_path").and_then(|v| v.as_str()) {
+            return path.to_string();
+        }
+        if let Some(cmd) = input.get("command").and_then(|v| v.as_str()) {
+            return cmd.to_string();
+        }
+        if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
+            // Truncate long content
+            if content.len() > 100 {
+                return format!("{}...", &content[..100]);
+            }
+            return content.to_string();
+        }
+        // Fallback: pretty print JSON
+        if let Ok(pretty) = serde_json::to_string_pretty(input) {
+            return pretty;
+        }
+    }
+
+    String::new()
 }
 
 #[cfg(test)]
@@ -1088,6 +1351,7 @@ mod tests {
         App {
             threads: vec![],
             tasks: vec![],
+            todos: vec![],
             should_quit: false,
             screen: Screen::CommandDeck,
             active_thread_id: None,
@@ -2223,6 +2487,157 @@ mod tests {
         assert!(
             buffer_str.contains("opus"),
             "Should show opus model name"
+        );
+    }
+
+    // ============= Phase 10: Contextual Keybinds Tests =============
+
+    #[test]
+    fn test_contextual_keybinds_command_deck() {
+        let app = create_test_app();
+        // app.screen defaults to CommandDeck
+
+        let keybinds = build_contextual_keybinds(&app);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Should show basic CommandDeck hints
+        assert!(content.contains("Tab"));
+        assert!(content.contains("switch focus"));
+        assert!(content.contains("Enter"));
+        assert!(content.contains("send"));
+    }
+
+    #[test]
+    fn test_contextual_keybinds_conversation_with_error() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.stream_error = Some("Test error".to_string());
+
+        let keybinds = build_contextual_keybinds(&app);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Should show dismiss error hint
+        assert!(content.contains("d"));
+        assert!(content.contains("dismiss error"));
+    }
+
+    #[test]
+    fn test_contextual_keybinds_programming_thread_shows_mode_cycling() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a programming thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming".to_string(),
+            preview: "Code".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+        app.active_thread_id = Some("prog-thread".to_string());
+
+        let keybinds = build_contextual_keybinds(&app);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Should show mode cycling hint for programming thread
+        assert!(content.contains("Shift+Tab"));
+        assert!(content.contains("cycle mode"));
+    }
+
+    #[test]
+    fn test_contextual_keybinds_normal_thread_no_mode_cycling() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a normal thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "conv-thread".to_string(),
+            title: "Normal".to_string(),
+            preview: "Chat".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+        app.active_thread_id = Some("conv-thread".to_string());
+
+        let keybinds = build_contextual_keybinds(&app);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Should NOT show mode cycling hint for normal thread
+        assert!(!content.contains("Shift+Tab"));
+        assert!(!content.contains("cycle mode"));
+    }
+
+    // ============= Phase 10: Streaming Input Border Tests =============
+
+    #[test]
+    fn test_conversation_input_uses_dashed_border_when_streaming() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should have dashed border characters (┄)
+        assert!(
+            buffer_str.contains("┄"),
+            "Input should use dashed border when streaming"
+        );
+    }
+
+    #[test]
+    fn test_conversation_input_uses_solid_border_when_not_streaming() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a thread with completed message
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.cache.append_to_message(&thread_id, "Response");
+        app.cache.finalize_message(&thread_id, 1);
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should have solid border characters (─), not dashed
+        assert!(
+            buffer_str.contains("─"),
+            "Input should use solid border when not streaming"
         );
     }
 }

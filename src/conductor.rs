@@ -319,6 +319,42 @@ impl ConductorClient {
         // Stub: return empty vec for now
         Vec::new()
     }
+
+    /// Respond to a permission request from the assistant.
+    ///
+    /// POST /v1/permissions/{permission_id}
+    ///
+    /// # Arguments
+    /// * `permission_id` - The ID of the permission request
+    /// * `approved` - Whether to approve (true) or deny (false) the permission
+    ///
+    /// # Returns
+    /// Ok(()) on success, or an error if the request fails
+    pub async fn respond_to_permission(
+        &self,
+        permission_id: &str,
+        approved: bool,
+    ) -> Result<(), ConductorError> {
+        let url = format!("{}/v1/permissions/{}", self.base_url, permission_id);
+
+        let body = serde_json::json!({
+            "approved": approved
+        });
+
+        let response = self.client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for ConductorClient {
