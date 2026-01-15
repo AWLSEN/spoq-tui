@@ -150,9 +150,10 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
         let timeout = tokio::time::sleep(std::time::Duration::from_millis(100));
 
         tokio::select! {
-            // Handle timeout for UI updates (migration progress, etc.)
+            // Handle timeout for UI updates (migration progress, animations, etc.)
             _ = timeout => {
-                // Just continue to redraw
+                // Increment tick counter for animations (spinner, cursor blink)
+                app.tick();
             }
 
             // Handle keyboard events

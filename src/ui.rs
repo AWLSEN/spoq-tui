@@ -1418,11 +1418,11 @@ fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
                 Span::styled("  ", Style::default()),
                 Span::styled(
                     "✓ ",
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(
                     format!("{}{}", tool_name, duration_str),
-                    Style::default().fg(Color::Green),
+                    Style::default().fg(Color::DarkGray),
                 ),
             ])
         }
@@ -1606,24 +1606,60 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     }
                 }
             } else {
-                // Display completed message content with markdown rendering
-                let content_lines = render_markdown(&message.content);
+                // Display completed message with interleaved text and tool events
+                // For assistant messages with segments, render segments in order
+                if message.role == MessageRole::Assistant && !message.segments.is_empty() {
+                    let mut is_first_line = true;
 
-                if content_lines.is_empty() {
-                    // Empty content, just show label
-                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                } else {
-                    // Prepend label to first line
-                    let mut iter = content_lines.into_iter();
-                    if let Some(first_line) = iter.next() {
-                        let mut first_spans = vec![Span::styled(label, label_style)];
-                        first_spans.extend(first_line.spans);
-                        lines.push(Line::from(first_spans));
+                    for segment in &message.segments {
+                        match segment {
+                            MessageSegment::Text(text) => {
+                                let mut segment_lines = render_markdown(text);
+                                if is_first_line && !segment_lines.is_empty() {
+                                    // Prepend label to first line of first text segment
+                                    let first_line = segment_lines.remove(0);
+                                    let mut first_spans = vec![Span::styled(label, label_style)];
+                                    first_spans.extend(first_line.spans);
+                                    lines.push(Line::from(first_spans));
+                                    is_first_line = false;
+                                }
+                                lines.extend(segment_lines);
+                            }
+                            MessageSegment::ToolEvent(event) => {
+                                if is_first_line {
+                                    // No text before first tool event, show label first
+                                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                                    is_first_line = false;
+                                }
+                                lines.push(render_tool_event(event, app.tick_count));
+                            }
+                        }
                     }
 
-                    // Add remaining lines as-is
-                    for line in iter {
-                        lines.push(line);
+                    // If we never added any content, show just the label
+                    if is_first_line {
+                        lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                    }
+                } else {
+                    // Fall back to content field for non-assistant messages or empty segments
+                    let content_lines = render_markdown(&message.content);
+
+                    if content_lines.is_empty() {
+                        // Empty content, just show label
+                        lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                    } else {
+                        // Prepend label to first line
+                        let mut iter = content_lines.into_iter();
+                        if let Some(first_line) = iter.next() {
+                            let mut first_spans = vec![Span::styled(label, label_style)];
+                            first_spans.extend(first_line.spans);
+                            lines.push(Line::from(first_spans));
+                        }
+
+                        // Add remaining lines as-is
+                        for line in iter {
+                            lines.push(line);
+                        }
                     }
                 }
             }
