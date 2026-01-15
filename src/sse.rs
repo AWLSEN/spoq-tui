@@ -22,6 +22,20 @@ pub enum SseLine {
     Comment(String),
 }
 
+/// Metadata included with SSE events from the backend.
+/// Backend sends these fields flattened at root level of each event.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SseEventMeta {
+    /// Sequence number for ordering events (auto-increments per event)
+    pub seq: Option<u64>,
+    /// Unix timestamp in milliseconds
+    pub timestamp: Option<u64>,
+    /// Session ID for the current streaming session
+    pub session_id: Option<String>,
+    /// Thread ID this event belongs to
+    pub thread_id: Option<String>,
+}
+
 /// Typed SSE events from the Conductor API
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -29,6 +43,8 @@ pub enum SseEvent {
     /// Content chunk for streaming text
     Content {
         text: String,
+        #[serde(skip)]
+        meta: SseEventMeta,
     },
     /// Thread metadata when a new thread is created or identified
     ThreadInfo {
@@ -54,6 +70,7 @@ pub enum SseEvent {
 
 /// Raw data payload from SSE data lines
 /// Supports multiple field names that backends might use for content
+/// Also captures flattened metadata fields from the backend
 #[derive(Debug, Clone, Deserialize)]
 struct ContentPayload {
     /// The text content - accepts "text", "content", "data", "chunk", or "token" fields
@@ -63,6 +80,18 @@ struct ContentPayload {
     /// Some backends nest content in a delta object (OpenAI style)
     #[serde(default)]
     delta: Option<DeltaPayload>,
+    /// Sequence number for ordering events
+    #[serde(default)]
+    seq: Option<u64>,
+    /// Unix timestamp in milliseconds
+    #[serde(default)]
+    timestamp: Option<u64>,
+    /// Session ID for the current streaming session
+    #[serde(default)]
+    session_id: Option<String>,
+    /// Thread ID this event belongs to
+    #[serde(default)]
+    thread_id: Option<String>,
 }
 
 /// Nested delta payload for OpenAI-style responses
@@ -142,7 +171,15 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
                 .or_else(|| payload.delta.as_ref().and_then(|d| d.data.clone()))
                 .unwrap_or_default();
 
-            Ok(SseEvent::Content { text })
+            // Extract metadata from flattened fields
+            let meta = SseEventMeta {
+                seq: payload.seq,
+                timestamp: payload.timestamp,
+                session_id: payload.session_id,
+                thread_id: payload.thread_id,
+            };
+
+            Ok(SseEvent::Content { text, meta })
         }
         // thread_info - legacy format with thread_id field
         "thread_info" => {
@@ -413,7 +450,8 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             SseEvent::Content {
-                text: "Hello world".to_string()
+                text: "Hello world".to_string(),
+                meta: SseEventMeta::default(),
             }
         );
     }
@@ -425,7 +463,8 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             SseEvent::Content {
-                text: "From content field".to_string()
+                text: "From content field".to_string(),
+                meta: SseEventMeta::default(),
             }
         );
     }
@@ -437,7 +476,8 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             SseEvent::Content {
-                text: "From delta".to_string()
+                text: "From delta".to_string(),
+                meta: SseEventMeta::default(),
             }
         );
     }
@@ -452,7 +492,8 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             SseEvent::Content {
-                text: "Hello".to_string()
+                text: "Hello".to_string(),
+                meta: SseEventMeta::default(),
             }
         );
     }
@@ -464,7 +505,8 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             SseEvent::Content {
-                text: "".to_string()
+                text: "".to_string(),
+                meta: SseEventMeta::default(),
             }
         );
     }
@@ -570,7 +612,8 @@ mod tests {
         assert_eq!(
             event,
             Some(SseEvent::Content {
-                text: "Hello".to_string()
+                text: "Hello".to_string(),
+                meta: SseEventMeta::default(),
             })
         );
     }
@@ -586,7 +629,8 @@ mod tests {
         assert_eq!(
             event1,
             Some(SseEvent::Content {
-                text: "First".to_string()
+                text: "First".to_string(),
+                meta: SseEventMeta::default(),
             })
         );
 
@@ -597,7 +641,8 @@ mod tests {
         assert_eq!(
             event2,
             Some(SseEvent::Content {
-                text: "Second".to_string()
+                text: "Second".to_string(),
+                meta: SseEventMeta::default(),
             })
         );
     }
@@ -633,7 +678,8 @@ mod tests {
         assert_eq!(
             event,
             Some(SseEvent::Content {
-                text: "Hello".to_string()
+                text: "Hello".to_string(),
+                meta: SseEventMeta::default(),
             })
         );
     }
@@ -831,5 +877,73 @@ mod tests {
         assert!(matches!(events[2], SseEvent::Content { .. }));
         assert!(matches!(events[3], SseEvent::Content { .. }));
         assert_eq!(events[4], SseEvent::Done);
+    }
+
+    #[test]
+    fn test_parse_backend_flattened_format() {
+        // Test the exact format the backend sends:
+        // data: {"type":"content","seq":5,"timestamp":1736956800000,"session_id":"abc123","thread_id":"thread_456","data":"Hello"}\n\n
+        // Note: Backend uses "data" field for content, not "text"
+        let json = r#"{"type":"content","seq":5,"timestamp":1736956800000,"session_id":"abc123","thread_id":"thread_456","data":"Hello"}"#;
+
+        let result = parse_sse_event("content", json);
+        let event = result.unwrap();
+
+        match event {
+            SseEvent::Content { text, meta } => {
+                assert_eq!(text, "Hello");
+                assert_eq!(meta.seq, Some(5));
+                assert_eq!(meta.timestamp, Some(1736956800000));
+                assert_eq!(meta.session_id, Some("abc123".to_string()));
+                assert_eq!(meta.thread_id, Some("thread_456".to_string()));
+            }
+            _ => panic!("Expected Content event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_backend_stream_with_metadata() {
+        // Simulate a realistic backend stream with flattened metadata
+        let mut parser = SseParser::new();
+
+        // Backend sends: data: {json}\n\n (no event: line, type is in JSON)
+        parser.feed_line(r#"data: {"type":"content","seq":1,"timestamp":1736956800000,"session_id":"sess-abc","thread_id":"thread-123","data":"Hello "}"#).unwrap();
+        let event1 = parser.feed_line("").unwrap().unwrap();
+
+        parser.feed_line(r#"data: {"type":"content","seq":2,"timestamp":1736956800001,"session_id":"sess-abc","thread_id":"thread-123","data":"world!"}"#).unwrap();
+        let event2 = parser.feed_line("").unwrap().unwrap();
+
+        // Verify first chunk
+        match event1 {
+            SseEvent::Content { text, meta } => {
+                assert_eq!(text, "Hello ");
+                assert_eq!(meta.seq, Some(1));
+            }
+            _ => panic!("Expected Content event"),
+        }
+
+        // Verify second chunk with incremented seq
+        match event2 {
+            SseEvent::Content { text, meta } => {
+                assert_eq!(text, "world!");
+                assert_eq!(meta.seq, Some(2));
+            }
+            _ => panic!("Expected Content event"),
+        }
+    }
+
+    #[test]
+    fn test_keepalive_comment_handling() {
+        // Backend sends `: comment` lines every 15 seconds as keep-alive
+        let mut parser = SseParser::new();
+
+        // Keep-alive should be ignored
+        assert!(parser.feed_line(": keep-alive").unwrap().is_none());
+        assert!(parser.feed_line(":").unwrap().is_none());
+
+        // But content should still parse
+        parser.feed_line(r#"data: {"type":"content","data":"test"}"#).unwrap();
+        let event = parser.feed_line("").unwrap();
+        assert!(matches!(event, Some(SseEvent::Content { .. })));
     }
 }

@@ -250,7 +250,20 @@ impl ConductorClient {
             return Err(ConductorError::ServerError { status, message });
         }
 
-        let data: ThreadListResponse = response.json().await?;
+        // DEBUG: Log raw response
+        let raw_text = response.text().await?;
+        {
+            use std::io::Write;
+            let mut log_file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("/tmp/spoq_debug.log")
+                .unwrap();
+            writeln!(log_file, "=== RAW /v1/threads response ===").ok();
+            writeln!(log_file, "{}", &raw_text[..raw_text.len().min(2000)]).ok();
+        }
+        let data: ThreadListResponse = serde_json::from_str(&raw_text)
+            .map_err(|e| ConductorError::ServerError { status: 0, message: e.to_string() })?;
         Ok(data.threads)
     }
 
@@ -333,7 +346,17 @@ impl Default for ConductorClient {
 /// while events module has the full typed event structure.
 fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
     match event {
-        crate::sse::SseEvent::Content { text } => SseEvent::Content(crate::events::ContentEvent { text }),
+        crate::sse::SseEvent::Content { text, meta } => {
+            SseEvent::Content(crate::events::ContentEvent {
+                text,
+                meta: crate::events::EventMeta {
+                    seq: meta.seq,
+                    timestamp: meta.timestamp,
+                    session_id: meta.session_id,
+                    thread_id: meta.thread_id,
+                },
+            })
+        }
         crate::sse::SseEvent::ThreadInfo { thread_id, title: _ } => {
             // Map to UserMessageSaved as a proxy for thread info
             SseEvent::UserMessageSaved(crate::events::UserMessageSavedEvent {
@@ -353,9 +376,11 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
             SseEvent::Error(crate::events::ErrorEvent { message, code })
         }
         crate::sse::SseEvent::Ping => {
-            // No direct ping mapping in events, treat as content with empty text
+            // Ping/keepalive - emit empty content that will be filtered
+            // This is a no-op event (skills_injected, ping, etc.)
             SseEvent::Content(crate::events::ContentEvent {
                 text: String::new(),
+                meta: crate::events::EventMeta::default(),
             })
         }
     }
@@ -427,11 +452,19 @@ mod tests {
     fn test_convert_sse_event_content() {
         let sse_event = crate::sse::SseEvent::Content {
             text: "Hello".to_string(),
+            meta: crate::sse::SseEventMeta {
+                seq: Some(5),
+                timestamp: Some(1736956800000),
+                session_id: Some("sess-123".to_string()),
+                thread_id: Some("thread-456".to_string()),
+            },
         };
         let event = convert_sse_event(sse_event);
         match event {
             SseEvent::Content(content) => {
                 assert_eq!(content.text, "Hello");
+                assert_eq!(content.meta.seq, Some(5));
+                assert_eq!(content.meta.timestamp, Some(1736956800000));
             }
             _ => panic!("Expected Content event"),
         }

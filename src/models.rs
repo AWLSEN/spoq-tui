@@ -86,8 +86,8 @@ pub struct Thread {
     /// Unique identifier from backend (can be string or integer)
     #[serde(deserialize_with = "deserialize_id")]
     pub id: String,
-    /// Title derived from first message
-    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    /// Title derived from first message (API sends as "name")
+    #[serde(default, deserialize_with = "deserialize_nullable_string", alias = "name")]
     pub title: String,
     /// Preview of the last message
     #[serde(default)]
@@ -490,6 +490,25 @@ mod tests {
         assert_eq!(thread.id, "thread-null-type");
         assert_eq!(thread.title, "Null Type Thread");
         // Should default to Normal when type is null
+        assert_eq!(thread.thread_type, ThreadType::Normal);
+    }
+
+    #[test]
+    fn test_thread_deserialization_with_name_field() {
+        // Test that "name" field from API is mapped to "title" field in struct
+        let json = r#"{
+            "id": "thread-api",
+            "name": "My Thread Title",
+            "thread_type": "normal",
+            "project_path": "/home/user/project",
+            "provider": "claude-cli"
+        }"#;
+
+        let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(thread.id, "thread-api");
+        // "name" from API should map to "title" in struct
+        assert_eq!(thread.title, "My Thread Title");
         assert_eq!(thread.thread_type, ThreadType::Normal);
     }
 

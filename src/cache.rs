@@ -230,6 +230,7 @@ impl ThreadCache {
     pub fn append_to_message(&mut self, thread_id: &str, token: &str) {
         // Resolve the thread_id in case it's a pending ID that was reconciled
         let resolved_id = self.resolve_thread_id(thread_id).to_string();
+
         if let Some(messages) = self.messages.get_mut(&resolved_id) {
             // Find the last streaming message
             if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {

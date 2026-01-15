@@ -1,15 +1,7 @@
-mod app;
-mod cache;
-mod conductor;
-mod events;
-mod markdown;
-mod models;
-pub mod sse;
-mod state;
-mod ui;
-mod widgets;
+use spoq::app::{App, AppMessage, Focus, Screen};
+use spoq::models;
+use spoq::ui;
 
-use app::{App, AppMessage, Focus, Screen};
 use color_eyre::Result;
 use crossterm::{
     cursor::Show,

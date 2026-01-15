@@ -1909,4 +1909,84 @@ mod tests {
         let thread = app.cache.get_thread("real-thread-123").unwrap();
         assert_eq!(thread.thread_type, ThreadType::Programming);
     }
+
+    // ============= State Module Integration Tests =============
+
+    #[test]
+    fn test_app_initializes_session_state() {
+        let app = App::default();
+
+        // SessionState should be initialized
+        assert!(app.session_state.skills.is_empty());
+        assert!(app.session_state.context_tokens_used.is_none());
+        assert!(app.session_state.pending_permission.is_none());
+        assert!(app.session_state.oauth_required.is_none());
+    }
+
+    #[test]
+    fn test_app_initializes_tool_tracker() {
+        let app = App::default();
+
+        // ToolTracker should be initialized and empty
+        assert_eq!(app.tool_tracker.total_count(), 0);
+        assert!(!app.tool_tracker.has_active_tools());
+    }
+
+    #[test]
+    fn test_session_state_persists_across_operations() {
+        let mut app = App::default();
+
+        // Modify session state
+        app.session_state.add_skill("git".to_string());
+        app.session_state.set_context_tokens(5000);
+
+        // Navigate around
+        app.navigate_to_command_deck();
+
+        // Session state should persist
+        assert!(app.session_state.has_skill("git"));
+        assert_eq!(app.session_state.context_tokens_used, Some(5000));
+    }
+
+    #[test]
+    fn test_tool_tracker_can_track_tools() {
+        use crate::state::tools::{ToolCallState, ToolCallStatus};
+
+        let mut app = App::default();
+
+        // Register a tool call
+        let state = ToolCallState::new("Bash".to_string());
+        app.tool_tracker.register_tool("tool-1".to_string(), state);
+
+        // Verify tracking
+        assert_eq!(app.tool_tracker.total_count(), 1);
+        assert!(app.tool_tracker.contains("tool-1"));
+
+        // Start the tool
+        app.tool_tracker.start_tool("tool-1");
+        let tool_state = app.tool_tracker.get_tool("tool-1").unwrap();
+        assert_eq!(tool_state.status, ToolCallStatus::Running);
+
+        // Complete the tool
+        app.tool_tracker.complete_tool("tool-1", Some("output".to_string()));
+        let tool_state = app.tool_tracker.get_tool("tool-1").unwrap();
+        assert_eq!(tool_state.status, ToolCallStatus::Completed);
+        assert!(!app.tool_tracker.has_active_tools());
+    }
+
+    #[test]
+    fn test_tool_tracker_independent_per_app() {
+        let mut app1 = App::default();
+        let mut app2 = App::default();
+
+        // Add tool to app1
+        app1.tool_tracker.register_tool(
+            "tool-1".to_string(),
+            crate::state::tools::ToolCallState::new("Bash".to_string())
+        );
+
+        // app2 should not see it
+        assert_eq!(app1.tool_tracker.total_count(), 1);
+        assert_eq!(app2.tool_tracker.total_count(), 0);
+    }
 }
