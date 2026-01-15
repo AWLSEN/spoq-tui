@@ -2946,4 +2946,59 @@ mod tests {
         assert_eq!(app.session_state.context_tokens_used, Some(50_000));
         assert_eq!(app.session_state.context_token_limit, Some(100_000));
     }
+
+    #[test]
+    fn test_thread_metadata_updated_updates_thread() {
+        let mut app = App::default();
+
+        // Create a thread
+        let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+
+        // Update metadata via message
+        app.handle_message(AppMessage::ThreadMetadataUpdated {
+            thread_id: thread_id.clone(),
+            title: Some("Updated Title".to_string()),
+            description: Some("New Description".to_string()),
+        });
+
+        // Verify the thread was updated
+        let thread = app.cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Updated Title");
+        assert_eq!(thread.description, Some("New Description".to_string()));
+    }
+
+    #[test]
+    fn test_thread_metadata_updated_partial_update() {
+        let mut app = App::default();
+
+        // Create a thread
+        let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+
+        // Update only description
+        app.handle_message(AppMessage::ThreadMetadataUpdated {
+            thread_id: thread_id.clone(),
+            title: None,
+            description: Some("Just a description".to_string()),
+        });
+
+        // Verify title unchanged, description updated
+        let thread = app.cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Original Title");
+        assert_eq!(thread.description, Some("Just a description".to_string()));
+    }
+
+    #[test]
+    fn test_thread_metadata_updated_nonexistent_thread() {
+        let mut app = App::default();
+
+        // Try to update a thread that doesn't exist
+        app.handle_message(AppMessage::ThreadMetadataUpdated {
+            thread_id: "nonexistent-thread".to_string(),
+            title: Some("Title".to_string()),
+            description: Some("Description".to_string()),
+        });
+
+        // Should not panic, just do nothing
+        assert!(app.cache.get_thread("nonexistent-thread").is_none());
+    }
 }
