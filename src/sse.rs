@@ -125,6 +125,14 @@ pub enum SseEvent {
         subagent_type: String,
         data: serde_json::Value,
     },
+    /// Thread updated - when thread metadata is changed
+    ThreadUpdated {
+        thread_id: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        description: Option<String>,
+    },
 }
 
 /// Raw data payload from SSE data lines
@@ -212,6 +220,15 @@ struct ContextCompactedPayload {
     tokens_used: Option<u32>,
     #[serde(default)]
     token_limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ThreadUpdatedPayload {
+    thread_id: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
 }
 
 /// Parse a single SSE line into its component type
@@ -467,6 +484,18 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
             Ok(SseEvent::Subagent {
                 subagent_type,
                 data: v,
+            })
+        }
+        "thread_updated" => {
+            let payload: ThreadUpdatedPayload = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::ThreadUpdated {
+                thread_id: payload.thread_id,
+                title: payload.title,
+                description: payload.description,
             })
         }
         // Ignore unknown events instead of erroring (more resilient)
@@ -1163,5 +1192,130 @@ mod tests {
         parser.feed_line(r#"data: {"type":"content","data":"test"}"#).unwrap();
         let event = parser.feed_line("").unwrap();
         assert!(matches!(event, Some(SseEvent::Content { .. })));
+    }
+
+    // Tests for thread_updated event
+
+    #[test]
+    fn test_parse_thread_updated_with_all_fields() {
+        let result = parse_sse_event(
+            "thread_updated",
+            r#"{"thread_id": "thread-uuid-123", "title": "New Title", "description": "New Description"}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::ThreadUpdated {
+                thread_id: "thread-uuid-123".to_string(),
+                title: Some("New Title".to_string()),
+                description: Some("New Description".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_thread_updated_with_only_thread_id() {
+        let result = parse_sse_event("thread_updated", r#"{"thread_id": "thread-456"}"#);
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::ThreadUpdated {
+                thread_id: "thread-456".to_string(),
+                title: None,
+                description: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_thread_updated_with_title_only() {
+        let result = parse_sse_event(
+            "thread_updated",
+            r#"{"thread_id": "thread-789", "title": "Updated Title"}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::ThreadUpdated {
+                thread_id: "thread-789".to_string(),
+                title: Some("Updated Title".to_string()),
+                description: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_thread_updated_with_description_only() {
+        let result = parse_sse_event(
+            "thread_updated",
+            r#"{"thread_id": "thread-abc", "description": "New description text"}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::ThreadUpdated {
+                thread_id: "thread-abc".to_string(),
+                title: None,
+                description: Some("New description text".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_thread_updated_with_empty_strings() {
+        let result = parse_sse_event(
+            "thread_updated",
+            r#"{"thread_id": "thread-xyz", "title": "", "description": ""}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::ThreadUpdated {
+                thread_id: "thread-xyz".to_string(),
+                title: Some("".to_string()),
+                description: Some("".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_thread_updated_invalid_json() {
+        let result = parse_sse_event("thread_updated", "not json");
+        assert!(matches!(result, Err(SseParseError::InvalidJson { .. })));
+    }
+
+    #[test]
+    fn test_parser_thread_updated_event() {
+        let mut parser = SseParser::new();
+
+        parser.feed_line("event: thread_updated").unwrap();
+        parser
+            .feed_line(r#"data: {"thread_id": "t-999", "title": "Test Thread", "description": "Test Desc"}"#)
+            .unwrap();
+
+        let event = parser.feed_line("").unwrap();
+        assert_eq!(
+            event,
+            Some(SseEvent::ThreadUpdated {
+                thread_id: "t-999".to_string(),
+                title: Some("Test Thread".to_string()),
+                description: Some("Test Desc".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn test_parser_thread_updated_event_minimal() {
+        let mut parser = SseParser::new();
+
+        parser.feed_line("event: thread_updated").unwrap();
+        parser
+            .feed_line(r#"data: {"thread_id": "minimal-thread"}"#)
+            .unwrap();
+
+        let event = parser.feed_line("").unwrap();
+        assert_eq!(
+            event,
+            Some(SseEvent::ThreadUpdated {
+                thread_id: "minimal-thread".to_string(),
+                title: None,
+                description: None,
+            })
+        );
     }
 }
