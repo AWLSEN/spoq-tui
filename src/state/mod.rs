@@ -1,5 +1,19 @@
+//! Application state management
+//!
+//! This module contains state containers for the TUI application:
+//! - Core types (Thread, Task, Notification) from legacy state
+//! - SessionState: Session-level information (skills, tokens, permissions)
+//! - ToolTracker: Per-thread ephemeral tool execution states
+
+pub mod session;
+pub mod tools;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+// Re-export new state types at module level
+pub use session::SessionState;
+pub use tools::{ToolCallState, ToolTracker};
 
 /// Represents a conversation thread
 #[derive(Debug, Clone, Serialize, Deserialize)]
