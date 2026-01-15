@@ -215,6 +215,7 @@ pub struct ServerMessage {
 
 /// Role of a message in a conversation
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
 pub enum MessageRole {
     User,
     Assistant,
@@ -239,6 +240,8 @@ pub struct ToolEvent {
     pub tool_call_id: String,
     /// Name of the tool (e.g., "Bash", "Read", "Glob")
     pub function_name: String,
+    /// Optional display name (e.g., "Read src/main.rs" instead of just "Read")
+    pub display_name: Option<String>,
     /// Current status of the tool
     pub status: ToolEventStatus,
     /// When the tool started
@@ -255,6 +258,7 @@ impl ToolEvent {
         Self {
             tool_call_id,
             function_name,
+            display_name: None,
             status: ToolEventStatus::Running,
             started_at: Utc::now(),
             completed_at: None,
@@ -348,6 +352,7 @@ impl Message {
     /// Append a token to the partial content during streaming
     pub fn append_token(&mut self, token: &str) {
         self.partial_content.push_str(token);
+        self.add_text_segment(token.to_string());
     }
 
     /// Append a token to the reasoning content during streaming
@@ -944,7 +949,7 @@ mod tests {
         let json = r#"{
             "id": 1,
             "thread_id": "thread-123",
-            "role": "User",
+            "role": "user",
             "content": "Hello",
             "created_at": "2024-01-01T00:00:00Z"
         }"#;
