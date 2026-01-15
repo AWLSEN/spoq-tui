@@ -16,6 +16,7 @@ use ratatui::{
 
 use crate::app::{App, Focus, ProgrammingMode, Screen};
 use crate::markdown::render_markdown;
+use crate::models::{Message, MessageSegment, ToolEventStatus};
 use crate::state::{Notification, TaskStatus};
 use crate::widgets::input_box::InputBoxWidget;
 
@@ -1266,6 +1267,62 @@ fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+/// Render inline tool events from a message's segments
+fn render_inline_tool_events(message: &Message, tick_count: u64) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    for segment in &message.segments {
+        if let MessageSegment::ToolEvent(event) = segment {
+            let line = match event.status {
+                ToolEventStatus::Running => {
+                    // Animated spinner - cycle through frames ~250ms per frame (assuming 10 ticks/sec)
+                    let frame_index = ((tick_count / 2) % 4) as usize;
+                    let spinner = SPINNER_FRAMES[frame_index];
+                    Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(
+                            format!("{} {}", spinner, event.function_name),
+                            Style::default().fg(Color::Cyan),
+                        ),
+                    ])
+                }
+                ToolEventStatus::Complete => {
+                    let duration_str = event.duration_secs
+                        .map(|d| format!(" ({:.1}s)", d))
+                        .unwrap_or_default();
+                    Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(
+                            "✓ ",
+                            Style::default().fg(Color::Green),
+                        ),
+                        Span::styled(
+                            format!("{} complete{}", event.function_name, duration_str),
+                            Style::default().fg(Color::Green),
+                        ),
+                    ])
+                }
+                ToolEventStatus::Failed => {
+                    Line::from(vec![
+                        Span::styled("  ", Style::default()),
+                        Span::styled(
+                            "✗ ",
+                            Style::default().fg(Color::Red),
+                        ),
+                        Span::styled(
+                            format!("{} failed", event.function_name),
+                            Style::default().fg(Color::Red),
+                        ),
+                    ])
+                }
+            };
+            lines.push(line);
+        }
+    }
+
+    lines
+}
+
 /// Render the messages area with user messages and AI responses
 fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     use crate::models::MessageRole;
@@ -1427,6 +1484,12 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     }
                 }
             }
+
+            // Render inline tool events for assistant messages
+            if message.role == MessageRole::Assistant && !message.segments.is_empty() {
+                lines.extend(render_inline_tool_events(message, app.tick_count));
+            }
+
             lines.push(Line::from(""));
         }
     } else {
