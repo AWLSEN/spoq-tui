@@ -85,9 +85,6 @@ const COLOR_TOOL_SUCCESS: Color = Color::Rgb(4, 181, 117); // green #04B575
 /// Tool error state - red
 const COLOR_TOOL_ERROR: Color = Color::Red;
 
-/// Tool result preview - dim gray
-const COLOR_TOOL_RESULT: Color = Color::Rgb(100, 100, 100); // dim gray for preview
-
 // ============================================================================
 // Helper Functions
 // ============================================================================
