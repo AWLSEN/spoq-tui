@@ -403,12 +403,17 @@ impl App {
             return;
         }
 
-        // Determine thread_type based on active thread or new_thread_type parameter
-        let thread_type = if self.is_active_thread_programming() {
-            ThreadType::Programming
-        } else if self.active_thread_id.is_none() {
-            // New thread - use the specified type
+        // CRITICAL: Check screen first to determine new vs continue.
+        // CommandDeck = ALWAYS new thread (regardless of any stale active_thread_id)
+        // Conversation = continue the thread that was opened via open_thread()
+        let is_command_deck = self.screen == Screen::CommandDeck;
+
+        // Determine thread_type based on screen and active thread
+        let thread_type = if is_command_deck {
+            // New thread from CommandDeck - use the specified type
             new_thread_type
+        } else if self.is_active_thread_programming() {
+            ThreadType::Programming
         } else {
             ThreadType::Normal
         };
@@ -420,8 +425,17 @@ impl App {
             false
         };
 
-        // CRITICAL: Determine if this is a NEW thread or CONTINUING existing
-        let (thread_id, is_new_thread) = if let Some(existing_id) = &self.active_thread_id {
+        // Determine thread_id based on screen
+        let (thread_id, is_new_thread) = if is_command_deck {
+            // NEW thread - create pending, will reconcile when backend responds
+            let pending_id = self.cache.create_pending_thread(content.clone(), new_thread_type);
+            self.active_thread_id = Some(pending_id.clone());
+            self.screen = Screen::Conversation;
+            // Reset scroll for new conversation
+            self.conversation_scroll = 0;
+            (pending_id, true)
+        } else if let Some(existing_id) = &self.active_thread_id {
+            // CONTINUING existing thread (we're on Conversation screen)
             // Check if thread is still pending (waiting for backend ThreadInfo)
             if existing_id.starts_with("pending-") {
                 // Block rapid second message - still waiting for ThreadInfo
@@ -432,7 +446,6 @@ impl App {
                 return;
             }
 
-            // CONTINUING existing thread
             if !self.cache.add_streaming_message(existing_id, content.clone()) {
                 // Thread doesn't exist in cache - might have been deleted
                 self.stream_error = Some("Thread no longer exists.".to_string());
@@ -440,12 +453,10 @@ impl App {
             }
             (existing_id.clone(), false)
         } else {
-            // NEW thread - create pending, will reconcile when backend responds
-            // Use the specified thread type for new conversations
+            // Edge case: on Conversation screen but no active_thread_id (shouldn't happen)
+            // Fall back to creating new thread
             let pending_id = self.cache.create_pending_thread(content.clone(), new_thread_type);
             self.active_thread_id = Some(pending_id.clone());
-            self.screen = Screen::Conversation;
-            // Reset scroll for new conversation
             self.conversation_scroll = 0;
             (pending_id, true)
         };
@@ -668,9 +679,10 @@ impl App {
                             });
                         }
                         SseEvent::ToolExecuting(tool_event) => {
-                            let display_name = tool_event.display_name
-                                .or(tool_event.url)
+                            let display_name = tool_event.display_name.clone()
+                                .or(tool_event.url.clone())
                                 .unwrap_or_else(|| "Executing...".to_string());
+                            let tool_call_id = tool_event.tool_call_id.clone();
                             Self::emit_debug(
                                 &debug_tx,
                                 DebugEventKind::ProcessedEvent(ProcessedEventData::new(
@@ -680,15 +692,34 @@ impl App {
                                 Some(thread_id),
                             );
                             let _ = message_tx.send(AppMessage::ToolExecuting {
-                                tool_call_id: tool_event.tool_call_id,
+                                tool_call_id,
                                 display_name,
                             });
                         }
                         SseEvent::ToolResult(tool_event) => {
-                            // Check if result looks like an error (starts with "Error:")
+                            // Check if result looks like an error
                             let result = &tool_event.result;
+
+                            // Check for JSON error field or string starting with "Error:"
                             let (success, summary) = if result.starts_with("Error:") || result.starts_with("error:") {
                                 (false, result.clone())
+                            } else if let Ok(json) = serde_json::from_str::<serde_json::Value>(result) {
+                                // Check for {"error": "..."} or {"data": null, "error": "..."}
+                                if let Some(err) = json.get("error").and_then(|e| e.as_str()) {
+                                    if !err.is_empty() {
+                                        (false, err.to_string())
+                                    } else if let Some(data) = json.get("data") {
+                                        if data.is_null() {
+                                            (false, "No data returned".to_string())
+                                        } else {
+                                            (true, "Complete".to_string())
+                                        }
+                                    } else {
+                                        (true, "Complete".to_string())
+                                    }
+                                } else {
+                                    (true, "Complete".to_string())
+                                }
                             } else {
                                 // Summarize successful result
                                 let summary = if result.len() > 50 {
@@ -1154,6 +1185,10 @@ impl App {
             AppMessage::ToolExecuting { tool_call_id, display_name } => {
                 // Update tool to executing state with display info
                 self.tool_tracker.set_tool_executing(&tool_call_id, display_name.clone());
+                // Update the display_name in the message segments
+                if let Some(thread_id) = &self.active_thread_id {
+                    self.cache.set_tool_display_name(thread_id, &tool_call_id, display_name.clone());
+                }
                 // Emit StateChange for tool executing
                 Self::emit_debug(
                     &self.debug_tx,
@@ -1609,6 +1644,38 @@ mod tests {
         // Should create a pending thread
         let thread_id = app.active_thread_id.as_ref().unwrap();
         assert!(thread_id.starts_with("pending-"));
+        // Should navigate to conversation
+        assert_eq!(app.screen, Screen::Conversation);
+    }
+
+    #[tokio::test]
+    async fn test_submit_from_command_deck_always_creates_new_thread() {
+        // This is the key bug fix test: even if active_thread_id is set,
+        // submitting from CommandDeck should create a NEW thread, not continue.
+        let mut app = App::default();
+
+        // Simulate a stale active_thread_id (e.g., leftover from previous session)
+        app.active_thread_id = Some("stale-thread-id".to_string());
+        // But we're on CommandDeck, not Conversation
+        app.screen = Screen::CommandDeck;
+
+        app.input_box.insert_char('N');
+        app.input_box.insert_char('e');
+        app.input_box.insert_char('w');
+
+        app.submit_input(ThreadType::Normal);
+
+        // Should create a NEW pending thread, ignoring the stale active_thread_id
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+        assert!(
+            thread_id.starts_with("pending-"),
+            "Expected new pending thread, got: {}",
+            thread_id
+        );
+        assert_ne!(
+            thread_id, "stale-thread-id",
+            "Should not reuse stale thread ID"
+        );
         // Should navigate to conversation
         assert_eq!(app.screen, Screen::Conversation);
     }

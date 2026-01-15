@@ -16,7 +16,7 @@ use ratatui::{
 
 use crate::app::{App, Focus, ProgrammingMode, Screen};
 use crate::markdown::render_markdown;
-use crate::models::{Message, MessageSegment, ToolEventStatus};
+use crate::models::{MessageSegment, ToolEvent, ToolEventStatus};
 use crate::state::{Notification, TaskStatus};
 use crate::widgets::input_box::InputBoxWidget;
 
@@ -1236,7 +1236,7 @@ const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "�
 /// Shows: ◐ Reading src/main.rs...  (executing, with spinner)
 ///        ✓ Read complete           (success, fades after 30 ticks)
 ///        ✗ Write failed: error     (failure, persists)
-/// Note: Tool events are now rendered inline with messages via render_inline_tool_events()
+/// Note: Tool events are now rendered inline with messages via render_tool_event()
 #[allow(dead_code)]
 fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
     use crate::state::ToolDisplayStatus;
@@ -1390,60 +1390,56 @@ fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
-/// Render inline tool events from a message's segments
-fn render_inline_tool_events(message: &Message, tick_count: u64) -> Vec<Line<'static>> {
-    let mut lines: Vec<Line<'static>> = Vec::new();
+/// Render a single tool event as a Line
+fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
+    // Use display_name if available, otherwise fall back to function_name
+    let tool_name = event.display_name.as_ref()
+        .unwrap_or(&event.function_name)
+        .clone();
 
-    for segment in &message.segments {
-        if let MessageSegment::ToolEvent(event) = segment {
-            let line = match event.status {
-                ToolEventStatus::Running => {
-                    // Animated spinner - cycle through frames ~100ms per frame (assuming 10 ticks/sec)
-                    let frame_index = (tick_count % 10) as usize;
-                    let spinner = SPINNER_FRAMES[frame_index];
-                    Line::from(vec![
-                        Span::styled("  ", Style::default()),
-                        Span::styled(
-                            format!("{} {}", spinner, event.function_name),
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                    ])
-                }
-                ToolEventStatus::Complete => {
-                    let duration_str = event.duration_secs
-                        .map(|d| format!(" ({:.1}s)", d))
-                        .unwrap_or_default();
-                    Line::from(vec![
-                        Span::styled("  ", Style::default()),
-                        Span::styled(
-                            "✓ ",
-                            Style::default().fg(Color::Green),
-                        ),
-                        Span::styled(
-                            format!("{} complete{}", event.function_name, duration_str),
-                            Style::default().fg(Color::Green),
-                        ),
-                    ])
-                }
-                ToolEventStatus::Failed => {
-                    Line::from(vec![
-                        Span::styled("  ", Style::default()),
-                        Span::styled(
-                            "✗ ",
-                            Style::default().fg(Color::Red),
-                        ),
-                        Span::styled(
-                            format!("{} failed", event.function_name),
-                            Style::default().fg(Color::Red),
-                        ),
-                    ])
-                }
-            };
-            lines.push(line);
+    match event.status {
+        ToolEventStatus::Running => {
+            // Animated spinner - cycle through frames ~100ms per frame (assuming 10 ticks/sec)
+            let frame_index = (tick_count % 10) as usize;
+            let spinner = SPINNER_FRAMES[frame_index];
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    format!("{} {}", spinner, tool_name),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ])
+        }
+        ToolEventStatus::Complete => {
+            let duration_str = event.duration_secs
+                .map(|d| format!(" ({:.1}s)", d))
+                .unwrap_or_default();
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    "✓ ",
+                    Style::default().fg(Color::Green),
+                ),
+                Span::styled(
+                    format!("{}{}", tool_name, duration_str),
+                    Style::default().fg(Color::Green),
+                ),
+            ])
+        }
+        ToolEventStatus::Failed => {
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    "✗ ",
+                    Style::default().fg(Color::Red),
+                ),
+                Span::styled(
+                    format!("{} failed", tool_name),
+                    Style::default().fg(Color::Red),
+                ),
+            ])
         }
     }
-
-    lines
 }
 
 /// Render the messages area with user messages and AI responses
@@ -1456,7 +1452,7 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     // Show inline error banners for the thread
     lines.extend(render_inline_error_banners(app));
 
-    // Note: Tool status is now rendered inline with messages via render_inline_tool_events()
+    // Note: Tool status is now rendered inline with messages via render_tool_event()
     // The legacy render_tool_status_lines and render_subagent_status_lines functions are kept
     // for potential future use but removed from the main render flow.
 
@@ -1520,7 +1516,7 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
 
             // Handle streaming vs completed messages
             if message.is_streaming {
-                // Display partial_content with blinking cursor
+                // Display streaming content with blinking cursor
                 // Blink cursor every ~500ms (assuming 10 ticks/sec, toggle every 5 ticks)
                 let show_cursor = (app.tick_count / 5) % 2 == 0;
                 let cursor_span = Span::styled(
@@ -1528,39 +1524,84 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     Style::default().fg(COLOR_ACCENT),
                 );
 
-                // Parse partial content with markdown renderer
-                let mut content_lines = render_markdown(&message.partial_content);
+                // For assistant messages with segments, render segments in order (interleaved)
+                // This shows text and tool events in the order they occurred
+                if message.role == MessageRole::Assistant && !message.segments.is_empty() {
+                    let mut is_first_line = true;
 
-                // Add label to first line, append cursor to last line
-                if content_lines.is_empty() {
-                    // No content yet, just show label with cursor
-                    lines.push(Line::from(vec![
-                        Span::styled(label, label_style),
-                        cursor_span,
-                    ]));
-                } else {
-                    // Prepend label to first line
-                    let first_line = content_lines.remove(0);
-                    let mut first_spans = vec![Span::styled(label, label_style)];
-                    first_spans.extend(first_line.spans);
-                    lines.push(Line::from(first_spans));
-
-                    // Add middle lines as-is
-                    for line in content_lines.drain(..content_lines.len().saturating_sub(1)) {
-                        lines.push(line);
+                    for segment in &message.segments {
+                        match segment {
+                            MessageSegment::Text(text) => {
+                                let mut segment_lines = render_markdown(text);
+                                if is_first_line && !segment_lines.is_empty() {
+                                    // Prepend label to first line of first text segment
+                                    let first_line = segment_lines.remove(0);
+                                    let mut first_spans = vec![Span::styled(label, label_style)];
+                                    first_spans.extend(first_line.spans);
+                                    lines.push(Line::from(first_spans));
+                                    is_first_line = false;
+                                }
+                                lines.extend(segment_lines);
+                            }
+                            MessageSegment::ToolEvent(event) => {
+                                if is_first_line {
+                                    // No text before first tool event, show label first
+                                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                                    is_first_line = false;
+                                }
+                                lines.push(render_tool_event(event, app.tick_count));
+                            }
+                        }
                     }
 
-                    // Append cursor to last line (if there are remaining lines)
-                    if let Some(last_line) = content_lines.pop() {
-                        let mut last_spans = last_line.spans;
-                        last_spans.push(cursor_span);
-                        lines.push(Line::from(last_spans));
+                    // If we never added any content, show label with cursor
+                    if is_first_line {
+                        lines.push(Line::from(vec![
+                            Span::styled(label, label_style),
+                            cursor_span,
+                        ]));
                     } else {
-                        // Only had one line, cursor was not added yet
-                        // The first line is already pushed, so add cursor separately
-                        // Actually, we need to modify the last pushed line
+                        // Append cursor to last line
                         if let Some(last_pushed) = lines.last_mut() {
                             last_pushed.spans.push(cursor_span);
+                        }
+                    }
+                } else {
+                    // Fall back to partial_content for backward compatibility
+                    // (non-assistant messages or when segments is empty)
+                    let mut content_lines = render_markdown(&message.partial_content);
+
+                    // Add label to first line, append cursor to last line
+                    if content_lines.is_empty() {
+                        // No content yet, just show label with cursor
+                        lines.push(Line::from(vec![
+                            Span::styled(label, label_style),
+                            cursor_span,
+                        ]));
+                    } else {
+                        // Prepend label to first line
+                        let first_line = content_lines.remove(0);
+                        let mut first_spans = vec![Span::styled(label, label_style)];
+                        first_spans.extend(first_line.spans);
+                        lines.push(Line::from(first_spans));
+
+                        // Add middle lines as-is
+                        for line in content_lines.drain(..content_lines.len().saturating_sub(1)) {
+                            lines.push(line);
+                        }
+
+                        // Append cursor to last line (if there are remaining lines)
+                        if let Some(last_line) = content_lines.pop() {
+                            let mut last_spans = last_line.spans;
+                            last_spans.push(cursor_span);
+                            lines.push(Line::from(last_spans));
+                        } else {
+                            // Only had one line, cursor was not added yet
+                            // The first line is already pushed, so add cursor separately
+                            // Actually, we need to modify the last pushed line
+                            if let Some(last_pushed) = lines.last_mut() {
+                                last_pushed.spans.push(cursor_span);
+                            }
                         }
                     }
                 }
@@ -1585,11 +1626,6 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                         lines.push(line);
                     }
                 }
-            }
-
-            // Render inline tool events for assistant messages
-            if message.role == MessageRole::Assistant && !message.segments.is_empty() {
-                lines.extend(render_inline_tool_events(message, app.tick_count));
             }
 
             lines.push(Line::from(""));
