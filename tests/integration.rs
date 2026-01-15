@@ -838,6 +838,436 @@ async fn test_complete_end_to_end_workflow() {
     assert_eq!(messages[3].content, "More Rust info!");
 }
 
+// ============================================================================
+// Phase 7 Integration Tests - Thread Metadata Updates (thread_updated flow)
+// ============================================================================
+
+/// Test Case 1: SSE thread_updated event → cache updated → UI renders
+/// - Create thread with original title
+/// - Send ThreadMetadataUpdated message with new title and description
+/// - Verify cache is updated correctly
+/// - Verify thread appears in UI with updated metadata
+#[tokio::test]
+async fn test_thread_updated_full_flow() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread
+    for c in "What is Rust?".chars() {
+        app.input_box.insert_char(c);
+    }
+    app.submit_input(ThreadType::Normal);
+
+    let pending_id = app.active_thread_id.clone().unwrap();
+    assert!(pending_id.starts_with("pending-"));
+
+    // Reconcile to real ID
+    app.handle_message(AppMessage::ThreadCreated {
+        pending_id: pending_id.clone(),
+        real_id: "thread-123".to_string(),
+        title: Some("What is Rust?".to_string()),
+    });
+
+    // Verify initial state
+    let thread = app.cache.get_thread("thread-123").unwrap();
+    assert_eq!(thread.title, "What is Rust?");
+    assert_eq!(thread.description, None);
+
+    // Simulate thread_updated SSE event
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: "thread-123".to_string(),
+        title: Some("Rust Programming Language".to_string()),
+        description: Some("A systems programming language focused on safety and performance".to_string()),
+    });
+
+    // Verify cache was updated
+    let updated_thread = app.cache.get_thread("thread-123").unwrap();
+    assert_eq!(updated_thread.title, "Rust Programming Language");
+    assert_eq!(
+        updated_thread.description,
+        Some("A systems programming language focused on safety and performance".to_string())
+    );
+
+    // Navigate back to command deck to see the thread in the list
+    app.navigate_to_command_deck();
+
+    // Verify thread appears in threads list with updated metadata
+    let threads = app.cache.threads();
+    let our_thread = threads.iter().find(|t| t.id == "thread-123").unwrap();
+    assert_eq!(our_thread.title, "Rust Programming Language");
+    assert_eq!(
+        our_thread.description,
+        Some("A systems programming language focused on safety and performance".to_string())
+    );
+}
+
+/// Test Case 2: thread_updated with pending thread ID
+/// - Create pending thread (before reconciliation)
+/// - Send thread_updated with pending ID
+/// - Verify cache resolves pending ID and updates correctly
+#[tokio::test]
+async fn test_thread_updated_with_pending_id() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread (pending)
+    for c in "Test message".chars() {
+        app.input_box.insert_char(c);
+    }
+    app.submit_input(ThreadType::Normal);
+
+    let pending_id = app.active_thread_id.clone().unwrap();
+    assert!(pending_id.starts_with("pending-"));
+
+    // Verify thread exists with pending ID
+    assert!(app.cache.get_thread(&pending_id).is_some());
+
+    // Send thread_updated with pending ID (before reconciliation)
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: pending_id.clone(),
+        title: Some("Updated Title via Pending ID".to_string()),
+        description: Some("Description set while pending".to_string()),
+    });
+
+    // Verify update was applied to pending thread
+    let pending_thread = app.cache.get_thread(&pending_id).unwrap();
+    assert_eq!(pending_thread.title, "Updated Title via Pending ID");
+    assert_eq!(
+        pending_thread.description,
+        Some("Description set while pending".to_string())
+    );
+
+    // Now reconcile to real ID
+    app.handle_message(AppMessage::ThreadCreated {
+        pending_id: pending_id.clone(),
+        real_id: "real-thread-456".to_string(),
+        title: Some("Updated Title via Pending ID".to_string()), // Backend sends current title
+    });
+
+    // Verify real thread exists with the metadata that was set on pending
+    let real_thread = app.cache.get_thread("real-thread-456").unwrap();
+    assert_eq!(real_thread.title, "Updated Title via Pending ID");
+    assert_eq!(
+        real_thread.description,
+        Some("Description set while pending".to_string())
+    );
+
+    // Verify pending thread no longer exists
+    assert!(app.cache.get_thread(&pending_id).is_none());
+
+    // Send another update with the real ID
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: "real-thread-456".to_string(),
+        title: Some("Final Title".to_string()),
+        description: Some("Final Description".to_string()),
+    });
+
+    // Verify final update was applied
+    let final_thread = app.cache.get_thread("real-thread-456").unwrap();
+    assert_eq!(final_thread.title, "Final Title");
+    assert_eq!(final_thread.description, Some("Final Description".to_string()));
+}
+
+/// Test Case 3: thread_updated with only title (no description)
+/// - Create thread
+/// - Send thread_updated with only title
+/// - Verify only title is updated, description remains None
+#[tokio::test]
+async fn test_thread_updated_title_only() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread
+    let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+
+    // Send thread_updated with only title
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread_id.clone(),
+        title: Some("New Title Only".to_string()),
+        description: None,
+    });
+
+    // Verify title updated, description still None
+    let thread = app.cache.get_thread(&thread_id).unwrap();
+    assert_eq!(thread.title, "New Title Only");
+    assert_eq!(thread.description, None);
+}
+
+/// Test Case 4: thread_updated with only description (no title)
+/// - Create thread
+/// - Send thread_updated with only description
+/// - Verify only description is updated, title unchanged
+#[tokio::test]
+async fn test_thread_updated_description_only() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread
+    let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+
+    // Send thread_updated with only description
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread_id.clone(),
+        title: None,
+        description: Some("New Description Only".to_string()),
+    });
+
+    // Verify description updated, title unchanged
+    let thread = app.cache.get_thread(&thread_id).unwrap();
+    assert_eq!(thread.title, "Original Title");
+    assert_eq!(thread.description, Some("New Description Only".to_string()));
+}
+
+/// Test Case 5: thread_updated with empty strings
+/// - Create thread with description
+/// - Send thread_updated with empty strings
+/// - Verify empty strings are applied (not treated as None)
+#[tokio::test]
+async fn test_thread_updated_empty_strings() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread
+    let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+
+    // Set initial description
+    app.cache.update_thread_metadata(
+        &thread_id,
+        None,
+        Some("Initial Description".to_string()),
+    );
+
+    // Send thread_updated with empty strings
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread_id.clone(),
+        title: Some("".to_string()),
+        description: Some("".to_string()),
+    });
+
+    // Verify empty strings are applied
+    let thread = app.cache.get_thread(&thread_id).unwrap();
+    assert_eq!(thread.title, "");
+    assert_eq!(thread.description, Some("".to_string()));
+}
+
+/// Test Case 6: multiple thread_updated events in sequence
+/// - Create thread
+/// - Send multiple thread_updated messages
+/// - Verify each update is applied correctly
+#[tokio::test]
+async fn test_thread_updated_multiple_updates() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread
+    let thread_id = app.cache.create_streaming_thread("Version 1".to_string());
+
+    // First update: add description
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread_id.clone(),
+        title: None,
+        description: Some("Description v1".to_string()),
+    });
+
+    let thread = app.cache.get_thread(&thread_id).unwrap();
+    assert_eq!(thread.title, "Version 1");
+    assert_eq!(thread.description, Some("Description v1".to_string()));
+
+    // Second update: update title
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread_id.clone(),
+        title: Some("Version 2".to_string()),
+        description: None,
+    });
+
+    let thread = app.cache.get_thread(&thread_id).unwrap();
+    assert_eq!(thread.title, "Version 2");
+    assert_eq!(thread.description, Some("Description v1".to_string())); // Unchanged
+
+    // Third update: update both
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread_id.clone(),
+        title: Some("Version 3".to_string()),
+        description: Some("Description v3".to_string()),
+    });
+
+    let thread = app.cache.get_thread(&thread_id).unwrap();
+    assert_eq!(thread.title, "Version 3");
+    assert_eq!(thread.description, Some("Description v3".to_string()));
+}
+
+/// Test Case 7: thread_updated for non-existent thread
+/// - Send thread_updated for thread that doesn't exist
+/// - Verify app doesn't panic and handles gracefully
+#[tokio::test]
+async fn test_thread_updated_nonexistent_thread() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Send thread_updated for non-existent thread
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: "nonexistent-thread-999".to_string(),
+        title: Some("Title".to_string()),
+        description: Some("Description".to_string()),
+    });
+
+    // Should not panic, just do nothing
+    assert!(app.cache.get_thread("nonexistent-thread-999").is_none());
+}
+
+/// Test Case 8: thread_updated during active conversation
+/// - Create thread and be in conversation view
+/// - Send thread_updated while viewing the thread
+/// - Verify metadata is updated without disrupting the conversation
+#[tokio::test]
+async fn test_thread_updated_during_active_conversation() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread and enter conversation
+    for c in "Test message".chars() {
+        app.input_box.insert_char(c);
+    }
+    app.submit_input(ThreadType::Normal);
+
+    let pending_id = app.active_thread_id.clone().unwrap();
+
+    // Reconcile to real ID
+    app.handle_message(AppMessage::ThreadCreated {
+        pending_id: pending_id.clone(),
+        real_id: "thread-conversation".to_string(),
+        title: Some("Test message".to_string()),
+    });
+
+    // Verify we're in conversation view
+    assert_eq!(app.screen, Screen::Conversation);
+    assert_eq!(app.active_thread_id, Some("thread-conversation".to_string()));
+
+    // Send thread_updated while in conversation
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: "thread-conversation".to_string(),
+        title: Some("Updated During Conversation".to_string()),
+        description: Some("Metadata changed while viewing".to_string()),
+    });
+
+    // Verify metadata was updated
+    let thread = app.cache.get_thread("thread-conversation").unwrap();
+    assert_eq!(thread.title, "Updated During Conversation");
+    assert_eq!(
+        thread.description,
+        Some("Metadata changed while viewing".to_string())
+    );
+
+    // Verify we're still in conversation view (not disrupted)
+    assert_eq!(app.screen, Screen::Conversation);
+    assert_eq!(app.active_thread_id, Some("thread-conversation".to_string()));
+
+    // Navigate back and verify thread list shows updated metadata
+    app.navigate_to_command_deck();
+    let threads = app.cache.threads();
+    let our_thread = threads.iter().find(|t| t.id == "thread-conversation").unwrap();
+    assert_eq!(our_thread.title, "Updated During Conversation");
+}
+
+/// Test Case 9: Verify thread description appears in UI thread list
+/// - Create multiple threads with different descriptions
+/// - Verify threads() returns threads with correct descriptions
+#[tokio::test]
+async fn test_thread_description_in_thread_list() {
+    use spoq::app::AppMessage;
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create thread 1 with description
+    let thread1_id = app.cache.create_streaming_thread("Thread 1".to_string());
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread1_id.clone(),
+        title: None,
+        description: Some("Description for thread 1".to_string()),
+    });
+
+    // Create thread 2 without description
+    let thread2_id = app.cache.create_streaming_thread("Thread 2".to_string());
+
+    // Create thread 3 with description
+    let thread3_id = app.cache.create_streaming_thread("Thread 3".to_string());
+    app.handle_message(AppMessage::ThreadMetadataUpdated {
+        thread_id: thread3_id.clone(),
+        title: None,
+        description: Some("Description for thread 3".to_string()),
+    });
+
+    // Get threads list
+    let threads = app.cache.threads();
+
+    // Find our threads (order is newest first, so thread3, thread2, thread1)
+    let t1 = threads.iter().find(|t| t.id == thread1_id).unwrap();
+    let t2 = threads.iter().find(|t| t.id == thread2_id).unwrap();
+    let t3 = threads.iter().find(|t| t.id == thread3_id).unwrap();
+
+    // Verify descriptions
+    assert_eq!(t1.description, Some("Description for thread 1".to_string()));
+    assert_eq!(t2.description, None);
+    assert_eq!(t3.description, Some("Description for thread 3".to_string()));
+}
+
+/// Test Case 10: End-to-end SSE parsing → event conversion → cache update
+/// - Parse thread_updated SSE event
+/// - Convert to ThreadUpdatedEvent
+/// - Send ThreadMetadataUpdated message
+/// - Verify full flow works
+#[tokio::test]
+async fn test_thread_updated_sse_to_cache_integration() {
+    use spoq::app::AppMessage;
+    use spoq::sse::{SseParser, SseEvent};
+
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create a thread
+    let thread_id = app.cache.create_streaming_thread("Original".to_string());
+
+    // Simulate SSE stream parsing
+    let mut parser = SseParser::new();
+
+    parser.feed_line("event: thread_updated").unwrap();
+    parser.feed_line(&format!(
+        r#"data: {{"thread_id": "{}", "title": "Updated via SSE", "description": "SSE Description"}}"#,
+        thread_id
+    )).unwrap();
+
+    let event = parser.feed_line("").unwrap();
+
+    // Verify SSE was parsed correctly
+    match event {
+        Some(SseEvent::ThreadUpdated { thread_id: tid, title, description }) => {
+            assert_eq!(tid, thread_id);
+            assert_eq!(title, Some("Updated via SSE".to_string()));
+            assert_eq!(description, Some("SSE Description".to_string()));
+
+            // Simulate conductor converting SSE to AppMessage
+            app.handle_message(AppMessage::ThreadMetadataUpdated {
+                thread_id: tid,
+                title,
+                description,
+            });
+        }
+        _ => panic!("Expected ThreadUpdated event"),
+    }
+
+    // Verify cache was updated
+    let thread = app.cache.get_thread(&thread_id).unwrap();
+    assert_eq!(thread.title, "Updated via SSE");
+    assert_eq!(thread.description, Some("SSE Description".to_string()));
+}
+
 /// Test that rapid submission on pending thread is blocked
 #[tokio::test]
 async fn test_rapid_submit_blocked_on_pending_thread() {
