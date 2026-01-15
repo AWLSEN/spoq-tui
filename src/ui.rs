@@ -1875,6 +1875,9 @@ mod tests {
             tool_tracker: crate::state::ToolTracker::new(),
             subagent_tracker: crate::state::SubagentTracker::new(),
             debug_tx: None,
+            stream_start_time: None,
+            last_event_time: None,
+            cumulative_token_count: 0,
         }
     }
 
