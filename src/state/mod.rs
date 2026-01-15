@@ -4,6 +4,7 @@
 //! - Core types (Thread, Task, Notification) from legacy state
 //! - SessionState: Session-level information (skills, tokens, permissions)
 //! - ToolTracker: Per-thread ephemeral tool execution states
+//! - SubagentTracker: Per-thread ephemeral subagent execution states
 
 pub mod session;
 pub mod tools;
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export new state types at module level
 pub use session::{PermissionRequest, SessionState};
-pub use tools::{ToolCallState, ToolDisplayStatus, ToolTracker};
+pub use tools::{SubagentDisplayStatus, SubagentState, SubagentTracker, ToolCallState, ToolDisplayStatus, ToolTracker};
 
 /// Represents a conversation thread
 #[derive(Debug, Clone, Serialize, Deserialize)]

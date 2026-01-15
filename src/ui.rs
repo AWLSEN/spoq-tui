@@ -48,6 +48,21 @@ pub const COLOR_INPUT_BG: Color = Color::Rgb(20, 20, 30);
 /// Progress bar fill color - white
 pub const COLOR_PROGRESS: Color = Color::White;
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Format token count in a human-readable way (e.g., 45000 -> "45k")
+fn format_tokens(tokens: u32) -> String {
+    if tokens >= 1_000_000 {
+        format!("{}M", tokens / 1_000_000)
+    } else if tokens >= 1_000 {
+        format!("{}k", tokens / 1_000)
+    } else {
+        format!("{}", tokens)
+    }
+}
+
 /// Progress bar background (used in later phases)
 #[allow(dead_code)]
 pub const COLOR_PROGRESS_BG: Color = Color::DarkGray;
@@ -171,19 +186,63 @@ fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
         ("○", "Disconnected", Color::Red)
     };
 
+    // Build session badges line
+    let mut badges_spans = vec![];
+
+    // Skills count badge
+    let skills_count = app.session_state.skills.len();
+    if skills_count > 0 {
+        badges_spans.push(Span::styled("[", Style::default().fg(COLOR_DIM)));
+        badges_spans.push(Span::styled(
+            format!("{} skill{}", skills_count, if skills_count == 1 { "" } else { "s" }),
+            Style::default().fg(COLOR_ACCENT),
+        ));
+        badges_spans.push(Span::styled("] ", Style::default().fg(COLOR_DIM)));
+    }
+
+    // Context usage badge
+    if let Some(used) = app.session_state.context_tokens_used {
+        badges_spans.push(Span::styled("[ctx: ", Style::default().fg(COLOR_DIM)));
+        badges_spans.push(Span::styled(
+            format_tokens(used),
+            Style::default().fg(COLOR_ACCENT),
+        ));
+        if let Some(limit) = app.session_state.context_token_limit {
+            badges_spans.push(Span::styled("/", Style::default().fg(COLOR_DIM)));
+            badges_spans.push(Span::styled(
+                format_tokens(limit),
+                Style::default().fg(COLOR_DIM),
+            ));
+        }
+        badges_spans.push(Span::styled("] ", Style::default().fg(COLOR_DIM)));
+    }
+
+    // OAuth status badge (flash if required)
+    if app.session_state.needs_oauth() {
+        if let Some((provider, _)) = &app.session_state.oauth_required {
+            badges_spans.push(Span::styled("[OAuth: ", Style::default().fg(COLOR_DIM)));
+            badges_spans.push(Span::styled(
+                provider,
+                Style::default().fg(Color::Yellow),
+            ));
+            badges_spans.push(Span::styled("] ", Style::default().fg(COLOR_DIM)));
+            if app.session_state.oauth_url.is_some() {
+                badges_spans.push(Span::styled(
+                    "(press 'o') ",
+                    Style::default().fg(COLOR_DIM).add_modifier(Modifier::ITALIC),
+                ));
+            }
+        }
+    }
+
+    // Connection status
+    badges_spans.push(Span::styled(status_icon, Style::default().fg(status_color)));
+    badges_spans.push(Span::raw(" "));
+    badges_spans.push(Span::styled(status_text, Style::default().fg(status_color)));
+
     let mut lines = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled(
-                "COMMAND DECK v0.1.0",
-                Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("  "),
-            Span::styled("[", Style::default().fg(COLOR_DIM)),
-            Span::styled(status_icon, Style::default().fg(status_color)),
-            Span::styled("] ", Style::default().fg(COLOR_DIM)),
-            Span::styled(status_text, Style::default().fg(status_color)),
-        ]),
+        Line::from(badges_spans),
         Line::from(""),
     ];
 
@@ -890,6 +949,127 @@ fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+// ============================================================================
+// Thinking/Reasoning Block
+// ============================================================================
+
+/// Render a collapsible thinking block for assistant messages.
+///
+/// Collapsed: ▸ Thinking... (847 tokens)
+/// Expanded:
+/// ▾ Thinking
+/// │ Let me analyze this step by step...
+/// │ First, I need to understand the structure.
+/// └──────────────────────────────────────────
+fn render_thinking_block(
+    message: &crate::models::Message,
+    tick_count: u64,
+) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Only render for assistant messages with reasoning content
+    if message.role != crate::models::MessageRole::Assistant {
+        return lines;
+    }
+
+    if message.reasoning_content.is_empty() {
+        return lines;
+    }
+
+    let token_count = message.reasoning_token_count();
+    let collapsed = message.reasoning_collapsed;
+
+    // Determine the arrow and style based on collapsed state
+    let (arrow, header_color) = if collapsed {
+        ("▸", Color::Magenta)
+    } else {
+        ("▾", Color::Magenta)
+    };
+
+    // Header line
+    if collapsed {
+        // Collapsed: ▸ Thinking... (847 tokens)
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{} ", arrow),
+                Style::default().fg(header_color),
+            ),
+            Span::styled(
+                "Thinking...",
+                Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
+            ),
+            Span::styled(
+                format!(" ({} tokens)", token_count),
+                Style::default().fg(COLOR_DIM),
+            ),
+            Span::styled(
+                "  [t] toggle",
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+    } else {
+        // Expanded header: ▾ Thinking
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("{} ", arrow),
+                Style::default().fg(header_color),
+            ),
+            Span::styled(
+                "Thinking",
+                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" ({} tokens)", token_count),
+                Style::default().fg(COLOR_DIM),
+            ),
+            Span::styled(
+                "  [t] toggle",
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+
+        // Render the reasoning content with box-drawing border
+        let content = &message.reasoning_content;
+        for line in content.lines() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "│ ",
+                    Style::default().fg(Color::DarkGray),
+                ),
+                Span::styled(
+                    line.to_string(),
+                    Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+        }
+
+        // If streaming, add a blinking cursor at the end
+        if message.is_streaming {
+            let show_cursor = (tick_count / 5) % 2 == 0;
+            if show_cursor {
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        "│ █",
+                        Style::default().fg(Color::Magenta),
+                    ),
+                ]));
+            }
+        }
+
+        // Bottom border
+        lines.push(Line::from(vec![
+            Span::styled(
+                "└──────────────────────────────────────────",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from("")); // Add spacing after thinking block
+
+    lines
+}
+
 /// Spinner frames for tool status animation
 const SPINNER_FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
 
@@ -969,6 +1149,84 @@ fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
+/// Render subagent status with spinner and progress
+/// UI design:
+/// ```text
+/// ┌ ◐ Exploring codebase structure
+/// │   Found 5 relevant files...
+/// └ ✓ Complete (8 tool calls)
+/// ```
+fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
+    use crate::state::SubagentDisplayStatus;
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Get subagents that should be rendered at current tick
+    let subagents = app.subagent_tracker.subagents_to_render(app.tick_count);
+
+    if subagents.is_empty() {
+        return lines;
+    }
+
+    for (_subagent_id, state) in subagents {
+        // Render main line with appropriate prefix and spinner/checkmark
+        let main_line = match &state.display_status {
+            SubagentDisplayStatus::Started { description, .. } |
+            SubagentDisplayStatus::Progress { description, .. } => {
+                // Animate spinner based on tick count
+                let spinner_idx = (app.tick_count / 2) as usize % SPINNER_FRAMES.len();
+                let spinner = SPINNER_FRAMES[spinner_idx];
+
+                Line::from(vec![
+                    Span::styled(
+                        format!("┌ {} ", spinner),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                    Span::styled(
+                        description.clone(),
+                        Style::default().fg(Color::Cyan),
+                    ),
+                ])
+            }
+            SubagentDisplayStatus::Completed { success, summary, .. } => {
+                let (prefix, color) = if *success {
+                    ("└ ✓ ", Color::Green)
+                } else {
+                    ("└ ✗ ", Color::Red)
+                };
+
+                Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(color)),
+                    Span::styled(summary.clone(), Style::default().fg(color)),
+                ])
+            }
+        };
+        lines.push(main_line);
+
+        // Render progress line if we have a progress message (only for in-progress subagents)
+        if let SubagentDisplayStatus::Progress { progress_message, .. } = &state.display_status {
+            if !progress_message.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        "│   ",
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                    Span::styled(
+                        progress_message.clone(),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]));
+            }
+        }
+    }
+
+    if !lines.is_empty() {
+        lines.push(Line::from("")); // Add spacing after subagent status
+    }
+
+    lines
+}
+
 /// Render the messages area with user messages and AI responses
 fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     use crate::models::MessageRole;
@@ -978,6 +1236,9 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
 
     // Show inline error banners for the thread
     lines.extend(render_inline_error_banners(app));
+
+    // Show subagent status indicators (before tools as subagents are higher-level)
+    lines.extend(render_subagent_status_lines(app));
 
     // Show tool status indicators
     lines.extend(render_tool_status_lines(app));
@@ -1034,6 +1295,11 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                 "───────────────────────────────────────────────",
                 Style::default().fg(COLOR_DIM),
             )]));
+
+            // Render thinking/reasoning block for assistant messages (before content)
+            if message.role == MessageRole::Assistant {
+                lines.extend(render_thinking_block(message, app.tick_count));
+            }
 
             let (label, label_style) = match message.role {
                 MessageRole::User => (
@@ -1454,6 +1720,7 @@ mod tests {
             programming_mode: ProgrammingMode::default(),
             session_state: crate::state::SessionState::new(),
             tool_tracker: crate::state::ToolTracker::new(),
+            subagent_tracker: crate::state::SubagentTracker::new(),
         }
     }
 
@@ -2846,5 +3113,28 @@ mod tests {
             buffer_str.contains("Bash"),
             "Should show tool name"
         );
+    }
+
+    #[test]
+    fn test_format_tokens_small() {
+        assert_eq!(format_tokens(0), "0");
+        assert_eq!(format_tokens(500), "500");
+        assert_eq!(format_tokens(999), "999");
+    }
+
+    #[test]
+    fn test_format_tokens_thousands() {
+        assert_eq!(format_tokens(1_000), "1k");
+        assert_eq!(format_tokens(5_000), "5k");
+        assert_eq!(format_tokens(45_000), "45k");
+        assert_eq!(format_tokens(100_000), "100k");
+        assert_eq!(format_tokens(999_999), "999k");
+    }
+
+    #[test]
+    fn test_format_tokens_millions() {
+        assert_eq!(format_tokens(1_000_000), "1M");
+        assert_eq!(format_tokens(5_000_000), "5M");
+        assert_eq!(format_tokens(10_000_000), "10M");
     }
 }
