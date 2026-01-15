@@ -1143,10 +1143,12 @@ fn render_thinking_block(
 /// Spinner frames for tool status animation
 const SPINNER_FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
 
-/// Render tool status indicators inline
+/// Render tool status indicators inline (LEGACY - kept for potential future use)
 /// Shows: ◐ Reading src/main.rs...  (executing, with spinner)
 ///        ✓ Read complete           (success, fades after 30 ticks)
 ///        ✗ Write failed: error     (failure, persists)
+/// Note: Tool events are now rendered inline with messages via render_inline_tool_events()
+#[allow(dead_code)]
 fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
     use crate::state::ToolDisplayStatus;
 
@@ -1219,13 +1221,15 @@ fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
     lines
 }
 
-/// Render subagent status with spinner and progress
+/// Render subagent status with spinner and progress (LEGACY - kept for potential future use)
 /// UI design:
 /// ```text
 /// ┌ ◐ Exploring codebase structure
 /// │   Found 5 relevant files...
 /// └ ✓ Complete (8 tool calls)
 /// ```
+/// Note: Subagent status may be integrated inline in future iterations
+#[allow(dead_code)]
 fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
     use crate::state::SubagentDisplayStatus;
 
@@ -1363,11 +1367,9 @@ fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     // Show inline error banners for the thread
     lines.extend(render_inline_error_banners(app));
 
-    // Show subagent status indicators (before tools as subagents are higher-level)
-    lines.extend(render_subagent_status_lines(app));
-
-    // Show tool status indicators
-    lines.extend(render_tool_status_lines(app));
+    // Note: Tool status is now rendered inline with messages via render_inline_tool_events()
+    // The legacy render_tool_status_lines and render_subagent_status_lines functions are kept
+    // for potential future use but removed from the main render flow.
 
     // Show stream error banner if there's a stream error (legacy, for non-thread errors)
     if let Some(error) = &app.stream_error {
