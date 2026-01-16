@@ -18,7 +18,7 @@ use crate::state::ToolDisplayStatus;
 use super::helpers::{format_tool_args, get_subagent_icon, get_tool_icon, inner_rect, MAX_VISIBLE_ERRORS, SPINNER_FRAMES};
 use super::input::render_permission_prompt;
 use super::theme::{
-    COLOR_ACCENT, COLOR_ACTIVE, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
+    COLOR_ACCENT, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
     COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
 
@@ -607,43 +607,41 @@ pub fn render_message_segments(
     let mut is_first_line = true;
     let mut i = 0;
 
+    // Helper to prepend vertical bar to a line
+    let prepend_bar = |line: Line<'static>| -> Line<'static> {
+        let mut spans = vec![Span::styled(label, label_style)];
+        spans.extend(line.spans);
+        Line::from(spans)
+    };
+
     while i < segments.len() {
         match &segments[i] {
             MessageSegment::Text(text) => {
-                let mut segment_lines = render_markdown(text);
-                if is_first_line && !segment_lines.is_empty() {
-                    // Prepend label to first line of first text segment
-                    let first_line = segment_lines.remove(0);
-                    let mut first_spans = vec![Span::styled(label, label_style)];
-                    first_spans.extend(first_line.spans);
-                    lines.push(Line::from(first_spans));
+                let segment_lines = render_markdown(text);
+                // Prepend vertical bar to ALL text lines
+                for line in segment_lines {
+                    lines.push(prepend_bar(line));
+                }
+                if !lines.is_empty() {
                     is_first_line = false;
                 }
-                lines.extend(segment_lines);
                 i += 1;
             }
             MessageSegment::ToolEvent(event) => {
-                if is_first_line {
-                    // No text before first tool event, show label first
-                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                    is_first_line = false;
-                }
-                lines.push(render_tool_event(event, tick_count));
+                // Prepend vertical bar to tool event line
+                let tool_line = render_tool_event(event, tick_count);
+                lines.push(prepend_bar(tool_line));
+                is_first_line = false;
 
                 // Add result preview if available (only for completed tools)
                 if event.duration_secs.is_some() {
                     if let Some(preview_line) = render_tool_result_preview(event) {
-                        lines.push(preview_line);
+                        lines.push(prepend_bar(preview_line));
                     }
                 }
                 i += 1;
             }
             MessageSegment::SubagentEvent(_) => {
-                if is_first_line {
-                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                    is_first_line = false;
-                }
-
                 // Collect consecutive subagent events
                 let mut subagent_events: Vec<&SubagentEvent> = Vec::new();
                 while i < segments.len() {
@@ -655,8 +653,11 @@ pub fn render_message_segments(
                     }
                 }
 
-                // Render the block with tree connectors
-                lines.extend(render_subagent_events_block(&subagent_events, tick_count));
+                // Render the block with tree connectors, prepend bar to each line
+                for line in render_subagent_events_block(&subagent_events, tick_count) {
+                    lines.push(prepend_bar(line));
+                }
+                is_first_line = false;
             }
         }
     }
@@ -891,39 +892,19 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         }
 
         for message in messages {
+            // Add blank line gap between messages (no divider line)
             lines.push(Line::from(""));
-            lines.push(Line::from(vec![Span::styled(
-                "───────────────────────────────────────────────",
-                Style::default().fg(COLOR_DIM),
-            )]));
 
             // Render thinking/reasoning block for assistant messages (before content)
             if message.role == MessageRole::Assistant {
                 lines.extend(render_thinking_block(message, app.tick_count));
             }
 
-            let (label, label_style) = match message.role {
-                MessageRole::User => (
-                    "You: ",
-                    Style::default()
-                        .fg(COLOR_ACTIVE)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                MessageRole::Assistant => (
-                    "AI: ",
-                    Style::default()
-                        .fg(COLOR_ACCENT)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                MessageRole::System => (
-                    "System: ",
-                    Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD),
-                ),
-                MessageRole::Tool => (
-                    "Tool: ",
-                    Style::default().fg(COLOR_DIM).add_modifier(Modifier::BOLD),
-                ),
-            };
+            // Use vertical bar prefix instead of role labels (You:/AI:/etc.)
+            let (label, label_style) = (
+                "│ ",
+                Style::default().fg(COLOR_DIM),
+            );
 
             // Handle streaming vs completed messages
             if message.is_streaming {
@@ -961,40 +942,27 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                 } else {
                     // Fall back to partial_content for backward compatibility
                     // (non-assistant messages or when segments is empty)
-                    
-                    let mut content_lines = render_markdown(&message.partial_content);
 
-                    // Add label to first line, append cursor to last line
+                    let content_lines = render_markdown(&message.partial_content);
+
+                    // Prepend vertical bar to ALL lines, append cursor to last line
                     if content_lines.is_empty() {
-                        // No content yet, just show label with cursor
+                        // No content yet, just show vertical bar with cursor
                         lines.push(Line::from(vec![
                             Span::styled(label, label_style),
                             cursor_span,
                         ]));
                     } else {
-                        // Prepend label to first line
-                        let first_line = content_lines.remove(0);
-                        let mut first_spans = vec![Span::styled(label, label_style)];
-                        first_spans.extend(first_line.spans);
-                        lines.push(Line::from(first_spans));
-
-                        // Add middle lines as-is
-                        for line in content_lines.drain(..content_lines.len().saturating_sub(1)) {
-                            lines.push(line);
-                        }
-
-                        // Append cursor to last line (if there are remaining lines)
-                        if let Some(last_line) = content_lines.pop() {
-                            let mut last_spans = last_line.spans;
-                            last_spans.push(cursor_span);
-                            lines.push(Line::from(last_spans));
-                        } else {
-                            // Only had one line, cursor was not added yet
-                            // The first line is already pushed, so add cursor separately
-                            // Actually, we need to modify the last pushed line
-                            if let Some(last_pushed) = lines.last_mut() {
-                                last_pushed.spans.push(cursor_span);
+                        // Prepend vertical bar to all lines
+                        let line_count = content_lines.len();
+                        for (idx, line) in content_lines.into_iter().enumerate() {
+                            let mut spans = vec![Span::styled(label, label_style)];
+                            spans.extend(line.spans);
+                            // Append cursor to last line
+                            if idx == line_count - 1 {
+                                spans.push(cursor_span.clone());
                             }
+                            lines.push(Line::from(spans));
                         }
                     }
                 }
@@ -1016,24 +984,18 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     }
                 } else {
                     // Fall back to content field for non-assistant messages or empty segments
-                    
+
                     let content_lines = render_markdown(&message.content);
 
                     if content_lines.is_empty() {
-                        // Empty content, just show label
+                        // Empty content, just show vertical bar
                         lines.push(Line::from(vec![Span::styled(label, label_style)]));
                     } else {
-                        // Prepend label to first line
-                        let mut iter = content_lines.into_iter();
-                        if let Some(first_line) = iter.next() {
-                            let mut first_spans = vec![Span::styled(label, label_style)];
-                            first_spans.extend(first_line.spans);
-                            lines.push(Line::from(first_spans));
-                        }
-
-                        // Add remaining lines as-is
-                        for line in iter {
-                            lines.push(line);
+                        // Prepend vertical bar to ALL lines
+                        for line in content_lines {
+                            let mut spans = vec![Span::styled(label, label_style)];
+                            spans.extend(line.spans);
+                            lines.push(Line::from(spans));
                         }
                     }
                 }
@@ -1042,19 +1004,10 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
             lines.push(Line::from(""));
         }
     } else {
-        // No messages yet - show placeholder
+        // No messages yet - show placeholder with vertical bar
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![Span::styled(
-            "───────────────────────────────────────────────",
-            Style::default().fg(COLOR_DIM),
-        )]));
         lines.push(Line::from(vec![
-            Span::styled(
-                "AI: ",
-                Style::default()
-                    .fg(COLOR_ACCENT)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled("│ ", Style::default().fg(COLOR_DIM)),
             Span::styled("Waiting for your message...", Style::default().fg(COLOR_DIM)),
         ]));
         lines.push(Line::from(""));
