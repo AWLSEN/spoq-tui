@@ -103,6 +103,11 @@ pub enum AppMessage {
         summary: String,
         tool_call_count: Option<u32>,
     },
+    /// Usage information received (context window usage)
+    UsageReceived {
+        context_used: u32,
+        context_limit: u32,
+    },
 }
 
 #[cfg(test)]

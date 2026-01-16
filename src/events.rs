@@ -256,6 +256,15 @@ pub struct ThreadUpdatedEvent {
     pub description: Option<String>,
 }
 
+/// Usage event - sent after done to provide context window usage info
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct UsageEvent {
+    /// Current context window tokens used
+    pub context_window_used: u32,
+    /// Maximum context window limit
+    pub context_window_limit: u32,
+}
+
 /// Wrapper enum for all possible SSE event types from Conductor.
 ///
 /// Use pattern matching to handle different event types during stream processing.
@@ -315,6 +324,8 @@ pub enum SseEvent {
     OAuthConsentRequired(OAuthConsentRequiredEvent),
     /// Thread updated
     ThreadUpdated(ThreadUpdatedEvent),
+    /// Usage information
+    Usage(UsageEvent),
 }
 
 /// Wraps an SSE event with its metadata.

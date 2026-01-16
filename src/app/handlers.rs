@@ -573,6 +573,24 @@ impl App {
                     self.active_thread_id.as_deref(),
                 );
             }
+            AppMessage::UsageReceived {
+                context_used,
+                context_limit,
+            } => {
+                // Update context tracking in session state
+                self.session_state.set_context_tokens(context_used);
+                self.session_state.set_context_token_limit(context_limit);
+                // Emit StateChange for usage update
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Usage received",
+                        format!("tokens: {}/{}", context_used, context_limit),
+                    )),
+                    None,
+                );
+            }
         }
     }
 }

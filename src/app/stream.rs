@@ -547,6 +547,24 @@ impl App {
                                 tool_call_count: subagent_event.tool_call_count,
                             });
                         }
+                        SseEvent::Usage(usage_event) => {
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "UsageReceived",
+                                    format!(
+                                        "used: {}, limit: {}",
+                                        usage_event.context_window_used,
+                                        usage_event.context_window_limit
+                                    ),
+                                )),
+                                Some(thread_id),
+                            );
+                            let _ = message_tx.send(AppMessage::UsageReceived {
+                                context_used: usage_event.context_window_used,
+                                context_limit: usage_event.context_window_limit,
+                            });
+                        }
                     }
                 }
                 Err(e) => {

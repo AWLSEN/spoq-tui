@@ -544,6 +544,12 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
                 description,
             })
         }
+        crate::sse::SseEvent::Usage { context_window_used, context_window_limit } => {
+            SseEvent::Usage(crate::events::UsageEvent {
+                context_window_used,
+                context_window_limit,
+            })
+        }
     }
 }
 

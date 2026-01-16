@@ -145,6 +145,11 @@ pub enum SseEvent {
         #[serde(default)]
         description: Option<String>,
     },
+    /// Usage information - context window usage
+    Usage {
+        context_window_used: u32,
+        context_window_limit: u32,
+    },
 }
 
 impl SseEvent {
@@ -171,6 +176,7 @@ impl SseEvent {
             SseEvent::SubagentProgress { .. } => "subagent_progress",
             SseEvent::SubagentCompleted { .. } => "subagent_completed",
             SseEvent::ThreadUpdated { .. } => "thread_updated",
+            SseEvent::Usage { .. } => "usage",
         }
     }
 }
@@ -269,6 +275,12 @@ struct ThreadUpdatedPayload {
     title: Option<String>,
     #[serde(default)]
     description: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct UsagePayload {
+    context_window_used: u32,
+    context_window_limit: u32,
 }
 
 /// Parse a single SSE line into its component type
@@ -554,6 +566,17 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
                 thread_id: payload.thread_id,
                 title: payload.title,
                 description: payload.description,
+            })
+        }
+        "usage" => {
+            let payload: UsagePayload = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::Usage {
+                context_window_used: payload.context_window_used,
+                context_window_limit: payload.context_window_limit,
             })
         }
         // Ignore unknown events instead of erroring (more resilient)
