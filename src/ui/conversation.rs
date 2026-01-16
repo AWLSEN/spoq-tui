@@ -57,7 +57,7 @@ pub fn create_mode_indicator_line(mode: ProgrammingMode) -> Option<Line<'static>
 // ============================================================================
 
 /// Render the conversation screen with header, messages area, and input
-pub fn render_conversation_screen(frame: &mut Frame, app: &App) {
+pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
 
     // Main outer border

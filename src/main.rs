@@ -143,7 +143,7 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
 
         // Draw the UI
         terminal.draw(|f| {
-            ui::render(f, app);
+            ui::render(f, &mut *app);
         })?;
 
         // Poll both keyboard events and message channel using tokio::select!

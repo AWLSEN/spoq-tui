@@ -40,7 +40,7 @@ use thread_switcher::render_thread_switcher;
 // ============================================================================
 
 /// Render the UI based on current screen
-pub fn render(frame: &mut Frame, app: &App) {
+pub fn render(frame: &mut Frame, app: &mut App) {
     match app.screen {
         Screen::CommandDeck => render_command_deck(frame, app),
         Screen::Conversation => render_conversation_screen(frame, app),
@@ -117,11 +117,11 @@ mod tests {
     fn test_render_command_deck_screen() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        let app = create_test_app();
+        let mut app = create_test_app();
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -144,7 +144,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -181,7 +181,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -208,7 +208,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -239,7 +239,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -261,7 +261,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -291,7 +291,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -320,7 +320,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -350,7 +350,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -376,7 +376,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -402,7 +402,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -432,7 +432,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -461,7 +461,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -492,7 +492,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -523,7 +523,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -556,7 +556,7 @@ mod tests {
         app.tick_count = 0;
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -573,7 +573,7 @@ mod tests {
         let mut terminal2 = Terminal::new(backend2).unwrap();
         terminal2
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -612,7 +612,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -643,7 +643,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -677,7 +677,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -750,7 +750,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -797,7 +797,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -839,7 +839,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -881,7 +881,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -913,7 +913,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -942,7 +942,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1014,7 +1014,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1055,7 +1055,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1096,7 +1096,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1141,7 +1141,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1196,7 +1196,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1230,7 +1230,7 @@ mod tests {
 
     #[test]
     fn test_contextual_keybinds_command_deck() {
-        let app = create_test_app();
+        let mut app = create_test_app();
         // app.screen defaults to CommandDeck
 
         let keybinds = build_contextual_keybinds(&app);
@@ -1328,7 +1328,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1361,7 +1361,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -1482,7 +1482,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -2247,7 +2247,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -2299,7 +2299,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 
@@ -2355,7 +2355,7 @@ mod tests {
 
         terminal
             .draw(|f| {
-                render(f, &app);
+                render(f, &mut app);
             })
             .unwrap();
 

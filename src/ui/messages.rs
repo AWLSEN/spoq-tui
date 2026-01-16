@@ -830,7 +830,7 @@ pub fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
 // ============================================================================
 
 /// Render the messages area with user messages and AI responses
-pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
 
@@ -1044,6 +1044,9 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     // scroll=0 means showing the bottom (latest content)
     // scroll=max means showing the top (oldest content)
     let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+
+    // Persist max_scroll so event handler can use it for immediate clamping
+    app.max_scroll = max_scroll;
 
     // Clamp user's scroll to valid range
     let clamped_scroll = app.conversation_scroll.min(max_scroll);
