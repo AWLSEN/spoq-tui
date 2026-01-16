@@ -280,8 +280,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         continue;
                                     }
                                     KeyCode::Enter => {
-                                        // Plain Enter = Normal thread (Shift+Enter handled above)
-                                        app.submit_input(models::ThreadType::Normal);
+                                        // Plain Enter = Conversation thread (Shift+Enter handled above)
+                                        app.submit_input(models::ThreadType::Conversation);
                                         continue;
                                     }
                                     KeyCode::Esc => {
@@ -359,21 +359,20 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                         }
                         Event::Mouse(mouse_event) => {
                             match mouse_event.kind {
-                                // Natural scrolling: swipe up = ScrollDown = see newer content (decrease scroll)
-                                // swipe down = ScrollUp = see older content (increase scroll)
+                                // Natural scrolling: scroll down = see newer content, scroll up = see older content
                                 MouseEventKind::ScrollDown => {
-                                    if app.screen == Screen::Conversation {
-                                        // Scroll up to see older content (increase scroll offset)
-                                        app.conversation_scroll =
-                                            app.conversation_scroll.saturating_add(3);
-                                    }
-                                }
-                                MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll down to see newer content (decrease scroll offset)
                                         // Minimum is 0 (showing latest at bottom)
                                         app.conversation_scroll =
                                             app.conversation_scroll.saturating_sub(3);
+                                    }
+                                }
+                                MouseEventKind::ScrollUp => {
+                                    if app.screen == Screen::Conversation {
+                                        // Scroll up to see older content (increase scroll offset)
+                                        app.conversation_scroll =
+                                            app.conversation_scroll.saturating_add(3);
                                     }
                                 }
                                 _ => {}
