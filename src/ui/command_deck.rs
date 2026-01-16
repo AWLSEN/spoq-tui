@@ -53,7 +53,7 @@ pub fn render_command_deck(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Length(9),  // Header with logo
             Constraint::Min(10),    // Main content area
-            Constraint::Length(7),  // Input area
+            Constraint::Length(6),  // Input area
         ])
         .split(inner);
 

@@ -91,7 +91,7 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
                     Constraint::Min(10),    // Messages area
                     Constraint::Length(1),  // Streaming indicator
                     Constraint::Length(1),  // Mode indicator
-                    Constraint::Length(8),  // Input area with keybinds
+                    Constraint::Length(6),  // Input area with keybinds
                 ])
                 .split(inner);
 
@@ -109,7 +109,7 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
                     Constraint::Length(3),  // Thread header
                     Constraint::Min(10),    // Messages area
                     Constraint::Length(1),  // Mode indicator
-                    Constraint::Length(8),  // Input area with keybinds
+                    Constraint::Length(6),  // Input area with keybinds
                 ])
                 .split(inner);
 
@@ -126,7 +126,7 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
                     Constraint::Length(3),  // Thread header
                     Constraint::Min(10),    // Messages area
                     Constraint::Length(1),  // Streaming indicator
-                    Constraint::Length(8),  // Input area with keybinds
+                    Constraint::Length(6),  // Input area with keybinds
                 ])
                 .split(inner);
 
@@ -142,7 +142,7 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
                 .constraints([
                     Constraint::Length(3),  // Thread header
                     Constraint::Min(10),    // Messages area
-                    Constraint::Length(8),  // Input area with keybinds
+                    Constraint::Length(6),  // Input area with keybinds
                 ])
                 .split(inner);
 
