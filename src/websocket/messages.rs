@@ -138,4 +138,293 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_malformed_json_missing_type() {
+        let json = r#"{
+            "request_id": "req-123",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "description": "List files",
+            "timestamp": 1234567890
+        }"#;
+
+        let result = serde_json::from_str::<WsIncomingMessage>(json);
+        assert!(result.is_err(), "Should fail without 'type' field");
+    }
+
+    #[test]
+    fn test_malformed_json_invalid_type() {
+        let json = r#"{
+            "type": "unknown_message_type",
+            "request_id": "req-123",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "description": "List files",
+            "timestamp": 1234567890
+        }"#;
+
+        let result = serde_json::from_str::<WsIncomingMessage>(json);
+        assert!(result.is_err(), "Should fail with unknown message type");
+    }
+
+    #[test]
+    fn test_malformed_json_missing_required_field() {
+        let json = r#"{
+            "type": "permission_request",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "description": "List files",
+            "timestamp": 1234567890
+        }"#;
+
+        let result = serde_json::from_str::<WsIncomingMessage>(json);
+        assert!(result.is_err(), "Should fail without required 'request_id'");
+    }
+
+    #[test]
+    fn test_malformed_json_invalid_timestamp_type() {
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "req-123",
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "description": "List files",
+            "timestamp": "not-a-number"
+        }"#;
+
+        let result = serde_json::from_str::<WsIncomingMessage>(json);
+        assert!(result.is_err(), "Should fail with invalid timestamp type");
+    }
+
+    #[test]
+    fn test_complex_tool_input() {
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "req-complex",
+            "tool_name": "ComplexTool",
+            "tool_input": {
+                "nested": {
+                    "array": [1, 2, 3],
+                    "object": {"key": "value"}
+                },
+                "string": "test",
+                "number": 42,
+                "boolean": true,
+                "null": null
+            },
+            "description": "Complex tool input",
+            "timestamp": 1234567890
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PermissionRequest(req) => {
+                assert_eq!(req.request_id, "req-complex");
+                assert!(req.tool_input.is_object());
+                assert_eq!(req.tool_input["string"], "test");
+                assert_eq!(req.tool_input["number"], 42);
+                assert_eq!(req.tool_input["boolean"], true);
+                assert!(req.tool_input["null"].is_null());
+            }
+        }
+    }
+
+    #[test]
+    fn test_empty_tool_input() {
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "req-empty",
+            "tool_name": "NoInputTool",
+            "tool_input": {},
+            "description": "Tool with no input",
+            "timestamp": 1234567890
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PermissionRequest(req) => {
+                assert_eq!(req.request_id, "req-empty");
+                assert!(req.tool_input.is_object());
+                assert_eq!(req.tool_input.as_object().unwrap().len(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ws_permission_request_clone() {
+        let req = WsPermissionRequest {
+            request_id: "req-clone".to_string(),
+            tool_name: "Test".to_string(),
+            tool_input: serde_json::json!({"key": "value"}),
+            description: "Test description".to_string(),
+            timestamp: 1234567890,
+        };
+
+        let cloned = req.clone();
+        assert_eq!(req.request_id, cloned.request_id);
+        assert_eq!(req.tool_name, cloned.tool_name);
+        assert_eq!(req.description, cloned.description);
+        assert_eq!(req.timestamp, cloned.timestamp);
+    }
+
+    #[test]
+    fn test_ws_permission_request_debug() {
+        let req = WsPermissionRequest {
+            request_id: "req-debug".to_string(),
+            tool_name: "DebugTool".to_string(),
+            tool_input: serde_json::json!({"test": true}),
+            description: "Debug test".to_string(),
+            timestamp: 1234567890,
+        };
+
+        let debug_str = format!("{:?}", req);
+        assert!(debug_str.contains("req-debug"));
+        assert!(debug_str.contains("DebugTool"));
+        assert!(debug_str.contains("Debug test"));
+    }
+
+    #[test]
+    fn test_ws_command_response_serialize_structure() {
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "req-struct".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some("Approved".to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+
+        // Verify field names are correct
+        assert_eq!(json["type"], "command_response");
+        assert_eq!(json["request_id"], "req-struct");
+        assert!(json["result"].is_object());
+        assert_eq!(json["result"]["status"], "success");
+        assert!(json["result"]["data"].is_object());
+        assert_eq!(json["result"]["data"]["allowed"], true);
+        assert_eq!(json["result"]["data"]["message"], "Approved");
+    }
+
+    #[test]
+    fn test_ws_command_response_deserialize() {
+        let json = r#"{
+            "type": "command_response",
+            "request_id": "req-deser",
+            "result": {
+                "status": "success",
+                "data": {
+                    "allowed": false,
+                    "message": "Denied"
+                }
+            }
+        }"#;
+
+        let response: WsCommandResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.type_, "command_response");
+        assert_eq!(response.request_id, "req-deser");
+        assert_eq!(response.result.status, "success");
+        assert!(!response.result.data.allowed);
+        assert_eq!(response.result.data.message, Some("Denied".to_string()));
+    }
+
+    #[test]
+    fn test_ws_permission_data_skip_serializing_none() {
+        let data = WsPermissionData {
+            allowed: true,
+            message: None,
+        };
+
+        let json = serde_json::to_value(&data).unwrap();
+
+        // Verify that message field is not present when None
+        assert!(json["allowed"].is_boolean());
+        assert!(json.get("message").is_none() || json["message"].is_null());
+
+        // Verify the JSON doesn't have a "message" key when serialized to string
+        let json_str = serde_json::to_string(&data).unwrap();
+        assert!(!json_str.contains("\"message\""));
+    }
+
+    #[test]
+    fn test_ws_command_result_clone() {
+        let result = WsCommandResult {
+            status: "success".to_string(),
+            data: WsPermissionData {
+                allowed: true,
+                message: Some("Test".to_string()),
+            },
+        };
+
+        let cloned = result.clone();
+        assert_eq!(result.status, cloned.status);
+        assert_eq!(result.data.allowed, cloned.data.allowed);
+        assert_eq!(result.data.message, cloned.data.message);
+    }
+
+    #[test]
+    fn test_large_timestamp() {
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "req-large-ts",
+            "tool_name": "Test",
+            "tool_input": {},
+            "description": "Large timestamp test",
+            "timestamp": 9999999999999
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PermissionRequest(req) => {
+                assert_eq!(req.timestamp, 9999999999999);
+            }
+        }
+    }
+
+    #[test]
+    fn test_special_characters_in_strings() {
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "req-special",
+            "tool_name": "Special\n\t\r\"Tool",
+            "tool_input": {"path": "/path/with/\"quotes\"/and\\backslashes"},
+            "description": "Description with\nnewlines\tand\ttabs",
+            "timestamp": 1234567890
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PermissionRequest(req) => {
+                assert_eq!(req.request_id, "req-special");
+                assert!(req.tool_name.contains('\n'));
+                assert!(req.description.contains('\n'));
+                assert!(req.description.contains('\t'));
+            }
+        }
+    }
+
+    #[test]
+    fn test_unicode_in_strings() {
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "req-unicode",
+            "tool_name": "🔧 Tool",
+            "tool_input": {"message": "Hello 世界 🌍"},
+            "description": "Test with émojis and ünïcödé",
+            "timestamp": 1234567890
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PermissionRequest(req) => {
+                assert_eq!(req.request_id, "req-unicode");
+                assert!(req.tool_name.contains('🔧'));
+                assert!(req.description.contains('é'));
+            }
+        }
+    }
 }

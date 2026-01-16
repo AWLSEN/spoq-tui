@@ -2765,4 +2765,119 @@ mod tests {
         assert_eq!(subagent_b.status, SubagentEventStatus::Running);
         assert_eq!(subagent_b.progress_message, Some("B progress".to_string()));
     }
+
+    // ============= WebSocket Connection State Tests =============
+
+    #[test]
+    fn test_handle_message_ws_connected() {
+        use crate::websocket::WsConnectionState;
+        let mut app = App::default();
+
+        // Initial state should be Disconnected
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Disconnected
+        ));
+
+        // Handle WsConnected message
+        app.handle_message(AppMessage::WsConnected);
+
+        // State should be Connected
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Connected
+        ));
+    }
+
+    #[test]
+    fn test_handle_message_ws_disconnected() {
+        use crate::websocket::WsConnectionState;
+        let mut app = App::default();
+
+        // Start with Connected state
+        app.ws_connection_state = WsConnectionState::Connected;
+
+        // Handle WsDisconnected message
+        app.handle_message(AppMessage::WsDisconnected);
+
+        // State should be Disconnected
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Disconnected
+        ));
+    }
+
+    #[test]
+    fn test_handle_message_ws_reconnecting() {
+        use crate::websocket::WsConnectionState;
+        let mut app = App::default();
+
+        // Initial state
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Disconnected
+        ));
+
+        // Handle WsReconnecting message with attempt 1
+        app.handle_message(AppMessage::WsReconnecting { attempt: 1 });
+
+        // State should be Reconnecting with attempt 1
+        match app.ws_connection_state {
+            WsConnectionState::Reconnecting { attempt } => {
+                assert_eq!(attempt, 1);
+            }
+            _ => panic!("Expected Reconnecting state"),
+        }
+
+        // Handle another reconnection attempt
+        app.handle_message(AppMessage::WsReconnecting { attempt: 3 });
+
+        // State should be Reconnecting with attempt 3
+        match app.ws_connection_state {
+            WsConnectionState::Reconnecting { attempt } => {
+                assert_eq!(attempt, 3);
+            }
+            _ => panic!("Expected Reconnecting state"),
+        }
+    }
+
+    #[test]
+    fn test_ws_connection_state_transitions() {
+        use crate::websocket::WsConnectionState;
+        let mut app = App::default();
+
+        // Start disconnected
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Disconnected
+        ));
+
+        // Connect
+        app.handle_message(AppMessage::WsConnected);
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Connected
+        ));
+
+        // Disconnect
+        app.handle_message(AppMessage::WsDisconnected);
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Disconnected
+        ));
+
+        // Reconnecting
+        app.handle_message(AppMessage::WsReconnecting { attempt: 1 });
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Reconnecting { .. }
+        ));
+
+        // Successfully reconnect
+        app.handle_message(AppMessage::WsConnected);
+        assert!(matches!(
+            app.ws_connection_state,
+            WsConnectionState::Connected
+        ));
+    }
 }

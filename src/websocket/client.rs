@@ -471,4 +471,123 @@ mod tests {
         let cloned = state.clone();
         assert_eq!(cloned, WsConnectionState::Reconnecting { attempt: 3 });
     }
+
+    #[test]
+    fn test_ws_connection_state_debug() {
+        let state = WsConnectionState::Connected;
+        let debug_str = format!("{:?}", state);
+        assert!(debug_str.contains("Connected"));
+
+        let state = WsConnectionState::Reconnecting { attempt: 2 };
+        let debug_str = format!("{:?}", state);
+        assert!(debug_str.contains("Reconnecting"));
+        assert!(debug_str.contains("2"));
+    }
+
+    #[test]
+    fn test_ws_client_config_custom() {
+        let config = WsClientConfig {
+            host: "example.com:8080".to_string(),
+            max_retries: 10,
+            max_backoff_secs: 60,
+        };
+
+        assert_eq!(config.host, "example.com:8080");
+        assert_eq!(config.max_retries, 10);
+        assert_eq!(config.max_backoff_secs, 60);
+    }
+
+    #[test]
+    fn test_ws_client_config_clone() {
+        let config = WsClientConfig {
+            host: "localhost:3000".to_string(),
+            max_retries: 3,
+            max_backoff_secs: 15,
+        };
+
+        let cloned = config.clone();
+        assert_eq!(config.host, cloned.host);
+        assert_eq!(config.max_retries, cloned.max_retries);
+        assert_eq!(config.max_backoff_secs, cloned.max_backoff_secs);
+    }
+
+    #[test]
+    fn test_ws_error_implements_error_trait() {
+        let err = WsError::ParseError("test".to_string());
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn test_all_ws_errors_display() {
+        let errors = vec![
+            WsError::ConnectionFailed("timeout".to_string()),
+            WsError::Disconnected,
+            WsError::SendFailed("closed".to_string()),
+            WsError::ParseError("invalid json".to_string()),
+        ];
+
+        for err in errors {
+            let display = err.to_string();
+            assert!(!display.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_backoff_calculation_cap() {
+        let max_backoff = 30u64;
+
+        // Test that backoff is capped correctly
+        for attempt in 1..=10 {
+            let backoff = std::cmp::min(1u64 << (attempt - 1), max_backoff);
+            assert!(backoff <= max_backoff, "Backoff should never exceed max");
+        }
+    }
+
+    #[test]
+    fn test_backoff_calculation_progression() {
+        let max_backoff = 100u64;
+
+        // Test exponential progression
+        let backoff1 = std::cmp::min(1u64 << 0, max_backoff);
+        let backoff2 = std::cmp::min(1u64 << 1, max_backoff);
+        let backoff3 = std::cmp::min(1u64 << 2, max_backoff);
+
+        assert!(backoff2 > backoff1);
+        assert!(backoff3 > backoff2);
+        assert_eq!(backoff2, backoff1 * 2);
+        assert_eq!(backoff3, backoff2 * 2);
+    }
+
+    #[test]
+    fn test_ws_connection_state_all_variants() {
+        let states = vec![
+            WsConnectionState::Connected,
+            WsConnectionState::Disconnected,
+            WsConnectionState::Reconnecting { attempt: 1 },
+            WsConnectionState::Reconnecting { attempt: 5 },
+        ];
+
+        for state in states {
+            // Test that all states can be cloned and compared
+            let cloned = state.clone();
+            assert_eq!(state, cloned);
+        }
+    }
+
+    #[test]
+    fn test_ws_error_debug() {
+        let err = WsError::ConnectionFailed("test error".to_string());
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("ConnectionFailed"));
+        assert!(debug_str.contains("test error"));
+    }
+
+    #[test]
+    fn test_ws_client_config_debug() {
+        let config = WsClientConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("127.0.0.1:3000"));
+        assert!(debug_str.contains("5"));
+        assert!(debug_str.contains("30"));
+    }
 }
