@@ -289,6 +289,20 @@ impl App {
             }
         }
     }
+
+    /// Emit a debug state change event (helper for external callers like main.rs)
+    pub fn emit_debug_state_change(&self, state_type: &str, description: &str, current: &str) {
+        use crate::debug::{DebugEventKind, StateChangeData, StateType};
+        emit_debug(
+            &self.debug_tx,
+            DebugEventKind::StateChange(StateChangeData::new(
+                StateType::ToolTracker, // Use ToolTracker as a generic state type
+                description,
+                current,
+            )),
+            None,
+        );
+    }
 }
 
 impl Default for App {

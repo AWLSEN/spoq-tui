@@ -218,9 +218,25 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                             // This takes priority over all other key handling
                             if app.session_state.has_pending_permission() {
                                 if let KeyCode::Char(c) = key.code {
+                                    // Debug: emit key press to debug system
+                                    app.emit_debug_state_change(
+                                        "permission_key",
+                                        "Key pressed during permission",
+                                        &format!("key: '{}', pending: true", c),
+                                    );
                                     if app.handle_permission_key(c) {
+                                        app.emit_debug_state_change(
+                                            "permission_key",
+                                            "Permission handled",
+                                            &format!("key: '{}' -> handled", c),
+                                        );
                                         continue;
                                     }
+                                    app.emit_debug_state_change(
+                                        "permission_key",
+                                        "Key not handled",
+                                        &format!("key: '{}' -> not Y/N/A", c),
+                                    );
                                 }
                                 // When permission is pending, ignore all other keys except Ctrl+C
                                 continue;

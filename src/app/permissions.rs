@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::websocket::{WsCommandResponse, WsCommandResult, WsConnectionState, WsPermissionData};
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 
 use super::App;
 
@@ -210,26 +210,32 @@ impl App {
     /// Handle a permission response key press ('y', 'a', or 'n')
     /// Returns true if a permission was handled, false if no pending permission
     pub fn handle_permission_key(&mut self, key: char) -> bool {
+        info!("handle_permission_key called with key: '{}'", key);
         if let Some(ref perm) = self.session_state.pending_permission.clone() {
+            info!("Pending permission found: {} for tool {}", perm.permission_id, perm.tool_name);
             match key {
                 'y' | 'Y' => {
-                    // Allow once
+                    info!("User pressed 'y' - approving permission");
                     self.approve_permission(&perm.permission_id);
                     true
                 }
                 'a' | 'A' => {
-                    // Allow always
+                    info!("User pressed 'a' - allowing tool always");
                     self.allow_tool_always(&perm.tool_name, &perm.permission_id);
                     true
                 }
                 'n' | 'N' => {
-                    // Deny
+                    info!("User pressed 'n' - denying permission");
                     self.deny_permission(&perm.permission_id);
                     true
                 }
-                _ => false,
+                _ => {
+                    info!("Key '{}' not recognized for permission handling", key);
+                    false
+                }
             }
         } else {
+            info!("No pending permission found");
             false
         }
     }

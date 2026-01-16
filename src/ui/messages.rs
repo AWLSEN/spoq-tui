@@ -301,29 +301,58 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
             let duration_str = event.duration_secs
                 .map(|d| format!(" ({:.1}s)", d))
                 .unwrap_or_default();
-            Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(
-                    format!("{} ", icon),
-                    Style::default().fg(COLOR_TOOL_ICON),
-                ),
-                Span::styled(
-                    "✓ ",
-                    Style::default().fg(COLOR_TOOL_SUCCESS),
-                ),
-                Span::styled(
-                    format!("{}: ", event.function_name),
-                    Style::default().fg(COLOR_TOOL_SUCCESS),
-                ),
-                Span::styled(
-                    args_display,
-                    Style::default().fg(COLOR_TOOL_SUCCESS),
-                ),
-                Span::styled(
-                    duration_str,
-                    Style::default().fg(COLOR_TOOL_RUNNING),
-                ),
-            ])
+
+            // Check if tool result was an error (e.g., permission denied)
+            // Use dimmed style for failed/denied tools
+            if event.result_is_error {
+                Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(
+                        format!("{} ", icon),
+                        Style::default().fg(COLOR_DIM),
+                    ),
+                    Span::styled(
+                        "✗ ",
+                        Style::default().fg(COLOR_DIM),
+                    ),
+                    Span::styled(
+                        format!("{}: ", event.function_name),
+                        Style::default().fg(COLOR_DIM),
+                    ),
+                    Span::styled(
+                        args_display,
+                        Style::default().fg(COLOR_DIM),
+                    ),
+                    Span::styled(
+                        duration_str,
+                        Style::default().fg(COLOR_DIM),
+                    ),
+                ])
+            } else {
+                Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(
+                        format!("{} ", icon),
+                        Style::default().fg(COLOR_TOOL_ICON),
+                    ),
+                    Span::styled(
+                        "✓ ",
+                        Style::default().fg(COLOR_TOOL_SUCCESS),
+                    ),
+                    Span::styled(
+                        format!("{}: ", event.function_name),
+                        Style::default().fg(COLOR_TOOL_SUCCESS),
+                    ),
+                    Span::styled(
+                        args_display,
+                        Style::default().fg(COLOR_TOOL_SUCCESS),
+                    ),
+                    Span::styled(
+                        duration_str,
+                        Style::default().fg(COLOR_TOOL_RUNNING),
+                    ),
+                ])
+            }
         }
         ToolEventStatus::Failed => {
             Line::from(vec![

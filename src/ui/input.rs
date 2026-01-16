@@ -162,8 +162,9 @@ pub fn render_permission_prompt(frame: &mut Frame, area: Rect, app: &App) {
 /// Render the permission request box.
 pub fn render_permission_box(frame: &mut Frame, area: Rect, perm: &crate::state::session::PermissionRequest) {
     // Calculate box dimensions - center in the given area
+    // Need at least 12 lines: border(2) + tool(1) + empty(1) + preview(5) + empty(1) + options(1) + buffer(1)
     let box_width = 60u16.min(area.width.saturating_sub(4));
-    let box_height = 10u16.min(area.height.saturating_sub(2));
+    let box_height = 14u16.min(area.height.saturating_sub(2));
 
     // Center the box
     let x = area.x + (area.width.saturating_sub(box_width)) / 2;
