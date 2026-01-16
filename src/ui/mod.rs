@@ -1388,6 +1388,7 @@ mod tests {
             description: "Write file".to_string(),
             context: Some("/home/user/test.rs".to_string()),
             tool_input: None,
+            received_at: std::time::Instant::now(),
         };
 
         let preview = get_permission_preview(&perm);
@@ -1404,6 +1405,7 @@ mod tests {
             description: "Read file".to_string(),
             context: None,
             tool_input: Some(serde_json::json!({"file_path": "/var/log/test.log"})),
+            received_at: std::time::Instant::now(),
         };
 
         let preview = get_permission_preview(&perm);
@@ -1420,6 +1422,7 @@ mod tests {
             description: "Run command".to_string(),
             context: None,
             tool_input: Some(serde_json::json!({"command": "npm install"})),
+            received_at: std::time::Instant::now(),
         };
 
         let preview = get_permission_preview(&perm);
@@ -1437,6 +1440,7 @@ mod tests {
             description: "Write file".to_string(),
             context: None,
             tool_input: Some(serde_json::json!({"content": long_content})),
+            received_at: std::time::Instant::now(),
         };
 
         let preview = get_permission_preview(&perm);
@@ -1454,6 +1458,7 @@ mod tests {
             description: "Custom action".to_string(),
             context: None,
             tool_input: None,
+            received_at: std::time::Instant::now(),
         };
 
         let preview = get_permission_preview(&perm);
@@ -1475,6 +1480,7 @@ mod tests {
             description: "Run npm install".to_string(),
             context: Some("npm install".to_string()),
             tool_input: None,
+            received_at: std::time::Instant::now(),
         });
 
         terminal

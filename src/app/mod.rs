@@ -2116,6 +2116,7 @@ mod tests {
                 description: "Run npm install".to_string(),
                 context: None,
                 tool_input: None,
+                received_at: std::time::Instant::now(),
             });
         assert!(app.session_state.has_pending_permission());
 
@@ -2142,6 +2143,7 @@ mod tests {
                 description: "Write file".to_string(),
                 context: Some("/home/user/test.rs".to_string()),
                 tool_input: None,
+                received_at: std::time::Instant::now(),
             });
         assert!(app.session_state.has_pending_permission());
 
@@ -2168,6 +2170,7 @@ mod tests {
                 description: "Edit file".to_string(),
                 context: None,
                 tool_input: None,
+                received_at: std::time::Instant::now(),
             });
         assert!(app.session_state.has_pending_permission());
 
@@ -2193,6 +2196,7 @@ mod tests {
                 description: "Run command".to_string(),
                 context: None,
                 tool_input: None,
+                received_at: std::time::Instant::now(),
             });
 
         // Uppercase 'Y' should also work
@@ -2213,6 +2217,7 @@ mod tests {
                 description: "Run command".to_string(),
                 context: None,
                 tool_input: None,
+                received_at: std::time::Instant::now(),
             });
 
         // Invalid keys should return false and NOT clear permission
@@ -2283,6 +2288,7 @@ mod tests {
                 description: "Read file".to_string(),
                 context: None,
                 tool_input: None,
+                received_at: std::time::Instant::now(),
             });
         app.handle_permission_key('a');
 

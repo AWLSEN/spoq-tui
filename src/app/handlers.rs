@@ -248,6 +248,7 @@ impl App {
                             description,
                             context: None, // Context will be extracted from tool_input in UI
                             tool_input,
+                            received_at: std::time::Instant::now(),
                         });
                     // Emit StateChange for pending permission
                     emit_debug(

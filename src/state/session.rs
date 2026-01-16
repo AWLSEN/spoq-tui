@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::time::Instant;
 
 /// A permission request waiting for user approval
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -21,6 +22,11 @@ pub struct PermissionRequest {
     /// Raw tool input parameters for preview display
     #[serde(default)]
     pub tool_input: Option<serde_json::Value>,
+    /// Timestamp when the request was received (for timeout tracking)
+    /// Not serialized as it's runtime-only state
+    #[serde(skip)]
+    #[serde(default = "Instant::now")]
+    pub received_at: Instant,
 }
 
 /// Session-level state that persists across threads
@@ -263,6 +269,7 @@ mod tests {
             description: "Run npm install".to_string(),
             context: None,
             tool_input: None,
+            received_at: Instant::now(),
         };
         state.set_pending_permission(request.clone());
 
@@ -279,6 +286,7 @@ mod tests {
             description: "Run npm install".to_string(),
             context: Some("Installing dependencies".to_string()),
             tool_input: None,
+            received_at: Instant::now(),
         };
         state.set_pending_permission(request);
         assert!(state.has_pending_permission());
@@ -324,6 +332,7 @@ mod tests {
             description: "Run command".to_string(),
             context: None,
             tool_input: None,
+            received_at: Instant::now(),
         });
         state.set_oauth_required("github".to_string(), "skill".to_string());
         state.allow_tool("Bash".to_string());
@@ -339,12 +348,14 @@ mod tests {
 
     #[test]
     fn test_permission_request_equality() {
+        let now = Instant::now();
         let req1 = PermissionRequest {
             permission_id: "perm-a".to_string(),
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: Some("context".to_string()),
             tool_input: None,
+            received_at: now,
         };
         let req2 = PermissionRequest {
             permission_id: "perm-a".to_string(),
@@ -352,6 +363,7 @@ mod tests {
             description: "Run command".to_string(),
             context: Some("context".to_string()),
             tool_input: None,
+            received_at: now,
         };
         let req3 = PermissionRequest {
             permission_id: "perm-b".to_string(),
@@ -359,6 +371,7 @@ mod tests {
             description: "Read file".to_string(),
             context: None,
             tool_input: None,
+            received_at: now,
         };
 
         assert_eq!(req1, req2);
