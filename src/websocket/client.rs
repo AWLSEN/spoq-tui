@@ -50,7 +50,7 @@ pub struct WsClientConfig {
 impl Default for WsClientConfig {
     fn default() -> Self {
         Self {
-            host: "127.0.0.1:3000".to_string(),
+            host: "100.80.115.93:8000".to_string(),
             max_retries: 5,
             max_backoff_secs: 30,
         }
@@ -414,7 +414,7 @@ mod tests {
     #[test]
     fn test_ws_client_config_default() {
         let config = WsClientConfig::default();
-        assert_eq!(config.host, "127.0.0.1:3000");
+        assert_eq!(config.host, "100.80.115.93:8000");
         assert_eq!(config.max_retries, 5);
         assert_eq!(config.max_backoff_secs, 30);
     }
@@ -599,7 +599,7 @@ mod tests {
     fn test_ws_client_config_debug() {
         let config = WsClientConfig::default();
         let debug_str = format!("{:?}", config);
-        assert!(debug_str.contains("127.0.0.1:3000"));
+        assert!(debug_str.contains("100.80.115.93:8000"));
         assert!(debug_str.contains("5"));
         assert!(debug_str.contains("30"));
     }
