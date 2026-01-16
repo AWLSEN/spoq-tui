@@ -12,14 +12,14 @@ use ratatui::{
 
 use crate::app::App;
 use crate::markdown::render_markdown;
-use crate::models::{Message, MessageRole, MessageSegment, ToolEvent, ToolEventStatus};
+use crate::models::{Message, MessageRole, MessageSegment, SubagentEvent, SubagentEventStatus, ToolEvent, ToolEventStatus};
 use crate::state::ToolDisplayStatus;
 
-use super::helpers::{format_tool_args, get_tool_icon, inner_rect, MAX_VISIBLE_ERRORS, SPINNER_FRAMES};
+use super::helpers::{format_tool_args, get_subagent_icon, get_tool_icon, inner_rect, MAX_VISIBLE_ERRORS, SPINNER_FRAMES};
 use super::input::render_permission_prompt;
 use super::theme::{
-    COLOR_ACCENT, COLOR_ACTIVE, COLOR_DIM, COLOR_TOOL_ERROR, COLOR_TOOL_ICON,
-    COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
+    COLOR_ACCENT, COLOR_ACTIVE, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
+    COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
 
 // ============================================================================
@@ -430,6 +430,241 @@ pub fn truncate_preview(text: &str, max_chars: usize, max_lines: usize) -> Strin
 }
 
 // ============================================================================
+// Subagent Event Rendering
+// ============================================================================
+
+/// Tree connector for subagent display
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TreeConnector {
+    /// Single item (no tree structure needed)
+    Single,
+    /// Non-last item in a group: ├──
+    Branch,
+    /// Last item in a group: └──
+    LastBranch,
+}
+
+impl TreeConnector {
+    /// Get the string representation of the tree connector
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TreeConnector::Single => "● ",
+            TreeConnector::Branch => "├── ",
+            TreeConnector::LastBranch => "└── ",
+        }
+    }
+}
+
+/// Render a single subagent event as a Line with optional tree connector
+///
+/// Uses subagent-specific icons, color-coded status indicators, and tree connectors
+/// to provide rich visual feedback about subagent execution status.
+///
+/// # Display format
+/// - Running:  `[connector] [spinner] Task(description)` (cyan)
+/// - Complete: `[connector] Done (N tool uses · summary)` (green)
+pub fn render_subagent_event(
+    event: &SubagentEvent,
+    tick_count: u64,
+    connector: TreeConnector,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let icon = get_subagent_icon(&event.subagent_type);
+    let connector_str = connector.as_str();
+
+    match event.status {
+        SubagentEventStatus::Running => {
+            // Animated spinner - cycle through frames
+            let frame_index = (tick_count % 10) as usize;
+            let spinner = SPINNER_FRAMES[frame_index];
+
+            // Main line: connector + spinner + Task(description)
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    connector_str,
+                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
+                ),
+                Span::styled(
+                    format!("{} ", spinner),
+                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
+                ),
+                Span::styled(
+                    format!("{} Task(", icon),
+                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
+                ),
+                Span::styled(
+                    event.description.clone(),
+                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
+                ),
+                Span::styled(
+                    ")",
+                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
+                ),
+            ]));
+
+            // Progress line if available
+            if let Some(ref progress) = event.progress_message {
+                let indent = if connector == TreeConnector::LastBranch || connector == TreeConnector::Single {
+                    "      " // No continuation line
+                } else {
+                    "  │   " // Continuation line for non-last items
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(indent, Style::default().fg(COLOR_SUBAGENT_RUNNING)),
+                    Span::styled(
+                        progress.clone(),
+                        Style::default().fg(COLOR_DIM),
+                    ),
+                ]));
+            }
+        }
+        SubagentEventStatus::Complete => {
+            // Format: connector + Done (N tool uses · summary) or just (N tool uses)
+            let tool_count_str = if event.tool_call_count == 1 {
+                "1 tool use".to_string()
+            } else {
+                format!("{} tool uses", event.tool_call_count)
+            };
+
+            let display_text = if let Some(ref summary) = event.summary {
+                // Truncate summary if too long
+                let truncated_summary = if summary.len() > 40 {
+                    format!("{}...", &summary[..37])
+                } else {
+                    summary.clone()
+                };
+                format!("Done ({} · {})", tool_count_str, truncated_summary)
+            } else {
+                format!("Done ({})", tool_count_str)
+            };
+
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(
+                    connector_str,
+                    Style::default().fg(COLOR_SUBAGENT_COMPLETE),
+                ),
+                Span::styled(
+                    format!("{} ", icon),
+                    Style::default().fg(COLOR_SUBAGENT_COMPLETE),
+                ),
+                Span::styled(
+                    display_text,
+                    Style::default().fg(COLOR_SUBAGENT_COMPLETE),
+                ),
+            ]));
+        }
+    }
+
+    lines
+}
+
+/// Render a block of consecutive subagent events with proper tree connectors
+///
+/// When multiple subagent events are adjacent (indicating parallel execution),
+/// this function renders them with Claude Code CLI-style tree connectors:
+/// - Single subagent: ● Task(description)
+/// - Multiple parallel: ├── for non-last, └── for last
+pub fn render_subagent_events_block(
+    events: &[&SubagentEvent],
+    tick_count: u64,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    if events.is_empty() {
+        return lines;
+    }
+
+    let count = events.len();
+
+    for (i, event) in events.iter().enumerate() {
+        let connector = if count == 1 {
+            TreeConnector::Single
+        } else if i == count - 1 {
+            TreeConnector::LastBranch
+        } else {
+            TreeConnector::Branch
+        };
+
+        lines.extend(render_subagent_event(event, tick_count, connector));
+    }
+
+    lines
+}
+
+/// Render message segments, grouping consecutive subagent events for proper tree connectors
+///
+/// This function processes segments in order, but groups consecutive SubagentEvent segments
+/// to render them with proper tree connectors (├── └── for parallel agents).
+pub fn render_message_segments(
+    segments: &[MessageSegment],
+    tick_count: u64,
+    label: &'static str,
+    label_style: Style,
+) -> (Vec<Line<'static>>, bool) {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut is_first_line = true;
+    let mut i = 0;
+
+    while i < segments.len() {
+        match &segments[i] {
+            MessageSegment::Text(text) => {
+                let mut segment_lines = render_markdown(text);
+                if is_first_line && !segment_lines.is_empty() {
+                    // Prepend label to first line of first text segment
+                    let first_line = segment_lines.remove(0);
+                    let mut first_spans = vec![Span::styled(label, label_style)];
+                    first_spans.extend(first_line.spans);
+                    lines.push(Line::from(first_spans));
+                    is_first_line = false;
+                }
+                lines.extend(segment_lines);
+                i += 1;
+            }
+            MessageSegment::ToolEvent(event) => {
+                if is_first_line {
+                    // No text before first tool event, show label first
+                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                    is_first_line = false;
+                }
+                lines.push(render_tool_event(event, tick_count));
+
+                // Add result preview if available (only for completed tools)
+                if event.duration_secs.is_some() {
+                    if let Some(preview_line) = render_tool_result_preview(event) {
+                        lines.push(preview_line);
+                    }
+                }
+                i += 1;
+            }
+            MessageSegment::SubagentEvent(_) => {
+                if is_first_line {
+                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                    is_first_line = false;
+                }
+
+                // Collect consecutive subagent events
+                let mut subagent_events: Vec<&SubagentEvent> = Vec::new();
+                while i < segments.len() {
+                    if let MessageSegment::SubagentEvent(event) = &segments[i] {
+                        subagent_events.push(event);
+                        i += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                // Render the block with tree connectors
+                lines.extend(render_subagent_events_block(&subagent_events, tick_count));
+            }
+        }
+    }
+
+    (lines, is_first_line)
+}
+
+// ============================================================================
 // Legacy Tool Status Functions (kept for potential future use)
 // ============================================================================
 
@@ -678,49 +913,15 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                 );
 
                 // For assistant messages with segments, render segments in order (interleaved)
-                // This shows text and tool events in the order they occurred
+                // This shows text, tool events, and subagent events in the order they occurred
                 if message.role == MessageRole::Assistant && !message.segments.is_empty() {
-                    let mut is_first_line = true;
-
-                    for segment in &message.segments {
-                        match segment {
-                            MessageSegment::Text(text) => {
-                                
-                                let mut segment_lines = render_markdown(text);
-                                if is_first_line && !segment_lines.is_empty() {
-                                    // Prepend label to first line of first text segment
-                                    let first_line = segment_lines.remove(0);
-                                    let mut first_spans = vec![Span::styled(label, label_style)];
-                                    first_spans.extend(first_line.spans);
-                                    lines.push(Line::from(first_spans));
-                                    is_first_line = false;
-                                }
-                                lines.extend(segment_lines);
-                            }
-                            MessageSegment::ToolEvent(event) => {
-                                if is_first_line {
-                                    // No text before first tool event, show label first
-                                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                                    is_first_line = false;
-                                }
-                                lines.push(render_tool_event(event, app.tick_count));
-
-                                // Add result preview if available (only for completed tools)
-                                if event.duration_secs.is_some() {
-                                    if let Some(preview_line) = render_tool_result_preview(event) {
-                                        lines.push(preview_line);
-                                    }
-                                }
-                            }
-                            MessageSegment::SubagentEvent(_event) => {
-                                // TODO: Render subagent event in Phase 4
-                                if is_first_line {
-                                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                                    is_first_line = false;
-                                }
-                            }
-                        }
-                    }
+                    let (segment_lines, is_first_line) = render_message_segments(
+                        &message.segments,
+                        app.tick_count,
+                        label,
+                        label_style,
+                    );
+                    lines.extend(segment_lines);
 
                     // If we never added any content, show label with cursor
                     if is_first_line {
@@ -775,50 +976,16 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     }
                 }
             } else {
-                // Display completed message with interleaved text and tool events
+                // Display completed message with interleaved text, tool events, and subagent events
                 // For assistant messages with segments, render segments in order
                 if message.role == MessageRole::Assistant && !message.segments.is_empty() {
-                    let mut is_first_line = true;
-
-                    for segment in &message.segments {
-                        match segment {
-                            MessageSegment::Text(text) => {
-                                
-                                let mut segment_lines = render_markdown(text);
-                                if is_first_line && !segment_lines.is_empty() {
-                                    // Prepend label to first line of first text segment
-                                    let first_line = segment_lines.remove(0);
-                                    let mut first_spans = vec![Span::styled(label, label_style)];
-                                    first_spans.extend(first_line.spans);
-                                    lines.push(Line::from(first_spans));
-                                    is_first_line = false;
-                                }
-                                lines.extend(segment_lines);
-                            }
-                            MessageSegment::ToolEvent(event) => {
-                                if is_first_line {
-                                    // No text before first tool event, show label first
-                                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                                    is_first_line = false;
-                                }
-                                lines.push(render_tool_event(event, app.tick_count));
-
-                                // Add result preview if available (only for completed tools)
-                                if event.duration_secs.is_some() {
-                                    if let Some(preview_line) = render_tool_result_preview(event) {
-                                        lines.push(preview_line);
-                                    }
-                                }
-                            }
-                            MessageSegment::SubagentEvent(_event) => {
-                                // TODO: Render subagent event in Phase 4
-                                if is_first_line {
-                                    lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                                    is_first_line = false;
-                                }
-                            }
-                        }
-                    }
+                    let (segment_lines, is_first_line) = render_message_segments(
+                        &message.segments,
+                        app.tick_count,
+                        label,
+                        label_style,
+                    );
+                    lines.extend(segment_lines);
 
                     // If we never added any content, show just the label
                     if is_first_line {

@@ -66,6 +66,23 @@ pub fn get_tool_icon(function_name: &str) -> &'static str {
     }
 }
 
+/// Returns the appropriate icon for a subagent based on its type
+///
+/// # Arguments
+/// * `subagent_type` - The type of subagent (e.g., "Explore", "Bash", "general-purpose")
+///
+/// # Returns
+/// A static string with the icon character
+pub fn get_subagent_icon(subagent_type: &str) -> &'static str {
+    match subagent_type {
+        "Explore" => "🔍",
+        "Bash" => "$",
+        "Plan" => "📋",
+        "general-purpose" => "🤖",
+        _ => "●"
+    }
+}
+
 /// Truncate a string to max_len characters, adding "..." if truncated
 pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {

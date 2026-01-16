@@ -1951,4 +1951,423 @@ mod tests {
         assert!(text3.contains("✓")); // Success indicator
         assert!(text3.contains("Writing /tmp/test.txt"));
     }
+
+    // ============= Phase 8: Subagent Rendering Tests =============
+
+    #[test]
+    fn test_get_subagent_icon() {
+        use helpers::get_subagent_icon;
+
+        assert_eq!(get_subagent_icon("Explore"), "🔍");
+        assert_eq!(get_subagent_icon("Bash"), "$");
+        assert_eq!(get_subagent_icon("Plan"), "📋");
+        assert_eq!(get_subagent_icon("general-purpose"), "🤖");
+        assert_eq!(get_subagent_icon("unknown"), "●");
+        assert_eq!(get_subagent_icon("CustomAgent"), "●");
+    }
+
+    #[test]
+    fn test_tree_connector_as_str() {
+        use messages::TreeConnector;
+
+        assert_eq!(TreeConnector::Single.as_str(), "● ");
+        assert_eq!(TreeConnector::Branch.as_str(), "├── ");
+        assert_eq!(TreeConnector::LastBranch.as_str(), "└── ");
+    }
+
+    #[test]
+    fn test_render_subagent_event_running() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let event = SubagentEvent::new(
+            "task-123".to_string(),
+            "Exploring codebase".to_string(),
+            "Explore".to_string(),
+        );
+
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+
+        assert!(!lines.is_empty());
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain the bullet point and Task
+        assert!(line_text.contains("●"));
+        assert!(line_text.contains("Task("));
+        assert!(line_text.contains("Exploring codebase"));
+        assert!(line_text.contains(")"));
+    }
+
+    #[test]
+    fn test_render_subagent_event_running_with_progress() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let mut event = SubagentEvent::new(
+            "task-123".to_string(),
+            "Analyzing files".to_string(),
+            "Explore".to_string(),
+        );
+        event.update_progress(Some("Reading src/main.rs".to_string()), true);
+
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+
+        assert_eq!(lines.len(), 2); // Main line + progress line
+        let progress_text: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(progress_text.contains("Reading src/main.rs"));
+    }
+
+    #[test]
+    fn test_render_subagent_event_complete() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let mut event = SubagentEvent::new(
+            "task-456".to_string(),
+            "Task completed".to_string(),
+            "general-purpose".to_string(),
+        );
+        event.tool_call_count = 5;
+        event.complete(Some("Found 10 files".to_string()));
+
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+
+        assert_eq!(lines.len(), 1);
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+
+        assert!(line_text.contains("Done"));
+        assert!(line_text.contains("5 tool uses"));
+        assert!(line_text.contains("Found 10 files"));
+    }
+
+    #[test]
+    fn test_render_subagent_event_complete_single_tool_use() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let mut event = SubagentEvent::new(
+            "task-789".to_string(),
+            "Quick task".to_string(),
+            "Bash".to_string(),
+        );
+        event.tool_call_count = 1;
+        event.complete(None);
+
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(line_text.contains("1 tool use")); // Singular
+        assert!(!line_text.contains("1 tool uses")); // Not plural
+    }
+
+    #[test]
+    fn test_render_subagent_event_with_branch_connector() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let event = SubagentEvent::new(
+            "task-branch".to_string(),
+            "Branch task".to_string(),
+            "Explore".to_string(),
+        );
+
+        let lines = render_subagent_event(&event, 0, TreeConnector::Branch);
+
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(line_text.contains("├──"));
+    }
+
+    #[test]
+    fn test_render_subagent_event_with_last_branch_connector() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let event = SubagentEvent::new(
+            "task-last".to_string(),
+            "Last task".to_string(),
+            "Explore".to_string(),
+        );
+
+        let lines = render_subagent_event(&event, 0, TreeConnector::LastBranch);
+
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(line_text.contains("└──"));
+    }
+
+    #[test]
+    fn test_render_subagent_events_block_single() {
+        use crate::models::SubagentEvent;
+        use messages::render_subagent_events_block;
+
+        let event = SubagentEvent::new(
+            "task-single".to_string(),
+            "Single task".to_string(),
+            "Explore".to_string(),
+        );
+
+        let events: Vec<&SubagentEvent> = vec![&event];
+        let lines = render_subagent_events_block(&events, 0);
+
+        // Should use Single connector (●)
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(line_text.contains("●"));
+        assert!(!line_text.contains("├──"));
+        assert!(!line_text.contains("└──"));
+    }
+
+    #[test]
+    fn test_render_subagent_events_block_multiple() {
+        use crate::models::SubagentEvent;
+        use messages::render_subagent_events_block;
+
+        let event1 = SubagentEvent::new(
+            "task-1".to_string(),
+            "First task".to_string(),
+            "Explore".to_string(),
+        );
+        let event2 = SubagentEvent::new(
+            "task-2".to_string(),
+            "Second task".to_string(),
+            "Bash".to_string(),
+        );
+        let event3 = SubagentEvent::new(
+            "task-3".to_string(),
+            "Third task".to_string(),
+            "general-purpose".to_string(),
+        );
+
+        let events: Vec<&SubagentEvent> = vec![&event1, &event2, &event3];
+        let lines = render_subagent_events_block(&events, 0);
+
+        // Should have lines for each event (running events have 1 line each)
+        assert!(lines.len() >= 3);
+
+        // Collect all text
+        let all_text: String = lines.iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // First and second should use Branch (├──), last should use LastBranch (└──)
+        assert!(all_text.contains("├──"));
+        assert!(all_text.contains("└──"));
+        // Should not use Single (●) for multiple items
+        assert!(!all_text.contains("● "));
+    }
+
+    #[test]
+    fn test_render_subagent_events_block_empty() {
+        use crate::models::SubagentEvent;
+        use messages::render_subagent_events_block;
+
+        let events: Vec<&SubagentEvent> = vec![];
+        let lines = render_subagent_events_block(&events, 0);
+
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_render_subagent_event_summary_truncation() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let mut event = SubagentEvent::new(
+            "task-long".to_string(),
+            "Task with long summary".to_string(),
+            "Explore".to_string(),
+        );
+        event.tool_call_count = 3;
+        let long_summary = "This is a very long summary that should be truncated because it exceeds the maximum allowed length for display purposes";
+        event.complete(Some(long_summary.to_string()));
+
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        // Should be truncated with ellipsis
+        assert!(line_text.contains("..."));
+        // Should not contain the full summary
+        assert!(!line_text.contains("for display purposes"));
+    }
+
+    #[test]
+    fn test_render_subagent_event_spinner_animation() {
+        use crate::models::SubagentEvent;
+        use messages::{render_subagent_event, TreeConnector};
+
+        let event = SubagentEvent::new(
+            "task-spinner".to_string(),
+            "Spinner test".to_string(),
+            "Explore".to_string(),
+        );
+
+        // Test at different tick counts to verify spinner changes
+        let lines_tick_0 = render_subagent_event(&event, 0, TreeConnector::Single);
+        let lines_tick_5 = render_subagent_event(&event, 5, TreeConnector::Single);
+
+        let text_0: String = lines_tick_0[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        let text_5: String = lines_tick_5[0].spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Spinner frame should change between tick 0 and tick 5
+        // (frames are at indices 0 and 5 in SPINNER_FRAMES)
+        assert_ne!(text_0, text_5);
+    }
+
+    #[test]
+    fn test_conversation_screen_renders_subagent_events() {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a streaming thread with a subagent event
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+
+        // Get the streaming message and add a subagent event
+        if let Some(messages) = app.cache.get_messages_mut(&thread_id) {
+            if let Some(msg) = messages.iter_mut().find(|m| m.is_streaming) {
+                msg.start_subagent_event(
+                    "task-render".to_string(),
+                    "Exploring codebase".to_string(),
+                    "Explore".to_string(),
+                );
+            }
+        }
+
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should show the subagent event
+        assert!(
+            buffer_str.contains("Task("),
+            "Should show Task( in subagent event"
+        );
+        assert!(
+            buffer_str.contains("Exploring codebase"),
+            "Should show subagent description"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_renders_completed_subagent() {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a thread with completed subagent
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+
+        if let Some(messages) = app.cache.get_messages_mut(&thread_id) {
+            if let Some(msg) = messages.iter_mut().find(|m| m.is_streaming) {
+                msg.start_subagent_event(
+                    "task-complete".to_string(),
+                    "Analysis task".to_string(),
+                    "general-purpose".to_string(),
+                );
+                msg.complete_subagent_event(
+                    "task-complete",
+                    Some("Found 5 issues".to_string()),
+                    3,
+                );
+            }
+        }
+
+        app.cache.finalize_message(&thread_id, 1);
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should show completed status
+        assert!(
+            buffer_str.contains("Done"),
+            "Should show 'Done' for completed subagent"
+        );
+        assert!(
+            buffer_str.contains("3 tool uses"),
+            "Should show tool count"
+        );
+        assert!(
+            buffer_str.contains("Found 5 issues"),
+            "Should show summary"
+        );
+    }
+
+    #[test]
+    fn test_conversation_screen_renders_parallel_subagents() {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+
+        // Create a thread with multiple parallel subagents
+        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+
+        if let Some(messages) = app.cache.get_messages_mut(&thread_id) {
+            if let Some(msg) = messages.iter_mut().find(|m| m.is_streaming) {
+                // Add multiple subagent events consecutively (simulating parallel execution)
+                msg.start_subagent_event(
+                    "task-1".to_string(),
+                    "First parallel task".to_string(),
+                    "Explore".to_string(),
+                );
+                msg.start_subagent_event(
+                    "task-2".to_string(),
+                    "Second parallel task".to_string(),
+                    "Bash".to_string(),
+                );
+            }
+        }
+
+        app.active_thread_id = Some(thread_id);
+
+        terminal
+            .draw(|f| {
+                render(f, &app);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+
+        // Should show tree connectors for parallel tasks
+        assert!(
+            buffer_str.contains("├──") || buffer_str.contains("└──"),
+            "Should show tree connectors for parallel subagents"
+        );
+        assert!(
+            buffer_str.contains("First parallel task"),
+            "Should show first task description"
+        );
+        assert!(
+            buffer_str.contains("Second parallel task"),
+            "Should show second task description"
+        );
+    }
 }
