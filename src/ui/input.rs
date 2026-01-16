@@ -40,7 +40,7 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5), // Input box (needs 5 for border + multi-line content)
+            Constraint::Length(3), // Input box (compact: border + text + border)
             Constraint::Length(1), // Keybinds
         ])
         .split(inner);
@@ -80,7 +80,7 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5), // Input box
+            Constraint::Length(3), // Input box (compact: border + text + border)
             Constraint::Length(1), // Keybinds
         ])
         .split(inner);
