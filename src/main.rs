@@ -1,4 +1,4 @@
-use spoq::app::{App, AppMessage, Focus, Screen};
+use spoq::app::{App, AppMessage, Focus, Screen, ScrollBoundary};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
@@ -386,6 +386,11 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         let amount = if near_bottom { 1 } else { 3 };
                                         app.conversation_scroll =
                                             app.conversation_scroll.saturating_sub(amount);
+                                        // Detect boundary hit at bottom (scroll = 0)
+                                        if app.conversation_scroll == 0 {
+                                            app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+                                            app.boundary_hit_tick = app.tick_count;
+                                        }
                                     }
                                 }
                                 MouseEventKind::ScrollUp => {
@@ -399,6 +404,11 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         app.conversation_scroll = app.conversation_scroll
                                             .saturating_add(amount)
                                             .min(app.max_scroll);
+                                        // Detect boundary hit at top (scroll = max_scroll)
+                                        if app.conversation_scroll == app.max_scroll && app.max_scroll > 0 {
+                                            app.scroll_boundary_hit = Some(ScrollBoundary::Top);
+                                            app.boundary_hit_tick = app.tick_count;
+                                        }
                                     }
                                 }
                                 _ => {}
