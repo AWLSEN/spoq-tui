@@ -2418,4 +2418,297 @@ mod tests {
         // Should not panic, just do nothing
         assert!(app.cache.get_thread("nonexistent-thread").is_none());
     }
+
+    // ============= Subagent Handler Tests =============
+
+    #[test]
+    fn test_handle_subagent_started() {
+        use crate::models::SubagentEventStatus;
+
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-123".to_string(),
+            description: "Exploring codebase".to_string(),
+            subagent_type: "Explore".to_string(),
+        });
+
+        // Verify subagent event was added to streaming message
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+
+        let subagent = assistant_msg.get_subagent_event("task-123");
+        assert!(subagent.is_some());
+        let subagent = subagent.unwrap();
+        assert_eq!(subagent.description, "Exploring codebase");
+        assert_eq!(subagent.subagent_type, "Explore");
+        assert_eq!(subagent.status, SubagentEventStatus::Running);
+    }
+
+    #[test]
+    fn test_handle_subagent_started_without_active_thread() {
+        let mut app = App::default();
+        // No active thread set
+
+        // Should not panic when handling SubagentStarted without active thread
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-orphan".to_string(),
+            description: "Orphan task".to_string(),
+            subagent_type: "general-purpose".to_string(),
+        });
+
+        // No crash means success - subagent event simply not stored
+    }
+
+    #[test]
+    fn test_handle_subagent_progress() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Start subagent first
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-456".to_string(),
+            description: "Running tests".to_string(),
+            subagent_type: "test-agent".to_string(),
+        });
+
+        // Send progress update
+        app.handle_message(AppMessage::SubagentProgress {
+            task_id: "task-456".to_string(),
+            message: "Scanning test files".to_string(),
+        });
+
+        // Verify progress was updated
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+
+        let subagent = assistant_msg.get_subagent_event("task-456").unwrap();
+        assert_eq!(subagent.progress_message, Some("Scanning test files".to_string()));
+    }
+
+    #[test]
+    fn test_handle_subagent_progress_multiple_updates() {
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Start subagent
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-multi".to_string(),
+            description: "Multi-step task".to_string(),
+            subagent_type: "Explore".to_string(),
+        });
+
+        // Send multiple progress updates
+        app.handle_message(AppMessage::SubagentProgress {
+            task_id: "task-multi".to_string(),
+            message: "Step 1".to_string(),
+        });
+        app.handle_message(AppMessage::SubagentProgress {
+            task_id: "task-multi".to_string(),
+            message: "Step 2".to_string(),
+        });
+        app.handle_message(AppMessage::SubagentProgress {
+            task_id: "task-multi".to_string(),
+            message: "Step 3".to_string(),
+        });
+
+        // Verify last progress message is stored
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+
+        let subagent = assistant_msg.get_subagent_event("task-multi").unwrap();
+        assert_eq!(subagent.progress_message, Some("Step 3".to_string()));
+    }
+
+    #[test]
+    fn test_handle_subagent_completed_with_summary() {
+        use crate::models::SubagentEventStatus;
+
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Start subagent
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-789".to_string(),
+            description: "Code analysis".to_string(),
+            subagent_type: "general-purpose".to_string(),
+        });
+
+        // Complete subagent with summary
+        app.handle_message(AppMessage::SubagentCompleted {
+            task_id: "task-789".to_string(),
+            summary: "Found 5 issues".to_string(),
+            tool_call_count: Some(12),
+        });
+
+        // Verify subagent was completed
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+
+        let subagent = assistant_msg.get_subagent_event("task-789").unwrap();
+        assert_eq!(subagent.status, SubagentEventStatus::Complete);
+        assert_eq!(subagent.summary, Some("Found 5 issues".to_string()));
+        assert_eq!(subagent.tool_call_count, 12);
+    }
+
+    #[test]
+    fn test_handle_subagent_completed_without_summary() {
+        use crate::models::SubagentEventStatus;
+
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Start subagent
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-no-summary".to_string(),
+            description: "Quick task".to_string(),
+            subagent_type: "Bash".to_string(),
+        });
+
+        // Complete subagent without summary
+        app.handle_message(AppMessage::SubagentCompleted {
+            task_id: "task-no-summary".to_string(),
+            summary: String::new(), // Empty summary
+            tool_call_count: None,
+        });
+
+        // Verify subagent was completed
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+
+        let subagent = assistant_msg.get_subagent_event("task-no-summary").unwrap();
+        assert_eq!(subagent.status, SubagentEventStatus::Complete);
+        // Empty summary is converted to None by the handler
+        assert!(subagent.summary.is_none());
+        assert_eq!(subagent.tool_call_count, 0);
+    }
+
+    #[test]
+    fn test_handle_subagent_full_lifecycle() {
+        use crate::models::SubagentEventStatus;
+
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Start
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "lifecycle-task".to_string(),
+            description: "Full lifecycle test".to_string(),
+            subagent_type: "Explore".to_string(),
+        });
+
+        // Verify started state
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+        let subagent = assistant_msg.get_subagent_event("lifecycle-task").unwrap();
+        assert_eq!(subagent.status, SubagentEventStatus::Running);
+        assert!(subagent.progress_message.is_none());
+        assert!(subagent.summary.is_none());
+
+        // Progress
+        app.handle_message(AppMessage::SubagentProgress {
+            task_id: "lifecycle-task".to_string(),
+            message: "In progress".to_string(),
+        });
+
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+        let subagent = assistant_msg.get_subagent_event("lifecycle-task").unwrap();
+        assert_eq!(subagent.status, SubagentEventStatus::Running);
+        assert_eq!(subagent.progress_message, Some("In progress".to_string()));
+
+        // Complete
+        app.handle_message(AppMessage::SubagentCompleted {
+            task_id: "lifecycle-task".to_string(),
+            summary: "Task completed successfully".to_string(),
+            tool_call_count: Some(5),
+        });
+
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+        let subagent = assistant_msg.get_subagent_event("lifecycle-task").unwrap();
+        assert_eq!(subagent.status, SubagentEventStatus::Complete);
+        assert_eq!(subagent.summary, Some("Task completed successfully".to_string()));
+        assert_eq!(subagent.tool_call_count, 5);
+    }
+
+    #[test]
+    fn test_handle_multiple_subagents() {
+        use crate::models::SubagentEventStatus;
+
+        let mut app = App::default();
+        let thread_id = app.cache.create_streaming_thread("Test".to_string());
+        app.active_thread_id = Some(thread_id.clone());
+
+        // Start multiple subagents
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-a".to_string(),
+            description: "Task A".to_string(),
+            subagent_type: "Explore".to_string(),
+        });
+        app.handle_message(AppMessage::SubagentStarted {
+            task_id: "task-b".to_string(),
+            description: "Task B".to_string(),
+            subagent_type: "general-purpose".to_string(),
+        });
+
+        // Progress on task B
+        app.handle_message(AppMessage::SubagentProgress {
+            task_id: "task-b".to_string(),
+            message: "B progress".to_string(),
+        });
+
+        // Complete task A
+        app.handle_message(AppMessage::SubagentCompleted {
+            task_id: "task-a".to_string(),
+            summary: "A done".to_string(),
+            tool_call_count: Some(3),
+        });
+
+        // Verify independent state
+        let messages = app.cache.get_messages(&thread_id).unwrap();
+        let assistant_msg = messages
+            .iter()
+            .find(|m| m.role == MessageRole::Assistant)
+            .unwrap();
+
+        let subagent_a = assistant_msg.get_subagent_event("task-a").unwrap();
+        assert_eq!(subagent_a.status, SubagentEventStatus::Complete);
+        assert_eq!(subagent_a.summary, Some("A done".to_string()));
+
+        let subagent_b = assistant_msg.get_subagent_event("task-b").unwrap();
+        assert_eq!(subagent_b.status, SubagentEventStatus::Running);
+        assert_eq!(subagent_b.progress_message, Some("B progress".to_string()));
+    }
 }

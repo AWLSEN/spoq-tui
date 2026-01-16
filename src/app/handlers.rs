@@ -435,24 +435,95 @@ impl App {
                 );
             }
             AppMessage::SubagentStarted {
-                task_id: _,
-                description: _,
-                subagent_type: _,
+                task_id,
+                description,
+                subagent_type,
             } => {
-                // TODO: Handle subagent started event in Phase 4
+                // Add subagent event to the streaming message
+                if let Some(thread_id) = &self.active_thread_id {
+                    self.cache.start_subagent_in_message(
+                        thread_id,
+                        task_id.clone(),
+                        description.clone(),
+                        subagent_type.clone(),
+                    );
+                }
+                // Emit StateChange for subagent started
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Subagent started",
+                        format!(
+                            "task: {}, type: {}, desc: {}",
+                            task_id,
+                            subagent_type,
+                            truncate_for_debug(&description, 30)
+                        ),
+                    )),
+                    self.active_thread_id.as_deref(),
+                );
             }
-            AppMessage::SubagentProgress {
-                task_id: _,
-                message: _,
-            } => {
-                // TODO: Handle subagent progress event in Phase 4
+            AppMessage::SubagentProgress { task_id, message } => {
+                // Update subagent progress in the message
+                if let Some(thread_id) = &self.active_thread_id {
+                    self.cache
+                        .update_subagent_progress(thread_id, &task_id, message.clone());
+                }
+                // Emit StateChange for subagent progress
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Subagent progress",
+                        format!(
+                            "task: {}, msg: {}",
+                            task_id,
+                            truncate_for_debug(&message, 40)
+                        ),
+                    )),
+                    self.active_thread_id.as_deref(),
+                );
             }
             AppMessage::SubagentCompleted {
-                task_id: _,
-                summary: _,
-                tool_call_count: _,
+                task_id,
+                summary,
+                tool_call_count,
             } => {
-                // TODO: Handle subagent completed event in Phase 4
+                // Convert empty string to None for optional summary
+                let summary_opt = if summary.is_empty() {
+                    None
+                } else {
+                    Some(summary.clone())
+                };
+
+                // Mark subagent as completed in the message
+                if let Some(thread_id) = &self.active_thread_id {
+                    self.cache.complete_subagent_in_message(
+                        thread_id,
+                        &task_id,
+                        summary_opt.clone(),
+                        tool_call_count.unwrap_or(0) as usize,
+                    );
+                }
+                // Emit StateChange for subagent completion
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Subagent completed",
+                        format!(
+                            "task: {}, summary: {}, tools: {:?}",
+                            task_id,
+                            summary_opt
+                                .as_ref()
+                                .map(|s| truncate_for_debug(s, 30))
+                                .unwrap_or_else(|| "none".to_string()),
+                            tool_call_count
+                        ),
+                    )),
+                    self.active_thread_id.as_deref(),
+                );
             }
         }
     }
