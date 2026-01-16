@@ -12,6 +12,7 @@ const EVICTION_TIMEOUT_SECS: u64 = 30 * 60;
 /// Local cache for threads and messages
 /// Will fetch from backend in future phases
 #[derive(Debug)]
+#[derive(Default)]
 pub struct ThreadCache {
     /// Cached threads indexed by thread ID
     threads: HashMap<String, Thread>,
@@ -29,20 +30,6 @@ pub struct ThreadCache {
     focused_error_index: usize,
     /// Last accessed time for each thread (for LRU eviction)
     last_accessed: HashMap<String, Instant>,
-}
-
-impl Default for ThreadCache {
-    fn default() -> Self {
-        Self {
-            threads: HashMap::new(),
-            messages: HashMap::new(),
-            thread_order: Vec::new(),
-            pending_to_real: HashMap::new(),
-            errors: HashMap::new(),
-            focused_error_index: 0,
-            last_accessed: HashMap::new(),
-        }
-    }
 }
 
 impl ThreadCache {

@@ -95,7 +95,7 @@ impl WsClient {
 
         // Spawn the background connection handler
         tokio::spawn(async move {
-            run_connection_loop(
+            run_connection_loop(ConnectionLoopParams {
                 url,
                 config,
                 ws_sink,
@@ -103,8 +103,8 @@ impl WsClient {
                 incoming_tx,
                 response_rx,
                 state_tx,
-                shutdown_clone,
-            )
+                shutdown: shutdown_clone,
+            })
             .await;
         });
 
@@ -162,26 +162,39 @@ impl Drop for WsClient {
     }
 }
 
-/// Run the main connection loop with reconnection logic
-async fn run_connection_loop(
+/// Parameters for the connection loop
+struct ConnectionLoopParams {
     url: String,
     config: WsClientConfig,
-    mut ws_sink: futures_util::stream::SplitSink<
+    ws_sink: futures_util::stream::SplitSink<
         tokio_tungstenite::WebSocketStream<
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
         Message,
     >,
-    mut ws_stream: futures_util::stream::SplitStream<
+    ws_stream: futures_util::stream::SplitStream<
         tokio_tungstenite::WebSocketStream<
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
     >,
     incoming_tx: mpsc::Sender<WsIncomingMessage>,
-    mut response_rx: mpsc::Receiver<WsCommandResponse>,
+    response_rx: mpsc::Receiver<WsCommandResponse>,
     state_tx: watch::Sender<WsConnectionState>,
     shutdown: Arc<AtomicBool>,
-) {
+}
+
+/// Run the main connection loop with reconnection logic
+async fn run_connection_loop(params: ConnectionLoopParams) {
+    let ConnectionLoopParams {
+        url,
+        config,
+        mut ws_sink,
+        mut ws_stream,
+        incoming_tx,
+        mut response_rx,
+        state_tx,
+        shutdown,
+    } = params;
     loop {
         if shutdown.load(Ordering::SeqCst) {
             debug!("Shutdown signal received, closing connection");

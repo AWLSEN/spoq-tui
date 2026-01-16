@@ -107,6 +107,7 @@ pub enum ProgrammingMode {
 
 /// Thread switcher dialog state (Tab to open)
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct ThreadSwitcher {
     /// Whether the thread switcher dialog is visible
     pub visible: bool,
@@ -116,17 +117,6 @@ pub struct ThreadSwitcher {
     pub scroll_offset: usize,
     /// Timestamp of last navigation key press (for auto-confirm on release)
     pub last_nav_time: Option<std::time::Instant>,
-}
-
-impl Default for ThreadSwitcher {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            selected_index: 0,
-            scroll_offset: 0,
-            last_nav_time: None,
-        }
-    }
 }
 
 /// Main application state
