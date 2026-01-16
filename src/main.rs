@@ -380,16 +380,25 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll down to see newer content (decrease scroll offset)
-                                        // Minimum is 0 (showing latest at bottom)
+                                        // Acceleration: scroll 3 lines when far from boundary, 1 line when near
+                                        let threshold = (app.max_scroll / 10).max(5);
+                                        let near_bottom = app.conversation_scroll <= threshold;
+                                        let amount = if near_bottom { 1 } else { 3 };
                                         app.conversation_scroll =
-                                            app.conversation_scroll.saturating_sub(1);
+                                            app.conversation_scroll.saturating_sub(amount);
                                     }
                                 }
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll up to see older content (increase scroll offset)
-                                        app.conversation_scroll =
-                                            app.conversation_scroll.saturating_add(1);
+                                        // Acceleration: scroll 3 lines when far from boundary, 1 line when near
+                                        // Immediate clamping prevents "sticky" scrolling at boundaries
+                                        let threshold = (app.max_scroll / 10).max(5);
+                                        let near_top = app.conversation_scroll >= app.max_scroll.saturating_sub(threshold);
+                                        let amount = if near_top { 1 } else { 3 };
+                                        app.conversation_scroll = app.conversation_scroll
+                                            .saturating_add(amount)
+                                            .min(app.max_scroll);
                                     }
                                 }
                                 _ => {}
