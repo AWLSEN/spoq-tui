@@ -70,7 +70,7 @@ impl App {
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
-            self.conversation_scroll = 0;
+            self.reset_scroll();
             (pending_id, true)
         } else if let Some(existing_id) = &self.active_thread_id {
             // CONTINUING existing thread (we're on Conversation screen)
@@ -97,7 +97,7 @@ impl App {
                 .cache
                 .create_pending_thread(content.clone(), new_thread_type);
             self.active_thread_id = Some(pending_id.clone());
-            self.conversation_scroll = 0;
+            self.reset_scroll();
             (pending_id, true)
         };
 

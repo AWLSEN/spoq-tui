@@ -201,6 +201,10 @@ pub struct App {
     pub scroll_boundary_hit: Option<ScrollBoundary>,
     /// Tick counter when boundary was hit (for timing the highlight)
     pub boundary_hit_tick: u64,
+    /// Scroll velocity for momentum scrolling (lines per tick, positive = up/older)
+    pub scroll_velocity: f32,
+    /// Precise scroll position for smooth scrolling (fractional lines)
+    pub scroll_position: f32,
 }
 
 impl App {
@@ -265,6 +269,8 @@ impl App {
             last_tab_press: None,
             scroll_boundary_hit: None,
             boundary_hit_tick: 0,
+            scroll_velocity: 0.0,
+            scroll_position: 0.0,
         })
     }
 

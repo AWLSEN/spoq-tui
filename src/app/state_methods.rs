@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use super::{App, AppMessage};
+use super::{App, AppMessage, ScrollBoundary};
 
 impl App {
     /// Get a clone of the message sender for passing to async tasks
@@ -30,9 +30,59 @@ impl App {
         self.stream_error = None;
     }
 
-    /// Increment the tick counter for animations
+    /// Reset scroll state to bottom (newest content)
+    pub fn reset_scroll(&mut self) {
+        self.conversation_scroll = 0;
+        self.scroll_position = 0.0;
+        self.scroll_velocity = 0.0;
+    }
+
+    /// Increment the tick counter for animations and update smooth scrolling
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
+
+        // Update smooth scrolling with momentum
+        self.update_smooth_scroll();
+    }
+
+    /// Update smooth scroll position with velocity and friction
+    fn update_smooth_scroll(&mut self) {
+        // Friction factor: lower = more friction, stops faster
+        const FRICTION: f32 = 0.80;
+        const VELOCITY_THRESHOLD: f32 = 0.05;
+
+        // Skip if no velocity
+        if self.scroll_velocity.abs() < VELOCITY_THRESHOLD {
+            self.scroll_velocity = 0.0;
+            return;
+        }
+
+        // Apply velocity to position
+        let new_position = self.scroll_position + self.scroll_velocity;
+
+        // Clamp to valid range [0, max_scroll]
+        let max = self.max_scroll as f32;
+        let clamped_position = new_position.clamp(0.0, max);
+
+        // Check for boundary hits
+        if new_position < 0.0 && self.scroll_position >= 0.0 {
+            // Hit bottom boundary
+            self.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+            self.boundary_hit_tick = self.tick_count;
+            self.scroll_velocity = 0.0; // Stop on boundary hit
+        } else if new_position > max && self.scroll_position <= max && self.max_scroll > 0 {
+            // Hit top boundary
+            self.scroll_boundary_hit = Some(ScrollBoundary::Top);
+            self.boundary_hit_tick = self.tick_count;
+            self.scroll_velocity = 0.0; // Stop on boundary hit
+        } else {
+            // Apply friction when not hitting boundary
+            self.scroll_velocity *= FRICTION;
+        }
+
+        // Update positions
+        self.scroll_position = clamped_position;
+        self.conversation_scroll = clamped_position.round() as u16;
     }
 
     /// Check if the currently active thread is a Programming thread

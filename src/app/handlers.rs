@@ -67,7 +67,7 @@ impl App {
                 );
                 // Auto-scroll to bottom when new content arrives, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
-                    self.conversation_scroll = 0;
+                    self.reset_scroll();
                 }
             }
             AppMessage::ReasoningToken { thread_id, token } => {
@@ -84,7 +84,7 @@ impl App {
                 );
                 // Auto-scroll to bottom when new reasoning content arrives, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
-                    self.conversation_scroll = 0;
+                    self.reset_scroll();
                 }
             }
             AppMessage::StreamComplete {
@@ -121,7 +121,7 @@ impl App {
                 );
                 // Auto-scroll to bottom when stream completes, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
-                    self.conversation_scroll = 0;
+                    self.reset_scroll();
                 }
             }
             AppMessage::StreamError { thread_id: _, error } => {

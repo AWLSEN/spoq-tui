@@ -147,7 +147,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
         })?;
 
         // Poll both keyboard events and message channel using tokio::select!
-        let timeout = tokio::time::sleep(std::time::Duration::from_millis(100));
+        // 16ms tick for smooth 60fps-like scrolling animation
+        let timeout = tokio::time::sleep(std::time::Duration::from_millis(16));
 
         tokio::select! {
             // Handle timeout for UI updates (migration progress, animations, etc.)
@@ -376,18 +377,15 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                         }
                         Event::Mouse(mouse_event) => {
                             match mouse_event.kind {
-                                // Natural scrolling: scroll down = see newer content, scroll up = see older content
+                                // Simple line-based scrolling (like native terminal apps)
+                                // Each scroll event moves 1 line
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll down to see newer content (decrease scroll offset)
-                                        // Acceleration: scroll 3 lines when far from boundary, 1 line when near
-                                        let threshold = (app.max_scroll / 10).max(5);
-                                        let near_bottom = app.conversation_scroll <= threshold;
-                                        let amount = if near_bottom { 1 } else { 3 };
-                                        app.conversation_scroll =
-                                            app.conversation_scroll.saturating_sub(amount);
-                                        // Detect boundary hit at bottom (scroll = 0)
-                                        if app.conversation_scroll == 0 {
+                                        // Scroll down = see newer content = decrease offset
+                                        if app.conversation_scroll > 0 {
+                                            app.conversation_scroll -= 1;
+                                            app.scroll_position = app.conversation_scroll as f32;
+                                        } else {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
                                             app.boundary_hit_tick = app.tick_count;
                                         }
@@ -395,17 +393,11 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 }
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll up to see older content (increase scroll offset)
-                                        // Acceleration: scroll 3 lines when far from boundary, 1 line when near
-                                        // Immediate clamping prevents "sticky" scrolling at boundaries
-                                        let threshold = (app.max_scroll / 10).max(5);
-                                        let near_top = app.conversation_scroll >= app.max_scroll.saturating_sub(threshold);
-                                        let amount = if near_top { 1 } else { 3 };
-                                        app.conversation_scroll = app.conversation_scroll
-                                            .saturating_add(amount)
-                                            .min(app.max_scroll);
-                                        // Detect boundary hit at top (scroll = max_scroll)
-                                        if app.conversation_scroll == app.max_scroll && app.max_scroll > 0 {
+                                        // Scroll up = see older content = increase offset
+                                        if app.conversation_scroll < app.max_scroll {
+                                            app.conversation_scroll += 1;
+                                            app.scroll_position = app.conversation_scroll as f32;
+                                        } else if app.max_scroll > 0 {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Top);
                                             app.boundary_hit_tick = app.tick_count;
                                         }

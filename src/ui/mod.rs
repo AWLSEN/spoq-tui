@@ -97,6 +97,8 @@ mod tests {
             last_tab_press: None,
             scroll_boundary_hit: None,
             boundary_hit_tick: 0,
+            scroll_velocity: 0.0,
+            scroll_position: 0.0,
         }
     }
 
@@ -1230,7 +1232,7 @@ mod tests {
 
     #[test]
     fn test_contextual_keybinds_command_deck() {
-        let mut app = create_test_app();
+        let app = create_test_app();
         // app.screen defaults to CommandDeck
 
         let keybinds = build_contextual_keybinds(&app);

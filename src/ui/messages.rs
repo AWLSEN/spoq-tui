@@ -1069,8 +1069,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
         .scroll((actual_scroll, 0));
     frame.render_widget(messages_widget, inner);
 
-    // Render scroll boundary highlight for visual feedback (~200ms, ~4 ticks at 50ms tick rate)
-    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 4;
+    // Render scroll boundary highlight for visual feedback (~200ms at 16ms tick rate)
+    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 12;
     if let Some(boundary) = app.scroll_boundary_hit {
         let ticks_since_hit = app.tick_count.saturating_sub(app.boundary_hit_tick);
         if ticks_since_hit < BOUNDARY_HIGHLIGHT_TICKS {

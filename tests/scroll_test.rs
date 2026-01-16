@@ -338,9 +338,9 @@ fn test_boundary_state_clears_after_timeout() {
     let mut app = create_test_app_in_conversation();
     app.scroll_boundary_hit = Some(ScrollBoundary::Top);
     app.boundary_hit_tick = 100;
-    app.tick_count = 105; // 5 ticks later (past the 4-tick threshold)
+    app.tick_count = 115; // 15 ticks later (past the 12-tick threshold at 16ms = ~200ms)
 
-    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 4;
+    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 12;
     let ticks_since_hit = app.tick_count.saturating_sub(app.boundary_hit_tick);
 
     if ticks_since_hit >= BOUNDARY_HIGHLIGHT_TICKS {
@@ -349,7 +349,7 @@ fn test_boundary_state_clears_after_timeout() {
 
     assert!(
         app.scroll_boundary_hit.is_none(),
-        "Boundary state should clear after timeout (4 ticks)"
+        "Boundary state should clear after timeout (12 ticks)"
     );
 }
 
@@ -358,9 +358,9 @@ fn test_boundary_state_persists_within_timeout() {
     let mut app = create_test_app_in_conversation();
     app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
     app.boundary_hit_tick = 100;
-    app.tick_count = 102; // 2 ticks later (within the 4-tick threshold)
+    app.tick_count = 105; // 5 ticks later (within the 12-tick threshold at 16ms = ~200ms)
 
-    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 4;
+    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 12;
     let ticks_since_hit = app.tick_count.saturating_sub(app.boundary_hit_tick);
 
     let should_clear = ticks_since_hit >= BOUNDARY_HIGHLIGHT_TICKS;
@@ -407,4 +407,203 @@ fn test_scroll_does_not_hit_boundary_when_in_middle() {
 
     assert!(!at_bottom, "Should not be at bottom when in middle");
     assert!(!at_top, "Should not be at top when in middle");
+}
+
+// =============================================================================
+// Smooth Scrolling / Momentum Tests
+// =============================================================================
+
+#[test]
+fn test_scroll_velocity_initializes_to_zero() {
+    let app = create_test_app_in_conversation();
+    assert_eq!(
+        app.scroll_velocity, 0.0,
+        "scroll_velocity should initialize to 0.0"
+    );
+}
+
+#[test]
+fn test_scroll_position_initializes_to_zero() {
+    let app = create_test_app_in_conversation();
+    assert_eq!(
+        app.scroll_position, 0.0,
+        "scroll_position should initialize to 0.0"
+    );
+}
+
+#[test]
+fn test_tick_applies_velocity_to_position() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 10.0;
+    app.scroll_velocity = 5.0; // Positive = scrolling up (older content)
+
+    app.tick();
+
+    // Position should increase by velocity (with friction)
+    assert!(
+        app.scroll_position > 10.0,
+        "tick() should apply velocity to position"
+    );
+}
+
+#[test]
+fn test_tick_decays_velocity_with_friction() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 50.0;
+    app.scroll_velocity = 10.0;
+
+    let original_velocity = app.scroll_velocity;
+    app.tick();
+
+    assert!(
+        app.scroll_velocity.abs() < original_velocity.abs(),
+        "tick() should decay velocity with friction"
+    );
+}
+
+#[test]
+fn test_tick_stops_velocity_when_very_small() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 50.0;
+    app.scroll_velocity = 0.05; // Below threshold (0.1)
+
+    app.tick();
+
+    assert_eq!(
+        app.scroll_velocity, 0.0,
+        "tick() should stop velocity when below threshold"
+    );
+}
+
+#[test]
+fn test_tick_clamps_position_at_bottom() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 2.0;
+    app.scroll_velocity = -10.0; // Negative = scrolling down (newer content)
+
+    app.tick();
+
+    assert_eq!(
+        app.scroll_position, 0.0,
+        "tick() should clamp position at bottom (0)"
+    );
+    assert_eq!(
+        app.scroll_velocity, 0.0,
+        "velocity should stop when hitting boundary"
+    );
+}
+
+#[test]
+fn test_tick_clamps_position_at_top() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 98.0;
+    app.scroll_velocity = 10.0; // Positive = scrolling up (older content)
+
+    app.tick();
+
+    assert_eq!(
+        app.scroll_position, 100.0,
+        "tick() should clamp position at top (max_scroll)"
+    );
+    assert_eq!(
+        app.scroll_velocity, 0.0,
+        "velocity should stop when hitting boundary"
+    );
+}
+
+#[test]
+fn test_tick_detects_bottom_boundary_hit() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 2.0;
+    app.scroll_velocity = -10.0; // Will overshoot bottom
+
+    app.tick();
+
+    assert_eq!(
+        app.scroll_boundary_hit,
+        Some(ScrollBoundary::Bottom),
+        "Should detect bottom boundary hit"
+    );
+}
+
+#[test]
+fn test_tick_detects_top_boundary_hit() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 98.0;
+    app.scroll_velocity = 10.0; // Will overshoot top
+
+    app.tick();
+
+    assert_eq!(
+        app.scroll_boundary_hit,
+        Some(ScrollBoundary::Top),
+        "Should detect top boundary hit"
+    );
+}
+
+#[test]
+fn test_conversation_scroll_synced_with_position() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 42.7;
+    app.scroll_velocity = 1.0;
+
+    app.tick();
+
+    // conversation_scroll should be rounded from scroll_position
+    let expected = app.scroll_position.round() as u16;
+    assert_eq!(
+        app.conversation_scroll, expected,
+        "conversation_scroll should be synced with scroll_position (rounded)"
+    );
+}
+
+#[test]
+fn test_reset_scroll_clears_all_scroll_state() {
+    let mut app = create_test_app_in_conversation();
+    app.conversation_scroll = 50;
+    app.scroll_position = 50.0;
+    app.scroll_velocity = 10.0;
+
+    app.reset_scroll();
+
+    assert_eq!(app.conversation_scroll, 0, "conversation_scroll should reset to 0");
+    assert_eq!(app.scroll_position, 0.0, "scroll_position should reset to 0.0");
+    assert_eq!(app.scroll_velocity, 0.0, "scroll_velocity should reset to 0.0");
+}
+
+#[test]
+fn test_momentum_continues_after_no_input() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.scroll_position = 50.0;
+    app.scroll_velocity = 8.0; // Initial impulse
+
+    // Simulate several ticks without new input
+    let mut positions = vec![app.scroll_position];
+    for _ in 0..5 {
+        app.tick();
+        positions.push(app.scroll_position);
+    }
+
+    // Position should keep increasing (momentum)
+    for i in 1..positions.len() {
+        assert!(
+            positions[i] > positions[i - 1] || app.scroll_velocity.abs() < 0.1,
+            "Position should keep increasing with momentum (or velocity stopped)"
+        );
+    }
+
+    // Velocity should decrease over time
+    assert!(
+        app.scroll_velocity < 8.0,
+        "Velocity should decrease due to friction"
+    );
 }
