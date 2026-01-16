@@ -3,6 +3,30 @@ use serde::{Deserialize, Serialize};
 
 use super::tools::{SubagentEvent, SubagentEventStatus, ToolCall, ToolEvent, ToolEventStatus};
 
+/// Content block in the new API format - either text or tool use
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentBlock {
+    Text { text: String },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+        #[serde(default)]
+        result: Option<String>,
+        #[serde(default)]
+        is_error: bool,
+    },
+}
+
+/// Message content - can be either an array of content blocks (new format) or a legacy string
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum MessageContent {
+    Blocks(Vec<ContentBlock>),
+    Legacy(String),
+}
+
 /// Role of a message in a conversation
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -550,5 +574,99 @@ mod tests {
         message.complete_subagent_event("nonexistent", Some("Done".to_string()), 1);
 
         assert_eq!(message.segments.len(), 0);
+    }
+
+    #[test]
+    fn test_content_block_text_serialization() {
+        let block = ContentBlock::Text {
+            text: "Hello, world!".to_string(),
+        };
+
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains(r#""type":"text""#));
+        assert!(json.contains(r#""text":"Hello, world!""#));
+
+        let deserialized: ContentBlock = serde_json::from_str(&json).unwrap();
+        assert_eq!(block, deserialized);
+    }
+
+    #[test]
+    fn test_content_block_tool_use_serialization() {
+        let block = ContentBlock::ToolUse {
+            id: "tool-123".to_string(),
+            name: "read_file".to_string(),
+            input: serde_json::json!({"path": "/test/file.txt"}),
+            result: Some("File content".to_string()),
+            is_error: false,
+        };
+
+        let json = serde_json::to_string(&block).unwrap();
+        assert!(json.contains(r#""type":"tool_use""#));
+        assert!(json.contains(r#""id":"tool-123""#));
+        assert!(json.contains(r#""name":"read_file""#));
+
+        let deserialized: ContentBlock = serde_json::from_str(&json).unwrap();
+        assert_eq!(block, deserialized);
+    }
+
+    #[test]
+    fn test_content_block_tool_use_defaults() {
+        let json = r#"{"type":"tool_use","id":"tool-456","name":"bash","input":{"command":"ls"}}"#;
+        let block: ContentBlock = serde_json::from_str(json).unwrap();
+
+        match block {
+            ContentBlock::ToolUse { id, name, input, result, is_error } => {
+                assert_eq!(id, "tool-456");
+                assert_eq!(name, "bash");
+                assert_eq!(input, serde_json::json!({"command": "ls"}));
+                assert_eq!(result, None);
+                assert_eq!(is_error, false);
+            }
+            _ => panic!("Expected ToolUse variant"),
+        }
+    }
+
+    #[test]
+    fn test_message_content_blocks() {
+        let content = MessageContent::Blocks(vec![
+            ContentBlock::Text {
+                text: "Processing...".to_string(),
+            },
+            ContentBlock::ToolUse {
+                id: "tool-1".to_string(),
+                name: "read".to_string(),
+                input: serde_json::json!({"file": "test.txt"}),
+                result: None,
+                is_error: false,
+            },
+        ]);
+
+        let json = serde_json::to_string(&content).unwrap();
+        let deserialized: MessageContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(content, deserialized);
+    }
+
+    #[test]
+    fn test_message_content_legacy() {
+        let content = MessageContent::Legacy("Hello, world!".to_string());
+
+        let json = serde_json::to_string(&content).unwrap();
+        assert_eq!(json, r#""Hello, world!""#);
+
+        let deserialized: MessageContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(content, deserialized);
+    }
+
+    #[test]
+    fn test_message_content_untagged_deserialization() {
+        // Test that a plain string deserializes as Legacy
+        let json = r#""Simple text""#;
+        let content: MessageContent = serde_json::from_str(json).unwrap();
+        assert!(matches!(content, MessageContent::Legacy(_)));
+
+        // Test that an array deserializes as Blocks
+        let json = r#"[{"type":"text","text":"Block text"}]"#;
+        let content: MessageContent = serde_json::from_str(json).unwrap();
+        assert!(matches!(content, MessageContent::Blocks(_)));
     }
 }
