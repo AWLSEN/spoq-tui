@@ -270,8 +270,8 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
         assert!(
-            buffer_str.contains("AI:"),
-            "Conversation screen should show AI label"
+            buffer_str.contains("│"),
+            "Conversation screen should show vertical bar for messages"
         );
         assert!(
             buffer_str.contains("Waiting for your message"),
@@ -689,8 +689,8 @@ mod tests {
             "Conversation screen should show user message content"
         );
         assert!(
-            buffer_str.contains("You:"),
-            "Conversation screen should show 'You:' label for user messages"
+            buffer_str.contains("│"),
+            "Conversation screen should show vertical bar for user messages"
         );
     }
 
