@@ -490,8 +490,63 @@ impl App {
                                 description: thread_event.description,
                             });
                         }
-                        // Ignore other event types for now
-                        _ => {}
+                        SseEvent::SubagentStarted(subagent_event) => {
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "SubagentStarted",
+                                    format!(
+                                        "type: {}, task: {}",
+                                        subagent_event.subagent_type,
+                                        truncate_for_debug(&subagent_event.description, 30)
+                                    ),
+                                )),
+                                Some(thread_id),
+                            );
+                            let _ = message_tx.send(AppMessage::SubagentStarted {
+                                task_id: subagent_event.task_id,
+                                description: subagent_event.description,
+                                subagent_type: subagent_event.subagent_type,
+                            });
+                        }
+                        SseEvent::SubagentProgress(subagent_event) => {
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "SubagentProgress",
+                                    format!(
+                                        "task: {}, msg: {}",
+                                        subagent_event.task_id,
+                                        truncate_for_debug(&subagent_event.message, 30)
+                                    ),
+                                )),
+                                Some(thread_id),
+                            );
+                            let _ = message_tx.send(AppMessage::SubagentProgress {
+                                task_id: subagent_event.task_id,
+                                message: subagent_event.message,
+                            });
+                        }
+                        SseEvent::SubagentCompleted(subagent_event) => {
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "SubagentCompleted",
+                                    format!(
+                                        "task: {}, tools: {:?}, summary: {}",
+                                        subagent_event.task_id,
+                                        subagent_event.tool_call_count,
+                                        truncate_for_debug(&subagent_event.summary, 30)
+                                    ),
+                                )),
+                                Some(thread_id),
+                            );
+                            let _ = message_tx.send(AppMessage::SubagentCompleted {
+                                task_id: subagent_event.task_id,
+                                summary: subagent_event.summary,
+                                tool_call_count: subagent_event.tool_call_count,
+                            });
+                        }
                     }
                 }
                 Err(e) => {
@@ -511,6 +566,214 @@ impl App {
                     break;
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{SubagentStartedEvent, SubagentProgressEvent, SubagentCompletedEvent};
+    use tokio::sync::mpsc;
+
+    // Helper function to create a trait object stream
+    fn create_stream(
+        events: Vec<Result<SseEvent, crate::conductor::ConductorError>>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn futures_util::Stream<
+                    Item = Result<SseEvent, crate::conductor::ConductorError>,
+                > + Send,
+        >,
+    > {
+        Box::pin(futures_util::stream::iter(events))
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_subagent_started() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-123";
+
+        // Create a test event
+        let event = SseEvent::SubagentStarted(SubagentStartedEvent {
+            task_id: "task-001".to_string(),
+            description: "Test subagent task".to_string(),
+            subagent_type: "Explore".to_string(),
+        });
+
+        // Create a mock stream with a single event
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        // Process the stream
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        // Verify the message was sent
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::SubagentStarted { task_id, description, subagent_type } => {
+                assert_eq!(task_id, "task-001");
+                assert_eq!(description, "Test subagent task");
+                assert_eq!(subagent_type, "Explore");
+            }
+            _ => panic!("Expected SubagentStarted message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_subagent_progress() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-456";
+
+        // Create a test event
+        let event = SseEvent::SubagentProgress(SubagentProgressEvent {
+            task_id: "task-002".to_string(),
+            message: "Processing files...".to_string(),
+        });
+
+        // Create a mock stream with a single event
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        // Process the stream
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        // Verify the message was sent
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::SubagentProgress { task_id, message } => {
+                assert_eq!(task_id, "task-002");
+                assert_eq!(message, "Processing files...");
+            }
+            _ => panic!("Expected SubagentProgress message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_subagent_completed() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-789";
+
+        // Create a test event
+        let event = SseEvent::SubagentCompleted(SubagentCompletedEvent {
+            task_id: "task-003".to_string(),
+            summary: "Successfully analyzed codebase".to_string(),
+            tool_call_count: Some(15),
+        });
+
+        // Create a mock stream with a single event
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        // Process the stream
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        // Verify the message was sent
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::SubagentCompleted { task_id, summary, tool_call_count } => {
+                assert_eq!(task_id, "task-003");
+                assert_eq!(summary, "Successfully analyzed codebase");
+                assert_eq!(tool_call_count, Some(15));
+            }
+            _ => panic!("Expected SubagentCompleted message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_subagent_completed_without_tool_count() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-999";
+
+        // Create a test event without tool_call_count
+        let event = SseEvent::SubagentCompleted(SubagentCompletedEvent {
+            task_id: "task-004".to_string(),
+            summary: "Task completed".to_string(),
+            tool_call_count: None,
+        });
+
+        // Create a mock stream with a single event
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        // Process the stream
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        // Verify the message was sent
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::SubagentCompleted { task_id, summary, tool_call_count } => {
+                assert_eq!(task_id, "task-004");
+                assert_eq!(summary, "Task completed");
+                assert_eq!(tool_call_count, None);
+            }
+            _ => panic!("Expected SubagentCompleted message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_multiple_subagent_events() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-multi";
+
+        // Create multiple test events
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![
+            Ok(SseEvent::SubagentStarted(SubagentStartedEvent {
+                task_id: "task-multi".to_string(),
+                description: "Multi-event test".to_string(),
+                subagent_type: "Plan".to_string(),
+            })),
+            Ok(SseEvent::SubagentProgress(SubagentProgressEvent {
+                task_id: "task-multi".to_string(),
+                message: "Step 1 complete".to_string(),
+            })),
+            Ok(SseEvent::SubagentProgress(SubagentProgressEvent {
+                task_id: "task-multi".to_string(),
+                message: "Step 2 complete".to_string(),
+            })),
+            Ok(SseEvent::SubagentCompleted(SubagentCompletedEvent {
+                task_id: "task-multi".to_string(),
+                summary: "All steps completed".to_string(),
+                tool_call_count: Some(20),
+            })),
+        ];
+        let mut pinned_stream = create_stream(events);
+
+        // Process the stream
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        // Verify all messages were sent in order
+        let msg1 = rx.recv().await.expect("Should receive first message");
+        match msg1 {
+            AppMessage::SubagentStarted { task_id, .. } => {
+                assert_eq!(task_id, "task-multi");
+            }
+            _ => panic!("Expected SubagentStarted as first message"),
+        }
+
+        let msg2 = rx.recv().await.expect("Should receive second message");
+        match msg2 {
+            AppMessage::SubagentProgress { message, .. } => {
+                assert_eq!(message, "Step 1 complete");
+            }
+            _ => panic!("Expected SubagentProgress as second message"),
+        }
+
+        let msg3 = rx.recv().await.expect("Should receive third message");
+        match msg3 {
+            AppMessage::SubagentProgress { message, .. } => {
+                assert_eq!(message, "Step 2 complete");
+            }
+            _ => panic!("Expected SubagentProgress as third message"),
+        }
+
+        let msg4 = rx.recv().await.expect("Should receive fourth message");
+        match msg4 {
+            AppMessage::SubagentCompleted { summary, tool_call_count, .. } => {
+                assert_eq!(summary, "All steps completed");
+                assert_eq!(tool_call_count, Some(20));
+            }
+            _ => panic!("Expected SubagentCompleted as fourth message"),
         }
     }
 }
