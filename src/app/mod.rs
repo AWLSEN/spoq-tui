@@ -126,6 +126,13 @@ impl Default for ThreadSwitcher {
     }
 }
 
+/// Represents which scroll boundary was hit (for visual feedback)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollBoundary {
+    Top,
+    Bottom,
+}
+
 /// Main application state
 pub struct App {
     /// List of conversation threads (legacy - for storage compatibility)
@@ -166,6 +173,8 @@ pub struct App {
     pub tick_count: u64,
     /// Scroll position for conversation view (0 = bottom/latest content)
     pub conversation_scroll: u16,
+    /// Maximum scroll value (calculated during render, used for clamping)
+    pub max_scroll: u16,
     /// Current programming mode for Claude interactions
     pub programming_mode: ProgrammingMode,
     /// Session-level state (skills, permissions, oauth, tokens)
@@ -188,6 +197,10 @@ pub struct App {
     pub thread_switcher: ThreadSwitcher,
     /// Timestamp of last Tab press (for double-tap detection)
     pub last_tab_press: Option<std::time::Instant>,
+    /// Scroll boundary hit state (for visual feedback)
+    pub scroll_boundary_hit: Option<ScrollBoundary>,
+    /// Tick counter when boundary was hit (for timing the highlight)
+    pub boundary_hit_tick: u64,
 }
 
 impl App {
@@ -238,6 +251,7 @@ impl App {
             client,
             tick_count: 0,
             conversation_scroll: 0,
+            max_scroll: 0,
             programming_mode: ProgrammingMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
@@ -249,6 +263,8 @@ impl App {
             cumulative_token_count: 0,
             thread_switcher: ThreadSwitcher::default(),
             last_tab_press: None,
+            scroll_boundary_hit: None,
+            boundary_hit_tick: 0,
         })
     }
 
