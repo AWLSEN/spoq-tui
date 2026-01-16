@@ -315,4 +315,71 @@ mod tests {
         let received = rx2.try_recv().expect("Failed to receive");
         assert!(matches!(received.event, DebugEventKind::Error(_)));
     }
+
+    #[test]
+    fn test_state_snapshot_default() {
+        use crate::debug::events::StateSnapshot;
+
+        let snapshot = StateSnapshot::default();
+        assert_eq!(snapshot.threads_count, 0);
+        assert_eq!(snapshot.messages_count, 0);
+        assert_eq!(snapshot.active_subagents, 0);
+        assert!(!snapshot.is_streaming);
+        assert!(snapshot.active_tools.is_empty());
+        assert_eq!(snapshot.session_id, None);
+        assert_eq!(snapshot.thread_id, None);
+    }
+
+    #[test]
+    fn test_state_snapshot_with_subagents() {
+        use crate::debug::events::StateSnapshot;
+
+        let snapshot = StateSnapshot {
+            threads_count: 2,
+            messages_count: 10,
+            is_streaming: true,
+            active_tools: vec![],
+            active_subagents: 3,
+            session_id: Some("session-123".to_string()),
+            thread_id: Some("thread-456".to_string()),
+        };
+
+        assert_eq!(snapshot.active_subagents, 3);
+        assert!(snapshot.is_streaming);
+    }
+
+    #[test]
+    fn test_state_snapshot_serialization() {
+        use crate::debug::events::StateSnapshot;
+
+        let snapshot = StateSnapshot {
+            threads_count: 1,
+            messages_count: 5,
+            is_streaming: false,
+            active_tools: vec![],
+            active_subagents: 2,
+            session_id: Some("test-session".to_string()),
+            thread_id: None,
+        };
+
+        let json = serde_json::to_string(&snapshot).expect("Failed to serialize");
+        assert!(json.contains("\"active_subagents\":2"));
+        assert!(json.contains("\"threads_count\":1"));
+        assert!(json.contains("\"messages_count\":5"));
+    }
+
+    #[test]
+    fn test_subagent_tracker_state_change() {
+        let data = StateChangeData::new(
+            StateType::SubagentTracker,
+            "Subagent registered",
+            "active: 1, task: task-123",
+        );
+        let event = DebugEvent::new(DebugEventKind::StateChange(data));
+
+        let json = serde_json::to_string(&event).expect("Failed to serialize");
+        assert!(json.contains("\"state_type\":\"subagent_tracker\""));
+        assert!(json.contains("\"description\":\"Subagent registered\""));
+        assert!(json.contains("active: 1"));
+    }
 }

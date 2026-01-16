@@ -195,6 +195,8 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
         .event-item.tool_call_start,
         .event-item.tool_call_end,
         .event-item.tool_result { border-left-color: #3b82f6; }
+        .event-item.subagent_start,
+        .event-item.subagent_end { border-left-color: #10b981; }
         .event-item.stream_lifecycle { border-left-color: #f59e0b; }
         .event-item.state_change { border-left-color: #8b5cf6; }
         .event-item.processed_event { border-left-color: #06b6d4; }
@@ -595,6 +597,10 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                         <div class="state-card-value" id="stateTools">0</div>
                     </div>
                     <div class="state-card">
+                        <div class="state-card-title">Active Subagents</div>
+                        <div class="state-card-value" id="stateSubagents">0</div>
+                    </div>
+                    <div class="state-card">
                         <div class="state-card-title">Cache Summary</div>
                         <div class="state-card-value" id="stateCache">Empty</div>
                     </div>
@@ -627,6 +633,7 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             thread: null,
             streaming: false,
             activeTools: 0,
+            activeSubagents: 0,
             accumulatedContent: '',
             reasoningContent: '',
             threadIds: new Set()
@@ -716,6 +723,12 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                         state.activeTools++;
                     } else if (sseType === 'tool_call_end' || sseType === 'tool_result') {
                         state.activeTools = Math.max(0, state.activeTools - 1);
+                    }
+                    // Track subagent start/end events
+                    if (sseType === 'subagent_start') {
+                        state.activeSubagents++;
+                    } else if (sseType === 'subagent_end') {
+                        state.activeSubagents = Math.max(0, state.activeSubagents - 1);
                     }
                 }
             } else if (eventType === 'error') {
@@ -864,6 +877,7 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             document.getElementById('stateThread').textContent = state.thread || '-';
             document.getElementById('stateStreaming').textContent = state.streaming ? 'Active' : 'Idle';
             document.getElementById('stateTools').textContent = state.activeTools;
+            document.getElementById('stateSubagents').textContent = state.activeSubagents;
             document.getElementById('stateCache').textContent = events.length + ' events';
         }
 
@@ -906,6 +920,7 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                 thread: state.thread,
                 streaming: state.streaming,
                 activeTools: state.activeTools,
+                activeSubagents: state.activeSubagents,
                 accumulatedContent: state.accumulatedContent,
                 reasoningContent: state.reasoningContent,
                 threadIds: Array.from(state.threadIds)
@@ -917,7 +932,8 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
             report += '- Duration: ' + mins + 'm ' + secs + 's\n';
             report += '- Current Thread: ' + (state.thread || 'None') + '\n';
             report += '- Streaming: ' + (state.streaming ? 'Yes' : 'No') + '\n';
-            report += '- Active Tools: ' + state.activeTools + '\n\n';
+            report += '- Active Tools: ' + state.activeTools + '\n';
+            report += '- Active Subagents: ' + state.activeSubagents + '\n\n';
             report += '## Statistics\n';
             report += '| Metric | Value |\n';
             report += '|--------|-------|\n';
@@ -966,6 +982,7 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                 thread: state.thread,
                 streaming: state.streaming,
                 activeTools: state.activeTools,
+                activeSubagents: state.activeSubagents,
                 accumulatedContent: state.accumulatedContent,
                 reasoningContent: state.reasoningContent,
                 threadIds: Array.from(state.threadIds),
@@ -1010,6 +1027,7 @@ pub const DASHBOARD_HTML: &str = r#"<!DOCTYPE html>
                 thread: null,
                 streaming: false,
                 activeTools: 0,
+                activeSubagents: 0,
                 accumulatedContent: '',
                 reasoningContent: '',
                 threadIds: new Set()

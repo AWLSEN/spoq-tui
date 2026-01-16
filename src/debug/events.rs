@@ -255,6 +255,8 @@ pub struct StateSnapshot {
     pub is_streaming: bool,
     /// List of currently active tools
     pub active_tools: Vec<ActiveToolInfo>,
+    /// Number of currently active subagents
+    pub active_subagents: u32,
     /// Current session ID if any
     pub session_id: Option<String>,
     /// Current thread ID if any

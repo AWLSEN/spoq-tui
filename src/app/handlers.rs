@@ -448,6 +448,27 @@ impl App {
                         subagent_type.clone(),
                     );
                 }
+
+                // Register subagent in tracker
+                self.subagent_tracker.register_subagent(
+                    task_id.clone(),
+                    subagent_type.clone(),
+                    description.clone(),
+                    self.tick_count,
+                );
+
+                // Emit StateChange for subagent tracker update
+                let active_count = self.subagent_tracker.active_count();
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SubagentTracker,
+                        "Subagent registered",
+                        format!("active: {}, task: {}", active_count, task_id),
+                    )),
+                    self.active_thread_id.as_deref(),
+                );
+
                 // Emit StateChange for subagent started
                 emit_debug(
                     &self.debug_tx,
@@ -470,6 +491,12 @@ impl App {
                     self.cache
                         .update_subagent_progress(thread_id, &task_id, message.clone());
                 }
+
+                // Update subagent progress in tracker
+                if let Some(subagent) = self.subagent_tracker.get_subagent_mut(&task_id) {
+                    subagent.set_progress(message.clone());
+                }
+
                 // Emit StateChange for subagent progress
                 emit_debug(
                     &self.debug_tx,
@@ -506,6 +533,27 @@ impl App {
                         tool_call_count.unwrap_or(0) as usize,
                     );
                 }
+
+                // Mark subagent as complete in tracker
+                if let Some(subagent) = self.subagent_tracker.get_subagent_mut(&task_id) {
+                    subagent.complete(true, summary.clone(), self.tick_count);
+                }
+
+                // Remove completed subagent from tracker
+                self.subagent_tracker.remove_subagent(&task_id);
+
+                // Emit StateChange for subagent tracker update
+                let active_count = self.subagent_tracker.active_count();
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SubagentTracker,
+                        "Subagent completed and removed",
+                        format!("active: {}, task: {}", active_count, task_id),
+                    )),
+                    self.active_thread_id.as_deref(),
+                );
+
                 // Emit StateChange for subagent completion
                 emit_debug(
                     &self.debug_tx,
