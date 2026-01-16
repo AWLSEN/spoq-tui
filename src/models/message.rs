@@ -75,35 +75,64 @@ impl ServerMessage {
     /// * `id` - The message ID to assign
     pub fn to_client_message(self, thread_id: &str, id: i64) -> Message {
         let role = self.role;
+        let mut full_text = String::new();
+        let mut segments = Vec::new();
 
-        // Convert MessageContent to a plain string
-        let content = match self.content {
-            Some(MessageContent::Legacy(text)) => text,
+        match self.content {
             Some(MessageContent::Blocks(blocks)) => {
-                // Extract text from all text blocks
-                blocks
-                    .into_iter()
-                    .filter_map(|block| match block {
-                        ContentBlock::Text { text } => Some(text),
-                        ContentBlock::ToolUse { .. } => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("")
+                for block in blocks {
+                    match block {
+                        ContentBlock::Text { text } => {
+                            full_text.push_str(&text);
+                            if !text.is_empty() {
+                                segments.push(MessageSegment::Text(text));
+                            }
+                        }
+                        ContentBlock::ToolUse { id, name, input, result, is_error } => {
+                            let mut event = ToolEvent::new(id, name);
+                            event.status = ToolEventStatus::Complete;
+                            event.args_json = serde_json::to_string(&input).unwrap_or_default();
+                            event.completed_at = Some(Utc::now());
+                            if let Some(r) = result {
+                                event.set_result(&r, is_error);
+                            }
+                            segments.push(MessageSegment::ToolEvent(event));
+                        }
+                    }
+                }
             }
-            None => String::new(),
-        };
+            Some(MessageContent::Legacy(text)) => {
+                full_text = text.clone();
+                if !text.is_empty() {
+                    segments.push(MessageSegment::Text(text));
+                }
+                // Handle legacy tool_calls if present
+                if let Some(tool_calls) = self.tool_calls {
+                    for tc in tool_calls {
+                        let mut event = ToolEvent::new(tc.id, tc.function.name);
+                        event.status = ToolEventStatus::Complete;
+                        event.args_json = tc.function.arguments;
+                        event.completed_at = Some(Utc::now());
+                        segments.push(MessageSegment::ToolEvent(event));
+                    }
+                }
+            }
+            None => {
+                // Leave empty
+            }
+        }
 
         Message {
             id,
             thread_id: thread_id.to_string(),
             role,
-            content,
+            content: full_text,
             created_at: Utc::now(),  // Server doesn't provide per-message timestamps
             is_streaming: false,
             partial_content: String::new(),
             reasoning_content: String::new(),  // Server may not provide reasoning history
             reasoning_collapsed: true,
-            segments: Vec::new(),
+            segments,
         }
     }
 }
@@ -310,6 +339,7 @@ impl Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::tools::ToolCallFunction;
 
     fn create_test_message() -> Message {
         Message {
@@ -685,5 +715,249 @@ mod tests {
         let json = r#"[{"type":"text","text":"Block text"}]"#;
         let content: MessageContent = serde_json::from_str(json).unwrap();
         assert!(matches!(content, MessageContent::Blocks(_)));
+    }
+
+    #[test]
+    fn test_to_client_message_with_blocks() {
+        let server_msg = ServerMessage {
+            role: MessageRole::Assistant,
+            content: Some(MessageContent::Blocks(vec![
+                ContentBlock::Text { text: "Hello ".to_string() },
+                ContentBlock::ToolUse {
+                    id: "tool-123".to_string(),
+                    name: "Read".to_string(),
+                    input: serde_json::json!({"file_path": "/test.txt"}),
+                    result: Some("File contents here".to_string()),
+                    is_error: false,
+                },
+                ContentBlock::Text { text: "Done!".to_string() },
+            ])),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+
+        let msg = server_msg.to_client_message("thread-1", 42);
+
+        assert_eq!(msg.id, 42);
+        assert_eq!(msg.thread_id, "thread-1");
+        assert_eq!(msg.role, MessageRole::Assistant);
+        assert_eq!(msg.content, "Hello Done!");
+        assert!(!msg.is_streaming);
+        assert_eq!(msg.segments.len(), 3);
+
+        // Check first segment is text
+        if let MessageSegment::Text(text) = &msg.segments[0] {
+            assert_eq!(text, "Hello ");
+        } else {
+            panic!("Expected Text segment");
+        }
+
+        // Check second segment is tool event
+        if let MessageSegment::ToolEvent(event) = &msg.segments[1] {
+            assert_eq!(event.tool_call_id, "tool-123");
+            assert_eq!(event.function_name, "Read");
+            assert_eq!(event.status, ToolEventStatus::Complete);
+            assert!(event.completed_at.is_some());
+            assert!(event.args_json.contains("file_path"));
+            assert_eq!(event.result_preview, Some("File contents here".to_string()));
+            assert!(!event.result_is_error);
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+
+        // Check third segment is text
+        if let MessageSegment::Text(text) = &msg.segments[2] {
+            assert_eq!(text, "Done!");
+        } else {
+            panic!("Expected Text segment");
+        }
+    }
+
+    #[test]
+    fn test_to_client_message_with_tool_error() {
+        let server_msg = ServerMessage {
+            role: MessageRole::Assistant,
+            content: Some(MessageContent::Blocks(vec![
+                ContentBlock::ToolUse {
+                    id: "tool-err".to_string(),
+                    name: "Bash".to_string(),
+                    input: serde_json::json!({"command": "bad_cmd"}),
+                    result: Some("Command not found".to_string()),
+                    is_error: true,
+                },
+            ])),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+
+        let msg = server_msg.to_client_message("thread-1", 1);
+
+        assert_eq!(msg.segments.len(), 1);
+
+        if let MessageSegment::ToolEvent(event) = &msg.segments[0] {
+            assert_eq!(event.tool_call_id, "tool-err");
+            assert_eq!(event.function_name, "Bash");
+            assert!(event.result_is_error);
+            assert_eq!(event.result_preview, Some("Command not found".to_string()));
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+    }
+
+    #[test]
+    fn test_to_client_message_with_legacy_content() {
+        let server_msg = ServerMessage {
+            role: MessageRole::User,
+            content: Some(MessageContent::Legacy("Legacy text message".to_string())),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+
+        let msg = server_msg.to_client_message("thread-2", 99);
+
+        assert_eq!(msg.content, "Legacy text message");
+        assert_eq!(msg.segments.len(), 1);
+
+        if let MessageSegment::Text(text) = &msg.segments[0] {
+            assert_eq!(text, "Legacy text message");
+        } else {
+            panic!("Expected Text segment");
+        }
+    }
+
+    #[test]
+    fn test_to_client_message_with_legacy_tool_calls() {
+        let server_msg = ServerMessage {
+            role: MessageRole::Assistant,
+            content: Some(MessageContent::Legacy("Using tools...".to_string())),
+            tool_calls: Some(vec![
+                ToolCall {
+                    id: "call-1".to_string(),
+                    call_type: "function".to_string(),
+                    function: ToolCallFunction {
+                        name: "Glob".to_string(),
+                        arguments: r#"{"pattern":"*.rs"}"#.to_string(),
+                    },
+                },
+                ToolCall {
+                    id: "call-2".to_string(),
+                    call_type: "function".to_string(),
+                    function: ToolCallFunction {
+                        name: "Grep".to_string(),
+                        arguments: r#"{"pattern":"test"}"#.to_string(),
+                    },
+                },
+            ]),
+            tool_call_id: None,
+            name: None,
+        };
+
+        let msg = server_msg.to_client_message("thread-3", 5);
+
+        assert_eq!(msg.content, "Using tools...");
+        assert_eq!(msg.segments.len(), 3); // 1 text + 2 tool events
+
+        // First segment is text
+        if let MessageSegment::Text(text) = &msg.segments[0] {
+            assert_eq!(text, "Using tools...");
+        } else {
+            panic!("Expected Text segment");
+        }
+
+        // Second segment is first tool event
+        if let MessageSegment::ToolEvent(event) = &msg.segments[1] {
+            assert_eq!(event.tool_call_id, "call-1");
+            assert_eq!(event.function_name, "Glob");
+            assert_eq!(event.status, ToolEventStatus::Complete);
+            assert!(event.args_json.contains("pattern"));
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+
+        // Third segment is second tool event
+        if let MessageSegment::ToolEvent(event) = &msg.segments[2] {
+            assert_eq!(event.tool_call_id, "call-2");
+            assert_eq!(event.function_name, "Grep");
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
+    }
+
+    #[test]
+    fn test_to_client_message_with_none_content() {
+        let server_msg = ServerMessage {
+            role: MessageRole::System,
+            content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+
+        let msg = server_msg.to_client_message("thread-4", 0);
+
+        assert_eq!(msg.content, "");
+        assert!(msg.segments.is_empty());
+    }
+
+    #[test]
+    fn test_to_client_message_with_empty_text_blocks() {
+        let server_msg = ServerMessage {
+            role: MessageRole::Assistant,
+            content: Some(MessageContent::Blocks(vec![
+                ContentBlock::Text { text: "".to_string() },
+                ContentBlock::Text { text: "Hello".to_string() },
+                ContentBlock::Text { text: "".to_string() },
+            ])),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+
+        let msg = server_msg.to_client_message("thread-5", 10);
+
+        // Empty text blocks should be filtered out from segments
+        assert_eq!(msg.content, "Hello");
+        assert_eq!(msg.segments.len(), 1);
+
+        if let MessageSegment::Text(text) = &msg.segments[0] {
+            assert_eq!(text, "Hello");
+        } else {
+            panic!("Expected Text segment");
+        }
+    }
+
+    #[test]
+    fn test_to_client_message_tool_without_result() {
+        let server_msg = ServerMessage {
+            role: MessageRole::Assistant,
+            content: Some(MessageContent::Blocks(vec![
+                ContentBlock::ToolUse {
+                    id: "tool-no-result".to_string(),
+                    name: "Write".to_string(),
+                    input: serde_json::json!({"file_path": "/test.txt", "content": "data"}),
+                    result: None,
+                    is_error: false,
+                },
+            ])),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+
+        let msg = server_msg.to_client_message("thread-6", 20);
+
+        assert_eq!(msg.segments.len(), 1);
+
+        if let MessageSegment::ToolEvent(event) = &msg.segments[0] {
+            assert_eq!(event.tool_call_id, "tool-no-result");
+            assert_eq!(event.function_name, "Write");
+            assert!(event.result_preview.is_none());
+            assert!(!event.result_is_error);
+        } else {
+            panic!("Expected ToolEvent segment");
+        }
     }
 }
