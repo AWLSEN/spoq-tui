@@ -143,6 +143,7 @@ impl InputBox {
             width: inner_width,
             height: area.height.saturating_sub(2),
         };
+        let center_y = inner_area.y + inner_area.height.saturating_sub(1) / 2;
 
         if inner_area.width == 0 || inner_area.height == 0 {
             return;
@@ -162,7 +163,7 @@ impl InputBox {
             if i < inner_width as usize {
                 buf.set_string(
                     inner_area.x + i as u16,
-                    inner_area.y,
+                    center_y,
                     c.to_string(),
                     text_style,
                 );
@@ -186,7 +187,7 @@ impl InputBox {
 
                 buf.set_string(
                     inner_area.x + cursor_x,
-                    inner_area.y,
+                    center_y,
                     cursor_char.to_string(),
                     cursor_style,
                 );
@@ -288,6 +289,7 @@ impl InputBoxWidget<'_> {
             width: inner_width,
             height: area.height.saturating_sub(2),
         };
+        let center_y = inner_area.y + inner_area.height.saturating_sub(1) / 2;
 
         if inner_area.width == 0 || inner_area.height == 0 {
             return;
@@ -307,7 +309,7 @@ impl InputBoxWidget<'_> {
             if i < inner_width as usize {
                 buf.set_string(
                     inner_area.x + i as u16,
-                    inner_area.y,
+                    center_y,
                     c.to_string(),
                     text_style,
                 );
@@ -331,7 +333,7 @@ impl InputBoxWidget<'_> {
 
                 buf.set_string(
                     inner_area.x + cursor_x,
-                    inner_area.y,
+                    center_y,
                     cursor_char.to_string(),
                     cursor_style,
                 );
@@ -389,6 +391,7 @@ impl InputBoxWidget<'_> {
             width: inner_width,
             height: area.height.saturating_sub(2),
         };
+        let center_y = inner_area.y + inner_area.height.saturating_sub(1) / 2;
 
         if inner_area.width == 0 || inner_area.height == 0 {
             return;
@@ -408,7 +411,7 @@ impl InputBoxWidget<'_> {
             if i < inner_width as usize {
                 buf.set_string(
                     inner_area.x + i as u16,
-                    inner_area.y,
+                    center_y,
                     c.to_string(),
                     text_style,
                 );
