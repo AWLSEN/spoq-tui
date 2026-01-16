@@ -99,7 +99,9 @@ impl App {
 
     /// Open a specific thread by ID for conversation
     pub fn open_thread(&mut self, thread_id: String) {
-        use super::AppMessage;
+        use super::{log_thread_update, AppMessage};
+
+        log_thread_update(&format!("open_thread called with thread_id: {}", thread_id));
 
         // Set active thread and navigate (existing logic)
         self.active_thread_id = Some(thread_id.clone());
@@ -108,15 +110,25 @@ impl App {
         self.conversation_scroll = 0;
 
         // Check if messages need to be fetched
-        if self.cache.get_messages(&thread_id).is_none() {
+        let has_cached = self.cache.get_messages(&thread_id).is_some();
+        log_thread_update(&format!("open_thread: has_cached_messages={}", has_cached));
+
+        if !has_cached {
+            log_thread_update(&format!("open_thread: spawning fetch task for {}", thread_id));
             // Spawn async fetch task
             let client = Arc::clone(&self.client);
             let message_tx = self.message_tx.clone();
             let tid = thread_id.clone();
 
             tokio::spawn(async move {
+                log_thread_update(&format!("open_thread: fetch task started for {}", tid));
                 match client.fetch_thread_with_messages(&tid).await {
                     Ok(response) => {
+                        log_thread_update(&format!(
+                            "open_thread: fetch SUCCESS for {}, got {} messages",
+                            tid,
+                            response.messages.len()
+                        ));
                         let messages: Vec<crate::models::Message> = response
                             .messages
                             .into_iter()
@@ -129,6 +141,10 @@ impl App {
                         });
                     }
                     Err(e) => {
+                        log_thread_update(&format!(
+                            "open_thread: fetch FAILED for {}: {:?}",
+                            tid, e
+                        ));
                         let _ = message_tx.send(AppMessage::MessagesLoadError {
                             thread_id: tid,
                             error: e.to_string(),

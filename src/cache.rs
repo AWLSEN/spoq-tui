@@ -103,9 +103,13 @@ impl ThreadCache {
         let thread_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
-        // Create title from first message (truncate if too long)
+        // Create title from first message (truncate if too long, respecting UTF-8 boundaries)
         let title = if first_message.len() > 40 {
-            format!("{}...", &first_message[..37])
+            let mut end = 37;
+            while end > 0 && !first_message.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &first_message[..end])
         } else {
             first_message.clone()
         };
@@ -166,9 +170,13 @@ impl ThreadCache {
         let thread_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
-        // Create title from first message (truncate if too long)
+        // Create title from first message (truncate if too long, respecting UTF-8 boundaries)
         let title = if first_message.len() > 40 {
-            format!("{}...", &first_message[..37])
+            let mut end = 37;
+            while end > 0 && !first_message.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &first_message[..end])
         } else {
             first_message.clone()
         };
@@ -577,9 +585,13 @@ impl ThreadCache {
         let thread_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
-        // Create title from first message (truncate if too long)
+        // Create title from first message (truncate if too long, respecting UTF-8 boundaries)
         let title = if first_message.len() > 40 {
-            format!("{}...", &first_message[..37])
+            let mut end = 37;
+            while end > 0 && !first_message.is_char_boundary(end) {
+                end -= 1;
+            }
+            format!("{}...", &first_message[..end])
         } else {
             first_message.clone()
         };

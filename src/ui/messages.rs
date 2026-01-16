@@ -70,7 +70,7 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
 
         // Error message line
         let msg_display = if error.message.len() > 46 {
-            format!("{}...", &error.message[..43])
+            super::helpers::truncate_string(&error.message, 46)
         } else {
             error.message.clone()
         };
@@ -530,7 +530,7 @@ pub fn render_subagent_event(
             let display_text = if let Some(ref summary) = event.summary {
                 // Truncate summary if too long
                 let truncated_summary = if summary.len() > 40 {
-                    format!("{}...", &summary[..37])
+                    super::helpers::truncate_string(summary, 40)
                 } else {
                     summary.clone()
                 };
@@ -864,9 +864,32 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     let cached_messages = app
         .active_thread_id
         .as_ref()
-        .and_then(|id| app.cache.get_messages(id));
+        .and_then(|id| {
+            crate::app::log_thread_update(&format!(
+                "RENDER: Looking for messages for thread_id: {}",
+                id
+            ));
+            let msgs = app.cache.get_messages(id);
+            crate::app::log_thread_update(&format!(
+                "RENDER: Found {} messages",
+                msgs.map(|m| m.len()).unwrap_or(0)
+            ));
+            msgs
+        });
 
     if let Some(messages) = cached_messages {
+        // Log first message to debug
+        if let Some(first_msg) = messages.first() {
+            crate::app::log_thread_update(&format!(
+                "RENDER: First message role={:?}, content_len={}, is_streaming={}, segments_len={}, content_preview={:?}",
+                first_msg.role,
+                first_msg.content.len(),
+                first_msg.is_streaming,
+                first_msg.segments.len(),
+                first_msg.content.chars().take(50).collect::<String>()
+            ));
+        }
+
         for message in messages {
             lines.push(Line::from(""));
             lines.push(Line::from(vec![Span::styled(
@@ -1042,17 +1065,27 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     let viewport_height = inner.height as usize;
     let viewport_width = inner.width as usize;
 
-    // Estimate total lines after wrapping
-    let mut total_lines: usize = 0;
-    for line in &lines {
-        let line_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
-        if line_width == 0 {
-            total_lines += 1; // Empty line
-        } else {
-            // Estimate wrapped lines (ceil division)
-            total_lines += (line_width + viewport_width - 1) / viewport_width.max(1);
-        }
+    // Log what's actually in the first few lines
+    for (i, line) in lines.iter().take(5).enumerate() {
+        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        crate::app::log_thread_update(&format!(
+            "RENDER: Line {}: {:?}",
+            i,
+            content.chars().take(80).collect::<String>()
+        ));
     }
+
+    crate::app::log_thread_update(&format!(
+        "RENDER: Generated {} raw lines, viewport={}x{}",
+        lines.len(),
+        viewport_width,
+        viewport_height
+    ));
+
+    // Use raw line count for scroll calculation
+    // Note: This is approximate since wrapping may add more lines,
+    // but it's much more accurate than trying to estimate wrap width
+    let total_lines = lines.len();
 
     // Calculate max scroll (how far up we can scroll from bottom)
     // scroll=0 means showing the bottom (latest content)
@@ -1066,6 +1099,14 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     // If user_scroll=0, show bottom → actual_scroll = max_scroll
     // If user_scroll=max, show top → actual_scroll = 0
     let actual_scroll = max_scroll.saturating_sub(clamped_scroll);
+
+    crate::app::log_thread_update(&format!(
+        "RENDER: total_lines={}, max_scroll={}, user_scroll={}, actual_scroll={}",
+        total_lines,
+        max_scroll,
+        app.conversation_scroll,
+        actual_scroll
+    ));
 
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })

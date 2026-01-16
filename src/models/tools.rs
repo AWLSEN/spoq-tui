@@ -93,11 +93,16 @@ impl ToolEvent {
         if content.len() <= MAX_PREVIEW_LEN {
             self.result_preview = Some(content.to_string());
         } else {
-            // Truncate and add ellipsis
-            let truncated = &content[..MAX_PREVIEW_LEN];
+            // Find a valid UTF-8 char boundary at or before MAX_PREVIEW_LEN
+            let mut end = MAX_PREVIEW_LEN;
+            while end > 0 && !content.is_char_boundary(end) {
+                end -= 1;
+            }
+            let truncated = &content[..end];
+
             // Try to truncate at a word boundary
             let preview = if let Some(last_space) = truncated.rfind(char::is_whitespace) {
-                if last_space > MAX_PREVIEW_LEN - 50 {
+                if last_space > end.saturating_sub(50) {
                     // Only use word boundary if we're not cutting off too much
                     &truncated[..last_space]
                 } else {

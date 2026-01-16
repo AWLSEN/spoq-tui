@@ -181,7 +181,15 @@ impl App {
             }
             AppMessage::MessagesLoaded { thread_id, messages } => {
                 let count = messages.len();
+                log_thread_update(&format!(
+                    "HANDLER: MessagesLoaded received for {}, {} messages",
+                    thread_id, count
+                ));
                 self.cache.set_messages(thread_id.clone(), messages);
+                log_thread_update(&format!(
+                    "HANDLER: Messages stored in cache for {}",
+                    thread_id
+                ));
                 // Emit StateChange for messages loaded
                 emit_debug(
                     &self.debug_tx,
@@ -193,7 +201,11 @@ impl App {
                     Some(&thread_id),
                 );
             }
-            AppMessage::MessagesLoadError { thread_id: _, error } => {
+            AppMessage::MessagesLoadError { thread_id, error } => {
+                log_thread_update(&format!(
+                    "HANDLER: MessagesLoadError for {}: {}",
+                    thread_id, error
+                ));
                 // Emit Error debug event
                 emit_debug(
                     &self.debug_tx,

@@ -278,9 +278,9 @@ pub fn get_permission_preview(perm: &crate::state::session::PermissionRequest) -
             return cmd.to_string();
         }
         if let Some(content) = input.get("content").and_then(|v| v.as_str()) {
-            // Truncate long content
+            // Truncate long content (respecting UTF-8 boundaries)
             if content.len() > 100 {
-                return format!("{}...", &content[..100]);
+                return super::helpers::truncate_string(content, 100);
             }
             return content.to_string();
         }

@@ -375,9 +375,13 @@ impl App {
                                         (true, "Complete".to_string())
                                     }
                                 } else {
-                                    // Summarize successful result
+                                    // Summarize successful result (respecting UTF-8 boundaries)
                                     let summary = if result.len() > 50 {
-                                        format!("{}...", &result[..47])
+                                        let mut end = 47;
+                                        while end > 0 && !result.is_char_boundary(end) {
+                                            end -= 1;
+                                        }
+                                        format!("{}...", &result[..end])
                                     } else if result.is_empty() {
                                         "Complete".to_string()
                                     } else {

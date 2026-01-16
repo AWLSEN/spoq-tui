@@ -83,13 +83,28 @@ pub fn get_subagent_icon(subagent_type: &str) -> &'static str {
     }
 }
 
-/// Truncate a string to max_len characters, adding "..." if truncated
+/// Truncate a string to approximately max_len bytes, adding "..." if truncated.
+/// Safely handles UTF-8 by finding the nearest char boundary.
 pub fn truncate_string(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let target = max_len.saturating_sub(3);
+        let end = find_char_boundary(s, target);
+        format!("{}...", &s[..end])
     }
+}
+
+/// Find the nearest valid UTF-8 char boundary at or before the given byte index.
+pub fn find_char_boundary(s: &str, index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    let mut end = index;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
 }
 
 /// Format tool arguments into a human-readable display string

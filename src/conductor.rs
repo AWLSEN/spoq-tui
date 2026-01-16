@@ -159,14 +159,22 @@ impl ConductorClient {
 
         // Create an SSE parser and process the byte stream
         // Include debug_tx in the state tuple for emitting debug events
+        // Use Vec<u8> buffer to avoid data loss when UTF-8 chars are split across TCP chunks
         let event_stream = stream::unfold(
-            (bytes_stream, SseParser::new(), String::new(), debug_tx),
-            |(mut bytes_stream, mut parser, mut buffer, debug_tx)| async move {
+            (bytes_stream, SseParser::new(), Vec::<u8>::new(), debug_tx),
+            |(mut bytes_stream, mut parser, mut byte_buffer, debug_tx)| async move {
                 loop {
                     // First, try to process any complete lines in the buffer
-                    if let Some(newline_pos) = buffer.find('\n') {
-                        let line = buffer[..newline_pos].trim_end_matches('\r').to_string();
-                        buffer = buffer[newline_pos + 1..].to_string();
+                    // Look for newline in the byte buffer
+                    if let Some(newline_pos) = byte_buffer.iter().position(|&b| b == b'\n') {
+                        // Extract the line bytes (including newline)
+                        let line_bytes: Vec<u8> = byte_buffer.drain(..=newline_pos).collect();
+
+                        // Decode to string using lossy conversion to handle edge cases
+                        // where a multi-byte UTF-8 char might still be incomplete
+                        let line = String::from_utf8_lossy(&line_bytes[..line_bytes.len() - 1])
+                            .trim_end_matches('\r')
+                            .to_string();
 
                         match parser.feed_line(&line) {
                             Ok(Some(sse_event)) => {
@@ -182,14 +190,14 @@ impl ConductorClient {
 
                                 // Convert the sse::SseEvent to events::SseEvent
                                 let event = convert_sse_event(sse_event);
-                                return Some((Ok(event), (bytes_stream, parser, buffer, debug_tx)));
+                                return Some((Ok(event), (bytes_stream, parser, byte_buffer, debug_tx)));
                             }
                             Ok(None) => {
                                 // Continue processing buffer
                                 continue;
                             }
                             Err(e) => {
-                                return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, buffer, debug_tx)));
+                                return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, byte_buffer, debug_tx)));
                             }
                         }
                     }
@@ -197,20 +205,20 @@ impl ConductorClient {
                     // Need more data from the stream
                     match bytes_stream.next().await {
                         Some(Ok(chunk)) => {
-                            // Append new data to buffer
-                            if let Ok(text) = String::from_utf8(chunk.to_vec()) {
-                                buffer.push_str(&text);
-                            }
+                            // Append raw bytes to buffer - no UTF-8 conversion that could fail
+                            byte_buffer.extend_from_slice(&chunk);
                             // Loop back to process the buffer
                         }
                         Some(Err(e)) => {
-                            return Some((Err(ConductorError::Http(e)), (bytes_stream, parser, buffer, debug_tx)));
+                            return Some((Err(ConductorError::Http(e)), (bytes_stream, parser, byte_buffer, debug_tx)));
                         }
                         None => {
                             // Stream ended - process any remaining data in buffer
-                            if !buffer.is_empty() {
-                                let line = buffer.trim_end_matches('\r').to_string();
-                                buffer.clear();
+                            if !byte_buffer.is_empty() {
+                                let line = String::from_utf8_lossy(&byte_buffer)
+                                    .trim_end_matches('\r')
+                                    .to_string();
+                                byte_buffer.clear();
                                 match parser.feed_line(&line) {
                                     Ok(Some(sse_event)) => {
                                         // Emit raw SSE debug event if debug channel is available
@@ -224,11 +232,11 @@ impl ConductorClient {
                                         }
 
                                         let event = convert_sse_event(sse_event);
-                                        return Some((Ok(event), (bytes_stream, parser, buffer, debug_tx)));
+                                        return Some((Ok(event), (bytes_stream, parser, byte_buffer, debug_tx)));
                                     }
                                     Ok(None) => {}
                                     Err(e) => {
-                                        return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, buffer, debug_tx)));
+                                        return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, byte_buffer, debug_tx)));
                                     }
                                 }
                             }
