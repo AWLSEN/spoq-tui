@@ -20,7 +20,9 @@ pub use websocket::{start_websocket, start_websocket_with_config};
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
-use crate::state::{SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker};
+use crate::state::{
+    AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
+};
 use crate::websocket::WsConnectionState;
 use crate::widgets::input_box::InputBox;
 use chrono::Utc;
@@ -185,6 +187,8 @@ pub struct App {
     pub ws_sender: Option<tokio::sync::mpsc::Sender<crate::websocket::WsCommandResponse>>,
     /// WebSocket connection state for UI status indicator
     pub ws_connection_state: WsConnectionState,
+    /// State for AskUserQuestion prompt modal
+    pub question_state: AskUserQuestionState,
 }
 
 impl App {
@@ -248,6 +252,7 @@ impl App {
             last_tab_press: None,
             ws_sender: None,
             ws_connection_state: WsConnectionState::Disconnected,
+            question_state: AskUserQuestionState::default(),
         })
     }
 

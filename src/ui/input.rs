@@ -11,9 +11,22 @@ use ratatui::{
 };
 
 use crate::app::{App, Screen};
+use crate::state::session::AskUserQuestionData;
 use crate::widgets::input_box::InputBoxWidget;
 
 use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
+
+// ============================================================================
+// AskUserQuestion Parsing
+// ============================================================================
+
+/// Parse AskUserQuestion tool input into structured data.
+///
+/// Attempts to deserialize the tool_input JSON value into an `AskUserQuestionData`.
+/// Returns `None` if the input doesn't match the expected structure.
+pub fn parse_ask_user_question(tool_input: &serde_json::Value) -> Option<AskUserQuestionData> {
+    serde_json::from_value(tool_input.clone()).ok()
+}
 
 // ============================================================================
 // Input Area
@@ -317,4 +330,189 @@ pub fn get_permission_preview(perm: &crate::state::session::PermissionRequest) -
     }
 
     String::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_parse_ask_user_question_valid() {
+        let input = json!({
+            "questions": [
+                {
+                    "question": "Which library should we use?",
+                    "header": "Auth method",
+                    "options": [
+                        {"label": "Option A", "description": "Description of A"},
+                        {"label": "Option B", "description": "Description of B"}
+                    ],
+                    "multiSelect": false
+                }
+            ],
+            "answers": {}
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_some());
+
+        let data = result.unwrap();
+        assert_eq!(data.questions.len(), 1);
+        assert_eq!(data.questions[0].question, "Which library should we use?");
+        assert_eq!(data.questions[0].header, "Auth method");
+        assert_eq!(data.questions[0].options.len(), 2);
+        assert!(!data.questions[0].multi_select);
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_multi_select() {
+        let input = json!({
+            "questions": [
+                {
+                    "question": "Select features",
+                    "header": "Features",
+                    "options": [
+                        {"label": "A", "description": "Feature A"},
+                        {"label": "B", "description": "Feature B"}
+                    ],
+                    "multiSelect": true
+                }
+            ],
+            "answers": {}
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_some());
+        assert!(result.unwrap().questions[0].multi_select);
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_missing_multi_select_defaults() {
+        let input = json!({
+            "questions": [
+                {
+                    "question": "Test?",
+                    "header": "Test",
+                    "options": []
+                }
+            ]
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_some());
+        assert!(!result.unwrap().questions[0].multi_select);
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_with_answers() {
+        let input = json!({
+            "questions": [
+                {
+                    "question": "Test?",
+                    "header": "Test",
+                    "options": [{"label": "A", "description": "a"}],
+                    "multiSelect": false
+                }
+            ],
+            "answers": {"q1": "answer1"}
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_some());
+        let data = result.unwrap();
+        assert_eq!(data.answers.get("q1"), Some(&"answer1".to_string()));
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_multiple_questions() {
+        let input = json!({
+            "questions": [
+                {
+                    "question": "First?",
+                    "header": "Q1",
+                    "options": [{"label": "A", "description": "a"}],
+                    "multiSelect": false
+                },
+                {
+                    "question": "Second?",
+                    "header": "Q2",
+                    "options": [{"label": "B", "description": "b"}],
+                    "multiSelect": true
+                }
+            ],
+            "answers": {}
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_some());
+        let data = result.unwrap();
+        assert_eq!(data.questions.len(), 2);
+        assert_eq!(data.questions[0].header, "Q1");
+        assert_eq!(data.questions[1].header, "Q2");
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_invalid_missing_questions() {
+        let input = json!({
+            "answers": {}
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_invalid_wrong_type() {
+        let input = json!({
+            "questions": "not an array",
+            "answers": {}
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_invalid_empty_object() {
+        let input = json!({});
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_invalid_null() {
+        let input = json!(null);
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_invalid_missing_required_question_fields() {
+        let input = json!({
+            "questions": [
+                {
+                    "header": "Test"
+                    // missing "question" and "options"
+                }
+            ],
+            "answers": {}
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_ask_user_question_completely_unrelated_json() {
+        let input = json!({
+            "command": "npm install",
+            "file_path": "/some/path"
+        });
+
+        let result = parse_ask_user_question(&input);
+        assert!(result.is_none());
+    }
 }

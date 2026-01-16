@@ -13,7 +13,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 // Re-export new state types at module level
-pub use session::{PermissionRequest, SessionState};
+pub use session::{
+    AskUserQuestionData, AskUserQuestionState, PermissionRequest, Question, QuestionOption,
+    SessionState,
+};
 pub use tools::{SubagentDisplayStatus, SubagentState, SubagentTracker, ToolCallState, ToolDisplayStatus, ToolTracker};
 
 /// Represents a conversation thread

@@ -96,6 +96,7 @@ mod tests {
             last_tab_press: None,
             ws_sender: None,
             ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
+            question_state: crate::state::AskUserQuestionState::default(),
         }
     }
 
