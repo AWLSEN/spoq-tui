@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, ScrollBoundary};
 use crate::markdown::render_markdown;
 use crate::models::{Message, MessageRole, MessageSegment, SubagentEvent, SubagentEventStatus, ToolEvent, ToolEventStatus};
 use crate::state::ToolDisplayStatus;
@@ -1068,6 +1068,38 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
         .wrap(Wrap { trim: false })
         .scroll((actual_scroll, 0));
     frame.render_widget(messages_widget, inner);
+
+    // Render scroll boundary highlight for visual feedback (~200ms, ~4 ticks at 50ms tick rate)
+    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 4;
+    if let Some(boundary) = app.scroll_boundary_hit {
+        let ticks_since_hit = app.tick_count.saturating_sub(app.boundary_hit_tick);
+        if ticks_since_hit < BOUNDARY_HIGHLIGHT_TICKS {
+            let highlight_style = Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD);
+            let indicator = "━".repeat(inner.width as usize);
+            match boundary {
+                ScrollBoundary::Top => {
+                    // Highlight at top edge
+                    let top_area = Rect::new(inner.x, inner.y, inner.width, 1);
+                    frame.render_widget(
+                        Paragraph::new(Line::styled(indicator, highlight_style)),
+                        top_area,
+                    );
+                }
+                ScrollBoundary::Bottom => {
+                    // Highlight at bottom edge
+                    let bottom_y = inner.y + inner.height.saturating_sub(1);
+                    let bottom_area = Rect::new(inner.x, bottom_y, inner.width, 1);
+                    frame.render_widget(
+                        Paragraph::new(Line::styled(indicator, highlight_style)),
+                        bottom_area,
+                    );
+                }
+            }
+        } else {
+            // Clear the boundary hit state after timeout
+            app.scroll_boundary_hit = None;
+        }
+    }
 
     // Render inline permission prompt if pending (overlays on top of messages)
     if app.session_state.has_pending_permission() {
