@@ -252,7 +252,26 @@ pub fn render_permission_box(frame: &mut Frame, area: Rect, perm: &crate::state:
 
     lines.push(Line::from("")); // Empty line
 
-    // Keyboard options
+    // Calculate timeout countdown (server times out at 55s)
+    let elapsed_secs = perm.received_at.elapsed().as_secs();
+    let remaining_secs = 55u64.saturating_sub(elapsed_secs);
+
+    // Style countdown: yellow when <15s, red when <5s
+    let countdown_color = if remaining_secs <= 5 {
+        Color::Red
+    } else if remaining_secs <= 15 {
+        Color::Yellow
+    } else {
+        Color::Gray
+    };
+
+    let countdown_text = if remaining_secs == 0 {
+        " (expired)".to_string()
+    } else {
+        format!(" ({}s)", remaining_secs)
+    };
+
+    // Keyboard options with countdown
     lines.push(Line::from(vec![
         Span::styled("[y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
         Span::raw(" Yes  "),
@@ -260,6 +279,7 @@ pub fn render_permission_box(frame: &mut Frame, area: Rect, perm: &crate::state:
         Span::raw(" Always  "),
         Span::styled("[n]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
         Span::raw(" No"),
+        Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
     let content = Paragraph::new(lines);
