@@ -148,18 +148,42 @@ pub struct TodosUpdatedEvent {
     pub todos: Vec<TodoItem>,
 }
 
-/// Event containing subagent activity information.
+/// Event indicating a subagent has been started.
 ///
-/// Sent when the assistant spawns or receives updates from subagents.
+/// Sent when the assistant spawns a new subagent to handle a task.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct SubagentEvent {
-    /// The type of subagent event (e.g., "spawn", "progress", "complete")
-    /// Note: This is named `subagent_type` to avoid conflict with SSE's `type` tag discriminator.
-    /// The backend should send this as `subagent_type` in the JSON.
-    #[serde(default)]
+pub struct SubagentStartedEvent {
+    /// Unique identifier for this subagent task
+    pub task_id: String,
+    /// Human-readable description of the task
+    pub description: String,
+    /// Type of subagent (e.g., "Explore", "Plan", "Bash")
     pub subagent_type: String,
-    /// Event-specific data (structure varies by type)
-    pub data: serde_json::Value,
+}
+
+/// Event containing progress updates from a subagent.
+///
+/// Sent when a running subagent reports progress on its task.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SubagentProgressEvent {
+    /// The task ID this progress update belongs to
+    pub task_id: String,
+    /// Progress message from the subagent
+    pub message: String,
+}
+
+/// Event indicating a subagent has completed its task.
+///
+/// Sent when a subagent finishes execution and returns results.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SubagentCompletedEvent {
+    /// The task ID that has completed
+    pub task_id: String,
+    /// Summary of the subagent's work
+    pub summary: String,
+    /// Number of tool calls made by the subagent
+    #[serde(default)]
+    pub tool_call_count: Option<u32>,
 }
 
 /// Event requesting user permission for an action.
@@ -275,8 +299,12 @@ pub enum SseEvent {
     UserMessageSaved(UserMessageSavedEvent),
     /// Todo list updated
     TodosUpdated(TodosUpdatedEvent),
-    /// Subagent activity
-    Subagent(SubagentEvent),
+    /// Subagent started
+    SubagentStarted(SubagentStartedEvent),
+    /// Subagent progress update
+    SubagentProgress(SubagentProgressEvent),
+    /// Subagent completed
+    SubagentCompleted(SubagentCompletedEvent),
     /// Permission request
     PermissionRequest(PermissionRequestEvent),
     /// Context compacted
@@ -464,19 +492,6 @@ mod tests {
         assert_eq!(event.todos[1].status, "in_progress");
         assert_eq!(event.todos[2].content, "Write tests");
         assert_eq!(event.todos[2].status, "pending");
-    }
-
-    #[test]
-    fn test_parse_subagent_event() {
-        let json = r#"{
-            "subagent_type": "spawn",
-            "data": {"agent_id": "agent-001", "task": "research"}
-        }"#;
-
-        let event: SubagentEvent = serde_json::from_str(json).unwrap();
-        assert_eq!(event.subagent_type, "spawn");
-        assert_eq!(event.data["agent_id"], "agent-001");
-        assert_eq!(event.data["task"], "research");
     }
 
     #[test]
@@ -712,20 +727,113 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_sse_event_subagent() {
+    fn test_parse_subagent_started_event() {
         let json = r#"{
-            "type": "subagent",
-            "subagent_type": "progress",
-            "data": {"percent": 50}
+            "task_id": "task-001",
+            "description": "Explore codebase structure",
+            "subagent_type": "Explore"
+        }"#;
+
+        let event: SubagentStartedEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.task_id, "task-001");
+        assert_eq!(event.description, "Explore codebase structure");
+        assert_eq!(event.subagent_type, "Explore");
+    }
+
+    #[test]
+    fn test_parse_subagent_progress_event() {
+        let json = r#"{
+            "task_id": "task-001",
+            "message": "Searching through src/ directory"
+        }"#;
+
+        let event: SubagentProgressEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.task_id, "task-001");
+        assert_eq!(event.message, "Searching through src/ directory");
+    }
+
+    #[test]
+    fn test_parse_subagent_completed_event() {
+        let json = r#"{
+            "task_id": "task-001",
+            "summary": "Found 15 relevant files in the authentication module",
+            "tool_call_count": 42
+        }"#;
+
+        let event: SubagentCompletedEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.task_id, "task-001");
+        assert_eq!(event.summary, "Found 15 relevant files in the authentication module");
+        assert_eq!(event.tool_call_count, Some(42));
+    }
+
+    #[test]
+    fn test_parse_subagent_completed_event_without_tool_count() {
+        let json = r#"{
+            "task_id": "task-002",
+            "summary": "Analysis complete"
+        }"#;
+
+        let event: SubagentCompletedEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.task_id, "task-002");
+        assert_eq!(event.summary, "Analysis complete");
+        assert_eq!(event.tool_call_count, None);
+    }
+
+    #[test]
+    fn test_parse_sse_event_subagent_started() {
+        let json = r#"{
+            "type": "subagent_started",
+            "task_id": "task-123",
+            "description": "Plan the implementation",
+            "subagent_type": "Plan"
         }"#;
 
         let event: SseEvent = serde_json::from_str(json).unwrap();
         match event {
-            SseEvent::Subagent(e) => {
-                assert_eq!(e.subagent_type, "progress");
-                assert_eq!(e.data["percent"], 50);
+            SseEvent::SubagentStarted(e) => {
+                assert_eq!(e.task_id, "task-123");
+                assert_eq!(e.description, "Plan the implementation");
+                assert_eq!(e.subagent_type, "Plan");
             }
-            _ => panic!("Expected Subagent event"),
+            _ => panic!("Expected SubagentStarted event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_subagent_progress() {
+        let json = r#"{
+            "type": "subagent_progress",
+            "task_id": "task-123",
+            "message": "Analyzing file structure..."
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::SubagentProgress(e) => {
+                assert_eq!(e.task_id, "task-123");
+                assert_eq!(e.message, "Analyzing file structure...");
+            }
+            _ => panic!("Expected SubagentProgress event"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sse_event_subagent_completed() {
+        let json = r#"{
+            "type": "subagent_completed",
+            "task_id": "task-123",
+            "summary": "Successfully analyzed project structure",
+            "tool_call_count": 25
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::SubagentCompleted(e) => {
+                assert_eq!(e.task_id, "task-123");
+                assert_eq!(e.summary, "Successfully analyzed project structure");
+                assert_eq!(e.tool_call_count, Some(25));
+            }
+            _ => panic!("Expected SubagentCompleted event"),
         }
     }
 

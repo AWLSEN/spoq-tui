@@ -729,7 +729,7 @@ mod tests {
             description: None,
             preview: "Just chatting".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Normal,
+            thread_type: crate::models::ThreadType::Conversation,
             model: None,
             permission_mode: None,
             message_count: 0,
@@ -995,7 +995,7 @@ mod tests {
             description: None,
             preview: "A normal conversation".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Normal,
+            thread_type: crate::models::ThreadType::Conversation,
             model: Some("claude-sonnet-4-5".to_string()),
             permission_mode: None,
             message_count: 0,
@@ -1015,10 +1015,10 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
 
-        // Should show [N] indicator for Normal thread
+        // Should show [C] indicator for Conversation thread
         assert!(
-            buffer_str.contains("[N]"),
-            "Thread type indicator [N] should be shown for Normal threads"
+            buffer_str.contains("[C]"),
+            "Thread type indicator [C] should be shown for Conversation threads"
         );
     }
 
@@ -1077,7 +1077,7 @@ mod tests {
             description: None,
             preview: "Testing model display".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Normal,
+            thread_type: crate::models::ThreadType::Conversation,
             model: Some("claude-sonnet-4-5-20250514".to_string()),
             permission_mode: None,
             message_count: 0,
@@ -1097,9 +1097,9 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
 
-        // Should show [N] and "sonnet" model name
+        // Should show [C] and "sonnet" model name
         assert!(
-            buffer_str.contains("[N]"),
+            buffer_str.contains("[C]"),
             "Thread type indicator should be shown"
         );
         assert!(
@@ -1163,7 +1163,7 @@ mod tests {
             description: None,
             preview: "Normal thread".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Normal,
+            thread_type: crate::models::ThreadType::Conversation,
             model: Some("claude-sonnet-4-5".to_string()),
             permission_mode: None,
             message_count: 0,
@@ -1199,8 +1199,8 @@ mod tests {
 
         // Both indicators should be present
         assert!(
-            buffer_str.contains("[N]"),
-            "Should show [N] indicator for normal thread"
+            buffer_str.contains("[C]"),
+            "Should show [C] indicator for conversation thread"
         );
         assert!(
             buffer_str.contains("[P]"),
@@ -1287,7 +1287,7 @@ mod tests {
             description: None,
             preview: "Chat".to_string(),
             updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Normal,
+            thread_type: crate::models::ThreadType::Conversation,
             model: None,
             permission_mode: None,
             message_count: 0,

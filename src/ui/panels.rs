@@ -181,10 +181,20 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
 
     let inner = inner_rect(area, 1);
 
-    // Calculate centering padding for thread cards
-    // Card width is 39 chars (including borders)
-    let card_width: u16 = 39;
+    // Calculate card width as 75% of panel width, with min/max bounds
     let panel_width = inner.width;
+    let card_width: u16 = ((panel_width as f32 * 0.75) as u16).clamp(30, panel_width.saturating_sub(2));
+    let inner_width = card_width.saturating_sub(2) as usize; // Width inside borders (between ┌ and ┐)
+
+    // Generate dynamic border strings
+    let border_top = format!("┌{}┐", "─".repeat(inner_width));
+    let border_bottom = format!("└{}┘", "─".repeat(inner_width));
+
+    // Content width: space between "│ " (2 chars) and "│" (1 char)
+    // So content_width = card_width - 3 = inner_width - 1
+    let content_width = inner_width.saturating_sub(1);
+
+    // Calculate centering padding
     let left_padding = if panel_width > card_width {
         (panel_width - card_width) / 2
     } else {
@@ -238,7 +248,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         lines.push(Line::from(vec![
             Span::raw(padding_str.clone()),
             Span::styled(
-                "┌─────────────────────────────────────┐",
+                border_top.clone(),
                 Style::default().fg(card_border_color),
             ),
         ]));
@@ -260,9 +270,9 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         };
 
         // Calculate available width for title to ensure dots fit
-        // Card width is 37 inner chars, minus "Thread: " (8) and marker (2) = 27 chars available
+        // content_width minus marker (2) and "Thread: " (8) = content_width - 10
         // Reserve 3 chars for dots if streaming
-        let max_title_len = if is_streaming { 24 } else { 27 };
+        let max_title_len = content_width.saturating_sub(10 + if is_streaming { 3 } else { 0 }); // 10 = marker(2) + "Thread: "(8)
         let display_title = if title.len() > max_title_len {
             format!("{}...", &title[..max_title_len.saturating_sub(3)])
         } else {
@@ -289,7 +299,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         }
 
         title_spans.push(Span::styled(
-            format!("{:>width$}│", "", width = 35_usize.saturating_sub(10 + display_title.len() + dots.len())),
+            format!("{:>width$}│", "", width = content_width.saturating_sub(10 + display_title.len() + dots.len())),
             Style::default().fg(card_border_color),
         ));
 
@@ -299,8 +309,8 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         let thread = &cached_threads[i];
         if let Some(description) = &thread.description {
             if !description.is_empty() {
-                // Max description length is 35 chars (card inner width minus borders and padding)
-                let max_desc_len = 35;
+                // Max description length is content_width minus indent (2 extra spaces)
+                let max_desc_len = content_width.saturating_sub(2);
                 let display_desc = if description.len() > max_desc_len {
                     format!("{}...", &description[..max_desc_len.saturating_sub(3)])
                 } else {
@@ -312,7 +322,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
                     Span::styled("│   ", Style::default().fg(card_border_color)),
                     Span::styled(display_desc.clone(), Style::default().fg(COLOR_DIM)),
                     Span::styled(
-                        format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + display_desc.len())),
+                        format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_desc.len())),
                         Style::default().fg(card_border_color),
                     ),
                 ]));
@@ -321,7 +331,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
 
         // Thread type indicator and model info (centered)
         let type_indicator = match thread.thread_type {
-            crate::models::ThreadType::Normal => "[N]",
+            crate::models::ThreadType::Conversation => "[C]",
             crate::models::ThreadType::Programming => "[P]",
         };
 
@@ -340,12 +350,12 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
             ));
             let type_info_len = type_indicator.len() + 1 + short_model.len();
             type_line_spans.push(Span::styled(
-                format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + type_info_len)),
+                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + type_info_len)),
                 Style::default().fg(card_border_color),
             ));
         } else {
             type_line_spans.push(Span::styled(
-                format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + type_indicator.len())),
+                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + type_indicator.len())),
                 Style::default().fg(card_border_color),
             ));
         }
@@ -353,12 +363,19 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         lines.push(Line::from(type_line_spans));
 
         // Thread preview (centered)
+        // Truncate preview to fit within content width minus quotes and indent
+        let max_preview_len = content_width.saturating_sub(4); // 2 for quotes, 2 for indent
+        let display_preview = if preview.len() > max_preview_len {
+            format!("{}...", &preview[..max_preview_len.saturating_sub(3)])
+        } else {
+            preview.clone()
+        };
         lines.push(Line::from(vec![
             Span::raw(padding_str.clone()),
             Span::styled("│   ", Style::default().fg(card_border_color)),
-            Span::styled(format!("\"{}\"", preview), Style::default().fg(COLOR_DIM)),
+            Span::styled(format!("\"{}\"", display_preview), Style::default().fg(COLOR_DIM)),
             Span::styled(
-                format!("{:>width$}│", "", width = 35_usize.saturating_sub(4 + preview.len())),
+                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_preview.len() + 2)), // +2 for quotes
                 Style::default().fg(card_border_color),
             ),
         ]));
@@ -367,7 +384,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         lines.push(Line::from(vec![
             Span::raw(padding_str.clone()),
             Span::styled(
-                "└─────────────────────────────────────┘",
+                border_bottom.clone(),
                 Style::default().fg(card_border_color),
             ),
         ]));

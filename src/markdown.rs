@@ -124,11 +124,12 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                         }
                     }
                 } else {
-                    // Normal text - handle newlines
+                    // Normal text - handle newlines with visual separation
                     for (i, part) in text_str.split('\n').enumerate() {
                         if i > 0 {
-                            // Flush current line and start new
+                            // Flush current line and start new with blank line for separation
                             lines.push(Line::from(std::mem::take(&mut current_spans)));
+                            lines.push(Line::from("")); // Visual separation
                         }
                         if !part.is_empty() {
                             current_spans.push(Span::styled(part.to_string(), current_style));
@@ -141,9 +142,10 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                 current_spans.push(Span::styled(code.to_string(), STYLE_INLINE_CODE));
             }
             Event::SoftBreak => {
-                // Soft break - add space
-                let current_style = *style_stack.last().unwrap_or(&Style::default());
-                current_spans.push(Span::styled(" ".to_string(), current_style));
+                // Soft break - create new line with blank line for visual separation
+                // This gives proper paragraph-like spacing in streamed content
+                lines.push(Line::from(std::mem::take(&mut current_spans)));
+                lines.push(Line::from("")); // Add blank line for visual separation
             }
             Event::HardBreak => {
                 // Hard break - new line
@@ -432,4 +434,56 @@ mod tests {
         // Should create separate lines
         assert!(lines.len() >= 2, "Hard break should create new line");
     }
+
+    #[test]
+    fn test_soft_break_creates_line() {
+        // GitHub-flavored markdown: single newline creates a line break
+        let md = "Line one\nLine two";
+        let lines = render_markdown(md);
+        // Should create separate lines (not collapse to single line with space)
+        assert!(
+            lines.len() >= 2,
+            "Soft break (single newline) should create new line, got {} lines",
+            lines.len()
+        );
+    }
+
+    #[test]
+    fn test_gfm_style_line_breaks() {
+        // Realistic multi-line content like streaming responses
+        let md = "Here's what I found:\n\n1. First item\n2. Second item\n\nLet me explain...";
+        let lines = render_markdown(md);
+
+        // Should have multiple lines for the structure
+        // Note: double newlines create paragraph breaks, exact count depends on parser
+        assert!(
+            lines.len() >= 3,
+            "Multi-line content should preserve structure, got {} lines",
+            lines.len()
+        );
+
+        // Verify content is present across lines
+        let all_content: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(all_content.contains("First item"));
+        assert!(all_content.contains("Second item"));
+        assert!(all_content.contains("explain"));
+    }
+
+    #[test]
+    fn test_streaming_content_line_breaks() {
+        // Simulates typical streaming response with line breaks
+        let md = "Step 1: Do this\nStep 2: Do that\nStep 3: Done";
+        let lines = render_markdown(md);
+
+        // Each step should be on its own line
+        assert!(
+            lines.len() >= 3,
+            "Each step should be on separate line, got {} lines",
+            lines.len()
+        );
+    }
 }
+

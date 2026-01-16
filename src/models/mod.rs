@@ -60,7 +60,7 @@ where
 }
 
 /// Helper to deserialize ThreadType with null handling
-/// Returns Default (Normal) if the field is null or missing
+/// Returns Default (Conversation) if the field is null or missing
 pub(crate) fn deserialize_thread_type<'de, D>(deserializer: D) -> Result<ThreadType, D::Error>
 where
     D: Deserializer<'de>,
@@ -84,24 +84,24 @@ mod tests {
 
     #[test]
     fn test_thread_type_default() {
-        assert_eq!(ThreadType::default(), ThreadType::Normal);
+        assert_eq!(ThreadType::default(), ThreadType::Conversation);
     }
 
     #[test]
     fn test_thread_type_variants() {
-        assert_eq!(ThreadType::Normal, ThreadType::Normal);
+        assert_eq!(ThreadType::Conversation, ThreadType::Conversation);
         assert_eq!(ThreadType::Programming, ThreadType::Programming);
-        assert_ne!(ThreadType::Normal, ThreadType::Programming);
+        assert_ne!(ThreadType::Conversation, ThreadType::Programming);
     }
 
     #[test]
     fn test_thread_type_serialization() {
-        // Test Normal serialization (lowercase for server compatibility)
-        let normal = ThreadType::Normal;
-        let json = serde_json::to_string(&normal).expect("Failed to serialize");
-        assert_eq!(json, "\"normal\"");
+        // Test Conversation serialization (lowercase for server compatibility)
+        let conversation = ThreadType::Conversation;
+        let json = serde_json::to_string(&conversation).expect("Failed to serialize");
+        assert_eq!(json, "\"conversation\"");
         let deserialized: ThreadType = serde_json::from_str(&json).expect("Failed to deserialize");
-        assert_eq!(normal, deserialized);
+        assert_eq!(conversation, deserialized);
 
         // Test Programming serialization (lowercase for server compatibility)
         let prog = ThreadType::Programming;
@@ -119,7 +119,7 @@ mod tests {
             description: None,
             preview: "Hello, world!".to_string(),
             updated_at: Utc::now(),
-            thread_type: ThreadType::Normal,
+            thread_type: ThreadType::Conversation,
             model: None,
             permission_mode: None,
             message_count: 0,
@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(thread.id, "thread-123");
         assert_eq!(thread.title, "Test Thread");
         assert_eq!(thread.preview, "Hello, world!");
-        assert_eq!(thread.thread_type, ThreadType::Normal);
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
     }
 
     #[test]
@@ -159,7 +159,7 @@ mod tests {
             description: None,
             preview: "Testing JSON".to_string(),
             updated_at: Utc::now(),
-            thread_type: ThreadType::Normal,
+            thread_type: ThreadType::Conversation,
             model: None,
             permission_mode: None,
             message_count: 0,
@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(thread.title, "Legacy Thread");
         assert_eq!(thread.preview, "Old format");
         // Should default to Normal when thread_type is missing
-        assert_eq!(thread.thread_type, ThreadType::Normal);
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
     }
 
     #[test]
@@ -246,7 +246,7 @@ mod tests {
         assert_eq!(thread.id, "thread-null-type");
         assert_eq!(thread.title, "Null Type Thread");
         // Should default to Normal when type is null
-        assert_eq!(thread.thread_type, ThreadType::Normal);
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         let json = r#"{
             "id": "thread-api",
             "name": "My Thread Title",
-            "thread_type": "normal",
+            "thread_type": "conversation",
             "project_path": "/home/user/project",
             "provider": "claude-cli"
         }"#;
@@ -265,7 +265,7 @@ mod tests {
         assert_eq!(thread.id, "thread-api");
         // "name" from API should map to "title" in struct
         assert_eq!(thread.title, "My Thread Title");
-        assert_eq!(thread.thread_type, ThreadType::Normal);
+        assert_eq!(thread.thread_type, ThreadType::Conversation);
     }
 
     #[test]
@@ -277,7 +277,7 @@ mod tests {
             "description": "This is a thread description",
             "preview": "Preview text",
             "updated_at": "2024-01-01T00:00:00Z",
-            "type": "normal"
+            "type": "conversation"
         }"#;
 
         let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
@@ -296,7 +296,7 @@ mod tests {
             "name": "Thread without Description",
             "preview": "Preview text",
             "updated_at": "2024-01-01T00:00:00Z",
-            "type": "normal"
+            "type": "conversation"
         }"#;
 
         let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
@@ -317,9 +317,9 @@ mod tests {
     #[test]
     fn test_thread_type_debug() {
         // Verify Debug trait is implemented correctly
-        let normal = ThreadType::Normal;
+        let conversation = ThreadType::Conversation;
         let prog = ThreadType::Programming;
-        assert_eq!(format!("{:?}", normal), "Normal");
+        assert_eq!(format!("{:?}", conversation), "Conversation");
         assert_eq!(format!("{:?}", prog), "Programming");
     }
 

@@ -517,10 +517,24 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
                 .unwrap_or_default();
             SseEvent::TodosUpdated(crate::events::TodosUpdatedEvent { todos: todo_items })
         }
-        crate::sse::SseEvent::Subagent { subagent_type, data } => {
-            SseEvent::Subagent(crate::events::SubagentEvent {
+        crate::sse::SseEvent::SubagentStarted { task_id, description, subagent_type } => {
+            SseEvent::SubagentStarted(crate::events::SubagentStartedEvent {
+                task_id,
+                description,
                 subagent_type,
-                data,
+            })
+        }
+        crate::sse::SseEvent::SubagentProgress { task_id, message } => {
+            SseEvent::SubagentProgress(crate::events::SubagentProgressEvent {
+                task_id,
+                message,
+            })
+        }
+        crate::sse::SseEvent::SubagentCompleted { task_id, summary, tool_call_count } => {
+            SseEvent::SubagentCompleted(crate::events::SubagentCompletedEvent {
+                task_id,
+                summary,
+                tool_call_count,
             })
         }
         crate::sse::SseEvent::ThreadUpdated { thread_id, title, description } => {

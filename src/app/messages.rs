@@ -86,4 +86,138 @@ pub enum AppMessage {
         title: Option<String>,
         description: Option<String>,
     },
+    /// Subagent task started
+    SubagentStarted {
+        task_id: String,
+        description: String,
+        subagent_type: String,
+    },
+    /// Subagent progress update
+    SubagentProgress {
+        task_id: String,
+        message: String,
+    },
+    /// Subagent task completed
+    SubagentCompleted {
+        task_id: String,
+        summary: String,
+        tool_call_count: Option<u32>,
+    },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_subagent_started_construction() {
+        let msg = AppMessage::SubagentStarted {
+            task_id: "task-123".to_string(),
+            description: "Test task description".to_string(),
+            subagent_type: "general-purpose".to_string(),
+        };
+
+        // Verify it can be constructed and cloned
+        let cloned = msg.clone();
+        match cloned {
+            AppMessage::SubagentStarted {
+                task_id,
+                description,
+                subagent_type,
+            } => {
+                assert_eq!(task_id, "task-123");
+                assert_eq!(description, "Test task description");
+                assert_eq!(subagent_type, "general-purpose");
+            }
+            _ => panic!("Expected SubagentStarted variant"),
+        }
+    }
+
+    #[test]
+    fn test_subagent_progress_construction() {
+        let msg = AppMessage::SubagentProgress {
+            task_id: "task-456".to_string(),
+            message: "Progress update message".to_string(),
+        };
+
+        // Verify it can be constructed and cloned
+        let cloned = msg.clone();
+        match cloned {
+            AppMessage::SubagentProgress { task_id, message } => {
+                assert_eq!(task_id, "task-456");
+                assert_eq!(message, "Progress update message");
+            }
+            _ => panic!("Expected SubagentProgress variant"),
+        }
+    }
+
+    #[test]
+    fn test_subagent_completed_construction() {
+        let msg = AppMessage::SubagentCompleted {
+            task_id: "task-789".to_string(),
+            summary: "Task completed successfully".to_string(),
+            tool_call_count: Some(42),
+        };
+
+        // Verify it can be constructed and cloned
+        let cloned = msg.clone();
+        match cloned {
+            AppMessage::SubagentCompleted {
+                task_id,
+                summary,
+                tool_call_count,
+            } => {
+                assert_eq!(task_id, "task-789");
+                assert_eq!(summary, "Task completed successfully");
+                assert_eq!(tool_call_count, Some(42));
+            }
+            _ => panic!("Expected SubagentCompleted variant"),
+        }
+    }
+
+    #[test]
+    fn test_subagent_completed_without_tool_count() {
+        let msg = AppMessage::SubagentCompleted {
+            task_id: "task-999".to_string(),
+            summary: "Task completed".to_string(),
+            tool_call_count: None,
+        };
+
+        match msg {
+            AppMessage::SubagentCompleted {
+                task_id,
+                summary,
+                tool_call_count,
+            } => {
+                assert_eq!(task_id, "task-999");
+                assert_eq!(summary, "Task completed");
+                assert_eq!(tool_call_count, None);
+            }
+            _ => panic!("Expected SubagentCompleted variant"),
+        }
+    }
+
+    #[test]
+    fn test_all_subagent_variants_debug() {
+        // Verify Debug trait works for all new variants
+        let started = AppMessage::SubagentStarted {
+            task_id: "t1".to_string(),
+            description: "desc".to_string(),
+            subagent_type: "type".to_string(),
+        };
+        let progress = AppMessage::SubagentProgress {
+            task_id: "t2".to_string(),
+            message: "msg".to_string(),
+        };
+        let completed = AppMessage::SubagentCompleted {
+            task_id: "t3".to_string(),
+            summary: "sum".to_string(),
+            tool_call_count: Some(5),
+        };
+
+        // Should not panic
+        let _ = format!("{:?}", started);
+        let _ = format!("{:?}", progress);
+        let _ = format!("{:?}", completed);
+    }
 }

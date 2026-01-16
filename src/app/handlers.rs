@@ -434,6 +434,26 @@ impl App {
                     Some(&thread_id),
                 );
             }
+            AppMessage::SubagentStarted {
+                task_id: _,
+                description: _,
+                subagent_type: _,
+            } => {
+                // TODO: Handle subagent started event in Phase 4
+            }
+            AppMessage::SubagentProgress {
+                task_id: _,
+                message: _,
+            } => {
+                // TODO: Handle subagent progress event in Phase 4
+            }
+            AppMessage::SubagentCompleted {
+                task_id: _,
+                summary: _,
+                tool_call_count: _,
+            } => {
+                // TODO: Handle subagent completed event in Phase 4
+            }
         }
     }
 }

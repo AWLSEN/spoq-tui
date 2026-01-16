@@ -365,14 +365,14 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         // Scroll down to see newer content (decrease scroll offset)
                                         // Minimum is 0 (showing latest at bottom)
                                         app.conversation_scroll =
-                                            app.conversation_scroll.saturating_sub(3);
+                                            app.conversation_scroll.saturating_sub(1);
                                     }
                                 }
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll up to see older content (increase scroll offset)
                                         app.conversation_scroll =
-                                            app.conversation_scroll.saturating_add(3);
+                                            app.conversation_scroll.saturating_add(1);
                                     }
                                 }
                                 _ => {}

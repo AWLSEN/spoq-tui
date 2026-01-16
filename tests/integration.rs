@@ -28,7 +28,7 @@ async fn test_full_thread_creation_flow() {
     assert_eq!(app.input_box.content(), "Hello world");
 
     // 3. Call submit_input()
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // 4. Verify thread created in cache
     assert_eq!(
@@ -75,7 +75,7 @@ async fn test_screen_navigation() {
     app.input_box.insert_char('e');
     app.input_box.insert_char('s');
     app.input_box.insert_char('t');
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     assert_eq!(
         app.screen,
@@ -111,7 +111,7 @@ async fn test_thread_appears_in_right_panel() {
     for c in message.chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // Get the thread ID that was just created
     let thread_id = app.active_thread_id.clone().expect("Thread should be created");
@@ -150,7 +150,7 @@ async fn test_multiple_threads_ordering() {
     for c in "First thread".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
     let first_thread_id = app.active_thread_id.clone().unwrap();
 
     // Navigate back and create second thread
@@ -158,7 +158,7 @@ async fn test_multiple_threads_ordering() {
     for c in "Second thread".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
     let second_thread_id = app.active_thread_id.clone().unwrap();
 
     // Verify both threads exist
@@ -190,7 +190,7 @@ async fn test_empty_input_does_not_create_thread() {
     let initial_count = app.cache.thread_count();
 
     // Submit with empty input
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // Verify no thread was created
     assert_eq!(
@@ -218,7 +218,7 @@ async fn test_whitespace_only_input_does_not_create_thread() {
     app.input_box.insert_char(' ');
     app.input_box.insert_char(' ');
     app.input_box.insert_char(' ');
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // Verify no thread was created
     assert_eq!(
@@ -237,7 +237,7 @@ async fn test_input_cleared_after_submit() {
     }
     assert!(!app.input_box.is_empty(), "Input should have content");
 
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     assert!(
         app.input_box.is_empty(),
@@ -252,7 +252,7 @@ async fn test_thread_messages_have_correct_roles() {
     for c in "Hello AI".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let thread_id = app.active_thread_id.as_ref().unwrap();
     let messages = app.cache.get_messages(thread_id).unwrap();
@@ -274,8 +274,8 @@ async fn test_thread_messages_have_correct_roles() {
 /// - Start at command deck (active_thread_id = None)
 /// - Type message, press Enter
 /// - Verify: Navigates to conversation (screen = Conversation)
-/// - Verify: Cache creates pending thread with "pending-" prefix
-/// - Verify: active_thread_id is set to pending ID
+/// - Verify: Cache creates thread with client-generated UUID
+/// - Verify: active_thread_id is set to the UUID
 #[tokio::test]
 async fn test_new_thread_flow_complete() {
     let mut app = App::new().expect("Failed to create app");
@@ -293,7 +293,7 @@ async fn test_new_thread_flow_complete() {
     }
 
     // 3. Submit (press Enter equivalent)
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // 4. Verify: Navigates to conversation
     assert_eq!(
@@ -302,14 +302,14 @@ async fn test_new_thread_flow_complete() {
         "Should navigate to Conversation screen after submit"
     );
 
-    // 5. Verify: Cache creates pending thread with "pending-" prefix
+    // 5. Verify: Cache creates thread with a valid UUID
     let thread_id = app
         .active_thread_id
         .as_ref()
         .expect("active_thread_id should be set");
     assert!(
-        thread_id.starts_with("pending-"),
-        "Thread ID should have 'pending-' prefix, got: {}",
+        uuid::Uuid::parse_str(thread_id).is_ok(),
+        "Thread ID should be a valid UUID, got: {}",
         thread_id
     );
 
@@ -347,50 +347,50 @@ async fn test_continue_thread_flow() {
     for c in "First question".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
-    let pending_id = app
+    let thread_id = app
         .active_thread_id
         .clone()
-        .expect("Should have pending thread ID");
-    assert!(pending_id.starts_with("pending-"));
+        .expect("Should have thread ID");
+    assert!(uuid::Uuid::parse_str(&thread_id).is_ok());
 
-    // Simulate backend reconciliation
+    // Simulate backend response (echoes back same UUID)
     app.handle_message(AppMessage::ThreadCreated {
-        pending_id: pending_id.clone(),
-        real_id: "real-thread-123".to_string(),
+        pending_id: thread_id.clone(),
+        real_id: thread_id.clone(),
         title: Some("First question".to_string()),
     });
 
     // Finalize first response
-    app.cache.append_to_message("real-thread-123", "First response");
-    app.cache.finalize_message("real-thread-123", 1);
+    app.cache.append_to_message(&thread_id, "First response");
+    app.cache.finalize_message(&thread_id, 1);
 
-    // Verify we're still in conversation with real thread ID
+    // Verify we're still in conversation with same thread ID
     assert_eq!(
         app.active_thread_id,
-        Some("real-thread-123".to_string()),
-        "active_thread_id should be reconciled to real ID"
+        Some(thread_id.clone()),
+        "active_thread_id should remain the same"
     );
     assert_eq!(app.screen, Screen::Conversation);
 
-    let initial_message_count = app.cache.get_messages("real-thread-123").unwrap().len();
+    let initial_message_count = app.cache.get_messages(&thread_id).unwrap().len();
 
     // Type second message
     for c in "Follow-up question".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
-    // Verify: Should still be on same thread (NOT a new pending thread)
+    // Verify: Should still be on same thread (NOT a new thread)
     assert_eq!(
         app.active_thread_id,
-        Some("real-thread-123".to_string()),
+        Some(thread_id.clone()),
         "Should continue using same thread ID"
     );
 
     // Verify: Messages were added to existing thread
-    let messages = app.cache.get_messages("real-thread-123").unwrap();
+    let messages = app.cache.get_messages(&thread_id).unwrap();
     assert_eq!(
         messages.len(),
         initial_message_count + 2,
@@ -420,7 +420,7 @@ async fn test_back_to_deck_flow() {
     for c in "Test message".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     assert_eq!(app.screen, Screen::Conversation);
     assert!(app.active_thread_id.is_some());
@@ -469,10 +469,10 @@ async fn test_new_thread_after_returning_to_deck() {
     for c in "First thread message".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let first_thread_id = app.active_thread_id.clone().unwrap();
-    assert!(first_thread_id.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&first_thread_id).is_ok());
 
     // Navigate back to command deck
     app.navigate_to_command_deck();
@@ -484,11 +484,11 @@ async fn test_new_thread_after_returning_to_deck() {
     for c in "Second thread message".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // Verify: Creates NEW thread
     let second_thread_id = app.active_thread_id.clone().unwrap();
-    assert!(second_thread_id.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&second_thread_id).is_ok());
 
     // Verify: New pending ID is DIFFERENT from previous
     assert_ne!(
@@ -535,10 +535,10 @@ async fn test_thread_reconciliation_complete() {
     for c in "What is Rust?".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let pending_id = app.active_thread_id.clone().unwrap();
-    assert!(pending_id.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&pending_id).is_ok());
 
     // Add some streaming content
     app.cache.append_to_message(&pending_id, "Rust is ");
@@ -624,7 +624,7 @@ async fn test_open_thread_flow() {
     for c in "First thread".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
     let first_thread_id = app.active_thread_id.clone().unwrap();
 
     // Navigate back to deck
@@ -634,7 +634,7 @@ async fn test_open_thread_flow() {
     for c in "Second thread".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
     let second_thread_id = app.active_thread_id.clone().unwrap();
 
     // Navigate back to deck
@@ -689,7 +689,7 @@ async fn test_open_thread_direct() {
     for c in "Test thread".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
     let thread_id = app.active_thread_id.clone().unwrap();
 
     // Navigate away
@@ -716,7 +716,7 @@ async fn test_open_selected_thread_invalid_index() {
     for c in "Single thread".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // Navigate back
     app.navigate_to_command_deck();
@@ -749,10 +749,10 @@ async fn test_complete_end_to_end_workflow() {
     for c in "What is Rust?".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let pending_id1 = app.active_thread_id.clone().unwrap();
-    assert!(pending_id1.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&pending_id1).is_ok());
     assert_eq!(app.screen, Screen::Conversation);
 
     // Simulate backend response
@@ -770,7 +770,7 @@ async fn test_complete_end_to_end_workflow() {
     for c in "Tell me more".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     assert_eq!(
         app.active_thread_id,
@@ -797,10 +797,10 @@ async fn test_complete_end_to_end_workflow() {
     for c in "Different topic".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let pending_id2 = app.active_thread_id.clone().unwrap();
-    assert!(pending_id2.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&pending_id2).is_ok());
     assert_ne!(pending_id2, "thread-1");
 
     // Simulate backend response for second thread
@@ -857,10 +857,10 @@ async fn test_thread_updated_full_flow() {
     for c in "What is Rust?".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let pending_id = app.active_thread_id.clone().unwrap();
-    assert!(pending_id.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&pending_id).is_ok());
 
     // Reconcile to real ID
     app.handle_message(AppMessage::ThreadCreated {
@@ -916,10 +916,10 @@ async fn test_thread_updated_with_pending_id() {
     for c in "Test message".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let pending_id = app.active_thread_id.clone().unwrap();
-    assert!(pending_id.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&pending_id).is_ok());
 
     // Verify thread exists with pending ID
     assert!(app.cache.get_thread(&pending_id).is_some());
@@ -1136,7 +1136,7 @@ async fn test_thread_updated_during_active_conversation() {
     for c in "Test message".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let pending_id = app.active_thread_id.clone().unwrap();
 
@@ -1277,16 +1277,16 @@ async fn test_rapid_submit_blocked_on_pending_thread() {
     for c in "First message".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     let pending_id = app.active_thread_id.clone().unwrap();
-    assert!(pending_id.starts_with("pending-"));
+    assert!(uuid::Uuid::parse_str(&pending_id).is_ok());
 
     // Try to submit again while still pending
     for c in "Second message".chars() {
         app.input_box.insert_char(c);
     }
-    app.submit_input(ThreadType::Normal);
+    app.submit_input(ThreadType::Conversation);
 
     // Should be blocked with error
     assert!(app.stream_error.is_some());

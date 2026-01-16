@@ -120,10 +120,22 @@ pub enum SseEvent {
     TodosUpdated {
         todos: serde_json::Value,
     },
-    /// Subagent event - stores raw data for flexibility
-    Subagent {
+    /// Subagent started
+    SubagentStarted {
+        task_id: String,
+        description: String,
         subagent_type: String,
-        data: serde_json::Value,
+    },
+    /// Subagent progress update
+    SubagentProgress {
+        task_id: String,
+        message: String,
+    },
+    /// Subagent completed
+    SubagentCompleted {
+        task_id: String,
+        summary: String,
+        tool_call_count: Option<u32>,
     },
     /// Thread updated - when thread metadata is changed
     ThreadUpdated {
@@ -155,7 +167,9 @@ impl SseEvent {
             SseEvent::Reasoning { .. } => "reasoning",
             SseEvent::PermissionRequest { .. } => "permission_request",
             SseEvent::TodosUpdated { .. } => "todos_updated",
-            SseEvent::Subagent { .. } => "subagent",
+            SseEvent::SubagentStarted { .. } => "subagent_started",
+            SseEvent::SubagentProgress { .. } => "subagent_progress",
+            SseEvent::SubagentCompleted { .. } => "subagent_completed",
             SseEvent::ThreadUpdated { .. } => "thread_updated",
         }
     }
@@ -495,21 +509,39 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
             let todos = v.get("todos").cloned().unwrap_or(serde_json::Value::Array(vec![]));
             Ok(SseEvent::TodosUpdated { todos })
         }
-        "subagent" | "subagent_started" | "subagent_progress" | "subagent_completed" => {
+        "subagent_started" => {
             let v: serde_json::Value = serde_json::from_str(data)
                 .map_err(|e| SseParseError::InvalidJson {
                     event_type: event_type.to_string(),
                     source: e.to_string(),
                 })?;
-            // Determine subagent_type - either from JSON field or from event type name
-            let subagent_type = v.get("subagent_type")
-                .or(v.get("event_type"))
-                .and_then(|v| v.as_str())
-                .unwrap_or(event_type)
-                .to_string();
-            Ok(SseEvent::Subagent {
-                subagent_type,
-                data: v,
+            Ok(SseEvent::SubagentStarted {
+                task_id: v.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                description: v.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                subagent_type: v.get("subagent_type").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            })
+        }
+        "subagent_progress" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::SubagentProgress {
+                task_id: v.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                message: v.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            })
+        }
+        "subagent_completed" => {
+            let v: serde_json::Value = serde_json::from_str(data)
+                .map_err(|e| SseParseError::InvalidJson {
+                    event_type: event_type.to_string(),
+                    source: e.to_string(),
+                })?;
+            Ok(SseEvent::SubagentCompleted {
+                task_id: v.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                summary: v.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                tool_call_count: v.get("tool_call_count").and_then(|v| v.as_u64()).map(|n| n as u32),
             })
         }
         "thread_updated" => {
@@ -1341,6 +1373,150 @@ mod tests {
                 thread_id: "minimal-thread".to_string(),
                 title: None,
                 description: None,
+            })
+        );
+    }
+
+    // Tests for subagent events
+
+    #[test]
+    fn test_parse_subagent_started_event() {
+        let result = parse_sse_event(
+            "subagent_started",
+            r#"{"task_id": "task-001", "description": "Explore codebase", "subagent_type": "Explore"}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::SubagentStarted {
+                task_id: "task-001".to_string(),
+                description: "Explore codebase".to_string(),
+                subagent_type: "Explore".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_subagent_progress_event() {
+        let result = parse_sse_event(
+            "subagent_progress",
+            r#"{"task_id": "task-002", "message": "Searching files..."}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::SubagentProgress {
+                task_id: "task-002".to_string(),
+                message: "Searching files...".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_subagent_completed_event() {
+        let result = parse_sse_event(
+            "subagent_completed",
+            r#"{"task_id": "task-003", "summary": "Found 15 files", "tool_call_count": 42}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::SubagentCompleted {
+                task_id: "task-003".to_string(),
+                summary: "Found 15 files".to_string(),
+                tool_call_count: Some(42),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_subagent_completed_event_without_tool_count() {
+        let result = parse_sse_event(
+            "subagent_completed",
+            r#"{"task_id": "task-004", "summary": "Analysis complete"}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::SubagentCompleted {
+                task_id: "task-004".to_string(),
+                summary: "Analysis complete".to_string(),
+                tool_call_count: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parser_subagent_started_event() {
+        let mut parser = SseParser::new();
+
+        parser.feed_line("event: subagent_started").unwrap();
+        parser
+            .feed_line(r#"data: {"task_id": "t-123", "description": "Plan implementation", "subagent_type": "Plan"}"#)
+            .unwrap();
+
+        let event = parser.feed_line("").unwrap();
+        assert_eq!(
+            event,
+            Some(SseEvent::SubagentStarted {
+                task_id: "t-123".to_string(),
+                description: "Plan implementation".to_string(),
+                subagent_type: "Plan".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_parser_subagent_progress_event() {
+        let mut parser = SseParser::new();
+
+        parser.feed_line("event: subagent_progress").unwrap();
+        parser
+            .feed_line(r#"data: {"task_id": "t-456", "message": "Analyzing dependencies"}"#)
+            .unwrap();
+
+        let event = parser.feed_line("").unwrap();
+        assert_eq!(
+            event,
+            Some(SseEvent::SubagentProgress {
+                task_id: "t-456".to_string(),
+                message: "Analyzing dependencies".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn test_parser_subagent_completed_event() {
+        let mut parser = SseParser::new();
+
+        parser.feed_line("event: subagent_completed").unwrap();
+        parser
+            .feed_line(r#"data: {"task_id": "t-789", "summary": "Successfully completed analysis", "tool_call_count": 25}"#)
+            .unwrap();
+
+        let event = parser.feed_line("").unwrap();
+        assert_eq!(
+            event,
+            Some(SseEvent::SubagentCompleted {
+                task_id: "t-789".to_string(),
+                summary: "Successfully completed analysis".to_string(),
+                tool_call_count: Some(25),
+            })
+        );
+    }
+
+    #[test]
+    fn test_parser_subagent_completed_event_without_tool_count() {
+        let mut parser = SseParser::new();
+
+        parser.feed_line("event: subagent_completed").unwrap();
+        parser
+            .feed_line(r#"data: {"task_id": "t-999", "summary": "Done"}"#)
+            .unwrap();
+
+        let event = parser.feed_line("").unwrap();
+        assert_eq!(
+            event,
+            Some(SseEvent::SubagentCompleted {
+                task_id: "t-999".to_string(),
+                summary: "Done".to_string(),
+                tool_call_count: None,
             })
         );
     }

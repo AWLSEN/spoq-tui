@@ -19,14 +19,17 @@ impl App {
     /// Submit the current input, create a streaming thread, and spawn async API call.
     ///
     /// This handles two distinct cases:
-    /// 1. NEW thread: When `active_thread_id` is None, creates a new pending thread
+    /// 1. NEW thread: When `active_thread_id` is None, creates a new thread with a client-generated UUID
     /// 2. CONTINUING thread: When `active_thread_id` exists, adds to the existing thread
+    ///
+    /// The client generates the thread_id (UUID) for new threads and sends it to the backend.
+    /// The backend uses this client-provided UUID as the canonical thread_id.
     ///
     /// The unified stream endpoint routes based on thread_type parameter.
     /// For programming threads, plan_mode is set based on the current programming mode.
     ///
-    /// Edge case: If active_thread_id starts with "pending-", we block submission
-    /// because we're still waiting for the backend to confirm the thread ID.
+    /// Edge case: If the thread has a streaming response in progress, we block submission
+    /// to prevent sending multiple messages before the current response completes.
     ///
     /// The `new_thread_type` parameter specifies what type of thread to create if this
     /// is a NEW conversation. It's ignored when continuing an existing thread.
@@ -48,7 +51,7 @@ impl App {
         } else if self.is_active_thread_programming() {
             ThreadType::Programming
         } else {
-            ThreadType::Normal
+            ThreadType::Conversation
         };
 
         // Determine plan_mode for programming threads
@@ -71,9 +74,9 @@ impl App {
             (pending_id, true)
         } else if let Some(existing_id) = &self.active_thread_id {
             // CONTINUING existing thread (we're on Conversation screen)
-            // Check if thread is still pending (waiting for backend ThreadInfo)
-            if existing_id.starts_with("pending-") {
-                // Block rapid second message - still waiting for ThreadInfo
+            // Check if there's already a streaming response in progress
+            if self.cache.is_thread_streaming(existing_id) {
+                // Block rapid second message - still waiting for response to complete
                 self.stream_error = Some(
                     "Please wait for the current response to complete before sending another message."
                         .to_string(),
@@ -117,11 +120,9 @@ impl App {
         let debug_tx = self.debug_tx.clone();
 
         // Build unified StreamRequest with thread_type
-        let request = if is_new_thread {
-            StreamRequest::new(content).with_type(thread_type)
-        } else {
-            StreamRequest::with_thread(content, thread_id).with_type(thread_type)
-        };
+        // Always send thread_id - for new threads, we generate a UUID upfront
+        // The backend will use our client-generated UUID as the canonical thread_id
+        let request = StreamRequest::with_thread(content, thread_id).with_type(thread_type);
 
         // Apply plan_mode if needed
         let request = if plan_mode {
@@ -142,6 +143,8 @@ impl App {
                         )),
                         Some(&thread_id_for_task),
                     );
+                    // Update connection status to connected since streaming works
+                    let _ = message_tx.send(AppMessage::ConnectionStatus(true));
                     Self::process_stream(&mut stream, &message_tx, &thread_id_for_task, debug_tx)
                         .await;
                 }

@@ -8,9 +8,11 @@ use super::{deserialize_id, deserialize_nullable_string, deserialize_thread_type
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ThreadType {
-    /// Standard normal thread (default)
+    /// Standard conversation thread (default)
+    /// Accepts "normal" from server for backward compatibility
     #[default]
-    Normal,
+    #[serde(alias = "normal")]
+    Conversation,
     /// Programming-focused thread with code-specific features
     Programming,
 }

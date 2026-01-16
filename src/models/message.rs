@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::tools::{ToolCall, ToolEvent, ToolEventStatus};
+use super::tools::{SubagentEvent, ToolCall, ToolEvent, ToolEventStatus};
 
 /// Role of a message in a conversation
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -10,6 +10,7 @@ pub enum MessageRole {
     User,
     Assistant,
     System,
+    Tool,
 }
 
 /// A segment of message content - either text or a tool event
@@ -19,6 +20,8 @@ pub enum MessageSegment {
     Text(String),
     /// An inline tool event
     ToolEvent(ToolEvent),
+    /// An inline subagent event
+    SubagentEvent(SubagentEvent),
 }
 
 /// Message format from the server (different from client Message)
@@ -51,6 +54,7 @@ impl ServerMessage {
             MessageRole::User => MessageRole::User,
             MessageRole::Assistant => MessageRole::Assistant,
             MessageRole::System => MessageRole::System,
+            MessageRole::Tool => MessageRole::Tool,
         };
 
         Message {

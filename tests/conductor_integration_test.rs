@@ -291,6 +291,7 @@ fn test_server_message_to_client_message_preserves_role() {
             MessageRole::User => assert_eq!(client_msg.role, MessageRole::User),
             MessageRole::Assistant => assert_eq!(client_msg.role, MessageRole::Assistant),
             MessageRole::System => assert_eq!(client_msg.role, MessageRole::System),
+            MessageRole::Tool => assert_eq!(client_msg.role, MessageRole::Tool),
         }
     }
 }
@@ -301,7 +302,7 @@ fn test_thread_detail_response_structure() {
     // This validates the structure added in Phase 3
     let response = ThreadDetailResponse {
         id: "thread-123".to_string(),
-        thread_type: spoq::models::ThreadType::Normal,
+        thread_type: spoq::models::ThreadType::Conversation,
         name: Some("Test Thread".to_string()),
         project_path: None,
         provider: Some("anthropic".to_string()),
