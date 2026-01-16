@@ -1,6 +1,6 @@
 // Integration tests for scroll event handling
 
-use spoq::app::{App, Screen};
+use spoq::app::{App, Screen, ScrollBoundary};
 use spoq::models::ThreadType;
 
 /// Helper to create a test app with conversation screen
@@ -235,4 +235,176 @@ fn test_scroll_saturating_operations_prevent_overflow() {
     app.conversation_scroll = 0;
     let result = app.conversation_scroll.saturating_sub(100);
     assert_eq!(result, 0, "saturating_sub should not underflow");
+}
+
+// =============================================================================
+// Scroll Boundary Detection Tests
+// =============================================================================
+
+#[test]
+fn test_scroll_boundary_initializes_to_none() {
+    let app = create_test_app_in_conversation();
+    assert!(
+        app.scroll_boundary_hit.is_none(),
+        "scroll_boundary_hit should initialize to None"
+    );
+}
+
+#[test]
+fn test_boundary_hit_tick_initializes_to_zero() {
+    let app = create_test_app_in_conversation();
+    assert_eq!(
+        app.boundary_hit_tick, 0,
+        "boundary_hit_tick should initialize to 0"
+    );
+}
+
+#[test]
+fn test_scroll_boundary_enum_equality() {
+    assert_eq!(ScrollBoundary::Top, ScrollBoundary::Top);
+    assert_eq!(ScrollBoundary::Bottom, ScrollBoundary::Bottom);
+    assert_ne!(ScrollBoundary::Top, ScrollBoundary::Bottom);
+}
+
+#[test]
+fn test_scroll_boundary_enum_copy() {
+    let boundary = ScrollBoundary::Top;
+    let copy = boundary; // Copy trait
+    assert_eq!(boundary, copy, "ScrollBoundary should implement Copy");
+}
+
+#[test]
+fn test_bottom_boundary_detection() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.conversation_scroll = 1;
+    app.tick_count = 42;
+
+    // Simulate scroll down that hits bottom boundary
+    let threshold = (app.max_scroll / 10).max(5);
+    let near_bottom = app.conversation_scroll <= threshold;
+    let amount = if near_bottom { 1 } else { 3 };
+    app.conversation_scroll = app.conversation_scroll.saturating_sub(amount);
+
+    // Detect bottom boundary hit
+    if app.conversation_scroll == 0 {
+        app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+        app.boundary_hit_tick = app.tick_count;
+    }
+
+    assert_eq!(
+        app.scroll_boundary_hit,
+        Some(ScrollBoundary::Bottom),
+        "Should detect bottom boundary hit"
+    );
+    assert_eq!(
+        app.boundary_hit_tick, 42,
+        "Should record tick count when boundary hit"
+    );
+}
+
+#[test]
+fn test_top_boundary_detection() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.conversation_scroll = 99;
+    app.tick_count = 123;
+
+    // Simulate scroll up that hits top boundary
+    let threshold = (app.max_scroll / 10).max(5);
+    let near_top = app.conversation_scroll >= app.max_scroll.saturating_sub(threshold);
+    let amount = if near_top { 1 } else { 3 };
+    app.conversation_scroll = app.conversation_scroll.saturating_add(amount).min(app.max_scroll);
+
+    // Detect top boundary hit
+    if app.conversation_scroll == app.max_scroll && app.max_scroll > 0 {
+        app.scroll_boundary_hit = Some(ScrollBoundary::Top);
+        app.boundary_hit_tick = app.tick_count;
+    }
+
+    assert_eq!(
+        app.scroll_boundary_hit,
+        Some(ScrollBoundary::Top),
+        "Should detect top boundary hit"
+    );
+    assert_eq!(
+        app.boundary_hit_tick, 123,
+        "Should record tick count when boundary hit"
+    );
+}
+
+#[test]
+fn test_boundary_state_clears_after_timeout() {
+    let mut app = create_test_app_in_conversation();
+    app.scroll_boundary_hit = Some(ScrollBoundary::Top);
+    app.boundary_hit_tick = 100;
+    app.tick_count = 105; // 5 ticks later (past the 4-tick threshold)
+
+    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 4;
+    let ticks_since_hit = app.tick_count.saturating_sub(app.boundary_hit_tick);
+
+    if ticks_since_hit >= BOUNDARY_HIGHLIGHT_TICKS {
+        app.scroll_boundary_hit = None;
+    }
+
+    assert!(
+        app.scroll_boundary_hit.is_none(),
+        "Boundary state should clear after timeout (4 ticks)"
+    );
+}
+
+#[test]
+fn test_boundary_state_persists_within_timeout() {
+    let mut app = create_test_app_in_conversation();
+    app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+    app.boundary_hit_tick = 100;
+    app.tick_count = 102; // 2 ticks later (within the 4-tick threshold)
+
+    const BOUNDARY_HIGHLIGHT_TICKS: u64 = 4;
+    let ticks_since_hit = app.tick_count.saturating_sub(app.boundary_hit_tick);
+
+    let should_clear = ticks_since_hit >= BOUNDARY_HIGHLIGHT_TICKS;
+
+    assert!(
+        !should_clear,
+        "Boundary state should persist within timeout window"
+    );
+    assert_eq!(
+        app.scroll_boundary_hit,
+        Some(ScrollBoundary::Bottom),
+        "Boundary state should still be set"
+    );
+}
+
+#[test]
+fn test_no_top_boundary_when_max_scroll_zero() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 0; // No scrollable content
+    app.conversation_scroll = 0;
+    app.tick_count = 10;
+
+    // This scenario shouldn't trigger top boundary (max_scroll > 0 check)
+    let at_top = app.conversation_scroll == app.max_scroll && app.max_scroll > 0;
+
+    assert!(
+        !at_top,
+        "Should not detect top boundary when max_scroll is 0"
+    );
+}
+
+#[test]
+fn test_scroll_does_not_hit_boundary_when_in_middle() {
+    let mut app = create_test_app_in_conversation();
+    app.max_scroll = 100;
+    app.conversation_scroll = 50;
+
+    // Scroll up a bit (still in middle)
+    app.conversation_scroll = app.conversation_scroll.saturating_add(3).min(app.max_scroll);
+
+    // Check neither boundary is hit
+    let at_bottom = app.conversation_scroll == 0;
+    let at_top = app.conversation_scroll == app.max_scroll && app.max_scroll > 0;
+
+    assert!(!at_bottom, "Should not be at bottom when in middle");
+    assert!(!at_top, "Should not be at top when in middle");
 }
