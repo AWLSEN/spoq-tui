@@ -174,8 +174,32 @@ impl App {
     }
 
     // =========================================================================
-    // Thread Switcher (Ctrl+Tab)
+    // Thread Switcher (double-tap Tab to open)
     // =========================================================================
+
+    /// Maximum visible threads in the switcher dialog
+    const MAX_VISIBLE_THREADS: usize = 8;
+
+    /// Double-tap detection window in milliseconds
+    const DOUBLE_TAP_MS: u128 = 300;
+
+    /// Handle Tab press - returns true if switcher was opened (double-tap detected)
+    pub fn handle_tab_press(&mut self) -> bool {
+        let now = std::time::Instant::now();
+
+        if let Some(last_press) = self.last_tab_press {
+            if now.duration_since(last_press).as_millis() <= Self::DOUBLE_TAP_MS {
+                // Double-tap detected - open switcher
+                self.last_tab_press = None; // Reset for next double-tap
+                self.open_switcher();
+                return true;
+            }
+        }
+
+        // Single tap - record time for potential double-tap
+        self.last_tab_press = Some(now);
+        false
+    }
 
     /// Open the thread switcher dialog and select the second thread (index 1)
     /// so the first Tab press moves to the previous thread.
@@ -190,14 +214,16 @@ impl App {
         // Start at index 1 (second most recent) so Tab immediately shows
         // a different thread than the current one
         self.thread_switcher.selected_index = 1;
-        self.thread_switcher.last_tab_time = Some(std::time::Instant::now());
+        self.thread_switcher.scroll_offset = 0;
+        self.thread_switcher.last_nav_time = Some(std::time::Instant::now());
     }
 
     /// Close the thread switcher dialog without switching
     pub fn close_switcher(&mut self) {
         self.thread_switcher.visible = false;
         self.thread_switcher.selected_index = 0;
-        self.thread_switcher.last_tab_time = None;
+        self.thread_switcher.scroll_offset = 0;
+        self.thread_switcher.last_nav_time = None;
     }
 
     /// Cycle the thread switcher selection forward (toward older threads)
@@ -209,7 +235,8 @@ impl App {
 
         self.thread_switcher.selected_index =
             (self.thread_switcher.selected_index + 1) % thread_count;
-        self.thread_switcher.last_tab_time = Some(std::time::Instant::now());
+        self.adjust_switcher_scroll(thread_count);
+        self.thread_switcher.last_nav_time = Some(std::time::Instant::now());
     }
 
     /// Cycle the thread switcher selection backward (toward newer threads)
@@ -224,10 +251,27 @@ impl App {
         } else {
             self.thread_switcher.selected_index -= 1;
         }
-        self.thread_switcher.last_tab_time = Some(std::time::Instant::now());
+        self.adjust_switcher_scroll(thread_count);
+        self.thread_switcher.last_nav_time = Some(std::time::Instant::now());
     }
 
-    /// Check if the thread switcher should auto-confirm due to Tab release timeout
+    /// Adjust scroll offset to keep selected item visible
+    fn adjust_switcher_scroll(&mut self, thread_count: usize) {
+        let selected = self.thread_switcher.selected_index;
+        let offset = self.thread_switcher.scroll_offset;
+        let visible = Self::MAX_VISIBLE_THREADS.min(thread_count);
+
+        // If selected is above visible area, scroll up
+        if selected < offset {
+            self.thread_switcher.scroll_offset = selected;
+        }
+        // If selected is below visible area, scroll down
+        else if selected >= offset + visible {
+            self.thread_switcher.scroll_offset = selected - visible + 1;
+        }
+    }
+
+    /// Check if the thread switcher should auto-confirm due to navigation timeout
     /// Returns true if auto-confirm happened
     ///
     /// NOTE: Alternative approach if auto-confirm doesn't work well:
@@ -235,13 +279,13 @@ impl App {
     /// - Require explicit Enter to confirm selection
     /// - This would be more predictable but less fluid
     pub fn check_switcher_timeout(&mut self) -> bool {
-        const AUTO_CONFIRM_MS: u128 = 1000; // 1000ms timeout (longer than macOS key repeat delay)
+        const AUTO_CONFIRM_MS: u128 = 800; // 800ms timeout
 
         if !self.thread_switcher.visible {
             return false;
         }
 
-        if let Some(last_time) = self.thread_switcher.last_tab_time {
+        if let Some(last_time) = self.thread_switcher.last_nav_time {
             if last_time.elapsed().as_millis() >= AUTO_CONFIRM_MS {
                 self.confirm_switcher_selection();
                 return true;
@@ -261,7 +305,8 @@ impl App {
             // Close switcher first
             self.thread_switcher.visible = false;
             self.thread_switcher.selected_index = 0;
-            self.thread_switcher.last_tab_time = None;
+            self.thread_switcher.scroll_offset = 0;
+            self.thread_switcher.last_nav_time = None;
             // Open the selected thread
             self.open_thread(thread_id);
         } else {

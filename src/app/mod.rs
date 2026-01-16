@@ -109,8 +109,10 @@ pub struct ThreadSwitcher {
     pub visible: bool,
     /// Currently selected index in the thread list (MRU order)
     pub selected_index: usize,
-    /// Timestamp of last Tab press (for auto-confirm on release)
-    pub last_tab_time: Option<std::time::Instant>,
+    /// Scroll offset for the thread list (first visible thread index)
+    pub scroll_offset: usize,
+    /// Timestamp of last navigation key press (for auto-confirm on release)
+    pub last_nav_time: Option<std::time::Instant>,
 }
 
 impl Default for ThreadSwitcher {
@@ -118,7 +120,8 @@ impl Default for ThreadSwitcher {
         Self {
             visible: false,
             selected_index: 0,
-            last_tab_time: None,
+            scroll_offset: 0,
+            last_nav_time: None,
         }
     }
 }
@@ -181,8 +184,10 @@ pub struct App {
     pub last_event_time: Option<std::time::Instant>,
     /// Cumulative token count for the current stream
     pub cumulative_token_count: u64,
-    /// Thread switcher dialog state (Ctrl+Tab to switch threads)
+    /// Thread switcher dialog state (double-tap Tab to switch threads)
     pub thread_switcher: ThreadSwitcher,
+    /// Timestamp of last Tab press (for double-tap detection)
+    pub last_tab_press: Option<std::time::Instant>,
 }
 
 impl App {
@@ -243,6 +248,7 @@ impl App {
             last_event_time: None,
             cumulative_token_count: 0,
             thread_switcher: ThreadSwitcher::default(),
+            last_tab_press: None,
         })
     }
 

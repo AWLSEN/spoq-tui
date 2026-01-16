@@ -80,9 +80,28 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
     lines.push(Line::from("")); // Top padding
 
     let selected_idx = app.thread_switcher.selected_index;
+    let scroll_offset = app.thread_switcher.scroll_offset;
     let max_title_width = (inner.width as usize).saturating_sub(16); // Space for indicator and model
 
-    for (idx, thread) in threads.iter().take(MAX_VISIBLE_THREADS).enumerate() {
+    // Show scroll up indicator if there are hidden threads above
+    if scroll_offset > 0 {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  ↑ {} more above", scroll_offset),
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
+    }
+
+    // Iterate through visible threads starting from scroll_offset
+    let visible_threads: Vec<_> = threads
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(MAX_VISIBLE_THREADS)
+        .collect();
+
+    for (idx, thread) in visible_threads {
         let is_selected = idx == selected_idx;
 
         // Selection marker
@@ -110,9 +129,16 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
             .map(|m| extract_short_model_name(m))
             .unwrap_or("--");
 
-        // Truncate thread title if needed
+        // Truncate thread title if needed (respecting UTF-8 boundaries)
         let title = if thread.title.len() > max_title_width {
-            format!("{}...", &thread.title[..max_title_width.saturating_sub(3)])
+            let end = max_title_width.saturating_sub(3);
+            let boundary = thread.title
+                .char_indices()
+                .take_while(|(i, _)| *i <= end)
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            format!("{}...", &thread.title[..boundary])
         } else {
             thread.title.clone()
         };
@@ -140,11 +166,12 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
         ]));
     }
 
-    // If there are more threads than shown
-    if threads.len() > MAX_VISIBLE_THREADS {
+    // Show scroll down indicator if there are hidden threads below
+    let threads_below = threads.len().saturating_sub(scroll_offset + MAX_VISIBLE_THREADS);
+    if threads_below > 0 {
         lines.push(Line::from(vec![
             Span::styled(
-                format!("  ... {} more", threads.len() - MAX_VISIBLE_THREADS),
+                format!("  ↓ {} more below", threads_below),
                 Style::default().fg(COLOR_DIM),
             ),
         ]));
@@ -155,10 +182,8 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
     // Hint line
     lines.push(Line::from(vec![
         Span::styled("  ", Style::default()),
-        Span::styled("Tab/↓", Style::default().fg(COLOR_ACCENT)),
-        Span::styled(": next  ", Style::default().fg(COLOR_DIM)),
-        Span::styled("↑", Style::default().fg(COLOR_ACCENT)),
-        Span::styled(": prev  ", Style::default().fg(COLOR_DIM)),
+        Span::styled("Tab/↓↑", Style::default().fg(COLOR_ACCENT)),
+        Span::styled(": navigate  ", Style::default().fg(COLOR_DIM)),
         Span::styled("Esc", Style::default().fg(COLOR_ACCENT)),
         Span::styled(": cancel", Style::default().fg(COLOR_DIM)),
     ]));

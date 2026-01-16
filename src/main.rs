@@ -228,7 +228,7 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         app.cycle_switcher_forward();
                                         continue;
                                     }
-                                    KeyCode::BackTab | KeyCode::Up => {
+                                    KeyCode::Up => {
                                         app.cycle_switcher_backward();
                                         continue;
                                     }
@@ -337,14 +337,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                             // Panel navigation (when not typing in input)
                             match key.code {
                                 KeyCode::Tab => {
-                                    // Tab opens thread switcher
-                                    app.open_switcher();
-                                }
-                                KeyCode::BackTab => {
-                                    // Shift+Tab cycles backward in thread switcher if open
-                                    if app.thread_switcher.visible {
-                                        app.cycle_switcher_backward();
-                                    }
+                                    // Double-tap Tab opens thread switcher
+                                    app.handle_tab_press();
                                 }
                                 KeyCode::Esc if app.focus != Focus::Input => {
                                     // Escape when not in input: go back to CommandDeck

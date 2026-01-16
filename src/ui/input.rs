@@ -125,7 +125,7 @@ pub fn build_contextual_keybinds(app: &App) -> Line<'static> {
         spans.push(Span::raw(" back"));
     } else {
         // CommandDeck screen
-        spans.push(Span::styled("[Tab]", Style::default().fg(COLOR_ACCENT)));
+        spans.push(Span::styled("[Tab Tab]", Style::default().fg(COLOR_ACCENT)));
         spans.push(Span::raw(" switch thread │ "));
 
         spans.push(Span::styled("[Enter]", Style::default().fg(COLOR_ACCENT)));
