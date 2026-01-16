@@ -70,6 +70,15 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                             lines.push(Line::from(std::mem::take(&mut current_spans)));
                         }
                     }
+                    Tag::Item => {
+                        // Start of list item - flush current content to start new line
+                        if !current_spans.is_empty() {
+                            lines.push(Line::from(std::mem::take(&mut current_spans)));
+                        }
+                        // Add bullet point
+                        let current_style = *style_stack.last().unwrap_or(&Style::default());
+                        current_spans.push(Span::styled("• ".to_string(), current_style));
+                    }
                     _ => {}
                 }
             }
@@ -95,6 +104,12 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                     }
                     TagEnd::Paragraph => {
                         // Flush paragraph line
+                        if !current_spans.is_empty() {
+                            lines.push(Line::from(std::mem::take(&mut current_spans)));
+                        }
+                    }
+                    TagEnd::Item => {
+                        // End of list item - flush content to its own line
                         if !current_spans.is_empty() {
                             lines.push(Line::from(std::mem::take(&mut current_spans)));
                         }

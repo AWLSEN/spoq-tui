@@ -12,22 +12,6 @@ use ratatui::{
 
 use crate::app::App;
 use crate::markdown::render_markdown;
-use std::io::Write;
-
-/// Log markdown input to debug file for diagnosing line break issues
-fn log_markdown_input(text: &str) {
-    if let Ok(mut file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/markdown_debug.log")
-    {
-        let _ = writeln!(file, "=== MARKDOWN INPUT ({} chars) ===", text.len());
-        let _ = writeln!(file, "{:?}", text);
-        let _ = writeln!(file, "--- RAW ---");
-        let _ = writeln!(file, "{}", text);
-        let _ = writeln!(file, "=== END ===\n");
-    }
-}
 use crate::models::{Message, MessageRole, MessageSegment, ToolEvent, ToolEventStatus};
 use crate::state::ToolDisplayStatus;
 
@@ -701,7 +685,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     for segment in &message.segments {
                         match segment {
                             MessageSegment::Text(text) => {
-                                log_markdown_input(text); // DEBUG
+                                
                                 let mut segment_lines = render_markdown(text);
                                 if is_first_line && !segment_lines.is_empty() {
                                     // Prepend label to first line of first text segment
@@ -753,7 +737,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                 } else {
                     // Fall back to partial_content for backward compatibility
                     // (non-assistant messages or when segments is empty)
-                    log_markdown_input(&message.partial_content); // DEBUG
+                    
                     let mut content_lines = render_markdown(&message.partial_content);
 
                     // Add label to first line, append cursor to last line
@@ -799,7 +783,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     for segment in &message.segments {
                         match segment {
                             MessageSegment::Text(text) => {
-                                log_markdown_input(text); // DEBUG
+                                
                                 let mut segment_lines = render_markdown(text);
                                 if is_first_line && !segment_lines.is_empty() {
                                     // Prepend label to first line of first text segment
@@ -842,7 +826,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
                     }
                 } else {
                     // Fall back to content field for non-assistant messages or empty segments
-                    log_markdown_input(&message.content); // DEBUG
+                    
                     let content_lines = render_markdown(&message.content);
 
                     if content_lines.is_empty() {
