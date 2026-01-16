@@ -12,4 +12,5 @@ pub mod models;
 pub mod sse;
 pub mod state;
 pub mod ui;
+pub mod websocket;
 pub mod widgets;
