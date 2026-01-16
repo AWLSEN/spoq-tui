@@ -55,8 +55,8 @@ pub struct ServerMessage {
     pub role: MessageRole,
     /// Content of the message (may be empty for tool calls)
     #[serde(default)]
-    pub content: Option<String>,
-    /// Tool calls made by the assistant
+    pub content: Option<MessageContent>,
+    /// Tool calls made by the assistant (legacy format, will be ignored when content has blocks)
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCall>>,
     /// ID of the tool call this message responds to
@@ -76,11 +76,28 @@ impl ServerMessage {
     pub fn to_client_message(self, thread_id: &str, id: i64) -> Message {
         let role = self.role;
 
+        // Convert MessageContent to a plain string
+        let content = match self.content {
+            Some(MessageContent::Legacy(text)) => text,
+            Some(MessageContent::Blocks(blocks)) => {
+                // Extract text from all text blocks
+                blocks
+                    .into_iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::Text { text } => Some(text),
+                        ContentBlock::ToolUse { .. } => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            }
+            None => String::new(),
+        };
+
         Message {
             id,
             thread_id: thread_id.to_string(),
             role,
-            content: self.content.unwrap_or_default(),
+            content,
             created_at: Utc::now(),  // Server doesn't provide per-message timestamps
             is_streaming: false,
             partial_content: String::new(),

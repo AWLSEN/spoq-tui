@@ -231,7 +231,7 @@ fn test_server_message_to_client_message_conversion() {
     // Test conversion from ServerMessage to client Message
     let server_msg = ServerMessage {
         role: MessageRole::User,
-        content: Some("Hello, world!".to_string()),
+        content: Some(spoq::models::MessageContent::Legacy("Hello, world!".to_string())),
         tool_calls: None,
         tool_call_id: None,
         name: None,
@@ -278,7 +278,7 @@ fn test_server_message_to_client_message_preserves_role() {
     for role in roles {
         let server_msg = ServerMessage {
             role,
-            content: Some("Test".to_string()),
+            content: Some(spoq::models::MessageContent::Legacy("Test".to_string())),
             tool_calls: None,
             tool_call_id: None,
             name: None,
@@ -321,7 +321,7 @@ fn test_thread_detail_response_with_messages() {
     // Test ThreadDetailResponse with populated messages
     let message1 = ServerMessage {
         role: MessageRole::User,
-        content: Some("First message".to_string()),
+        content: Some(spoq::models::MessageContent::Legacy("First message".to_string())),
         tool_calls: None,
         tool_call_id: None,
         name: None,
@@ -329,7 +329,7 @@ fn test_thread_detail_response_with_messages() {
 
     let message2 = ServerMessage {
         role: MessageRole::Assistant,
-        content: Some("Second message".to_string()),
+        content: Some(spoq::models::MessageContent::Legacy("Second message".to_string())),
         tool_calls: None,
         tool_call_id: None,
         name: None,
