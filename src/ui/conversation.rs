@@ -240,15 +240,21 @@ pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
         ));
     }
 
-    // Context badge [ctx: 45K/100K] or [ctx: -/-]
+    // Context progress bar [████░░░░░░] 42% or [░░░░░░░░░░] -- when no data
     let ctx_badge = match (app.session_state.context_tokens_used, app.session_state.context_token_limit) {
-        (Some(used), Some(limit)) => {
-            // Format as K if over 1000
-            let used_str = if used >= 1000 { format!("{}K", used / 1000) } else { format!("{}", used) };
-            let limit_str = if limit >= 1000 { format!("{}K", limit / 1000) } else { format!("{}", limit) };
-            format!("[ctx: {}/{}] ", used_str, limit_str)
+        (Some(used), Some(limit)) if limit > 0 => {
+            let percentage = (used as f64 / limit as f64 * 100.0).round() as u32;
+            let filled_blocks = (percentage / 10).min(10) as usize;
+            let empty_blocks = 10 - filled_blocks;
+            let bar = format!(
+                "[{}{}] {}% ",
+                "█".repeat(filled_blocks),
+                "░".repeat(empty_blocks),
+                percentage
+            );
+            bar
         }
-        _ => "[ctx: -/-] ".to_string(),
+        _ => "[░░░░░░░░░░] -- ".to_string(),
     };
     badges.push(Span::styled(ctx_badge, Style::default().fg(COLOR_DIM)));
 
