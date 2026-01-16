@@ -20,10 +20,7 @@ impl App {
         let tx = self.message_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            let connected = match client.health_check().await {
-                Ok(healthy) => healthy,
-                Err(_) => false,
-            };
+            let connected: bool = (client.health_check().await).unwrap_or_default();
             let _ = tx.send(AppMessage::ConnectionStatus(connected));
         });
     }

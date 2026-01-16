@@ -50,12 +50,7 @@ impl ServerMessage {
     /// * `thread_id` - The thread ID to associate with the message
     /// * `id` - The message ID to assign
     pub fn to_client_message(self, thread_id: &str, id: i64) -> Message {
-        let role = match self.role {
-            MessageRole::User => MessageRole::User,
-            MessageRole::Assistant => MessageRole::Assistant,
-            MessageRole::System => MessageRole::System,
-            MessageRole::Tool => MessageRole::Tool,
-        };
+        let role = self.role;
 
         Message {
             id,

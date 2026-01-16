@@ -141,7 +141,7 @@ async fn handle_websocket(socket: WebSocket, state: DebugServerState) {
                     // Serialize the event to JSON
                     match serde_json::to_string(&event) {
                         Ok(json) => {
-                            if sender.send(Message::Text(json.into())).await.is_err() {
+                            if sender.send(Message::Text(json)).await.is_err() {
                                 // Client disconnected
                                 break;
                             }

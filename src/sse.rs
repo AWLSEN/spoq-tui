@@ -289,8 +289,8 @@ pub fn parse_sse_line(line: &str) -> SseLine {
         return SseLine::Empty;
     }
 
-    if line.starts_with(':') {
-        return SseLine::Comment(line[1..].trim().to_string());
+    if let Some(stripped) = line.strip_prefix(':') {
+        return SseLine::Comment(stripped.trim().to_string());
     }
 
     if let Some(rest) = line.strip_prefix("event:") {

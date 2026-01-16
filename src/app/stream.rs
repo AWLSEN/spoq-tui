@@ -154,7 +154,7 @@ impl App {
                         &debug_tx,
                         DebugEventKind::Error(ErrorData::new(
                             ErrorSource::ConductorApi,
-                            &e.to_string(),
+                            e.to_string(),
                         )),
                         Some(&thread_id_for_task),
                     );
@@ -573,7 +573,7 @@ impl App {
                         &debug_tx,
                         DebugEventKind::Error(ErrorData::new(
                             ErrorSource::SseConnection,
-                            &e.to_string(),
+                            e.to_string(),
                         )),
                         Some(thread_id),
                     );

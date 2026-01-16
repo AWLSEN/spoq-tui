@@ -224,7 +224,7 @@ pub fn render_thinking_block(
 
         // If streaming, add a blinking cursor at the end
         if message.is_streaming {
-            let show_cursor = (tick_count / 5) % 2 == 0;
+            let show_cursor = (tick_count / 5).is_multiple_of(2);
             if show_cursor {
                 lines.push(Line::from(vec![
                     Span::styled(
@@ -906,7 +906,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
             if message.is_streaming {
                 // Display streaming content with blinking cursor
                 // Blink cursor every ~500ms (assuming 10 ticks/sec, toggle every 5 ticks)
-                let show_cursor = (app.tick_count / 5) % 2 == 0;
+                let show_cursor = (app.tick_count / 5).is_multiple_of(2);
                 let cursor_span = Span::styled(
                     if show_cursor { "█" } else { " " },
                     Style::default().fg(COLOR_ACCENT),
