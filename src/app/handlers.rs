@@ -604,6 +604,51 @@ impl App {
                     None,
                 );
             }
+            AppMessage::WsConnected => {
+                use crate::websocket::WsConnectionState;
+                tracing::info!("WebSocket connected");
+                self.ws_connection_state = WsConnectionState::Connected;
+                // Emit StateChange for WebSocket connection
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "WebSocket connected",
+                        "connected",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::WsDisconnected => {
+                use crate::websocket::WsConnectionState;
+                tracing::info!("WebSocket disconnected");
+                self.ws_connection_state = WsConnectionState::Disconnected;
+                // Emit StateChange for WebSocket disconnection
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "WebSocket disconnected",
+                        "disconnected",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::WsReconnecting { attempt } => {
+                use crate::websocket::WsConnectionState;
+                tracing::info!("WebSocket reconnecting (attempt {})", attempt);
+                self.ws_connection_state = WsConnectionState::Reconnecting { attempt };
+                // Emit StateChange for WebSocket reconnection attempt
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "WebSocket reconnecting",
+                        format!("attempt: {}", attempt),
+                    )),
+                    None,
+                );
+            }
         }
     }
 }

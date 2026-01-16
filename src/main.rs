@@ -1,4 +1,4 @@
-use spoq::app::{App, AppMessage, Focus, Screen};
+use spoq::app::{start_websocket, App, AppMessage, Focus, Screen};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
@@ -49,6 +49,11 @@ async fn main() -> Result<()> {
 
     // Load threads from backend (async initialization)
     app.initialize().await;
+
+    // Connect WebSocket for real-time communication
+    // If connection fails, app continues in SSE-only mode
+    let ws_sender = start_websocket(app.message_tx.clone()).await;
+    app.ws_sender = ws_sender;
 
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;

@@ -94,6 +94,8 @@ mod tests {
             cumulative_token_count: 0,
             thread_switcher: crate::app::ThreadSwitcher::default(),
             last_tab_press: None,
+            ws_sender: None,
+            ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
         }
     }
 

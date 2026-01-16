@@ -108,6 +108,12 @@ pub enum AppMessage {
         context_used: u32,
         context_limit: u32,
     },
+    /// WebSocket connected successfully
+    WsConnected,
+    /// WebSocket disconnected
+    WsDisconnected,
+    /// WebSocket reconnecting
+    WsReconnecting { attempt: u8 },
 }
 
 #[cfg(test)]
@@ -224,5 +230,47 @@ mod tests {
         let _ = format!("{:?}", started);
         let _ = format!("{:?}", progress);
         let _ = format!("{:?}", completed);
+    }
+
+    #[test]
+    fn test_ws_connected_construction() {
+        let msg = AppMessage::WsConnected;
+        // Verify it can be cloned and debug printed
+        let cloned = msg.clone();
+        let _ = format!("{:?}", cloned);
+    }
+
+    #[test]
+    fn test_ws_disconnected_construction() {
+        let msg = AppMessage::WsDisconnected;
+        // Verify it can be cloned and debug printed
+        let cloned = msg.clone();
+        let _ = format!("{:?}", cloned);
+    }
+
+    #[test]
+    fn test_ws_reconnecting_construction() {
+        let msg = AppMessage::WsReconnecting { attempt: 3 };
+        // Verify it can be cloned and debug printed
+        let cloned = msg.clone();
+        match cloned {
+            AppMessage::WsReconnecting { attempt } => {
+                assert_eq!(attempt, 3);
+            }
+            _ => panic!("Expected WsReconnecting variant"),
+        }
+    }
+
+    #[test]
+    fn test_all_ws_variants_debug() {
+        // Verify Debug trait works for all WebSocket variants
+        let connected = AppMessage::WsConnected;
+        let disconnected = AppMessage::WsDisconnected;
+        let reconnecting = AppMessage::WsReconnecting { attempt: 1 };
+
+        // Should not panic
+        let _ = format!("{:?}", connected);
+        let _ = format!("{:?}", disconnected);
+        let _ = format!("{:?}", reconnecting);
     }
 }

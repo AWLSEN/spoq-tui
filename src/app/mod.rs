@@ -12,13 +12,16 @@ mod navigation;
 mod permissions;
 mod state_methods;
 mod stream;
+mod websocket;
 
 pub use messages::AppMessage;
+pub use websocket::{start_websocket, start_websocket_with_config};
 
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
 use crate::state::{SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker};
+use crate::websocket::WsConnectionState;
 use crate::widgets::input_box::InputBox;
 use chrono::Utc;
 use color_eyre::Result;
@@ -188,6 +191,10 @@ pub struct App {
     pub thread_switcher: ThreadSwitcher,
     /// Timestamp of last Tab press (for double-tap detection)
     pub last_tab_press: Option<std::time::Instant>,
+    /// WebSocket sender for sending messages to the server
+    pub ws_sender: Option<tokio::sync::mpsc::Sender<crate::websocket::WsCommandResponse>>,
+    /// WebSocket connection state for UI status indicator
+    pub ws_connection_state: WsConnectionState,
 }
 
 impl App {
@@ -249,6 +256,8 @@ impl App {
             cumulative_token_count: 0,
             thread_switcher: ThreadSwitcher::default(),
             last_tab_press: None,
+            ws_sender: None,
+            ws_connection_state: WsConnectionState::Disconnected,
         })
     }
 
