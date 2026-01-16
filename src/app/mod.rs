@@ -28,11 +28,20 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 /// Truncate a string for debug output, adding "..." if truncated.
+/// Uses char boundaries to avoid panicking on multi-byte UTF-8 characters.
 pub(super) fn truncate_for_debug(s: &str, max_len: usize) -> String {
     if s.len() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        // Find a valid char boundary at or before max_len - 3
+        let target = max_len.saturating_sub(3);
+        let boundary = s
+            .char_indices()
+            .take_while(|(i, _)| *i <= target)
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        format!("{}...", &s[..boundary])
     }
 }
 
