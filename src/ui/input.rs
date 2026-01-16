@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, Focus, Screen};
+use crate::app::{App, Screen};
 use crate::widgets::input_box::InputBoxWidget;
 
 use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
@@ -20,7 +20,8 @@ use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 // ============================================================================
 
 pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
-    let input_focused = app.focus == Focus::Input;
+    // Input is always "focused" since we removed panel focus cycling
+    let input_focused = true;
     let border_color = if input_focused { COLOR_HEADER } else { COLOR_BORDER };
 
     let input_outer = Block::default()
@@ -44,8 +45,9 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget (never streaming on CommandDeck)
-    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
+    // Render the InputBox widget with blinking cursor (never streaming on CommandDeck)
+    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused)
+        .with_tick(app.tick_count);
     frame.render_widget(input_widget, input_chunks[0]);
 
     // Build contextual keybind hints
@@ -57,7 +59,8 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Render the input area for conversation screen
 pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
-    let input_focused = app.focus == Focus::Input;
+    // Input is always "focused" since we removed panel focus cycling
+    let input_focused = true;
     let is_streaming = app.is_streaming();
     let border_color = if input_focused { COLOR_HEADER } else { COLOR_BORDER };
 
@@ -82,11 +85,13 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget with appropriate border style
+    // Render the InputBox widget with appropriate border style and blinking cursor
     let input_widget = if is_streaming {
         InputBoxWidget::dashed(&app.input_box, "", input_focused)
+            .with_tick(app.tick_count)
     } else {
         InputBoxWidget::new(&app.input_box, "", input_focused)
+            .with_tick(app.tick_count)
     };
     frame.render_widget(input_widget, input_chunks[0]);
 

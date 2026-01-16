@@ -202,6 +202,8 @@ pub struct InputBoxWidget<'a> {
     focused: bool,
     /// Whether to show dashed border (for streaming state)
     dashed: bool,
+    /// Tick count for cursor blinking (cursor visible when tick_count % 10 < 5)
+    tick_count: u64,
 }
 
 impl<'a> InputBoxWidget<'a> {
@@ -211,6 +213,7 @@ impl<'a> InputBoxWidget<'a> {
             title,
             focused,
             dashed: false,
+            tick_count: 0,
         }
     }
 
@@ -221,21 +224,121 @@ impl<'a> InputBoxWidget<'a> {
             title,
             focused,
             dashed: true,
+            tick_count: 0,
         }
+    }
+
+    /// Set the tick count for cursor blinking
+    pub fn with_tick(mut self, tick_count: u64) -> Self {
+        self.tick_count = tick_count;
+        self
+    }
+
+    /// Check if cursor should be visible based on tick count (blink rate)
+    fn cursor_visible(&self) -> bool {
+        // Blink every ~500ms (5 ticks at 100ms tick rate)
+        (self.tick_count % 10) < 5
     }
 }
 
 impl Widget for InputBoxWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let show_cursor = self.focused && self.cursor_visible();
         if self.dashed {
             self.render_with_dashed_border(area, buf);
         } else {
-            self.input_box.render_with_title(area, buf, self.title, self.focused);
+            self.render_normal(area, buf, show_cursor);
         }
     }
 }
 
 impl InputBoxWidget<'_> {
+    /// Render with normal border and optional blinking cursor
+    fn render_normal(&self, area: Rect, buf: &mut Buffer, show_cursor: bool) {
+        // Calculate inner area (accounting for border)
+        let inner_width = area.width.saturating_sub(2);
+
+        // Create a mutable copy to update scroll
+        let mut scroll_offset = self.input_box.scroll_offset;
+
+        // Update scroll offset calculation
+        if inner_width > 0 {
+            if self.input_box.cursor_position < scroll_offset {
+                scroll_offset = self.input_box.cursor_position;
+            }
+            if self.input_box.cursor_position >= scroll_offset + inner_width as usize {
+                scroll_offset = self.input_box.cursor_position - inner_width as usize + 1;
+            }
+        }
+
+        // Draw border with dark theme colors
+        let border_color = if self.focused { Color::Gray } else { Color::DarkGray };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(border_color))
+            .title(self.title);
+
+        // Render the block
+        block.render(area, buf);
+
+        // Calculate inner area for text
+        let inner_area = Rect {
+            x: area.x + 1,
+            y: area.y + 1,
+            width: inner_width,
+            height: area.height.saturating_sub(2),
+        };
+
+        if inner_area.width == 0 || inner_area.height == 0 {
+            return;
+        }
+
+        // Get the visible portion of text
+        let visible_text: String = self.input_box
+            .content
+            .chars()
+            .skip(scroll_offset)
+            .take(inner_width as usize)
+            .collect();
+
+        // Render the text
+        let text_style = Style::default().fg(Color::White);
+        for (i, c) in visible_text.chars().enumerate() {
+            if i < inner_width as usize {
+                buf.set_string(
+                    inner_area.x + i as u16,
+                    inner_area.y,
+                    c.to_string(),
+                    text_style,
+                );
+            }
+        }
+
+        // Render the blinking cursor
+        if show_cursor {
+            let cursor_x = (self.input_box.cursor_position - scroll_offset) as u16;
+            if cursor_x < inner_width {
+                let cursor_char = self.input_box
+                    .content
+                    .chars()
+                    .nth(self.input_box.cursor_position)
+                    .unwrap_or(' ');
+
+                // White cursor block for dark theme
+                let cursor_style = Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::White);
+
+                buf.set_string(
+                    inner_area.x + cursor_x,
+                    inner_area.y,
+                    cursor_char.to_string(),
+                    cursor_style,
+                );
+            }
+        }
+    }
+
     /// Render with a custom dashed border for streaming state
     fn render_with_dashed_border(&self, area: Rect, buf: &mut Buffer) {
         // Calculate inner area (accounting for border)
