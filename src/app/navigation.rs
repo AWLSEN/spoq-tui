@@ -103,6 +103,9 @@ impl App {
 
         log_thread_update(&format!("open_thread called with thread_id: {}", thread_id));
 
+        // Touch thread to update LRU (prevents eviction and moves to front)
+        self.cache.touch_thread(&thread_id);
+
         // Set active thread and navigate (existing logic)
         self.active_thread_id = Some(thread_id.clone());
         self.screen = Screen::Conversation;
@@ -168,5 +171,102 @@ impl App {
 
         let thread_id = threads[self.threads_index].id.clone();
         self.open_thread(thread_id);
+    }
+
+    // =========================================================================
+    // Thread Switcher (Ctrl+Tab)
+    // =========================================================================
+
+    /// Open the thread switcher dialog and select the second thread (index 1)
+    /// so the first Tab press moves to the previous thread.
+    pub fn open_switcher(&mut self) {
+        let thread_count = self.cache.threads().len();
+        if thread_count < 2 {
+            // No point opening switcher with 0 or 1 threads
+            return;
+        }
+
+        self.thread_switcher.visible = true;
+        // Start at index 1 (second most recent) so Tab immediately shows
+        // a different thread than the current one
+        self.thread_switcher.selected_index = 1;
+        self.thread_switcher.last_tab_time = Some(std::time::Instant::now());
+    }
+
+    /// Close the thread switcher dialog without switching
+    pub fn close_switcher(&mut self) {
+        self.thread_switcher.visible = false;
+        self.thread_switcher.selected_index = 0;
+        self.thread_switcher.last_tab_time = None;
+    }
+
+    /// Cycle the thread switcher selection forward (toward older threads)
+    pub fn cycle_switcher_forward(&mut self) {
+        let thread_count = self.cache.threads().len();
+        if thread_count == 0 {
+            return;
+        }
+
+        self.thread_switcher.selected_index =
+            (self.thread_switcher.selected_index + 1) % thread_count;
+        self.thread_switcher.last_tab_time = Some(std::time::Instant::now());
+    }
+
+    /// Cycle the thread switcher selection backward (toward newer threads)
+    pub fn cycle_switcher_backward(&mut self) {
+        let thread_count = self.cache.threads().len();
+        if thread_count == 0 {
+            return;
+        }
+
+        if self.thread_switcher.selected_index == 0 {
+            self.thread_switcher.selected_index = thread_count - 1;
+        } else {
+            self.thread_switcher.selected_index -= 1;
+        }
+        self.thread_switcher.last_tab_time = Some(std::time::Instant::now());
+    }
+
+    /// Check if the thread switcher should auto-confirm due to Tab release timeout
+    /// Returns true if auto-confirm happened
+    ///
+    /// NOTE: Alternative approach if auto-confirm doesn't work well:
+    /// - Use Tab/Arrow keys just for navigation (no auto-confirm)
+    /// - Require explicit Enter to confirm selection
+    /// - This would be more predictable but less fluid
+    pub fn check_switcher_timeout(&mut self) -> bool {
+        const AUTO_CONFIRM_MS: u128 = 1000; // 1000ms timeout (longer than macOS key repeat delay)
+
+        if !self.thread_switcher.visible {
+            return false;
+        }
+
+        if let Some(last_time) = self.thread_switcher.last_tab_time {
+            if last_time.elapsed().as_millis() >= AUTO_CONFIRM_MS {
+                self.confirm_switcher_selection();
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Confirm the thread switcher selection and switch to the selected thread
+    pub fn confirm_switcher_selection(&mut self) {
+        let threads = self.cache.threads();
+        let idx = self.thread_switcher.selected_index;
+
+        if idx < threads.len() {
+            let thread_id = threads[idx].id.clone();
+            // Close switcher first
+            self.thread_switcher.visible = false;
+            self.thread_switcher.selected_index = 0;
+            self.thread_switcher.last_tab_time = None;
+            // Open the selected thread
+            self.open_thread(thread_id);
+        } else {
+            // Invalid index, just close
+            self.close_switcher();
+        }
     }
 }

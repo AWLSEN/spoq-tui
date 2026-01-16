@@ -13,6 +13,7 @@ mod input;
 mod messages;
 mod panels;
 mod theme;
+mod thread_switcher;
 
 // Re-export theme colors for external use
 pub use theme::{
@@ -32,6 +33,7 @@ use ratatui::Frame;
 use crate::app::{App, Screen};
 use command_deck::render_command_deck;
 use conversation::render_conversation_screen;
+use thread_switcher::render_thread_switcher;
 
 // ============================================================================
 // Main UI Rendering
@@ -43,6 +45,9 @@ pub fn render(frame: &mut Frame, app: &App) {
         Screen::CommandDeck => render_command_deck(frame, app),
         Screen::Conversation => render_conversation_screen(frame, app),
     }
+
+    // Render thread switcher overlay (if visible)
+    render_thread_switcher(frame, app);
 }
 
 #[cfg(test)]
@@ -87,6 +92,7 @@ mod tests {
             stream_start_time: None,
             last_event_time: None,
             cumulative_token_count: 0,
+            thread_switcher: crate::app::ThreadSwitcher::default(),
         }
     }
 
@@ -1228,7 +1234,7 @@ mod tests {
 
         // Should show basic CommandDeck hints
         assert!(content.contains("Tab"));
-        assert!(content.contains("switch focus"));
+        assert!(content.contains("switch thread"));
         assert!(content.contains("Enter"));
         assert!(content.contains("send"));
     }

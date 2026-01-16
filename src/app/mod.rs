@@ -102,6 +102,27 @@ pub enum ProgrammingMode {
     None,
 }
 
+/// Thread switcher dialog state (Tab to open)
+#[derive(Debug, Clone)]
+pub struct ThreadSwitcher {
+    /// Whether the thread switcher dialog is visible
+    pub visible: bool,
+    /// Currently selected index in the thread list (MRU order)
+    pub selected_index: usize,
+    /// Timestamp of last Tab press (for auto-confirm on release)
+    pub last_tab_time: Option<std::time::Instant>,
+}
+
+impl Default for ThreadSwitcher {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            selected_index: 0,
+            last_tab_time: None,
+        }
+    }
+}
+
 /// Main application state
 pub struct App {
     /// List of conversation threads (legacy - for storage compatibility)
@@ -160,6 +181,8 @@ pub struct App {
     pub last_event_time: Option<std::time::Instant>,
     /// Cumulative token count for the current stream
     pub cumulative_token_count: u64,
+    /// Thread switcher dialog state (Ctrl+Tab to switch threads)
+    pub thread_switcher: ThreadSwitcher,
 }
 
 impl App {
@@ -219,6 +242,7 @@ impl App {
             stream_start_time: None,
             last_event_time: None,
             cumulative_token_count: 0,
+            thread_switcher: ThreadSwitcher::default(),
         })
     }
 

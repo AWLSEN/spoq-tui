@@ -154,6 +154,9 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
             _ = timeout => {
                 // Increment tick counter for animations (spinner, cursor blink)
                 app.tick();
+
+                // Check for thread switcher auto-confirm (Tab release simulation)
+                app.check_switcher_timeout();
             }
 
             // Handle keyboard events
@@ -216,6 +219,33 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 }
                                 // When permission is pending, ignore all other keys except Ctrl+C
                                 continue;
+                            }
+
+                            // Thread switcher handling (takes priority when visible)
+                            if app.thread_switcher.visible {
+                                match key.code {
+                                    KeyCode::Tab | KeyCode::Down => {
+                                        app.cycle_switcher_forward();
+                                        continue;
+                                    }
+                                    KeyCode::BackTab | KeyCode::Up => {
+                                        app.cycle_switcher_backward();
+                                        continue;
+                                    }
+                                    KeyCode::Esc => {
+                                        app.close_switcher();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        app.confirm_switcher_selection();
+                                        continue;
+                                    }
+                                    _ => {
+                                        // Any other key closes and confirms
+                                        app.confirm_switcher_selection();
+                                        continue;
+                                    }
+                                }
                             }
 
                             // Handle OAuth consent 'o' key to open URL in browser
@@ -307,20 +337,13 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                             // Panel navigation (when not typing in input)
                             match key.code {
                                 KeyCode::Tab => {
-                                    app.cycle_focus();
+                                    // Tab opens thread switcher
+                                    app.open_switcher();
                                 }
                                 KeyCode::BackTab => {
-                                    // Shift+Tab in Conversation screen with Programming thread: cycle mode
-                                    if app.screen == Screen::Conversation && app.is_active_thread_programming() {
-                                        app.cycle_programming_mode();
-                                    } else {
-                                        // Otherwise: cycle focus backwards
-                                        app.focus = match app.focus {
-                                            Focus::Notifications => Focus::Input,
-                                            Focus::Tasks => Focus::Notifications,
-                                            Focus::Threads => Focus::Tasks,
-                                            Focus::Input => Focus::Threads,
-                                        };
+                                    // Shift+Tab cycles backward in thread switcher if open
+                                    if app.thread_switcher.visible {
+                                        app.cycle_switcher_backward();
                                     }
                                 }
                                 KeyCode::Esc if app.focus != Focus::Input => {

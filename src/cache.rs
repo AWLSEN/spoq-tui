@@ -1,13 +1,17 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use chrono::{Duration, Utc};
 use uuid::Uuid;
 
 use crate::models::{ErrorInfo, Message, MessageRole, Thread, ThreadType};
 
+/// Eviction timeout in seconds (30 minutes)
+const EVICTION_TIMEOUT_SECS: u64 = 30 * 60;
+
 /// Local cache for threads and messages
 /// Will fetch from backend in future phases
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ThreadCache {
     /// Cached threads indexed by thread ID
     threads: HashMap<String, Thread>,
@@ -23,6 +27,22 @@ pub struct ThreadCache {
     errors: HashMap<String, Vec<ErrorInfo>>,
     /// Index of currently focused error (for dismiss with 'd' key)
     focused_error_index: usize,
+    /// Last accessed time for each thread (for LRU eviction)
+    last_accessed: HashMap<String, Instant>,
+}
+
+impl Default for ThreadCache {
+    fn default() -> Self {
+        Self {
+            threads: HashMap::new(),
+            messages: HashMap::new(),
+            thread_order: Vec::new(),
+            pending_to_real: HashMap::new(),
+            errors: HashMap::new(),
+            focused_error_index: 0,
+            last_accessed: HashMap::new(),
+        }
+    }
 }
 
 impl ThreadCache {
@@ -38,12 +58,32 @@ impl ThreadCache {
         cache
     }
 
-    /// Get all threads in order (most recent first)
+    /// Get all threads in order (most recent first), excluding evicted threads
     pub fn threads(&self) -> Vec<&Thread> {
+        let now = Instant::now();
         self.thread_order
             .iter()
-            .filter_map(|id| self.threads.get(id))
+            .filter_map(|id| {
+                // Check if thread is evicted (not accessed in EVICTION_TIMEOUT_SECS)
+                if let Some(last_time) = self.last_accessed.get(id) {
+                    if now.duration_since(*last_time).as_secs() > EVICTION_TIMEOUT_SECS {
+                        return None; // Evicted
+                    }
+                }
+                self.threads.get(id)
+            })
             .collect()
+    }
+
+    /// Touch a thread to update its last_accessed time (prevents eviction)
+    pub fn touch_thread(&mut self, thread_id: &str) {
+        if self.threads.contains_key(thread_id) {
+            self.last_accessed.insert(thread_id.to_string(), Instant::now());
+
+            // Also move to front of thread_order for MRU
+            self.thread_order.retain(|id| id != thread_id);
+            self.thread_order.insert(0, thread_id.to_string());
+        }
     }
 
     /// Get a thread by ID
@@ -63,6 +103,9 @@ impl ThreadCache {
         // Update thread order - move to front if exists, otherwise add to front
         self.thread_order.retain(|existing_id| existing_id != &id);
         self.thread_order.insert(0, id.clone());
+
+        // Update last_accessed time
+        self.last_accessed.insert(id.clone(), Instant::now());
 
         self.threads.insert(id, thread);
     }
@@ -95,6 +138,7 @@ impl ThreadCache {
         self.thread_order.clear();
         self.errors.clear();
         self.focused_error_index = 0;
+        self.last_accessed.clear();
     }
 
     /// Create a stub thread locally (will be replaced by backend call in future)
