@@ -46,7 +46,7 @@ pub use layout::{
 pub use helpers::format_tool_args;
 
 // Re-export rendering functions for external use
-pub use messages::{render_tool_result_preview, truncate_preview};
+pub use messages::{estimate_wrapped_line_count, render_tool_result_preview, truncate_preview};
 
 use ratatui::Frame;
 
@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn test_conversation_screen_shows_ai_stub() {
+    fn test_conversation_screen_shows_placeholder() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
@@ -290,20 +290,21 @@ mod tests {
             })
             .unwrap();
 
-        // Check that the buffer shows AI stub response
+        // Check that the buffer shows placeholder response with vertical bar
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer
             .content()
             .iter()
             .map(|cell| cell.symbol())
             .collect();
+        // Messages now use vertical bar prefix instead of role labels
         assert!(
-            buffer_str.contains("AI:"),
-            "Conversation screen should show AI label"
+            buffer_str.contains("│"),
+            "Conversation screen should show vertical bar prefix"
         );
         assert!(
             buffer_str.contains("Waiting for your message"),
-            "Conversation screen should show AI stub response"
+            "Conversation screen should show placeholder text"
         );
     }
 
@@ -716,9 +717,10 @@ mod tests {
             buffer_str.contains("Hello from user"),
             "Conversation screen should show user message content"
         );
+        // Messages now use vertical bar prefix instead of role labels
         assert!(
-            buffer_str.contains("You:"),
-            "Conversation screen should show 'You:' label for user messages"
+            buffer_str.contains("│"),
+            "Conversation screen should show vertical bar prefix for messages"
         );
     }
 

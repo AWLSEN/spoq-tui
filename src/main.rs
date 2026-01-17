@@ -206,8 +206,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     app.create_new_thread();
                                     continue;
                                 }
-                                // Ctrl+P to submit as Programming thread (from CommandDeck)
-                                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                // Alt+P to submit as Programming thread (from CommandDeck)
+                                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::ALT) => {
                                     if app.screen == Screen::CommandDeck && !app.input_box.is_empty() {
                                         app.submit_input(models::ThreadType::Programming);
                                     }
@@ -316,8 +316,13 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         app.input_box.move_cursor_end();
                                         continue;
                                     }
+                                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        // Ctrl+Enter inserts a newline (works in more terminals than Shift+Enter)
+                                        app.input_box.insert_char('\n');
+                                        continue;
+                                    }
                                     KeyCode::Enter => {
-                                        // Plain Enter = Conversation thread (Shift+Enter handled above)
+                                        // Plain Enter = Conversation thread
                                         app.submit_input(models::ThreadType::Conversation);
                                         continue;
                                     }
