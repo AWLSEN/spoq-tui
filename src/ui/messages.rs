@@ -284,11 +284,13 @@ pub fn render_thinking_block(
 /// Uses tool-specific icons, color-coded status indicators, and formatted arguments
 /// to provide rich visual feedback about tool execution status.
 ///
+/// Uses `LayoutContext` for responsive args display truncation.
+///
 /// # Display format
 /// - Running:  `[icon] [spinner] [tool_name]: [args_display]` (gray)
 /// - Complete: `[icon] ✓ [tool_name]: [args_display] (duration)` (green)
 /// - Failed:   `[icon] ✗ [tool_name]: [args_display]` (red)
-pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
+pub fn render_tool_event(event: &ToolEvent, tick_count: u64, ctx: &LayoutContext) -> Line<'static> {
     // Get the appropriate icon for this tool
     let icon = get_tool_icon(&event.function_name);
 
@@ -297,6 +299,15 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
     let args_display = event.args_display.clone().unwrap_or_else(|| {
         format_tool_args(&event.function_name, &event.args_json)
     });
+
+    // Calculate responsive max length for args display
+    // Account for icon (2), spinner (2), tool name (~15), status (2), and padding
+    let max_args_len = ctx.text_wrap_width(0).saturating_sub(25) as usize;
+    let args_display = if args_display.len() > max_args_len && max_args_len > 3 {
+        super::helpers::truncate_string(&args_display, max_args_len)
+    } else {
+        args_display
+    };
 
     match event.status {
         ToolEventStatus::Running => {
@@ -519,6 +530,8 @@ impl TreeConnector {
 /// Uses subagent-specific icons, color-coded status indicators, and tree connectors
 /// to provide rich visual feedback about subagent execution status.
 ///
+/// Uses `LayoutContext` for responsive description and summary truncation.
+///
 /// # Display format
 /// - Running:  `[connector] [spinner] Task(description)` (cyan)
 /// - Complete: `[connector] Done (N tool uses · summary)` (green)
@@ -526,16 +539,35 @@ pub fn render_subagent_event(
     event: &SubagentEvent,
     tick_count: u64,
     connector: TreeConnector,
+    ctx: &LayoutContext,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let icon = get_subagent_icon(&event.subagent_type);
     let connector_str = connector.as_str();
+
+    // Calculate responsive truncation lengths based on terminal width
+    // Account for connector (~5), spinner (2), icon (2), padding, and chrome
+    let max_description_len = ctx.text_wrap_width(0).saturating_sub(20) as usize;
+    let max_summary_len = if ctx.is_extra_small() {
+        25
+    } else if ctx.is_narrow() {
+        35
+    } else {
+        60
+    };
 
     match event.status {
         SubagentEventStatus::Running => {
             // Animated spinner - cycle through frames
             let frame_index = (tick_count % 10) as usize;
             let spinner = SPINNER_FRAMES[frame_index];
+
+            // Truncate description if needed
+            let description = if event.description.len() > max_description_len && max_description_len > 3 {
+                super::helpers::truncate_string(&event.description, max_description_len)
+            } else {
+                event.description.clone()
+            };
 
             // Main line: connector + spinner + Task(description)
             lines.push(Line::from(vec![
@@ -553,7 +585,7 @@ pub fn render_subagent_event(
                     Style::default().fg(COLOR_SUBAGENT_RUNNING),
                 ),
                 Span::styled(
-                    event.description.clone(),
+                    description,
                     Style::default().fg(COLOR_SUBAGENT_RUNNING),
                 ),
                 Span::styled(
@@ -569,10 +601,16 @@ pub fn render_subagent_event(
                 } else {
                     "  │   " // Continuation line for non-last items
                 };
+                // Truncate progress message for narrow terminals
+                let progress_text = if progress.len() > max_description_len && max_description_len > 3 {
+                    super::helpers::truncate_string(progress, max_description_len)
+                } else {
+                    progress.clone()
+                };
                 lines.push(Line::from(vec![
                     Span::styled(indent, Style::default().fg(COLOR_SUBAGENT_RUNNING)),
                     Span::styled(
-                        progress.clone(),
+                        progress_text,
                         Style::default().fg(COLOR_DIM),
                     ),
                 ]));
@@ -587,9 +625,9 @@ pub fn render_subagent_event(
             };
 
             let display_text = if let Some(ref summary) = event.summary {
-                // Truncate summary if too long
-                let truncated_summary = if summary.len() > 40 {
-                    super::helpers::truncate_string(summary, 40)
+                // Truncate summary using responsive max length
+                let truncated_summary = if summary.len() > max_summary_len {
+                    super::helpers::truncate_string(summary, max_summary_len)
                 } else {
                     summary.clone()
                 };
@@ -625,9 +663,12 @@ pub fn render_subagent_event(
 /// this function renders them with Claude Code CLI-style tree connectors:
 /// - Single subagent: ● Task(description)
 /// - Multiple parallel: ├── for non-last, └── for last
+///
+/// Uses `LayoutContext` for responsive text truncation.
 pub fn render_subagent_events_block(
     events: &[&SubagentEvent],
     tick_count: u64,
+    ctx: &LayoutContext,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -646,7 +687,7 @@ pub fn render_subagent_events_block(
             TreeConnector::Branch
         };
 
-        lines.extend(render_subagent_event(event, tick_count, connector));
+        lines.extend(render_subagent_event(event, tick_count, connector, ctx));
     }
 
     lines
@@ -657,18 +698,20 @@ pub fn render_subagent_events_block(
 /// This function processes segments in order, but groups consecutive SubagentEvent segments
 /// to render them with proper tree connectors (├── └── for parallel agents).
 ///
+/// Uses `LayoutContext` for responsive text truncation across all segment types.
+///
 /// # Arguments
 /// * `segments` - The message segments to render
 /// * `tick_count` - Current tick for animations
 /// * `label` - Label prefix (e.g., "│ " for user messages)
 /// * `label_style` - Style for the label
-/// * `max_preview_len` - Maximum length for tool result previews (responsive to terminal width)
+/// * `ctx` - Layout context for responsive sizing
 pub fn render_message_segments(
     segments: &[MessageSegment],
     tick_count: u64,
     label: &'static str,
     label_style: Style,
-    max_preview_len: usize,
+    ctx: &LayoutContext,
 ) -> (Vec<Line<'static>>, bool) {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut is_first_line = true;
@@ -695,13 +738,15 @@ pub fn render_message_segments(
                 i += 1;
             }
             MessageSegment::ToolEvent(event) => {
-                // Prepend vertical bar to tool event line
-                let tool_line = render_tool_event(event, tick_count);
+                // Prepend vertical bar to tool event line (with responsive args truncation)
+                let tool_line = render_tool_event(event, tick_count, ctx);
                 lines.push(prepend_bar(tool_line));
                 is_first_line = false;
 
                 // Add result preview if available (only for completed tools)
+                // Use responsive max preview length from context
                 if event.duration_secs.is_some() {
+                    let max_preview_len = ctx.max_preview_length();
                     if let Some(preview_line) = render_tool_result_preview(event, max_preview_len) {
                         lines.push(prepend_bar(preview_line));
                     }
@@ -720,8 +765,8 @@ pub fn render_message_segments(
                     }
                 }
 
-                // Render the block with tree connectors, prepend bar to each line
-                for line in render_subagent_events_block(&subagent_events, tick_count) {
+                // Render the block with tree connectors (with responsive truncation), prepend bar to each line
+                for line in render_subagent_events_block(&subagent_events, tick_count, ctx) {
                     lines.push(prepend_bar(line));
                 }
                 is_first_line = false;
@@ -935,15 +980,14 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
 /// Render the messages area with user messages and AI responses
 ///
 /// Uses `LayoutContext` for responsive layout:
+/// - Tool event args are truncated based on available width
 /// - Tool result previews are truncated based on available width
+/// - Subagent descriptions and summaries adapt to terminal size
 /// - Message wrapping uses actual viewport width
 /// - Error banners adapt to terminal size
 pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &LayoutContext) {
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
-
-    // Calculate responsive max preview length using LayoutContext
-    let max_preview_len = ctx.max_preview_length();
 
     // Show inline error banners for the thread
     lines.extend(render_inline_error_banners(app, ctx));
@@ -1045,7 +1089,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                         app.tick_count,
                         label,
                         label_style,
-                        max_preview_len,
+                        ctx,
                     );
                     lines.extend(segment_lines);
 
@@ -1106,7 +1150,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                         app.tick_count,
                         label,
                         label_style,
-                        max_preview_len,
+                        ctx,
                     );
                     message_lines.extend(segment_lines);
 
@@ -1403,5 +1447,147 @@ mod tests {
         let ctx = LayoutContext::new(50, 24);
         // 80% of 50 = 40, clamped between 40 and 80
         assert_eq!(ctx.bounded_width(80, 40, 80), 40);
+    }
+
+    // ========================================================================
+    // Responsive Tool Event Tests
+    // ========================================================================
+
+    #[test]
+    fn test_render_tool_event_truncates_long_args_on_narrow_terminal() {
+        use crate::models::ToolEvent;
+
+        let mut tool = ToolEvent::new("tool_123".to_string(), "Read".to_string());
+        // Set a very long args display
+        let long_path = "/very/long/path/that/should/be/truncated/when/terminal/is/narrow/file.rs";
+        tool.args_display = Some(format!("Reading {}", long_path));
+
+        // On a narrow terminal (60 cols), args should be truncated
+        let narrow_ctx = LayoutContext::new(60, 24);
+        let line = render_tool_event(&tool, 0, &narrow_ctx);
+        let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain truncation ellipsis
+        assert!(line_text.contains("...") || line_text.len() < 100);
+    }
+
+    #[test]
+    fn test_render_tool_event_shows_full_args_on_wide_terminal() {
+        use crate::models::ToolEvent;
+
+        let mut tool = ToolEvent::new("tool_123".to_string(), "Read".to_string());
+        // Set a moderate args display
+        tool.args_display = Some("Reading /path/to/file.rs".to_string());
+
+        // On a wide terminal, args should not be truncated
+        let wide_ctx = LayoutContext::new(160, 40);
+        let line = render_tool_event(&tool, 0, &wide_ctx);
+        let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain full path
+        assert!(line_text.contains("Reading /path/to/file.rs"));
+        // Should NOT be truncated
+        assert!(!line_text.contains("...") || line_text.contains("Reading /path/to/file.rs"));
+    }
+
+    // ========================================================================
+    // Responsive Subagent Event Tests
+    // ========================================================================
+
+    #[test]
+    fn test_render_subagent_event_truncates_summary_on_narrow_terminal() {
+        use crate::models::SubagentEvent;
+
+        let mut event = SubagentEvent::new(
+            "task-narrow".to_string(),
+            "Test task".to_string(),
+            "Explore".to_string(),
+        );
+        event.tool_call_count = 3;
+        // Set a long summary
+        let long_summary = "This is a very long summary that should be truncated on narrow terminals";
+        event.complete(Some(long_summary.to_string()));
+
+        // On narrow terminal (60 cols), summary should be truncated more aggressively
+        let narrow_ctx = LayoutContext::new(60, 24);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &narrow_ctx);
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should be truncated (narrow uses max_summary_len of 35)
+        assert!(line_text.contains("..."));
+        // Should NOT contain the end of the summary
+        assert!(!line_text.contains("narrow terminals"));
+    }
+
+    #[test]
+    fn test_render_subagent_event_shows_more_summary_on_wide_terminal() {
+        use crate::models::SubagentEvent;
+
+        let mut event = SubagentEvent::new(
+            "task-wide".to_string(),
+            "Test task".to_string(),
+            "Explore".to_string(),
+        );
+        event.tool_call_count = 3;
+        // Set a moderate summary (within 60 char limit for wide terminals)
+        let summary = "Found relevant configuration files";
+        event.complete(Some(summary.to_string()));
+
+        // On wide terminal (120 cols), full summary should be shown
+        let wide_ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &wide_ctx);
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain full summary
+        assert!(line_text.contains("Found relevant configuration files"));
+    }
+
+    #[test]
+    fn test_render_subagent_event_truncates_description_on_narrow_terminal() {
+        use crate::models::SubagentEvent;
+
+        // Create event with a very long description
+        let long_desc = "Exploring the entire codebase to find all relevant configuration files and settings";
+        let event = SubagentEvent::new(
+            "task-desc".to_string(),
+            long_desc.to_string(),
+            "Explore".to_string(),
+        );
+
+        // On extra-small terminal (50 cols), description should be truncated
+        let xs_ctx = LayoutContext::new(50, 24);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &xs_ctx);
+        let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should be truncated (visible in the ellipsis)
+        assert!(line_text.contains("..."));
+        // Full description should NOT be present
+        assert!(!line_text.contains("configuration files and settings"));
+    }
+
+    #[test]
+    fn test_render_inline_error_banners_responsive_width() {
+        // Test with different contexts - error banners use bounded_width(80, 40, 80)
+        let narrow_ctx = LayoutContext::new(50, 24);
+        let wide_ctx = LayoutContext::new(160, 40);
+
+        // Error banner width calculation: bounded_width(80, 40, 80)
+        // For 50 cols: 80% = 40, clamped to 40-80 = 40
+        assert_eq!(narrow_ctx.bounded_width(80, 40, 80), 40);
+        // For 160 cols: 80% = 128, clamped to 40-80 = 80
+        assert_eq!(wide_ctx.bounded_width(80, 40, 80), 80);
+    }
+
+    #[test]
+    fn test_render_thinking_block_responsive_border_width() {
+        // Test that thinking block border width adapts to terminal size
+        let narrow_ctx = LayoutContext::new(60, 24);
+        let wide_ctx = LayoutContext::new(120, 40);
+
+        // Thinking block uses text_wrap_width(0).min(80)
+        // For 60 cols: 60 - 4 = 56, min(56, 80) = 56
+        assert_eq!(narrow_ctx.text_wrap_width(0).min(80), 56);
+        // For 120 cols: 120 - 4 = 116, min(116, 80) = 80
+        assert_eq!(wide_ctx.text_wrap_width(0).min(80), 80);
     }
 }

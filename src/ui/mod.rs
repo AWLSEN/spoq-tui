@@ -1904,7 +1904,8 @@ mod tests {
         // Mark as done
         tool.complete();
 
-        let line = render_tool_event(&tool, 0);
+        let ctx = LayoutContext::new(120, 40);
+        let line = render_tool_event(&tool, 0, &ctx);
 
         // Verify the line contains expected elements
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -1933,7 +1934,8 @@ mod tests {
         // Mark as done
         tool.fail();
 
-        let line = render_tool_event(&tool, 0);
+        let ctx = LayoutContext::new(120, 40);
+        let line = render_tool_event(&tool, 0, &ctx);
 
         // Verify the line contains expected elements
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -1957,7 +1959,8 @@ mod tests {
         tool.args_display = Some("Searching 'test'".to_string());
 
         // Tool is still running (not finished)
-        let line = render_tool_event(&tool, 0);
+        let ctx = LayoutContext::new(120, 40);
+        let line = render_tool_event(&tool, 0, &ctx);
 
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
@@ -1978,7 +1981,8 @@ mod tests {
 
         // Step 1: Tool starts with no args yet
         let mut tool = crate::models::ToolEvent::new("tool_lifecycle".to_string(), "Write".to_string());
-        let line1 = render_tool_event(&tool, 0);
+        let ctx = LayoutContext::new(120, 40);
+        let line1 = render_tool_event(&tool, 0, &ctx);
         let text1: String = line1.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text1.contains("📝"));  // Write icon is 📝 not ✍
         assert!(text1.contains("Write")); // Default to tool name
@@ -1986,14 +1990,14 @@ mod tests {
         // Step 2: Args stream in
         tool.args_json = r#"{"file_path": "/tmp/test.txt", "content": "Hello"}"#.to_string();
         tool.args_display = Some("Writing /tmp/test.txt".to_string());
-        let line2 = render_tool_event(&tool, 0);
+        let line2 = render_tool_event(&tool, 0, &ctx);
         let text2: String = line2.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text2.contains("Writing /tmp/test.txt"));
 
         // Step 3: Result comes back
         tool.set_result("File written successfully", false);
         tool.complete();
-        let line3 = render_tool_event(&tool, 0);
+        let line3 = render_tool_event(&tool, 0, &ctx);
         let text3: String = line3.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text3.contains("✓")); // Success indicator
         assert!(text3.contains("Writing /tmp/test.txt"));
@@ -2033,7 +2037,8 @@ mod tests {
             "Explore".to_string(),
         );
 
-        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &ctx);
 
         assert!(!lines.is_empty());
         let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
@@ -2057,7 +2062,8 @@ mod tests {
         );
         event.update_progress(Some("Reading src/main.rs".to_string()), true);
 
-        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &ctx);
 
         assert_eq!(lines.len(), 2); // Main line + progress line
         let progress_text: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
@@ -2077,7 +2083,8 @@ mod tests {
         event.tool_call_count = 5;
         event.complete(Some("Found 10 files".to_string()));
 
-        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &ctx);
 
         assert_eq!(lines.len(), 1);
         let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
@@ -2100,7 +2107,8 @@ mod tests {
         event.tool_call_count = 1;
         event.complete(None);
 
-        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &ctx);
 
         let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(line_text.contains("1 tool use")); // Singular
@@ -2118,7 +2126,8 @@ mod tests {
             "Explore".to_string(),
         );
 
-        let lines = render_subagent_event(&event, 0, TreeConnector::Branch);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Branch, &ctx);
 
         let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(line_text.contains("├──"));
@@ -2135,7 +2144,8 @@ mod tests {
             "Explore".to_string(),
         );
 
-        let lines = render_subagent_event(&event, 0, TreeConnector::LastBranch);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::LastBranch, &ctx);
 
         let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(line_text.contains("└──"));
@@ -2153,7 +2163,8 @@ mod tests {
         );
 
         let events: Vec<&SubagentEvent> = vec![&event];
-        let lines = render_subagent_events_block(&events, 0);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_events_block(&events, 0, &ctx);
 
         // Should use Single connector (●)
         let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
@@ -2184,7 +2195,8 @@ mod tests {
         );
 
         let events: Vec<&SubagentEvent> = vec![&event1, &event2, &event3];
-        let lines = render_subagent_events_block(&events, 0);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_events_block(&events, 0, &ctx);
 
         // Should have lines for each event (running events have 1 line each)
         assert!(lines.len() >= 3);
@@ -2208,7 +2220,8 @@ mod tests {
         use messages::render_subagent_events_block;
 
         let events: Vec<&SubagentEvent> = vec![];
-        let lines = render_subagent_events_block(&events, 0);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_events_block(&events, 0, &ctx);
 
         assert!(lines.is_empty());
     }
@@ -2227,7 +2240,8 @@ mod tests {
         let long_summary = "This is a very long summary that should be truncated because it exceeds the maximum allowed length for display purposes";
         event.complete(Some(long_summary.to_string()));
 
-        let lines = render_subagent_event(&event, 0, TreeConnector::Single);
+        let ctx = LayoutContext::new(120, 40);
+        let lines = render_subagent_event(&event, 0, TreeConnector::Single, &ctx);
 
         let line_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
         // Should be truncated with ellipsis
@@ -2247,9 +2261,10 @@ mod tests {
             "Explore".to_string(),
         );
 
+        let ctx = LayoutContext::new(120, 40);
         // Test at different tick counts to verify spinner changes
-        let lines_tick_0 = render_subagent_event(&event, 0, TreeConnector::Single);
-        let lines_tick_5 = render_subagent_event(&event, 5, TreeConnector::Single);
+        let lines_tick_0 = render_subagent_event(&event, 0, TreeConnector::Single, &ctx);
+        let lines_tick_5 = render_subagent_event(&event, 5, TreeConnector::Single, &ctx);
 
         let text_0: String = lines_tick_0[0].spans.iter().map(|s| s.content.as_ref()).collect();
         let text_5: String = lines_tick_5[0].spans.iter().map(|s| s.content.as_ref()).collect();
