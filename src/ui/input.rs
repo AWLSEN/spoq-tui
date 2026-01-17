@@ -1041,6 +1041,7 @@ mod tests {
             active_panel: crate::app::ActivePanel::default(),
             question_state: crate::state::session::AskUserQuestionState::default(),
             ws_sender: None,
+            ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
         }
     }
 

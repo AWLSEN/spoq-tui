@@ -988,4 +988,419 @@ mod tests {
         let chars: Vec<char> = input.content.chars().collect();
         assert_eq!(chars[5], '\n');
     }
+
+    // ==========================================================================
+    // Phase 5: Additional edge case tests for macOS text editing shortcuts
+    // ==========================================================================
+
+    // Word navigation: mid-word scenarios
+    #[test]
+    fn test_move_cursor_word_left_mid_word() {
+        let mut input = InputBox::new();
+        // "hello wor|ld"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        // Move cursor to mid-word position (after "wor")
+        input.move_cursor_left();
+        input.move_cursor_left();
+        assert_eq!(input.cursor_position, 9); // "hello wor|ld"
+
+        // Should move to start of "world"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 6); // "hello |world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_mid_word() {
+        let mut input = InputBox::new();
+        // "hel|lo world"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+        input.move_cursor_right();
+        input.move_cursor_right();
+        input.move_cursor_right();
+        assert_eq!(input.cursor_position, 3); // "hel|lo world"
+
+        // Should move to end of "hello"
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 5); // "hello| world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_punctuation() {
+        let mut input = InputBox::new();
+        // "|hello, world"
+        for c in "hello, world".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        // Should move to end of "hello"
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 5); // "hello|, world"
+
+        // Next word move should skip punctuation and space, then move through "world"
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 12); // "hello, world|"
+    }
+
+    #[test]
+    fn test_move_cursor_word_left_empty_content() {
+        let mut input = InputBox::new();
+        // Empty content
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_empty_content() {
+        let mut input = InputBox::new();
+        // Empty content
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_move_cursor_word_consecutive_punctuation() {
+        let mut input = InputBox::new();
+        // "hello... world|"
+        for c in "hello... world".chars() {
+            input.insert_char(c);
+        }
+
+        // Move word left should skip to start of "world"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 9); // "hello... |world"
+
+        // Another word left should skip punctuation and move to start of "hello"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 0); // "|hello... world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_with_underscore() {
+        let mut input = InputBox::new();
+        // "hello_world test|"
+        for c in "hello_world test".chars() {
+            input.insert_char(c);
+        }
+
+        // Move word left should move to start of "test"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 12); // "hello_world |test"
+
+        // Another word left should treat "hello_world" as one word
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 0); // "|hello_world test"
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_with_underscore() {
+        let mut input = InputBox::new();
+        // "|hello_world test"
+        for c in "hello_world test".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        // Should treat "hello_world" as one word
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 11); // "hello_world| test"
+    }
+
+    #[test]
+    fn test_move_cursor_word_left_only_spaces() {
+        let mut input = InputBox::new();
+        // "   |"
+        for c in "   ".chars() {
+            input.insert_char(c);
+        }
+
+        // Move word left should move to start
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_only_spaces() {
+        let mut input = InputBox::new();
+        // "|   "
+        for c in "   ".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        // Move word right should move to end (skipping spaces)
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 3);
+    }
+
+    // Word deletion: additional edge cases
+    #[test]
+    fn test_delete_word_backward_with_punctuation() {
+        let mut input = InputBox::new();
+        // "hello, world|"
+        for c in "hello, world".chars() {
+            input.insert_char(c);
+        }
+
+        // Delete "world"
+        input.delete_word_backward();
+        assert_eq!(input.content, "hello, ");
+        assert_eq!(input.cursor_position, 7);
+
+        // Delete skips non-word chars (space, comma) then deletes word "hello"
+        input.delete_word_backward();
+        assert_eq!(input.content, "");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_word_backward_empty_content() {
+        let mut input = InputBox::new();
+        // Empty content
+        input.delete_word_backward();
+        assert_eq!(input.content, "");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_word_backward_with_underscore() {
+        let mut input = InputBox::new();
+        // "hello_world|"
+        for c in "hello_world".chars() {
+            input.insert_char(c);
+        }
+
+        // Should delete entire "hello_world" as one word
+        input.delete_word_backward();
+        assert_eq!(input.content, "");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_word_backward_consecutive_punctuation() {
+        let mut input = InputBox::new();
+        // "hello...|"
+        for c in "hello...".chars() {
+            input.insert_char(c);
+        }
+
+        // delete_word_backward first skips non-word chars (the "...") then deletes word chars ("hello")
+        input.delete_word_backward();
+        assert_eq!(input.content, "");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_word_backward_only_spaces() {
+        let mut input = InputBox::new();
+        // "hello   |"
+        for c in "hello   ".chars() {
+            input.insert_char(c);
+        }
+
+        // Should delete spaces and then "hello"
+        input.delete_word_backward();
+        assert_eq!(input.content, "");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    // Line deletion: additional edge cases
+    #[test]
+    fn test_delete_to_line_start_empty_content() {
+        let mut input = InputBox::new();
+        // Empty content
+        input.delete_to_line_start();
+        assert_eq!(input.content, "");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_to_line_start_entire_first_line() {
+        let mut input = InputBox::new();
+        // "hello|"
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+
+        // Should delete entire line
+        input.delete_to_line_start();
+        assert_eq!(input.content, "");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_to_line_start_multiline_entire_second_line() {
+        let mut input = InputBox::new();
+        // "line1\nline2|"
+        for c in "line1\nline2".chars() {
+            input.insert_char(c);
+        }
+
+        // Should delete entire second line content (but not the newline)
+        input.delete_to_line_start();
+        assert_eq!(input.content, "line1\n");
+        assert_eq!(input.cursor_position, 6);
+    }
+
+    #[test]
+    fn test_delete_to_line_start_multiple_newlines() {
+        let mut input = InputBox::new();
+        // "line1\n\nline3|"
+        for c in "line1\n\nline3".chars() {
+            input.insert_char(c);
+        }
+
+        // Should delete "line3" but not the empty line
+        input.delete_to_line_start();
+        assert_eq!(input.content, "line1\n\n");
+        assert_eq!(input.cursor_position, 7);
+    }
+
+    #[test]
+    fn test_delete_to_line_start_cursor_at_newline() {
+        let mut input = InputBox::new();
+        // "hello\n|world"
+        for c in "hello\nworld".chars() {
+            input.insert_char(c);
+        }
+        // Position cursor right after newline (position 6)
+        input.move_cursor_home();
+        for _ in 0..6 {
+            input.move_cursor_right();
+        }
+
+        // Cursor is at line start (right after newline), nothing to delete
+        input.delete_to_line_start();
+        assert_eq!(input.content, "hello\nworld");
+        assert_eq!(input.cursor_position, 6);
+    }
+
+    // Unicode handling tests
+    #[test]
+    fn test_word_navigation_with_unicode() {
+        let mut input = InputBox::new();
+        // "hello \u{1F600} world|" - 14 chars: h(0)e(1)l(2)l(3)o(4) (5)\u{1F600}(6) (7)w(8)o(9)r(10)l(11)d(12)
+        for c in "hello \u{1F600} world".chars() {
+            input.insert_char(c);
+        }
+        // Verify character count
+        assert_eq!(input.content.chars().count(), 13);
+
+        // Move word left should handle emoji as non-word char
+        // Should move to start of "world" which is position 8
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 8); // "hello \u{1F600} |world"
+    }
+
+    #[test]
+    fn test_delete_word_backward_with_unicode() {
+        let mut input = InputBox::new();
+        // "hello world|"
+        for c in "hello \u{1F600} world".chars() {
+            input.insert_char(c);
+        }
+
+        // Delete "world"
+        input.delete_word_backward();
+        assert_eq!(input.content, "hello \u{1F600} ");
+    }
+
+    #[test]
+    fn test_delete_to_line_start_with_unicode() {
+        let mut input = InputBox::new();
+        // "hello\nworld|"
+        for c in "\u{1F600}line1\n\u{1F601}line2".chars() {
+            input.insert_char(c);
+        }
+
+        // Delete to line start
+        input.delete_to_line_start();
+        assert_eq!(input.content, "\u{1F600}line1\n");
+    }
+
+    // Boundary tests for word boundaries
+    #[test]
+    fn test_move_cursor_word_left_single_word() {
+        let mut input = InputBox::new();
+        // "hello|"
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_single_word() {
+        let mut input = InputBox::new();
+        // "|hello"
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 5);
+    }
+
+    #[test]
+    fn test_move_cursor_word_left_at_word_boundary() {
+        let mut input = InputBox::new();
+        // "hello |world"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        // Position cursor at word boundary (position 6, start of "world")
+        input.move_cursor_home();
+        for _ in 0..6 {
+            input.move_cursor_right();
+        }
+
+        // Should move to start of "hello"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_at_word_boundary() {
+        let mut input = InputBox::new();
+        // "hello| world"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        // Position cursor at word boundary (position 5, end of "hello")
+        input.move_cursor_home();
+        for _ in 0..5 {
+            input.move_cursor_right();
+        }
+
+        // Should skip space and move to end of "world"
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 11);
+    }
+
+    #[test]
+    fn test_delete_word_backward_at_word_start() {
+        let mut input = InputBox::new();
+        // "hello |world"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        // Position cursor at word boundary (position 6, start of "world")
+        input.move_cursor_home();
+        for _ in 0..6 {
+            input.move_cursor_right();
+        }
+
+        // Should delete "hello "
+        input.delete_word_backward();
+        assert_eq!(input.content, "world");
+        assert_eq!(input.cursor_position, 0);
+    }
 }
