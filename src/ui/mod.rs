@@ -121,6 +121,7 @@ mod tests {
             scroll_position: 0.0,
             terminal_width: 80,
             terminal_height: 24,
+            active_panel: crate::app::ActivePanel::default(),
         }
     }
 

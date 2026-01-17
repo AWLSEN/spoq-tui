@@ -133,6 +133,18 @@ pub enum ScrollBoundary {
     Bottom,
 }
 
+/// Represents which panel is active in narrow/stacked layout mode.
+/// When the terminal is too narrow for side-by-side panels (< 60 cols),
+/// only one panel is shown at a time and users can switch between them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActivePanel {
+    /// Left panel (Notifications + Tasks/Todos)
+    #[default]
+    Left,
+    /// Right panel (Threads)
+    Right,
+}
+
 /// Main application state
 pub struct App {
     /// List of conversation threads (legacy - for storage compatibility)
@@ -209,6 +221,8 @@ pub struct App {
     pub terminal_width: u16,
     /// Current terminal height in rows
     pub terminal_height: u16,
+    /// Active panel for narrow/stacked layout mode (when width < 60 cols)
+    pub active_panel: ActivePanel,
 }
 
 impl App {
@@ -277,6 +291,7 @@ impl App {
             scroll_position: 0.0,
             terminal_width: 80,  // Default, will be updated on first render
             terminal_height: 24, // Default, will be updated on first render
+            active_panel: ActivePanel::default(),
         })
     }
 
@@ -2777,5 +2792,53 @@ mod tests {
         let subagent_b = assistant_msg.get_subagent_event("task-b").unwrap();
         assert_eq!(subagent_b.status, SubagentEventStatus::Running);
         assert_eq!(subagent_b.progress_message, Some("B progress".to_string()));
+    }
+
+    // ========================================================================
+    // ActivePanel Tests
+    // ========================================================================
+
+    #[test]
+    fn test_active_panel_default_is_left() {
+        assert_eq!(ActivePanel::default(), ActivePanel::Left);
+    }
+
+    #[test]
+    fn test_active_panel_equality() {
+        assert_eq!(ActivePanel::Left, ActivePanel::Left);
+        assert_eq!(ActivePanel::Right, ActivePanel::Right);
+        assert_ne!(ActivePanel::Left, ActivePanel::Right);
+    }
+
+    #[test]
+    fn test_active_panel_copy() {
+        let panel = ActivePanel::Right;
+        let copied = panel;
+        assert_eq!(panel, copied);
+    }
+
+    #[test]
+    fn test_app_initializes_with_left_panel_active() {
+        let app = App::default();
+        assert_eq!(app.active_panel, ActivePanel::Left);
+    }
+
+    #[test]
+    fn test_app_active_panel_can_be_changed() {
+        let mut app = App::default();
+        assert_eq!(app.active_panel, ActivePanel::Left);
+
+        app.active_panel = ActivePanel::Right;
+        assert_eq!(app.active_panel, ActivePanel::Right);
+
+        app.active_panel = ActivePanel::Left;
+        assert_eq!(app.active_panel, ActivePanel::Left);
+    }
+
+    #[test]
+    fn test_app_terminal_dimensions_have_defaults() {
+        let app = App::default();
+        assert_eq!(app.terminal_width, 80);
+        assert_eq!(app.terminal_height, 24);
     }
 }
