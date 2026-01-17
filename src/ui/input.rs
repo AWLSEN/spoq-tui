@@ -322,7 +322,7 @@ pub fn render_permission_box(
 }
 
 /// Extract preview content from a PermissionRequest.
-pub fn get_permission_preview(perm: &crate::state::session::PermissionRequest) -> String {
+pub fn get_permission_preview(perm: &PermissionRequest) -> String {
     // First try context (human-readable description)
     if let Some(ref ctx) = perm.context {
         return ctx.clone();
