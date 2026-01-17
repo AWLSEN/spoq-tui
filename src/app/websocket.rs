@@ -34,9 +34,9 @@ pub async fn start_websocket_with_config(
         Ok(mut client) => {
             info!("WebSocket connected successfully");
 
-            // Get the response sender before moving client into the task
+            // Get the outgoing message sender before moving client into the task
             // We need to create a channel that bridges to the client's send method
-            let (response_tx, mut response_rx) =
+            let (outgoing_tx, mut outgoing_rx) =
                 mpsc::channel::<crate::websocket::WsOutgoingMessage>(100);
 
             // Get the state receiver for monitoring connection state
@@ -67,17 +67,17 @@ pub async fn start_websocket_with_config(
                             }
                         }
 
-                        // Handle outgoing responses
-                        response = response_rx.recv() => {
-                            match response {
-                                Some(resp) => {
-                                    if let Err(e) = client.send(resp).await {
-                                        error!("Failed to send WebSocket response: {}", e);
+                        // Handle outgoing messages
+                        outgoing = outgoing_rx.recv() => {
+                            match outgoing {
+                                Some(msg) => {
+                                    if let Err(e) = client.send(msg).await {
+                                        error!("Failed to send WebSocket message: {}", e);
                                     }
                                 }
                                 None => {
-                                    // Response channel closed, shutdown
-                                    info!("WebSocket response channel closed");
+                                    // Outgoing channel closed, shutdown
+                                    info!("WebSocket outgoing channel closed");
                                     break;
                                 }
                             }
@@ -102,7 +102,7 @@ pub async fn start_websocket_with_config(
                 }
             });
 
-            Ok(response_tx)
+            Ok(outgoing_tx)
         }
         Err(e) => {
             let error_msg = format!("Failed to connect to ws://{}/ws: {}", host, e);

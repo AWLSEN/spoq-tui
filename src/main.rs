@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
     app.emit_debug_state_change(
         "websocket",
         "Connecting to WebSocket",
-        "ws://100.80.115.93:8000/ws - timeout 5s",
+        "WebSocket server - timeout 5s",
     );
     match start_websocket(app.message_tx.clone()).await {
         Ok(sender) => {
@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
             app.emit_debug_state_change(
                 "websocket",
                 "WebSocket connected",
-                "ws://100.80.115.93:8000/ws - ready for permission requests",
+                "WebSocket server - ready for permission requests",
             );
         }
         Err(error_msg) => {
