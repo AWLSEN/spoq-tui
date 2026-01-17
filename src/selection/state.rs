@@ -249,7 +249,7 @@ impl SelectionState {
 
     /// Check if there is an active selection (non-empty range)
     pub fn has_selection(&self) -> bool {
-        self.get_range().map_or(false, |r| !r.is_empty())
+        self.get_range().is_some_and(|r| !r.is_empty())
     }
 
     /// Check if a selection is currently being made (mouse down, dragging)

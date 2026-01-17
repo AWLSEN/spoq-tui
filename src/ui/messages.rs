@@ -974,8 +974,326 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
 }
 
 // ============================================================================
+// Message Virtualization
+// ============================================================================
+
+/// Number of messages to render as buffer above and below the visible viewport.
+/// This provides smooth scrolling when messages come into view.
+const VIRTUALIZATION_BUFFER: usize = 5;
+
+/// Represents the height in visual lines of a single message.
+/// Used for virtualization to determine which messages are visible.
+#[derive(Debug, Clone)]
+pub struct MessageHeight {
+    /// Index of the message in the messages array
+    pub message_index: usize,
+    /// Number of visual lines this message occupies (after wrapping)
+    pub visual_lines: usize,
+    /// Cumulative visual line offset from the start of all messages
+    pub cumulative_offset: usize,
+}
+
+/// Calculate the visible range of message indices based on scroll position.
+///
+/// Returns (start_index, end_index) where:
+/// - start_index is the first message to render (inclusive)
+/// - end_index is the last message to render (exclusive)
+///
+/// The range includes a buffer of messages above and below the viewport
+/// for smooth scrolling.
+///
+/// # Arguments
+/// * `message_heights` - Pre-computed heights for each message
+/// * `scroll_from_top` - The scroll offset from the top (in visual lines)
+/// * `viewport_height` - The height of the viewport in visual lines
+///
+/// # Returns
+/// (start_index, end_index) tuple defining which messages to render
+pub fn calculate_visible_range(
+    message_heights: &[MessageHeight],
+    scroll_from_top: usize,
+    viewport_height: usize,
+) -> (usize, usize) {
+    if message_heights.is_empty() {
+        return (0, 0);
+    }
+
+    // Find the first message that starts within or after the visible range
+    let mut start_index = 0;
+    for (i, height) in message_heights.iter().enumerate() {
+        let message_end = height.cumulative_offset + height.visual_lines;
+        if message_end > scroll_from_top {
+            start_index = i;
+            break;
+        }
+        start_index = i + 1;
+    }
+
+    // Apply buffer to start (go back N messages)
+    start_index = start_index.saturating_sub(VIRTUALIZATION_BUFFER);
+
+    // Find the first message that starts after the visible range
+    let visible_end = scroll_from_top + viewport_height;
+    let mut end_index = message_heights.len();
+    for (i, height) in message_heights.iter().enumerate() {
+        if height.cumulative_offset >= visible_end {
+            end_index = i;
+            break;
+        }
+    }
+
+    // Apply buffer to end (render N more messages)
+    end_index = (end_index + VIRTUALIZATION_BUFFER).min(message_heights.len());
+
+    (start_index, end_index)
+}
+
+/// Calculate the number of visual lines to skip when rendering virtualized messages.
+///
+/// When we skip messages at the beginning, we need to tell ratatui how many
+/// visual lines those skipped messages would have occupied, so the scroll
+/// position remains correct.
+///
+/// # Arguments
+/// * `message_heights` - Pre-computed heights for each message
+/// * `start_index` - The first message index we're rendering
+///
+/// # Returns
+/// The number of visual lines occupied by messages before start_index
+pub fn calculate_skip_lines(message_heights: &[MessageHeight], start_index: usize) -> usize {
+    if start_index == 0 || message_heights.is_empty() {
+        return 0;
+    }
+
+    // The cumulative offset of the first rendered message is exactly
+    // how many lines we've skipped
+    message_heights
+        .get(start_index)
+        .map(|h| h.cumulative_offset)
+        .unwrap_or(0)
+}
+
+// ============================================================================
 // Messages Area
 // ============================================================================
+
+/// Render a single message and return its lines.
+///
+/// This is a helper function used by the virtualized message renderer.
+/// It handles both streaming and completed messages, using the cache
+/// for completed messages when available.
+fn render_single_message(
+    message: &Message,
+    app: &mut App,
+    ctx: &LayoutContext,
+) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+
+    // Add blank line gap between messages (no divider line)
+    lines.push(Line::from(""));
+
+    // Render thinking/reasoning block for assistant messages (before content)
+    if message.role == MessageRole::Assistant {
+        lines.extend(render_thinking_block(message, app.tick_count, ctx));
+    }
+
+    // Use vertical bar prefix for user messages only, empty for assistant messages
+    let (label, label_style) = if message.role == MessageRole::User {
+        ("│ ", Style::default().fg(COLOR_DIM))
+    } else {
+        ("", Style::default().fg(COLOR_DIM))
+    };
+
+    // Handle streaming vs completed messages
+    if message.is_streaming {
+        // Display streaming content with blinking cursor
+        // Blink cursor every ~500ms (assuming 10 ticks/sec, toggle every 5 ticks)
+        let show_cursor = (app.tick_count / 5).is_multiple_of(2);
+        let cursor_span = Span::styled(
+            if show_cursor { "█" } else { " " },
+            Style::default().fg(COLOR_ACCENT),
+        );
+
+        // For assistant messages with segments, render segments in order (interleaved)
+        // This shows text, tool events, and subagent events in the order they occurred
+        if message.role == MessageRole::Assistant && !message.segments.is_empty() {
+            let (segment_lines, is_first_line) = render_message_segments(
+                &message.segments,
+                app.tick_count,
+                label,
+                label_style,
+                ctx,
+            );
+            lines.extend(segment_lines);
+
+            // If we never added any content, show label with cursor
+            if is_first_line {
+                lines.push(Line::from(vec![
+                    Span::styled(label, label_style),
+                    cursor_span,
+                ]));
+            } else {
+                // Append cursor to last line
+                if let Some(last_pushed) = lines.last_mut() {
+                    last_pushed.spans.push(cursor_span);
+                }
+            }
+        } else {
+            // Fall back to partial_content for backward compatibility
+            // (non-assistant messages or when segments is empty)
+
+            let content_lines = render_markdown(&message.partial_content);
+
+            // Prepend vertical bar to ALL lines, append cursor to last line
+            if content_lines.is_empty() {
+                // No content yet, just show vertical bar with cursor
+                lines.push(Line::from(vec![
+                    Span::styled(label, label_style),
+                    cursor_span,
+                ]));
+            } else {
+                // Prepend vertical bar to all lines
+                let line_count = content_lines.len();
+                for (idx, line) in content_lines.into_iter().enumerate() {
+                    let mut spans = vec![Span::styled(label, label_style)];
+                    spans.extend(line.spans);
+                    // Append cursor to last line
+                    if idx == line_count - 1 {
+                        spans.push(cursor_span.clone());
+                    }
+                    lines.push(Line::from(spans));
+                }
+            }
+        }
+    } else {
+        // Display completed message - try cache first
+        if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version) {
+            lines.extend(cached_lines.clone());
+            lines.push(Line::from(""));
+            return lines;
+        }
+
+        // Not cached - render and cache
+        let mut message_lines: Vec<Line<'static>> = Vec::new();
+
+        // For assistant messages with segments, render segments in order
+        if message.role == MessageRole::Assistant && !message.segments.is_empty() {
+            let (segment_lines, is_first_line) = render_message_segments(
+                &message.segments,
+                app.tick_count,
+                label,
+                label_style,
+                ctx,
+            );
+            message_lines.extend(segment_lines);
+
+            // If we never added any content, show just the label
+            if is_first_line {
+                message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
+            }
+        } else {
+            // Fall back to content field for non-assistant messages or empty segments
+            let content_lines = render_markdown(&message.content);
+
+            if content_lines.is_empty() {
+                // Empty content, just show vertical bar
+                message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
+            } else {
+                // Prepend vertical bar to ALL lines
+                for line in content_lines {
+                    let mut spans = vec![Span::styled(label, label_style)];
+                    spans.extend(line.spans);
+                    message_lines.push(Line::from(spans));
+                }
+            }
+        }
+
+        // Cache and add to output
+        app.rendered_lines_cache.insert(message.id, message.render_version, message_lines.clone());
+        lines.extend(message_lines);
+    }
+
+    lines.push(Line::from(""));
+    lines
+}
+
+/// Estimate the visual line count for a single message without full rendering.
+///
+/// This is used for virtualization to calculate which messages are visible
+/// without actually rendering all message content. For cached messages,
+/// this can use the cached line count. For non-cached messages, it provides
+/// an estimate based on content length and viewport width.
+fn estimate_message_height(
+    message: &Message,
+    app: &mut App,
+    viewport_width: usize,
+    ctx: &LayoutContext,
+) -> usize {
+    // Base lines: 1 blank at start + 1 blank at end = 2
+    let mut estimated_lines = 2;
+
+    // Add thinking block lines if applicable
+    if message.role == MessageRole::Assistant && !message.reasoning_content.is_empty() {
+        if message.reasoning_collapsed {
+            // Collapsed: 1 header line + 1 spacing
+            estimated_lines += 2;
+        } else {
+            // Expanded: header + content lines + bottom border + spacing
+            let reasoning_lines = message.reasoning_content.lines().count();
+            estimated_lines += 1 + reasoning_lines + 1 + 1;
+        }
+    }
+
+    // For completed messages, try cache first
+    if !message.is_streaming {
+        if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version) {
+            // Use actual cached line count plus wrapping estimate
+            return estimate_wrapped_line_count(cached_lines, viewport_width);
+        }
+    }
+
+    // Estimate content lines based on character count
+    let content = if message.is_streaming {
+        &message.partial_content
+    } else {
+        &message.content
+    };
+
+    // Rough estimate: each 80 chars = ~1 logical line, then wrap calculation
+    let char_count = content.chars().count();
+    let logical_lines = if char_count == 0 {
+        1
+    } else {
+        // Assume average of 60 chars per logical line (accounting for markdown)
+        (char_count / 60).max(1)
+    };
+
+    // Apply wrapping: each logical line may wrap based on viewport width
+    let wrap_factor = if viewport_width > 0 {
+        (60 + viewport_width - 1) / viewport_width // Ceiling division
+    } else {
+        1
+    };
+
+    estimated_lines += logical_lines * wrap_factor;
+
+    // Add lines for tool events in segments (rough estimate: 2 lines per tool)
+    if message.role == MessageRole::Assistant {
+        let tool_count = message.segments.iter().filter(|s| {
+            matches!(s, MessageSegment::ToolEvent(_) | MessageSegment::SubagentEvent(_))
+        }).count();
+        estimated_lines += tool_count * 2;
+    }
+
+    // For more accurate estimates on completed messages, render and cache
+    if !message.is_streaming && estimated_lines > 10 {
+        // For larger messages, actually render to get accurate height
+        let rendered = render_single_message(message, app, ctx);
+        return estimate_wrapped_line_count(&rendered, viewport_width);
+    }
+
+    estimated_lines
+}
 
 /// Render the messages area with user messages and AI responses
 ///
@@ -985,16 +1303,20 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
 /// - Subagent descriptions and summaries adapt to terminal size
 /// - Message wrapping uses actual viewport width
 /// - Error banners adapt to terminal size
+///
+/// Implements message virtualization to only render messages within the
+/// visible viewport plus a small buffer, significantly improving performance
+/// for long conversation threads.
 pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &LayoutContext) {
     let inner = inner_rect(area, 1);
-    let mut lines: Vec<Line> = Vec::new();
+    let viewport_height = inner.height as usize;
+    let viewport_width = inner.width as usize;
+
+    // Collect header lines (error banners, stream errors)
+    let mut header_lines: Vec<Line> = Vec::new();
 
     // Show inline error banners for the thread
-    lines.extend(render_inline_error_banners(app, ctx));
-
-    // Note: Tool status is now rendered inline with messages via render_tool_event()
-    // The legacy render_tool_status_lines and render_subagent_status_lines functions are kept
-    // for potential future use but removed from the main render flow.
+    header_lines.extend(render_inline_error_banners(app, ctx));
 
     // Show stream error banner if there's a stream error (legacy, for non-thread errors)
     if let Some(error) = &app.stream_error {
@@ -1005,7 +1327,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         } else {
             error.clone()
         };
-        lines.push(Line::from(vec![
+        header_lines.push(Line::from(vec![
             Span::styled(
                 "  ⚠ ERROR: ",
                 Style::default()
@@ -1019,11 +1341,13 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         ]));
         // Responsive divider width
         let divider_width = ctx.text_wrap_width(0).min(80) as usize;
-        lines.push(Line::from(vec![Span::styled(
+        header_lines.push(Line::from(vec![Span::styled(
             "═".repeat(divider_width),
             Style::default().fg(Color::Red),
         )]));
     }
+
+    let header_visual_lines = estimate_wrapped_line_count(&header_lines, viewport_width);
 
     // Get messages from cache if we have an active thread
     let cached_messages = app
@@ -1042,160 +1366,130 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
             msgs
         });
 
-    if let Some(messages) = cached_messages {
-        // Log first message to debug
-        if let Some(first_msg) = messages.first() {
-            crate::app::log_thread_update(&format!(
-                "RENDER: First message role={:?}, content_len={}, is_streaming={}, segments_len={}, content_preview={:?}",
-                first_msg.role,
-                first_msg.content.len(),
-                first_msg.is_streaming,
-                first_msg.segments.len(),
-                first_msg.content.chars().take(50).collect::<String>()
-            ));
-        }
+    // Clone messages to avoid borrow issues during height calculation
+    let messages: Vec<Message> = cached_messages
+        .map(|m| m.clone())
+        .unwrap_or_default();
 
-        for message in messages {
-            // Add blank line gap between messages (no divider line)
-            lines.push(Line::from(""));
-
-            // Render thinking/reasoning block for assistant messages (before content)
-            if message.role == MessageRole::Assistant {
-                lines.extend(render_thinking_block(message, app.tick_count, ctx));
-            }
-
-            // Use vertical bar prefix for user messages only, empty for assistant messages
-            let (label, label_style) = if message.role == MessageRole::User {
-                ("│ ", Style::default().fg(COLOR_DIM))
-            } else {
-                ("", Style::default().fg(COLOR_DIM))
-            };
-
-            // Handle streaming vs completed messages
-            if message.is_streaming {
-                // Display streaming content with blinking cursor
-                // Blink cursor every ~500ms (assuming 10 ticks/sec, toggle every 5 ticks)
-                let show_cursor = (app.tick_count / 5).is_multiple_of(2);
-                let cursor_span = Span::styled(
-                    if show_cursor { "█" } else { " " },
-                    Style::default().fg(COLOR_ACCENT),
-                );
-
-                // For assistant messages with segments, render segments in order (interleaved)
-                // This shows text, tool events, and subagent events in the order they occurred
-                if message.role == MessageRole::Assistant && !message.segments.is_empty() {
-                    let (segment_lines, is_first_line) = render_message_segments(
-                        &message.segments,
-                        app.tick_count,
-                        label,
-                        label_style,
-                        ctx,
-                    );
-                    lines.extend(segment_lines);
-
-                    // If we never added any content, show label with cursor
-                    if is_first_line {
-                        lines.push(Line::from(vec![
-                            Span::styled(label, label_style),
-                            cursor_span,
-                        ]));
-                    } else {
-                        // Append cursor to last line
-                        if let Some(last_pushed) = lines.last_mut() {
-                            last_pushed.spans.push(cursor_span);
-                        }
-                    }
-                } else {
-                    // Fall back to partial_content for backward compatibility
-                    // (non-assistant messages or when segments is empty)
-
-                    let content_lines = render_markdown(&message.partial_content);
-
-                    // Prepend vertical bar to ALL lines, append cursor to last line
-                    if content_lines.is_empty() {
-                        // No content yet, just show vertical bar with cursor
-                        lines.push(Line::from(vec![
-                            Span::styled(label, label_style),
-                            cursor_span,
-                        ]));
-                    } else {
-                        // Prepend vertical bar to all lines
-                        let line_count = content_lines.len();
-                        for (idx, line) in content_lines.into_iter().enumerate() {
-                            let mut spans = vec![Span::styled(label, label_style)];
-                            spans.extend(line.spans);
-                            // Append cursor to last line
-                            if idx == line_count - 1 {
-                                spans.push(cursor_span.clone());
-                            }
-                            lines.push(Line::from(spans));
-                        }
-                    }
-                }
-            } else {
-                // Display completed message - try cache first
-                if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version) {
-                    lines.extend(cached_lines.clone());
-                    lines.push(Line::from(""));
-                    continue;
-                }
-
-                // Not cached - render and cache
-                let mut message_lines: Vec<Line<'static>> = Vec::new();
-
-                // For assistant messages with segments, render segments in order
-                if message.role == MessageRole::Assistant && !message.segments.is_empty() {
-                    let (segment_lines, is_first_line) = render_message_segments(
-                        &message.segments,
-                        app.tick_count,
-                        label,
-                        label_style,
-                        ctx,
-                    );
-                    message_lines.extend(segment_lines);
-
-                    // If we never added any content, show just the label
-                    if is_first_line {
-                        message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                    }
-                } else {
-                    // Fall back to content field for non-assistant messages or empty segments
-                    let content_lines = render_markdown(&message.content);
-
-                    if content_lines.is_empty() {
-                        // Empty content, just show vertical bar
-                        message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
-                    } else {
-                        // Prepend vertical bar to ALL lines
-                        for line in content_lines {
-                            let mut spans = vec![Span::styled(label, label_style)];
-                            spans.extend(line.spans);
-                            message_lines.push(Line::from(spans));
-                        }
-                    }
-                }
-
-                // Cache and add to output
-                app.rendered_lines_cache.insert(message.id, message.render_version, message_lines.clone());
-                lines.extend(message_lines);
-            }
-
-            lines.push(Line::from(""));
-        }
-    } else {
+    if messages.is_empty() {
         // No messages yet - show placeholder with vertical bar
+        let mut lines = header_lines;
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("│ ", Style::default().fg(COLOR_DIM)),
             Span::styled("Waiting for your message...", Style::default().fg(COLOR_DIM)),
         ]));
         lines.push(Line::from(""));
+
+        let total_lines = estimate_wrapped_line_count(&lines, viewport_width);
+        let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+        app.max_scroll = max_scroll;
+
+        let messages_widget = Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((0, 0));
+        frame.render_widget(messages_widget, inner);
+
+        // Render inline permission prompt if pending
+        if app.session_state.has_pending_permission() {
+            render_permission_prompt(frame, inner, app);
+        }
+        return;
     }
 
-    // Calculate content height for scroll bounds
-    // With word wrap enabled, we need to estimate wrapped line count
-    let viewport_height = inner.height as usize;
-    let viewport_width = inner.width as usize;
+    // Log first message to debug
+    if let Some(first_msg) = messages.first() {
+        crate::app::log_thread_update(&format!(
+            "RENDER: First message role={:?}, content_len={}, is_streaming={}, segments_len={}, content_preview={:?}",
+            first_msg.role,
+            first_msg.content.len(),
+            first_msg.is_streaming,
+            first_msg.segments.len(),
+            first_msg.content.chars().take(50).collect::<String>()
+        ));
+    }
+
+    // Phase 1: Calculate heights for all messages (using estimates for non-cached)
+    let mut message_heights: Vec<MessageHeight> = Vec::with_capacity(messages.len());
+    let mut cumulative_offset = header_visual_lines;
+
+    for (i, message) in messages.iter().enumerate() {
+        let visual_lines = estimate_message_height(message, app, viewport_width, ctx);
+        message_heights.push(MessageHeight {
+            message_index: i,
+            visual_lines,
+            cumulative_offset,
+        });
+        cumulative_offset += visual_lines;
+    }
+
+    let total_visual_lines = cumulative_offset;
+
+    // Calculate max scroll (how far up we can scroll from bottom)
+    // scroll=0 means showing the bottom (latest content)
+    // scroll=max means showing the top (oldest content)
+    let max_scroll = total_visual_lines.saturating_sub(viewport_height) as u16;
+    app.max_scroll = max_scroll;
+
+    // Clamp user's scroll to valid range
+    let clamped_scroll = app.conversation_scroll.min(max_scroll);
+
+    // Convert from "scroll from bottom" to ratatui's "scroll from top"
+    // If user_scroll=0, show bottom → actual_scroll = max_scroll
+    // If user_scroll=max, show top → actual_scroll = 0
+    let scroll_from_top = (max_scroll.saturating_sub(clamped_scroll)) as usize;
+
+    crate::app::log_thread_update(&format!(
+        "RENDER: total_visual_lines={}, max_scroll={}, user_scroll={}, scroll_from_top={}",
+        total_visual_lines,
+        max_scroll,
+        app.conversation_scroll,
+        scroll_from_top
+    ));
+
+    // Phase 2: Calculate visible range with buffer
+    let (start_index, end_index) = calculate_visible_range(
+        &message_heights,
+        scroll_from_top.saturating_sub(header_visual_lines),
+        viewport_height,
+    );
+
+    crate::app::log_thread_update(&format!(
+        "RENDER: Virtualization - rendering messages {}..{} of {} (buffer={})",
+        start_index,
+        end_index,
+        messages.len(),
+        VIRTUALIZATION_BUFFER
+    ));
+
+    // Phase 3: Render only visible messages
+    let mut lines: Vec<Line> = header_lines;
+
+    // Add placeholder lines for messages before the visible range
+    let skip_lines = calculate_skip_lines(&message_heights, start_index);
+    for _ in 0..skip_lines {
+        lines.push(Line::from(""));
+    }
+
+    // Render visible messages
+    for message in messages.iter().skip(start_index).take(end_index - start_index) {
+        let message_lines = render_single_message(message, app, ctx);
+        lines.extend(message_lines);
+    }
+
+    // Add placeholder lines for messages after the visible range
+    let rendered_end_offset = if end_index > 0 && end_index <= message_heights.len() {
+        let last_rendered = &message_heights[end_index - 1];
+        last_rendered.cumulative_offset + last_rendered.visual_lines
+    } else if end_index == 0 {
+        header_visual_lines
+    } else {
+        total_visual_lines
+    };
+    let trailing_lines = total_visual_lines.saturating_sub(rendered_end_offset);
+    for _ in 0..trailing_lines {
+        lines.push(Line::from(""));
+    }
 
     // Log what's actually in the first few lines
     for (i, line) in lines.iter().take(5).enumerate() {
@@ -1207,44 +1501,17 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         ));
     }
 
-    // Estimate the number of visual lines after word wrapping
-    let total_lines = estimate_wrapped_line_count(&lines, viewport_width);
-
     crate::app::log_thread_update(&format!(
-        "RENDER: Generated {} raw lines, {} estimated visual lines, viewport={}x{}",
+        "RENDER: Generated {} lines for {} visible messages, viewport={}x{}",
         lines.len(),
-        total_lines,
+        end_index - start_index,
         viewport_width,
         viewport_height
     ));
 
-    // Calculate max scroll (how far up we can scroll from bottom)
-    // scroll=0 means showing the bottom (latest content)
-    // scroll=max means showing the top (oldest content)
-    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
-
-    // Persist max_scroll so event handler can use it for immediate clamping
-    app.max_scroll = max_scroll;
-
-    // Clamp user's scroll to valid range
-    let clamped_scroll = app.conversation_scroll.min(max_scroll);
-
-    // Convert from "scroll from bottom" to ratatui's "scroll from top"
-    // If user_scroll=0, show bottom → actual_scroll = max_scroll
-    // If user_scroll=max, show top → actual_scroll = 0
-    let actual_scroll = max_scroll.saturating_sub(clamped_scroll);
-
-    crate::app::log_thread_update(&format!(
-        "RENDER: total_lines={}, max_scroll={}, user_scroll={}, actual_scroll={}",
-        total_lines,
-        max_scroll,
-        app.conversation_scroll,
-        actual_scroll
-    ));
-
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .scroll((actual_scroll, 0));
+        .scroll((scroll_from_top as u16, 0));
     frame.render_widget(messages_widget, inner);
 
     // Render inline permission prompt if pending (overlays on top of messages)
