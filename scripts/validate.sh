@@ -82,7 +82,6 @@ FILES=(
     "src/models.rs"
     "src/sse.rs"
     "src/ui.rs"
-    "src/widgets/input_box.rs"
     "tests/integration.rs"
     "Cargo.toml"
 )
