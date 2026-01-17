@@ -2523,4 +2523,448 @@ mod tests {
 
         assert!(!buffer_str.contains("Terminal Too Small"), "Should not show 'Terminal Too Small' message");
     }
+
+    // ========================================================================
+    // Responsive Layout Integration Tests
+    // ========================================================================
+    // These tests verify that the UI renders correctly at various terminal sizes
+    // without panics and with appropriate layout adaptations.
+
+    /// Helper function to verify basic UI rendering succeeds without panic
+    fn verify_render_succeeds(width: u16, height: u16, screen: Screen) {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = screen;
+        // IMPORTANT: Set app's terminal dimensions to match the test backend
+        // This ensures LayoutContext calculations use the correct size
+        app.terminal_width = width;
+        app.terminal_height = height;
+
+        // Add some test data to make rendering more comprehensive
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "test-thread-1".to_string(),
+            title: "Test Thread with a longer title".to_string(),
+            description: Some("A description".to_string()),
+            preview: "This is a preview message that might be truncated".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+            model: Some("claude-opus".to_string()),
+            permission_mode: None,
+            message_count: 5,
+            created_at: chrono::Utc::now(),
+        });
+
+        if screen == Screen::Conversation {
+            app.active_thread_id = Some("test-thread-1".to_string());
+            app.cache.add_message_simple(
+                "test-thread-1",
+                crate::models::MessageRole::User,
+                "Hello, this is a test message".to_string(),
+            );
+            app.cache.add_message_simple(
+                "test-thread-1",
+                crate::models::MessageRole::Assistant,
+                "This is a response from the assistant".to_string(),
+            );
+        }
+
+        let result = terminal.draw(|f| render(f, &mut app));
+        assert!(result.is_ok(), "Render should succeed at {}x{}", width, height);
+
+        let buffer = terminal.backend().buffer();
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(has_content, "Should render some content at {}x{}", width, height);
+    }
+
+    // ========================================================================
+    // 40x20 - Narrow and Short Terminal (Edge case)
+    // ========================================================================
+
+    #[test]
+    fn test_responsive_40x20_command_deck() {
+        verify_render_succeeds(40, 20, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_responsive_40x20_conversation() {
+        verify_render_succeeds(40, 20, Screen::Conversation);
+    }
+
+    #[test]
+    fn test_responsive_40x20_layout_context() {
+        let ctx = LayoutContext::new(40, 20);
+
+        // Verify layout decisions
+        assert!(ctx.is_narrow(), "40 cols should be narrow");
+        assert!(ctx.is_short(), "20 rows should be short");
+        assert!(ctx.is_compact(), "40x20 should be compact");
+        assert!(ctx.should_stack_panels(), "40 cols should trigger panel stacking");
+        assert!(ctx.should_collapse_sidebar(), "40 cols should collapse sidebar");
+
+        // Verify panel widths are reasonable (equal split for narrow)
+        let (left, right) = ctx.two_column_widths();
+        assert_eq!(left, 20, "Left panel should be half width at 40 cols");
+        assert_eq!(right, 20, "Right panel should be half width at 40 cols");
+
+        // Verify header/input heights are reduced
+        assert_eq!(ctx.header_height(), 3, "Header should be compact at 40x20");
+        assert_eq!(ctx.input_area_height(), 4, "Input area should be compact at 40x20");
+    }
+
+    // ========================================================================
+    // 80x24 - Standard Terminal (Default case)
+    // ========================================================================
+
+    #[test]
+    fn test_responsive_80x24_command_deck() {
+        verify_render_succeeds(80, 24, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_responsive_80x24_conversation() {
+        verify_render_succeeds(80, 24, Screen::Conversation);
+    }
+
+    #[test]
+    fn test_responsive_80x24_layout_context() {
+        let ctx = LayoutContext::new(80, 24);
+
+        // Verify layout decisions
+        assert!(!ctx.is_narrow(), "80 cols should not be narrow");
+        assert!(!ctx.is_short(), "24 rows should not be short");
+        assert!(!ctx.is_compact(), "80x24 should not be compact");
+        assert!(!ctx.should_stack_panels(), "80 cols should not stack panels");
+        assert!(!ctx.should_collapse_sidebar(), "80 cols should not collapse sidebar");
+
+        // Verify panel widths (40/60 split for medium)
+        let (left, right) = ctx.two_column_widths();
+        assert_eq!(left, 32, "Left panel should be 40% at 80 cols");
+        assert_eq!(right, 48, "Right panel should be 60% at 80 cols");
+
+        // Verify header/input heights are normal
+        assert_eq!(ctx.header_height(), 9, "Header should be normal at 80x24");
+        assert_eq!(ctx.input_area_height(), 6, "Input area should be normal at 80x24");
+    }
+
+    #[test]
+    fn test_responsive_80x24_with_messages() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("test-thread".to_string());
+
+        // Add thread with multiple messages
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "test-thread".to_string(),
+            title: "Multi-message Thread".to_string(),
+            description: None,
+            preview: "Preview".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+            model: None,
+            permission_mode: None,
+            message_count: 4,
+            created_at: chrono::Utc::now(),
+        });
+
+        for i in 0..4 {
+            let role = if i % 2 == 0 { crate::models::MessageRole::User } else { crate::models::MessageRole::Assistant };
+            app.cache.add_message_simple("test-thread", role, format!("Message {}", i));
+        }
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // Verify messages are rendered
+        assert!(buffer_str.contains("Message"), "Messages should be visible at 80x24");
+    }
+
+    // ========================================================================
+    // 120x40 - Medium-Large Terminal
+    // ========================================================================
+
+    #[test]
+    fn test_responsive_120x40_command_deck() {
+        verify_render_succeeds(120, 40, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_responsive_120x40_conversation() {
+        verify_render_succeeds(120, 40, Screen::Conversation);
+    }
+
+    #[test]
+    fn test_responsive_120x40_layout_context() {
+        let ctx = LayoutContext::new(120, 40);
+
+        // Verify layout decisions
+        assert!(!ctx.is_narrow(), "120 cols should not be narrow");
+        assert!(!ctx.is_short(), "40 rows should not be short");
+        assert!(!ctx.is_compact(), "120x40 should not be compact");
+        assert!(!ctx.should_stack_panels(), "120 cols should not stack panels");
+
+        // At 120 cols, we're at the boundary for wide layout
+        let (left, right) = ctx.two_column_widths();
+        assert_eq!(left, 42, "Left panel should be 35% at 120 cols");
+        assert_eq!(right, 78, "Right panel should be 65% at 120 cols");
+
+        // Verify size category
+        // Note: 120 is >= MD_WIDTH (120), so it's Large (not Medium)
+        assert_eq!(ctx.width_category(), layout::SizeCategory::Large);
+        assert_eq!(ctx.height_category(), layout::SizeCategory::Large);
+    }
+
+    #[test]
+    fn test_responsive_120x40_with_programming_thread() {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("prog-thread".to_string());
+
+        // Add a programming thread
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "prog-thread".to_string(),
+            title: "Programming Task".to_string(),
+            description: Some("A coding task".to_string()),
+            preview: "Code preview".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+            model: Some("claude-opus".to_string()),
+            permission_mode: None,
+            message_count: 2,
+            created_at: chrono::Utc::now(),
+        });
+
+        app.cache.add_message_simple("prog-thread", crate::models::MessageRole::User, "Write some code".to_string());
+        app.cache.add_message_simple("prog-thread", crate::models::MessageRole::Assistant, "Here is the code...".to_string());
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // Verify programming indicator is visible
+        assert!(buffer_str.contains("Programming") || buffer_str.contains("PROGRAMMING"),
+            "Programming indicator should be visible at 120x40");
+    }
+
+    // ========================================================================
+    // 200x50 - Wide Terminal
+    // ========================================================================
+
+    #[test]
+    fn test_responsive_200x50_command_deck() {
+        verify_render_succeeds(200, 50, Screen::CommandDeck);
+    }
+
+    #[test]
+    fn test_responsive_200x50_conversation() {
+        verify_render_succeeds(200, 50, Screen::Conversation);
+    }
+
+    #[test]
+    fn test_responsive_200x50_layout_context() {
+        let ctx = LayoutContext::new(200, 50);
+
+        // Verify layout decisions
+        assert!(!ctx.is_narrow(), "200 cols should not be narrow");
+        assert!(!ctx.is_short(), "50 rows should not be short");
+        assert!(!ctx.is_compact(), "200x50 should not be compact");
+        assert!(!ctx.should_stack_panels(), "200 cols should not stack panels");
+
+        // At 200 cols, left panel should be capped at 60
+        let (left, right) = ctx.two_column_widths();
+        assert_eq!(left, 60, "Left panel should be capped at 60 for wide terminals");
+        assert_eq!(right, 140, "Right panel gets remaining space");
+
+        // Verify size category
+        assert_eq!(ctx.width_category(), layout::SizeCategory::Large);
+        assert_eq!(ctx.height_category(), layout::SizeCategory::Large);
+
+        // Verify full features are enabled
+        assert!(ctx.should_show_scrollbar(), "Scrollbar should be shown at 200x50");
+        assert!(ctx.should_show_full_badges(), "Full badges should be shown at 200x50");
+        assert!(ctx.should_show_tool_previews(), "Tool previews should be shown at 200x50");
+    }
+
+    #[test]
+    fn test_responsive_200x50_with_long_content() {
+        let backend = TestBackend::new(200, 50);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("long-thread".to_string());
+
+        // Add thread with long content
+        app.cache.upsert_thread(crate::models::Thread {
+            id: "long-thread".to_string(),
+            title: "A thread with a very long title that should be fully visible on wide terminals".to_string(),
+            description: Some("A detailed description that provides more context".to_string()),
+            preview: "Preview text".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+            model: Some("claude-opus-4-5".to_string()),
+            permission_mode: None,
+            message_count: 10,
+            created_at: chrono::Utc::now(),
+        });
+
+        // Add a long message
+        let long_message = "This is a very long message that would typically wrap on smaller terminals. ".repeat(10);
+        app.cache.add_message_simple("long-thread", crate::models::MessageRole::User, long_message.clone());
+        app.cache.add_message_simple("long-thread", crate::models::MessageRole::Assistant, "Response to the long message".to_string());
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // Verify thread title is visible
+        assert!(buffer_str.contains("long title") || buffer_str.contains("long-thread"),
+            "Thread title should be visible at 200x50");
+    }
+
+    // ========================================================================
+    // Edge Case Tests
+    // ========================================================================
+
+    #[test]
+    fn test_responsive_boundary_60x24() {
+        // Test at the XS_WIDTH boundary
+        verify_render_succeeds(60, 24, Screen::CommandDeck);
+        verify_render_succeeds(60, 24, Screen::Conversation);
+
+        let ctx = LayoutContext::new(60, 24);
+        // At 60, should NOT be extra small but should still be small
+        assert!(!ctx.is_extra_small(), "60 cols should not be extra small");
+        assert!(ctx.is_narrow(), "60 cols should be narrow (< 80)");
+    }
+
+    #[test]
+    fn test_responsive_boundary_80x24() {
+        // Test at the SM_WIDTH boundary
+        let ctx = LayoutContext::new(80, 24);
+        assert!(!ctx.is_narrow(), "80 cols should not be narrow");
+        assert_eq!(ctx.width_category(), layout::SizeCategory::Medium);
+    }
+
+    #[test]
+    fn test_responsive_boundary_120x40() {
+        // Test at the MD_WIDTH and MD_HEIGHT boundary
+        // 120 is >= MD_WIDTH (120), so it's Large
+        // 40 is >= MD_HEIGHT (40), so it's Large
+        let ctx = LayoutContext::new(120, 40);
+        assert_eq!(ctx.width_category(), layout::SizeCategory::Large);
+        assert_eq!(ctx.height_category(), layout::SizeCategory::Large);
+    }
+
+    #[test]
+    fn test_responsive_extreme_narrow_30x24() {
+        // Terminal at minimum width should show "too small" message
+        let backend = TestBackend::new(30, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // At exactly minimum width, it should work
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(has_content, "Should render at minimum width");
+    }
+
+    #[test]
+    fn test_responsive_extreme_short_80x9() {
+        // Very short terminal - BELOW minimum height threshold
+        let backend = TestBackend::new(80, 9);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        // Should show "too small" message for height below MIN_TERMINAL_HEIGHT (10)
+        assert!(buffer_str.contains("Terminal Too Small") || buffer_str.contains("resize"),
+            "Terminal below minimum height should show resize message");
+    }
+
+    #[test]
+    fn test_responsive_at_minimum_80x10() {
+        // Terminal exactly at minimum height - should work normally
+        let backend = TestBackend::new(80, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+
+        // At minimum size, it should render normally (not show "too small")
+        assert!(has_content, "Terminal at minimum size should render content");
+    }
+
+    #[test]
+    fn test_responsive_various_sizes_no_panic() {
+        // Test a variety of sizes to ensure no panics
+        let sizes = [
+            (40, 20),
+            (50, 20),
+            (60, 16),
+            (70, 20),
+            (80, 24),
+            (100, 30),
+            (120, 40),
+            (150, 45),
+            (200, 50),
+            (250, 60),
+        ];
+
+        for (width, height) in sizes.iter() {
+            let backend = TestBackend::new(*width, *height);
+            let mut terminal = Terminal::new(backend).unwrap();
+            let mut app = create_test_app();
+
+            // Test both screens
+            for screen in [Screen::CommandDeck, Screen::Conversation] {
+                app.screen = screen;
+                let result = terminal.draw(|f| render(f, &mut app));
+                assert!(result.is_ok(), "Render should not panic at {}x{} on {:?}", width, height, screen);
+            }
+        }
+    }
+
+    #[test]
+    fn test_responsive_layout_consistency() {
+        // Verify that layout calculations are consistent
+        let sizes = [
+            (40, 20, true, true),    // (width, height, expect_narrow, expect_short)
+            (60, 16, true, true),
+            (80, 24, false, false),
+            (120, 40, false, false),
+            (200, 50, false, false),
+        ];
+
+        for (width, height, expect_narrow, expect_short) in sizes.iter() {
+            let ctx = LayoutContext::new(*width, *height);
+            assert_eq!(ctx.is_narrow(), *expect_narrow,
+                "is_narrow() mismatch at {}x{}", width, height);
+            assert_eq!(ctx.is_short(), *expect_short,
+                "is_short() mismatch at {}x{}", width, height);
+
+            // Verify panel widths sum to total width
+            let (left, right) = ctx.two_column_widths();
+            assert_eq!(left + right, *width,
+                "Panel widths should sum to total width at {}x{}", width, height);
+        }
+    }
 }

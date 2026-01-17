@@ -248,7 +248,9 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     // Calculate card width as percentage of panel width with bounds
     // Use 75% on wider terminals, 90% on narrower ones
     let card_percentage: u16 = if ctx.is_narrow() { 90 } else { 75 };
-    let card_width: u16 = ctx.bounded_width(card_percentage, 25, inner.width.saturating_sub(2));
+    let max_width = inner.width.saturating_sub(2);
+    let min_width = max_width.min(25); // Ensure min <= max
+    let card_width: u16 = ctx.bounded_width(card_percentage, min_width, max_width);
     let inner_width = card_width.saturating_sub(2) as usize; // Width inside borders (between ┌ and ┐)
 
     // Generate dynamic border strings

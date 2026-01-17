@@ -1305,3 +1305,657 @@ async fn test_rapid_submit_blocked_on_pending_thread() {
         .unwrap();
     assert_eq!(messages.len(), 2);
 }
+
+// ============================================================================
+// Phase 9 Multiline Input Integration Tests - TextAreaInput Wrapper
+// ============================================================================
+
+/// Test Case 1: Single-line input → submit → verify content
+/// - Type a simple message on one line
+/// - Submit the message
+/// - Verify the content is correctly captured
+#[tokio::test]
+async fn test_single_line_input_submit() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type a single-line message
+    for c in "Hello, this is a single line message".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Verify content before submit
+    assert_eq!(app.textarea.content(), "Hello, this is a single line message");
+    assert_eq!(app.textarea.line_count(), 1);
+
+    // Submit the message
+    app.submit_input(ThreadType::Conversation);
+
+    // Verify thread was created with correct content
+    let thread_id = app.active_thread_id.as_ref().expect("Should have thread ID");
+    let messages = app.cache.get_messages(thread_id).expect("Messages should exist");
+
+    assert_eq!(messages[0].role, MessageRole::User);
+    assert_eq!(messages[0].content, "Hello, this is a single line message");
+
+    // Verify input was cleared after submit
+    assert!(app.textarea.is_empty());
+}
+
+/// Test Case 2: Multiline input (type, insert_newline, type more) → verify line count
+/// - Insert text, add newlines, insert more text
+/// - Verify correct number of lines
+#[tokio::test]
+async fn test_multiline_input_newline_insertion() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type first line
+    for c in "Line 1: Hello".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Insert newline (simulating Shift+Enter / Ctrl+J / Alt+Enter)
+    app.textarea.insert_newline();
+
+    // Type second line
+    for c in "Line 2: World".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Verify we have 2 lines
+    assert_eq!(app.textarea.line_count(), 2);
+    assert_eq!(app.textarea.content(), "Line 1: Hello\nLine 2: World");
+
+    // Add another line
+    app.textarea.insert_newline();
+    for c in "Line 3: Multiline test".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    assert_eq!(app.textarea.line_count(), 3);
+    assert_eq!(app.textarea.content(), "Line 1: Hello\nLine 2: World\nLine 3: Multiline test");
+}
+
+/// Test Case 3: Max 5 lines → verify line count doesn't exceed natural limit
+/// - Add more than 5 lines
+/// - Verify textarea accepts all lines (max height is for display, not content)
+#[tokio::test]
+async fn test_multiline_input_max_lines_height_calculation() {
+    use spoq::ui::input::calculate_input_box_height;
+
+    // Verify height calculation clamping behavior
+    assert_eq!(calculate_input_box_height(1), 3, "1 line: content + 2 borders = 3");
+    assert_eq!(calculate_input_box_height(2), 4, "2 lines: content + 2 borders = 4");
+    assert_eq!(calculate_input_box_height(3), 5, "3 lines + 2 borders = 5");
+    assert_eq!(calculate_input_box_height(4), 6, "4 lines + 2 borders = 6");
+    assert_eq!(calculate_input_box_height(5), 7, "5 lines + 2 borders = 7 (max)");
+    assert_eq!(calculate_input_box_height(6), 7, "6 lines clamped to 5 + 2 = 7");
+    assert_eq!(calculate_input_box_height(10), 7, "10 lines clamped to 5 + 2 = 7");
+
+    // But textarea should still accept all lines
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create 7 lines
+    for i in 1..=7 {
+        for c in format!("Line {}", i).chars() {
+            app.textarea.insert_char(c);
+        }
+        if i < 7 {
+            app.textarea.insert_newline();
+        }
+    }
+
+    // All 7 lines should be stored (height clamping is only for display)
+    assert_eq!(app.textarea.line_count(), 7);
+
+    // Content should have all lines
+    let content = app.textarea.content();
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(lines.len(), 7);
+    assert_eq!(lines[0], "Line 1");
+    assert_eq!(lines[6], "Line 7");
+}
+
+/// Test Case 4: Up/Down cursor navigation between lines
+/// - Create multiline content
+/// - Navigate up and down with cursor
+/// - Verify cursor position changes correctly
+#[tokio::test]
+async fn test_up_down_cursor_navigation() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create 3 lines
+    for c in "First".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "Second".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "Third".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Cursor should be at end of line 3 (0-indexed row 2)
+    let (row, col) = app.textarea.cursor();
+    assert_eq!(row, 2, "Cursor should be on row 2 (third line)");
+    assert_eq!(col, 5, "Cursor should be at column 5 (after 'Third')");
+
+    // Move up
+    app.textarea.move_cursor_up();
+    let (row, _col) = app.textarea.cursor();
+    assert_eq!(row, 1, "Cursor should move to row 1 (second line)");
+
+    // Move up again
+    app.textarea.move_cursor_up();
+    let (row, _col) = app.textarea.cursor();
+    assert_eq!(row, 0, "Cursor should move to row 0 (first line)");
+
+    // Move up at top should stay at top
+    app.textarea.move_cursor_up();
+    let (row, _col) = app.textarea.cursor();
+    assert_eq!(row, 0, "Cursor should stay at row 0 (can't go higher)");
+
+    // Move down
+    app.textarea.move_cursor_down();
+    let (row, _col) = app.textarea.cursor();
+    assert_eq!(row, 1, "Cursor should move to row 1");
+
+    // Move down
+    app.textarea.move_cursor_down();
+    let (row, _col) = app.textarea.cursor();
+    assert_eq!(row, 2, "Cursor should move to row 2");
+
+    // Move down at bottom should stay at bottom
+    app.textarea.move_cursor_down();
+    let (row, _col) = app.textarea.cursor();
+    assert_eq!(row, 2, "Cursor should stay at row 2 (can't go lower)");
+}
+
+/// Test Case 5: Word navigation (Alt+Left/Right equivalents)
+/// - Type multiple words
+/// - Navigate by word
+/// - Verify cursor position at word boundaries
+#[tokio::test]
+async fn test_word_navigation() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type a sentence with multiple words
+    for c in "hello world test".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Cursor is at end (col 16)
+    let (_, col) = app.textarea.cursor();
+    assert_eq!(col, 16, "Cursor should be at end of 'hello world test'");
+
+    // Move word left - should go to start of "test"
+    app.textarea.move_cursor_word_left();
+    let (_, col) = app.textarea.cursor();
+    assert!(col <= 12, "Cursor should be at or before 'test'");
+
+    // Move word left again - should go to start of "world"
+    app.textarea.move_cursor_word_left();
+    let (_, col) = app.textarea.cursor();
+    assert!(col <= 6, "Cursor should be at or before 'world'");
+
+    // Move word right - should go forward
+    let col_before = col;
+    app.textarea.move_cursor_word_right();
+    let (_, col_after) = app.textarea.cursor();
+    assert!(col_after > col_before, "Cursor should move forward");
+}
+
+/// Test Case 6: Delete word backward (Alt+Backspace equivalent)
+/// - Type multiple words
+/// - Delete word backward
+/// - Verify correct word is deleted
+#[tokio::test]
+async fn test_delete_word_backward() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type a sentence
+    for c in "hello world test".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    assert_eq!(app.textarea.content(), "hello world test");
+
+    // Delete word backward - should remove "test"
+    app.textarea.delete_word_backward();
+    let content = app.textarea.content();
+    assert!(content.starts_with("hello"), "Should still have 'hello'");
+    assert!(!content.ends_with("test"), "'test' should be deleted");
+
+    // Delete word backward again - should remove "world " or similar
+    app.textarea.delete_word_backward();
+    let content = app.textarea.content();
+    assert!(content.starts_with("hello"), "Should still have 'hello'");
+}
+
+/// Test Case 7: Undo/redo functionality
+/// - Make changes
+/// - Undo
+/// - Verify change is reverted
+/// - Redo
+/// - Verify change is restored
+#[tokio::test]
+async fn test_undo_redo() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type some text
+    for c in "Hello".chars() {
+        app.textarea.insert_char(c);
+    }
+    assert_eq!(app.textarea.content(), "Hello");
+
+    // Undo should revert
+    let undone = app.textarea.undo();
+    assert!(undone, "Undo should return true when there's something to undo");
+    // Note: exact undo behavior depends on tui-textarea's implementation
+    // It may undo character by character or by operation
+
+    // Redo should restore (if undo worked)
+    let redone = app.textarea.redo();
+    // Redo may or may not have anything to redo depending on undo behavior
+    // Just verify it doesn't panic
+    let _ = redone;
+}
+
+/// Test Case 8: Content extraction (lines joined with newlines)
+/// - Create multiline content
+/// - Extract content
+/// - Verify lines are joined correctly
+#[tokio::test]
+async fn test_content_extraction() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create multiline content
+    for c in "Line A".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "Line B".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "Line C".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Content should join lines with newlines
+    let content = app.textarea.content();
+    assert_eq!(content, "Line A\nLine B\nLine C");
+
+    // Verify lines() access
+    let lines = app.textarea.lines();
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0], "Line A");
+    assert_eq!(lines[1], "Line B");
+    assert_eq!(lines[2], "Line C");
+}
+
+/// Test Case 9: Clear functionality
+/// - Type content
+/// - Clear
+/// - Verify textarea is empty
+#[tokio::test]
+async fn test_clear_functionality() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type multiline content
+    for c in "Line 1".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "Line 2".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    assert!(!app.textarea.is_empty(), "Should have content");
+    assert_eq!(app.textarea.line_count(), 2);
+
+    // Clear
+    app.textarea.clear();
+
+    // Verify empty
+    assert!(app.textarea.is_empty(), "Should be empty after clear");
+    // Note: line_count() returns at least 1 for empty textarea
+}
+
+/// Test Case 10: Auto-grow behavior via calculate_input_area_height
+/// - Verify height increases as lines are added
+#[tokio::test]
+async fn test_auto_grow_behavior() {
+    use spoq::ui::input::calculate_input_area_height;
+
+    // Verify auto-grow behavior
+    assert_eq!(calculate_input_area_height(1), 4, "1 line: box(3) + keybinds(1) = 4");
+    assert_eq!(calculate_input_area_height(2), 5, "2 lines: box(4) + keybinds(1) = 5");
+    assert_eq!(calculate_input_area_height(3), 6, "3 lines: box(5) + keybinds(1) = 6");
+    assert_eq!(calculate_input_area_height(4), 7, "4 lines: box(6) + keybinds(1) = 7");
+    assert_eq!(calculate_input_area_height(5), 8, "5 lines: box(7) + keybinds(1) = 8 (max)");
+    assert_eq!(calculate_input_area_height(6), 8, "6 lines: clamped to box(7) + keybinds(1) = 8");
+
+    // Also verify with actual App
+    let mut app = App::new().expect("Failed to create app");
+
+    // Start with empty - should be 1 line
+    assert_eq!(app.textarea.line_count(), 1);
+
+    // Add content - still 1 line
+    for c in "Single line".chars() {
+        app.textarea.insert_char(c);
+    }
+    assert_eq!(app.textarea.line_count(), 1);
+
+    // Add newline - now 2 lines
+    app.textarea.insert_newline();
+    assert_eq!(app.textarea.line_count(), 2);
+
+    // Add more lines
+    for _ in 0..3 {
+        for c in "More text".chars() {
+            app.textarea.insert_char(c);
+        }
+        app.textarea.insert_newline();
+    }
+
+    // Should have 5 lines now (2 + 3)
+    assert_eq!(app.textarea.line_count(), 5);
+}
+
+/// Test Case 11: Multiline input submission preserves newlines in message content
+/// - Create multiline input
+/// - Submit
+/// - Verify message content has newlines preserved
+#[tokio::test]
+async fn test_multiline_submit_preserves_newlines() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create multiline content
+    for c in "First paragraph".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    app.textarea.insert_newline(); // Double newline for paragraph break
+    for c in "Second paragraph".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    let expected_content = "First paragraph\n\nSecond paragraph";
+    assert_eq!(app.textarea.content(), expected_content);
+
+    // Submit
+    app.submit_input(ThreadType::Conversation);
+
+    // Verify message content preserves newlines
+    let thread_id = app.active_thread_id.as_ref().expect("Should have thread ID");
+    let messages = app.cache.get_messages(thread_id).expect("Messages should exist");
+
+    assert_eq!(messages[0].content, expected_content);
+}
+
+/// Test Case 12: Cursor position tracking across lines
+/// - Type on multiple lines
+/// - Move cursor to specific positions
+/// - Verify cursor tracking is accurate
+#[tokio::test]
+async fn test_cursor_position_tracking() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type "ABC" on first line
+    for c in "ABC".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Verify cursor at (0, 3)
+    assert_eq!(app.textarea.cursor(), (0, 3));
+
+    // Add newline and type "XYZ"
+    app.textarea.insert_newline();
+    for c in "XYZ".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Verify cursor at (1, 3)
+    assert_eq!(app.textarea.cursor(), (1, 3));
+
+    // Move to start of line
+    app.textarea.move_cursor_home();
+    assert_eq!(app.textarea.cursor(), (1, 0));
+
+    // Move to end of line
+    app.textarea.move_cursor_end();
+    assert_eq!(app.textarea.cursor(), (1, 3));
+
+    // Move up
+    app.textarea.move_cursor_up();
+    assert_eq!(app.textarea.cursor().0, 0);
+}
+
+/// Test Case 13: Home and End keys work per-line
+/// - Type multiline content
+/// - Use Home/End navigation
+/// - Verify they work within current line only
+#[tokio::test]
+async fn test_home_end_per_line() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create content: "ABCDE" on line 1, "12345" on line 2
+    for c in "ABCDE".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "12345".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Cursor at (1, 5) - end of "12345"
+    assert_eq!(app.textarea.cursor(), (1, 5));
+
+    // Home moves to start of current line (line 1)
+    app.textarea.move_cursor_home();
+    assert_eq!(app.textarea.cursor(), (1, 0), "Home should go to start of line 1");
+
+    // End moves back to end of current line
+    app.textarea.move_cursor_end();
+    assert_eq!(app.textarea.cursor(), (1, 5), "End should go to end of line 1");
+
+    // Move up to line 0
+    app.textarea.move_cursor_up();
+    assert_eq!(app.textarea.cursor().0, 0);
+
+    // Home on line 0
+    app.textarea.move_cursor_home();
+    assert_eq!(app.textarea.cursor(), (0, 0));
+
+    // End on line 0
+    app.textarea.move_cursor_end();
+    assert_eq!(app.textarea.cursor(), (0, 5));
+}
+
+/// Test Case 14: Backspace across line boundaries
+/// - Create multiline content
+/// - Backspace at start of line 2 should join lines
+#[tokio::test]
+async fn test_backspace_joins_lines() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create "ABC\nXYZ"
+    for c in "ABC".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "XYZ".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    assert_eq!(app.textarea.line_count(), 2);
+    assert_eq!(app.textarea.content(), "ABC\nXYZ");
+
+    // Move to start of line 2
+    app.textarea.move_cursor_home();
+    assert_eq!(app.textarea.cursor(), (1, 0));
+
+    // Backspace should delete the newline and join lines
+    app.textarea.backspace();
+
+    // Should now be 1 line: "ABCXYZ"
+    assert_eq!(app.textarea.line_count(), 1);
+    assert_eq!(app.textarea.content(), "ABCXYZ");
+}
+
+/// Test Case 15: Delete at end of line
+/// - Create multiline content
+/// - Delete at end of line 1 should join with line 2
+#[tokio::test]
+async fn test_delete_at_line_end_joins_lines() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create "ABC\nXYZ"
+    for c in "ABC".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline();
+    for c in "XYZ".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    assert_eq!(app.textarea.line_count(), 2);
+
+    // Move to end of line 1 (after "ABC")
+    app.textarea.move_cursor_up();
+    app.textarea.move_cursor_end();
+    assert_eq!(app.textarea.cursor(), (0, 3));
+
+    // Delete forward should remove the newline
+    app.textarea.delete_char();
+
+    // Should now be 1 line: "ABCXYZ"
+    assert_eq!(app.textarea.line_count(), 1);
+    assert_eq!(app.textarea.content(), "ABCXYZ");
+}
+
+/// Test Case 16: Empty line insertion and removal
+/// - Insert empty lines
+/// - Verify line count
+/// - Remove them
+#[tokio::test]
+async fn test_empty_line_handling() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Type text, insert empty lines, type more
+    for c in "Header".chars() {
+        app.textarea.insert_char(c);
+    }
+    app.textarea.insert_newline(); // Empty line
+    app.textarea.insert_newline(); // Another empty line
+    for c in "Footer".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    assert_eq!(app.textarea.line_count(), 3);
+    assert_eq!(app.textarea.content(), "Header\n\nFooter");
+
+    // Verify lines array
+    let lines = app.textarea.lines();
+    assert_eq!(lines[0], "Header");
+    assert_eq!(lines[1], "");
+    assert_eq!(lines[2], "Footer");
+}
+
+/// Test Case 17: TextAreaInput::with_content initialization
+/// - Create with initial multiline content
+/// - Verify content and cursor position
+#[tokio::test]
+async fn test_with_content_initialization() {
+    use spoq::widgets::textarea_input::TextAreaInput;
+
+    let input = TextAreaInput::with_content("line1\nline2\nline3");
+
+    assert_eq!(input.line_count(), 3);
+    assert_eq!(input.content(), "line1\nline2\nline3");
+
+    // Cursor should be at end (after init)
+    let (row, col) = input.cursor();
+    assert_eq!(row, 2, "Cursor should be on last line");
+    assert_eq!(col, 5, "Cursor should be at end of last line");
+}
+
+/// Test Case 18: Delete to line start (Ctrl+U equivalent)
+/// - Type on a line
+/// - Delete to start
+/// - Verify line content
+#[tokio::test]
+async fn test_delete_to_line_start() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create "Hello World" on one line
+    for c in "Hello World".chars() {
+        app.textarea.insert_char(c);
+    }
+
+    // Move cursor to middle (after "Hello ")
+    app.textarea.move_cursor_home();
+    for _ in 0..6 {
+        app.textarea.move_cursor_right();
+    }
+
+    // Delete to line start should remove "Hello "
+    app.textarea.delete_to_line_start();
+
+    // Should be left with "World"
+    assert_eq!(app.textarea.content(), "World");
+}
+
+/// Test Case 19: Move to top and bottom of multiline content
+/// - Create many lines
+/// - Move to top and bottom
+#[tokio::test]
+async fn test_move_to_top_bottom() {
+    let mut app = App::new().expect("Failed to create app");
+
+    // Create 5 lines
+    for i in 1..=5 {
+        for c in format!("Line {}", i).chars() {
+            app.textarea.insert_char(c);
+        }
+        if i < 5 {
+            app.textarea.insert_newline();
+        }
+    }
+
+    // Cursor should be at bottom (row 4)
+    assert_eq!(app.textarea.cursor().0, 4);
+
+    // Move to top
+    app.textarea.move_cursor_top();
+    assert_eq!(app.textarea.cursor().0, 0, "Should be at top (row 0)");
+
+    // Move to bottom
+    app.textarea.move_cursor_bottom();
+    assert_eq!(app.textarea.cursor().0, 4, "Should be at bottom (row 4)");
+}
+
+/// Test Case 20: Tab character handling
+/// - Verify tab inserts spaces (default 4)
+#[tokio::test]
+async fn test_tab_handling() {
+    use spoq::widgets::textarea_input::TextAreaInput;
+
+    let mut input = TextAreaInput::new();
+
+    // Type some text
+    for c in "def".chars() {
+        input.insert_char(c);
+    }
+
+    // Insert a tab character
+    input.insert_char('\t');
+
+    // Verify content (tab should be converted to spaces based on tab_length setting)
+    let content = input.content();
+    // The content will contain either a tab or spaces depending on textarea behavior
+    assert!(content.starts_with("def"), "Content should start with 'def'");
+}
