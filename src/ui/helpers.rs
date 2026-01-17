@@ -1,6 +1,9 @@
 //! Helper functions and constants for UI rendering
 //!
 //! Contains utility functions for formatting, truncation, and common UI patterns.
+//!
+//! Note: Layout-related functionality has been moved to the `layout` module.
+//! See `LayoutContext` in `super::layout` for responsive sizing calculations.
 
 use ratatui::layout::Rect;
 use serde_json::Value;
@@ -200,3 +203,4 @@ pub fn format_tool_args(function_name: &str, args_json: &str) -> String {
         _ => function_name.to_string(),
     }
 }
+

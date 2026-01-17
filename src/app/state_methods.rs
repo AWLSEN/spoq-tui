@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use super::{App, AppMessage};
+use super::{App, AppMessage, ScrollBoundary};
 
 impl App {
     /// Get a clone of the message sender for passing to async tasks
@@ -30,9 +30,59 @@ impl App {
         self.stream_error = None;
     }
 
-    /// Increment the tick counter for animations
+    /// Reset scroll state to bottom (newest content)
+    pub fn reset_scroll(&mut self) {
+        self.conversation_scroll = 0;
+        self.scroll_position = 0.0;
+        self.scroll_velocity = 0.0;
+    }
+
+    /// Increment the tick counter for animations and update smooth scrolling
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
+
+        // Update smooth scrolling with momentum
+        self.update_smooth_scroll();
+    }
+
+    /// Update smooth scroll position with velocity and friction
+    fn update_smooth_scroll(&mut self) {
+        // Friction factor: lower = more friction, stops faster
+        const FRICTION: f32 = 0.80;
+        const VELOCITY_THRESHOLD: f32 = 0.05;
+
+        // Skip if no velocity
+        if self.scroll_velocity.abs() < VELOCITY_THRESHOLD {
+            self.scroll_velocity = 0.0;
+            return;
+        }
+
+        // Apply velocity to position
+        let new_position = self.scroll_position + self.scroll_velocity;
+
+        // Clamp to valid range [0, max_scroll]
+        let max = self.max_scroll as f32;
+        let clamped_position = new_position.clamp(0.0, max);
+
+        // Check for boundary hits
+        if new_position < 0.0 && self.scroll_position >= 0.0 {
+            // Hit bottom boundary
+            self.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+            self.boundary_hit_tick = self.tick_count;
+            self.scroll_velocity = 0.0; // Stop on boundary hit
+        } else if new_position > max && self.scroll_position <= max && self.max_scroll > 0 {
+            // Hit top boundary
+            self.scroll_boundary_hit = Some(ScrollBoundary::Top);
+            self.boundary_hit_tick = self.tick_count;
+            self.scroll_velocity = 0.0; // Stop on boundary hit
+        } else {
+            // Apply friction when not hitting boundary
+            self.scroll_velocity *= FRICTION;
+        }
+
+        // Update positions
+        self.scroll_position = clamped_position;
+        self.conversation_scroll = clamped_position.round() as u16;
     }
 
     /// Check if the currently active thread is a Programming thread
@@ -89,5 +139,38 @@ impl App {
         if let Some(thread_id) = &self.active_thread_id {
             self.cache.add_error_simple(thread_id, error_code, message);
         }
+    }
+
+    /// Update terminal dimensions
+    ///
+    /// Called when the terminal is resized or on initial setup.
+    /// Updates both width and height in a single call.
+    pub fn update_terminal_dimensions(&mut self, width: u16, height: u16) {
+        self.terminal_width = width;
+        self.terminal_height = height;
+    }
+
+    /// Get the current terminal width
+    pub fn terminal_width(&self) -> u16 {
+        self.terminal_width
+    }
+
+    /// Get the current terminal height
+    pub fn terminal_height(&self) -> u16 {
+        self.terminal_height
+    }
+
+    /// Calculate the available content area width
+    ///
+    /// This accounts for borders and margins (2 cells on each side).
+    pub fn content_width(&self) -> u16 {
+        self.terminal_width.saturating_sub(4)
+    }
+
+    /// Calculate the available content area height
+    ///
+    /// This accounts for header, footer, and borders (approximately 6 rows).
+    pub fn content_height(&self) -> u16 {
+        self.terminal_height.saturating_sub(6)
     }
 }

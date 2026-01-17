@@ -108,6 +108,15 @@ impl InputBox {
         &self.content
     }
 
+    /// Get the number of lines in the content (for dynamic height calculation)
+    pub fn line_count(&self) -> usize {
+        if self.content.is_empty() {
+            1
+        } else {
+            self.content.lines().count().max(1)
+        }
+    }
+
     /// Render the input box with the given title
     pub fn render_with_title(&self, area: Rect, buf: &mut Buffer, title: &str, focused: bool) {
         // Calculate inner area (accounting for border)
@@ -143,6 +152,7 @@ impl InputBox {
             width: inner_width,
             height: area.height.saturating_sub(2),
         };
+        let center_y = inner_area.y + inner_area.height.saturating_sub(1) / 2;
 
         if inner_area.width == 0 || inner_area.height == 0 {
             return;
@@ -162,7 +172,7 @@ impl InputBox {
             if i < inner_width as usize {
                 buf.set_string(
                     inner_area.x + i as u16,
-                    inner_area.y,
+                    center_y,
                     c.to_string(),
                     text_style,
                 );
@@ -186,7 +196,7 @@ impl InputBox {
 
                 buf.set_string(
                     inner_area.x + cursor_x,
-                    inner_area.y,
+                    center_y,
                     cursor_char.to_string(),
                     cursor_style,
                 );
@@ -202,7 +212,7 @@ pub struct InputBoxWidget<'a> {
     focused: bool,
     /// Whether to show dashed border (for streaming state)
     dashed: bool,
-    /// Tick count for cursor blinking (cursor visible when tick_count % 10 < 5)
+    /// Tick count for cursor blinking (cursor visible when tick_count % 62 < 31, ~500ms cycle at 16ms tick rate)
     tick_count: u64,
 }
 
@@ -236,8 +246,8 @@ impl<'a> InputBoxWidget<'a> {
 
     /// Check if cursor should be visible based on tick count (blink rate)
     fn cursor_visible(&self) -> bool {
-        // Blink every ~500ms (5 ticks at 100ms tick rate)
-        (self.tick_count % 10) < 5
+        // Blink every ~500ms (31 ticks visible, 31 ticks hidden at 16ms tick rate)
+        (self.tick_count % 62) < 31
     }
 }
 
@@ -288,6 +298,7 @@ impl InputBoxWidget<'_> {
             width: inner_width,
             height: area.height.saturating_sub(2),
         };
+        let center_y = inner_area.y + inner_area.height.saturating_sub(1) / 2;
 
         if inner_area.width == 0 || inner_area.height == 0 {
             return;
@@ -307,7 +318,7 @@ impl InputBoxWidget<'_> {
             if i < inner_width as usize {
                 buf.set_string(
                     inner_area.x + i as u16,
-                    inner_area.y,
+                    center_y,
                     c.to_string(),
                     text_style,
                 );
@@ -331,7 +342,7 @@ impl InputBoxWidget<'_> {
 
                 buf.set_string(
                     inner_area.x + cursor_x,
-                    inner_area.y,
+                    center_y,
                     cursor_char.to_string(),
                     cursor_style,
                 );
@@ -389,6 +400,7 @@ impl InputBoxWidget<'_> {
             width: inner_width,
             height: area.height.saturating_sub(2),
         };
+        let center_y = inner_area.y + inner_area.height.saturating_sub(1) / 2;
 
         if inner_area.width == 0 || inner_area.height == 0 {
             return;
@@ -408,7 +420,7 @@ impl InputBoxWidget<'_> {
             if i < inner_width as usize {
                 buf.set_string(
                     inner_area.x + i as u16,
-                    inner_area.y,
+                    center_y,
                     c.to_string(),
                     text_style,
                 );

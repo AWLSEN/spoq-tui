@@ -855,11 +855,47 @@ pub fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
 }
 
 // ============================================================================
+// Wrapped Line Estimation
+// ============================================================================
+
+/// Estimate the number of visual lines after word wrapping.
+///
+/// This function calculates how many visual lines a set of logical lines will
+/// occupy when rendered with word wrapping enabled, given a specific viewport width.
+///
+/// Each logical line wraps to ceil(char_count / viewport_width) visual lines.
+/// Empty lines count as 1 visual line.
+///
+/// # Arguments
+/// * `lines` - The logical lines to estimate
+/// * `viewport_width` - The width of the viewport in characters
+///
+/// # Returns
+/// The estimated number of visual lines after wrapping
+pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usize {
+    if viewport_width == 0 {
+        return lines.len();
+    }
+
+    lines.iter().map(|line| {
+        let char_count: usize = line.spans.iter()
+            .map(|s| s.content.chars().count())
+            .sum();
+        if char_count == 0 {
+            1 // Empty line still takes 1 row
+        } else {
+            // Ceiling division: (char_count + viewport_width - 1) / viewport_width
+            (char_count + viewport_width - 1) / viewport_width
+        }
+    }).sum()
+}
+
+// ============================================================================
 // Messages Area
 // ============================================================================
 
 /// Render the messages area with user messages and AI responses
-pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
 
@@ -1057,22 +1093,24 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
         ));
     }
 
+    // Estimate the number of visual lines after word wrapping
+    let total_lines = estimate_wrapped_line_count(&lines, viewport_width);
+
     crate::app::log_thread_update(&format!(
-        "RENDER: Generated {} raw lines, viewport={}x{}",
+        "RENDER: Generated {} raw lines, {} estimated visual lines, viewport={}x{}",
         lines.len(),
+        total_lines,
         viewport_width,
         viewport_height
     ));
-
-    // Use raw line count for scroll calculation
-    // Note: This is approximate since wrapping may add more lines,
-    // but it's much more accurate than trying to estimate wrap width
-    let total_lines = lines.len();
 
     // Calculate max scroll (how far up we can scroll from bottom)
     // scroll=0 means showing the bottom (latest content)
     // scroll=max means showing the top (oldest content)
     let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+
+    // Persist max_scroll so event handler can use it for immediate clamping
+    app.max_scroll = max_scroll;
 
     // Clamp user's scroll to valid range
     let clamped_scroll = app.conversation_scroll.min(max_scroll);
@@ -1098,5 +1136,131 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &App) {
     // Render inline permission prompt if pending (overlays on top of messages)
     if app.session_state.has_pending_permission() {
         render_permission_prompt(frame, inner, app);
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_estimate_wrapped_line_count_empty() {
+        let lines: Vec<Line> = vec![];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 0);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_single_short_line() {
+        let lines = vec![Line::from("Hello")];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 1);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_single_empty_line() {
+        let lines = vec![Line::from("")];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 1);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_line_wraps_once() {
+        // 100 characters in an 80-character viewport should wrap to 2 lines
+        let long_text = "a".repeat(100);
+        let lines = vec![Line::from(long_text)];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 2);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_line_wraps_twice() {
+        // 200 characters in an 80-character viewport should wrap to 3 lines
+        let long_text = "a".repeat(200);
+        let lines = vec![Line::from(long_text)];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 3);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_exact_fit() {
+        // Exactly 80 characters should fit in 1 line
+        let exact_text = "a".repeat(80);
+        let lines = vec![Line::from(exact_text)];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 1);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_one_over() {
+        // 81 characters should wrap to 2 lines
+        let text = "a".repeat(81);
+        let lines = vec![Line::from(text)];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 2);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_multiple_lines() {
+        // 3 short lines
+        let lines = vec![
+            Line::from("Hello"),
+            Line::from("World"),
+            Line::from("Test"),
+        ];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 3);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_mixed_lengths() {
+        // Mix of short and long lines
+        let lines = vec![
+            Line::from("Short"),           // 1 line
+            Line::from("a".repeat(100)),   // 2 lines (in 80-char viewport)
+            Line::from(""),                // 1 line (empty)
+            Line::from("Another short"),   // 1 line
+        ];
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 5);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_zero_width() {
+        // Zero width should return raw line count
+        let lines = vec![
+            Line::from("Hello"),
+            Line::from("World"),
+        ];
+        assert_eq!(estimate_wrapped_line_count(&lines, 0), 2);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_with_spans() {
+        // Line with multiple spans
+        let lines = vec![
+            Line::from(vec![
+                Span::raw("Hello "),
+                Span::raw("World"),
+            ]),
+        ];
+        // "Hello World" = 11 chars, fits in 80-char line
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 1);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_spans_wrap() {
+        // Line with multiple spans that together wrap
+        let lines = vec![
+            Line::from(vec![
+                Span::raw("a".repeat(50)),
+                Span::raw("b".repeat(50)),
+            ]),
+        ];
+        // 100 chars should wrap to 2 lines in 80-char viewport
+        assert_eq!(estimate_wrapped_line_count(&lines, 80), 2);
+    }
+
+    #[test]
+    fn test_estimate_wrapped_line_count_narrow_viewport() {
+        // Very narrow viewport causes more wrapping
+        let lines = vec![Line::from("Hello World")]; // 11 chars
+        // In 5-char viewport: ceil(11/5) = 3 lines
+        assert_eq!(estimate_wrapped_line_count(&lines, 5), 3);
     }
 }

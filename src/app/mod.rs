@@ -109,7 +109,6 @@ pub enum ProgrammingMode {
 
 /// Thread switcher dialog state (Tab to open)
 #[derive(Debug, Clone)]
-#[derive(Default)]
 pub struct ThreadSwitcher {
     /// Whether the thread switcher dialog is visible
     pub visible: bool,
@@ -119,6 +118,36 @@ pub struct ThreadSwitcher {
     pub scroll_offset: usize,
     /// Timestamp of last navigation key press (for auto-confirm on release)
     pub last_nav_time: Option<std::time::Instant>,
+}
+
+impl Default for ThreadSwitcher {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            selected_index: 0,
+            scroll_offset: 0,
+            last_nav_time: None,
+        }
+    }
+}
+
+/// Represents which scroll boundary was hit (for visual feedback)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollBoundary {
+    Top,
+    Bottom,
+}
+
+/// Represents which panel is active in narrow/stacked layout mode.
+/// When the terminal is too narrow for side-by-side panels (< 60 cols),
+/// only one panel is shown at a time and users can switch between them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActivePanel {
+    /// Left panel (Notifications + Tasks/Todos)
+    #[default]
+    Left,
+    /// Right panel (Threads)
+    Right,
 }
 
 /// Main application state
@@ -161,6 +190,8 @@ pub struct App {
     pub tick_count: u64,
     /// Scroll position for conversation view (0 = bottom/latest content)
     pub conversation_scroll: u16,
+    /// Maximum scroll value (calculated during render, used for clamping)
+    pub max_scroll: u16,
     /// Current programming mode for Claude interactions
     pub programming_mode: ProgrammingMode,
     /// Session-level state (skills, permissions, oauth, tokens)
@@ -189,6 +220,20 @@ pub struct App {
     pub ws_connection_state: WsConnectionState,
     /// State for AskUserQuestion prompt modal
     pub question_state: AskUserQuestionState,
+    /// Scroll boundary hit state (for visual feedback)
+    pub scroll_boundary_hit: Option<ScrollBoundary>,
+    /// Tick counter when boundary was hit (for timing the highlight)
+    pub boundary_hit_tick: u64,
+    /// Scroll velocity for momentum scrolling (lines per tick, positive = up/older)
+    pub scroll_velocity: f32,
+    /// Precise scroll position for smooth scrolling (fractional lines)
+    pub scroll_position: f32,
+    /// Current terminal width in columns
+    pub terminal_width: u16,
+    /// Current terminal height in rows
+    pub terminal_height: u16,
+    /// Active panel for narrow/stacked layout mode (when width < 60 cols)
+    pub active_panel: ActivePanel,
 }
 
 impl App {
@@ -239,6 +284,7 @@ impl App {
             client,
             tick_count: 0,
             conversation_scroll: 0,
+            max_scroll: 0,
             programming_mode: ProgrammingMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
@@ -253,6 +299,13 @@ impl App {
             ws_sender: None,
             ws_connection_state: WsConnectionState::Disconnected,
             question_state: AskUserQuestionState::default(),
+            scroll_boundary_hit: None,
+            boundary_hit_tick: 0,
+            scroll_velocity: 0.0,
+            scroll_position: 0.0,
+            terminal_width: 80,  // Default, will be updated on first render
+            terminal_height: 24, // Default, will be updated on first render
+            active_panel: ActivePanel::default(),
         })
     }
 
@@ -2888,5 +2941,53 @@ mod tests {
             app.ws_connection_state,
             WsConnectionState::Connected
         ));
+    }
+
+    // ========================================================================
+    // ActivePanel Tests
+    // ========================================================================
+
+    #[test]
+    fn test_active_panel_default_is_left() {
+        assert_eq!(ActivePanel::default(), ActivePanel::Left);
+    }
+
+    #[test]
+    fn test_active_panel_equality() {
+        assert_eq!(ActivePanel::Left, ActivePanel::Left);
+        assert_eq!(ActivePanel::Right, ActivePanel::Right);
+        assert_ne!(ActivePanel::Left, ActivePanel::Right);
+    }
+
+    #[test]
+    fn test_active_panel_copy() {
+        let panel = ActivePanel::Right;
+        let copied = panel;
+        assert_eq!(panel, copied);
+    }
+
+    #[test]
+    fn test_app_initializes_with_left_panel_active() {
+        let app = App::default();
+        assert_eq!(app.active_panel, ActivePanel::Left);
+    }
+
+    #[test]
+    fn test_app_active_panel_can_be_changed() {
+        let mut app = App::default();
+        assert_eq!(app.active_panel, ActivePanel::Left);
+
+        app.active_panel = ActivePanel::Right;
+        assert_eq!(app.active_panel, ActivePanel::Right);
+
+        app.active_panel = ActivePanel::Left;
+        assert_eq!(app.active_panel, ActivePanel::Left);
+    }
+
+    #[test]
+    fn test_app_terminal_dimensions_have_defaults() {
+        let app = App::default();
+        assert_eq!(app.terminal_width, 80);
+        assert_eq!(app.terminal_height, 24);
     }
 }

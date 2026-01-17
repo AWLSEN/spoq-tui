@@ -1,4 +1,4 @@
-use spoq::app::{start_websocket, App, AppMessage, Focus, Screen};
+use spoq::app::{start_websocket, App, AppMessage, Focus, Screen, ScrollBoundary};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
@@ -46,6 +46,10 @@ async fn main() -> Result<()> {
 
     // Initialize application state with debug sender
     let mut app = App::with_debug(debug_tx)?;
+
+    // Capture initial terminal dimensions
+    let size = terminal.size()?;
+    app.update_terminal_dimensions(size.width, size.height);
 
     // Load threads from backend (async initialization)
     app.initialize().await;
@@ -148,11 +152,12 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
 
         // Draw the UI
         terminal.draw(|f| {
-            ui::render(f, app);
+            ui::render(f, &mut *app);
         })?;
 
         // Poll both keyboard events and message channel using tokio::select!
-        let timeout = tokio::time::sleep(std::time::Duration::from_millis(100));
+        // 16ms tick for smooth 60fps-like scrolling animation
+        let timeout = tokio::time::sleep(std::time::Duration::from_millis(16));
 
         tokio::select! {
             // Handle timeout for UI updates (migration progress, animations, etc.)
@@ -168,8 +173,10 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
             event_result = event_stream.next() => {
                 if let Some(Ok(event)) = event_result {
                     match event {
-                        Event::Resize(_width, _height) => {
-                            // Terminal was resized, redraw will happen on next loop iteration
+                        Event::Resize(width, height) => {
+                            // Update app state with new terminal dimensions
+                            app.update_terminal_dimensions(width, height);
+                            // Redraw will happen on next loop iteration
                             continue;
                         }
                         Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -204,8 +211,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     app.create_new_thread();
                                     continue;
                                 }
-                                // Ctrl+P to submit as Programming thread (from CommandDeck)
-                                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                // Alt+P to submit as Programming thread (from CommandDeck)
+                                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::ALT) => {
                                     if app.screen == Screen::CommandDeck && !app.input_box.is_empty() {
                                         app.submit_input(models::ThreadType::Programming);
                                     }
@@ -393,8 +400,13 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         app.input_box.move_cursor_end();
                                         continue;
                                     }
+                                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        // Ctrl+Enter inserts a newline (works in more terminals than Shift+Enter)
+                                        app.input_box.insert_char('\n');
+                                        continue;
+                                    }
                                     KeyCode::Enter => {
-                                        // Plain Enter = Conversation thread (Shift+Enter handled above)
+                                        // Plain Enter = Conversation thread
                                         app.submit_input(models::ThreadType::Conversation);
                                         continue;
                                     }
@@ -460,20 +472,30 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                         }
                         Event::Mouse(mouse_event) => {
                             match mouse_event.kind {
-                                // Natural scrolling: scroll down = see newer content, scroll up = see older content
+                                // Simple line-based scrolling (like native terminal apps)
+                                // Each scroll event moves 1 line
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll down to see newer content (decrease scroll offset)
-                                        // Minimum is 0 (showing latest at bottom)
-                                        app.conversation_scroll =
-                                            app.conversation_scroll.saturating_sub(1);
+                                        // Scroll down = see newer content = decrease offset
+                                        if app.conversation_scroll > 0 {
+                                            app.conversation_scroll -= 1;
+                                            app.scroll_position = app.conversation_scroll as f32;
+                                        } else {
+                                            app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+                                            app.boundary_hit_tick = app.tick_count;
+                                        }
                                     }
                                 }
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll up to see older content (increase scroll offset)
-                                        app.conversation_scroll =
-                                            app.conversation_scroll.saturating_add(1);
+                                        // Scroll up = see older content = increase offset
+                                        if app.conversation_scroll < app.max_scroll {
+                                            app.conversation_scroll += 1;
+                                            app.scroll_position = app.conversation_scroll as f32;
+                                        } else if app.max_scroll > 0 {
+                                            app.scroll_boundary_hit = Some(ScrollBoundary::Top);
+                                            app.boundary_hit_tick = app.tick_count;
+                                        }
                                     }
                                 }
                                 _ => {}

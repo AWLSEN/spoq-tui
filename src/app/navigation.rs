@@ -110,7 +110,7 @@ impl App {
         self.active_thread_id = Some(thread_id.clone());
         self.screen = Screen::Conversation;
         self.input_box.clear();
-        self.conversation_scroll = 0;
+        self.reset_scroll();
 
         // Check if messages need to be fetched
         let has_cached = self.cache.get_messages(&thread_id).is_some();
