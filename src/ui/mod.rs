@@ -43,12 +43,17 @@ pub use layout::{
 };
 
 // Re-export helper functions for external use
-pub use helpers::format_tool_args;
+pub use helpers::{format_tool_args, is_terminal_too_small, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH};
 
 // Re-export rendering functions for external use
 pub use messages::{estimate_wrapped_line_count, render_tool_result_preview, truncate_preview};
 
-use ratatui::Frame;
+use ratatui::{
+    Frame,
+    layout::{Alignment, Rect},
+    style::{Color, Style},
+    widgets::Paragraph,
+};
 
 use crate::app::{App, Screen};
 use command_deck::render_command_deck;
@@ -61,6 +66,14 @@ use thread_switcher::render_thread_switcher;
 
 /// Render the UI based on current screen
 pub fn render(frame: &mut Frame, app: &mut App) {
+    let area = frame.area();
+
+    // Check if terminal is too small
+    if helpers::is_terminal_too_small(area.width, area.height) {
+        render_terminal_too_small(frame, area);
+        return;
+    }
+
     match app.screen {
         Screen::CommandDeck => render_command_deck(frame, app),
         Screen::Conversation => render_conversation_screen(frame, app),
@@ -70,12 +83,32 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     render_thread_switcher(frame, app);
 }
 
+/// Render a message when the terminal is too small
+fn render_terminal_too_small(frame: &mut Frame, area: Rect) {
+    let message = vec![
+        format!("Terminal Too Small"),
+        format!(""),
+        format!("Current size: {}x{}", area.width, area.height),
+        format!("Minimum required: {}x{}", helpers::MIN_TERMINAL_WIDTH, helpers::MIN_TERMINAL_HEIGHT),
+        format!(""),
+        format!("Please resize your terminal"),
+    ];
+
+    let text = message.join("\n");
+
+    let paragraph = Paragraph::new(text)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Yellow));
+
+    frame.render_widget(paragraph, area);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::app::ProgrammingMode;
     use conversation::create_mode_indicator_line;
-    use helpers::{extract_short_model_name, format_tokens, get_tool_icon, truncate_string};
+    use helpers::{extract_short_model_name, format_tokens, get_tool_icon, truncate_string, is_terminal_too_small, MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT};
     use input::{build_contextual_keybinds, get_permission_preview};
     use messages::{render_tool_event, render_tool_result_preview, truncate_preview};
     use ratatui::{backend::TestBackend, Terminal};
@@ -2438,5 +2471,55 @@ mod tests {
             buffer_str.contains("Second parallel task"),
             "Should show second task description"
         );
+    }
+
+    #[test]
+    fn test_is_terminal_too_small_below_width_threshold() {
+        assert!(is_terminal_too_small(25, 15));
+    }
+
+    #[test]
+    fn test_is_terminal_too_small_below_height_threshold() {
+        assert!(is_terminal_too_small(50, 8));
+    }
+
+    #[test]
+    fn test_is_terminal_too_small_at_minimum() {
+        assert!(!is_terminal_too_small(MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT));
+    }
+
+    #[test]
+    fn test_is_terminal_too_small_above_minimum() {
+        assert!(!is_terminal_too_small(80, 24));
+    }
+
+    #[test]
+    fn test_render_terminal_too_small_message() {
+        let backend = TestBackend::new(20, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        assert!(buffer_str.contains("Terminal Too Small"), "Should show 'Terminal Too Small' message");
+        assert!(buffer_str.contains("20") && buffer_str.contains("8"), "Should show current terminal size");
+        assert!(buffer_str.contains("30"), "Should show minimum required width");
+    }
+
+    #[test]
+    fn test_render_normal_when_terminal_large_enough() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut app = create_test_app();
+
+        terminal.draw(|f| render(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+
+        assert!(!buffer_str.contains("Terminal Too Small"), "Should not show 'Terminal Too Small' message");
     }
 }

@@ -14,6 +14,12 @@ pub const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴"
 /// Maximum number of inline error banners to display
 pub const MAX_VISIBLE_ERRORS: usize = 2;
 
+/// Minimum terminal width for usable display
+pub const MIN_TERMINAL_WIDTH: u16 = 30;
+
+/// Minimum terminal height for usable display
+pub const MIN_TERMINAL_HEIGHT: u16 = 10;
+
 /// Get inner rect with margin
 pub fn inner_rect(area: Rect, margin: u16) -> Rect {
     Rect {
@@ -204,3 +210,9 @@ pub fn format_tool_args(function_name: &str, args_json: &str) -> String {
     }
 }
 
+/// Check if the terminal is too small to display content usably
+///
+/// Returns true if either dimension is below minimum thresholds
+pub fn is_terminal_too_small(width: u16, height: u16) -> bool {
+    width < MIN_TERMINAL_WIDTH || height < MIN_TERMINAL_HEIGHT
+}
