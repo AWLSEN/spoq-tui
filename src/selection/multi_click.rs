@@ -157,37 +157,6 @@ impl ClickDetector {
     }
 }
 
-/// Result of registering a click, containing both the mode and click count
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ClickResult {
-    /// The selection mode to use
-    pub mode: SelectionMode,
-    /// The click count (1 = single, 2 = double, 3 = triple)
-    pub click_count: u8,
-}
-
-impl ClickResult {
-    /// Create a new click result
-    pub fn new(mode: SelectionMode, click_count: u8) -> Self {
-        Self { mode, click_count }
-    }
-
-    /// Check if this is a single-click
-    pub fn is_single(&self) -> bool {
-        self.click_count == 1
-    }
-
-    /// Check if this is a double-click
-    pub fn is_double(&self) -> bool {
-        self.click_count == 2
-    }
-
-    /// Check if this is a triple-click
-    pub fn is_triple(&self) -> bool {
-        self.click_count == 3
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,58 +382,6 @@ mod tests {
         // After triple click
         detector.register_click(pos);
         assert_eq!(detector.get_selection_mode(), SelectionMode::Line);
-    }
-
-    // ============= ClickResult Tests =============
-
-    #[test]
-    fn test_click_result_new() {
-        let result = ClickResult::new(SelectionMode::Word, 2);
-        assert_eq!(result.mode, SelectionMode::Word);
-        assert_eq!(result.click_count, 2);
-    }
-
-    #[test]
-    fn test_click_result_is_single() {
-        let single = ClickResult::new(SelectionMode::Character, 1);
-        let double = ClickResult::new(SelectionMode::Word, 2);
-        let triple = ClickResult::new(SelectionMode::Line, 3);
-
-        assert!(single.is_single());
-        assert!(!double.is_single());
-        assert!(!triple.is_single());
-    }
-
-    #[test]
-    fn test_click_result_is_double() {
-        let single = ClickResult::new(SelectionMode::Character, 1);
-        let double = ClickResult::new(SelectionMode::Word, 2);
-        let triple = ClickResult::new(SelectionMode::Line, 3);
-
-        assert!(!single.is_double());
-        assert!(double.is_double());
-        assert!(!triple.is_double());
-    }
-
-    #[test]
-    fn test_click_result_is_triple() {
-        let single = ClickResult::new(SelectionMode::Character, 1);
-        let double = ClickResult::new(SelectionMode::Word, 2);
-        let triple = ClickResult::new(SelectionMode::Line, 3);
-
-        assert!(!single.is_triple());
-        assert!(!double.is_triple());
-        assert!(triple.is_triple());
-    }
-
-    #[test]
-    fn test_click_result_equality() {
-        let r1 = ClickResult::new(SelectionMode::Word, 2);
-        let r2 = ClickResult::new(SelectionMode::Word, 2);
-        let r3 = ClickResult::new(SelectionMode::Line, 3);
-
-        assert_eq!(r1, r2);
-        assert_ne!(r1, r3);
     }
 
     // ============= Edge Cases =============

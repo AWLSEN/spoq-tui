@@ -408,16 +408,16 @@ mod tests {
         let mut app = App::default();
         app.screen = Screen::Conversation;
         app.active_thread_id = Some("thread-123".to_string());
-        app.input_box.insert_char('T');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('s');
-        app.input_box.insert_char('t');
+        app.textarea.insert_char('T');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('s');
+        app.textarea.insert_char('t');
 
         app.navigate_to_command_deck();
 
         assert_eq!(app.screen, Screen::CommandDeck);
         assert!(app.active_thread_id.is_none());
-        assert!(app.input_box.is_empty());
+        assert!(app.textarea.is_empty());
     }
 
     #[test]
@@ -425,14 +425,14 @@ mod tests {
         let mut app = App::default();
         assert_eq!(app.screen, Screen::CommandDeck);
         app.active_thread_id = Some("thread-456".to_string());
-        app.input_box.insert_char('H');
-        app.input_box.insert_char('i');
+        app.textarea.insert_char('H');
+        app.textarea.insert_char('i');
 
         app.navigate_to_command_deck();
 
         assert_eq!(app.screen, Screen::CommandDeck);
         assert!(app.active_thread_id.is_none());
-        assert!(app.input_box.is_empty());
+        assert!(app.textarea.is_empty());
     }
 
     #[test]

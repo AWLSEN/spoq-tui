@@ -52,7 +52,7 @@ pub mod position;
 pub mod state;
 
 // Re-export commonly used types at the module level
-pub use multi_click::{ClickDetector, ClickResult};
+pub use multi_click::ClickDetector;
 pub use position::{
     ContentPosition, PositionMappingIndex, ScreenPosition, ScreenToContentMapping,
     // Unicode width utilities

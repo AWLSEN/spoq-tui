@@ -311,7 +311,7 @@ async fn test_subagent_event_via_app_message() {
 
     // Create a thread
     for c in "Test message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(spoq::models::ThreadType::Conversation);
 
@@ -491,7 +491,7 @@ async fn test_multiple_parallel_subagents_via_app_messages() {
 
     // Create a thread
     for c in "Test parallel".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(spoq::models::ThreadType::Conversation);
 
@@ -630,7 +630,7 @@ async fn test_completed_subagent_via_app_message() {
 
     // Create a thread
     for c in "Test completion flow".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(spoq::models::ThreadType::Conversation);
 
@@ -709,7 +709,7 @@ async fn test_full_subagent_flow_sse_to_cache_to_render() {
     let mut app = App::new().expect("Failed to create app");
 
     for c in "E2E test".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(spoq::models::ThreadType::Conversation);
 
@@ -766,7 +766,7 @@ async fn test_subagent_lifecycle_with_thread_reconciliation() {
 
     // Create a thread (pending state)
     for c in "Reconciliation test".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(spoq::models::ThreadType::Conversation);
 

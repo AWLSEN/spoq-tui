@@ -13,19 +13,19 @@ async fn test_full_thread_creation_flow() {
     let initial_thread_count = app.cache.thread_count();
 
     // 2. Simulate typing in input_box (use insert_char)
-    app.input_box.insert_char('H');
-    app.input_box.insert_char('e');
-    app.input_box.insert_char('l');
-    app.input_box.insert_char('l');
-    app.input_box.insert_char('o');
-    app.input_box.insert_char(' ');
-    app.input_box.insert_char('w');
-    app.input_box.insert_char('o');
-    app.input_box.insert_char('r');
-    app.input_box.insert_char('l');
-    app.input_box.insert_char('d');
+    app.textarea.insert_char('H');
+    app.textarea.insert_char('e');
+    app.textarea.insert_char('l');
+    app.textarea.insert_char('l');
+    app.textarea.insert_char('o');
+    app.textarea.insert_char(' ');
+    app.textarea.insert_char('w');
+    app.textarea.insert_char('o');
+    app.textarea.insert_char('r');
+    app.textarea.insert_char('l');
+    app.textarea.insert_char('d');
 
-    assert_eq!(app.input_box.content(), "Hello world");
+    assert_eq!(app.textarea.content(), "Hello world");
 
     // 3. Call submit_input()
     app.submit_input(ThreadType::Conversation);
@@ -71,10 +71,10 @@ async fn test_screen_navigation() {
     );
 
     // 2. Create thread (switches to Conversation)
-    app.input_box.insert_char('T');
-    app.input_box.insert_char('e');
-    app.input_box.insert_char('s');
-    app.input_box.insert_char('t');
+    app.textarea.insert_char('T');
+    app.textarea.insert_char('e');
+    app.textarea.insert_char('s');
+    app.textarea.insert_char('t');
     app.submit_input(ThreadType::Conversation);
 
     assert_eq!(
@@ -109,7 +109,7 @@ async fn test_thread_appears_in_right_panel() {
     // Type a message
     let message = "Test message for right panel";
     for c in message.chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -148,7 +148,7 @@ async fn test_multiple_threads_ordering() {
 
     // Create first thread
     for c in "First thread".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
     let first_thread_id = app.active_thread_id.clone().unwrap();
@@ -156,7 +156,7 @@ async fn test_multiple_threads_ordering() {
     // Navigate back and create second thread
     app.navigate_to_command_deck();
     for c in "Second thread".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
     let second_thread_id = app.active_thread_id.clone().unwrap();
@@ -215,9 +215,9 @@ async fn test_whitespace_only_input_does_not_create_thread() {
     let initial_count = app.cache.thread_count();
 
     // Type whitespace only
-    app.input_box.insert_char(' ');
-    app.input_box.insert_char(' ');
-    app.input_box.insert_char(' ');
+    app.textarea.insert_char(' ');
+    app.textarea.insert_char(' ');
+    app.textarea.insert_char(' ');
     app.submit_input(ThreadType::Conversation);
 
     // Verify no thread was created
@@ -233,14 +233,14 @@ async fn test_input_cleared_after_submit() {
     let mut app = App::new().expect("Failed to create app");
 
     for c in "Test message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
-    assert!(!app.input_box.is_empty(), "Input should have content");
+    assert!(!app.textarea.is_empty(), "Input should have content");
 
     app.submit_input(ThreadType::Conversation);
 
     assert!(
-        app.input_box.is_empty(),
+        app.textarea.is_empty(),
         "Input should be cleared after submit"
     );
 }
@@ -250,7 +250,7 @@ async fn test_thread_messages_have_correct_roles() {
     let mut app = App::new().expect("Failed to create app");
 
     for c in "Hello AI".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -289,7 +289,7 @@ async fn test_new_thread_flow_complete() {
 
     // 2. Type a message
     for c in "What is the meaning of life?".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
 
     // 3. Submit (press Enter equivalent)
@@ -345,7 +345,7 @@ async fn test_continue_thread_flow() {
 
     // Setup: Create first message in new thread
     for c in "First question".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -378,7 +378,7 @@ async fn test_continue_thread_flow() {
 
     // Type second message
     for c in "Follow-up question".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -418,7 +418,7 @@ async fn test_back_to_deck_flow() {
 
     // Setup: Create a thread and be in conversation
     for c in "Test message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -451,7 +451,7 @@ async fn test_back_to_deck_flow() {
 
     // Verify: Input is cleared
     assert!(
-        app.input_box.is_empty(),
+        app.textarea.is_empty(),
         "Input box should be cleared after navigation"
     );
 }
@@ -467,7 +467,7 @@ async fn test_new_thread_after_returning_to_deck() {
 
     // Create first thread
     for c in "First thread message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -482,7 +482,7 @@ async fn test_new_thread_after_returning_to_deck() {
 
     // Create second thread from command deck
     for c in "Second thread message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -533,7 +533,7 @@ async fn test_thread_reconciliation_complete() {
 
     // Create pending thread
     for c in "What is Rust?".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -622,7 +622,7 @@ async fn test_open_thread_flow() {
 
     // Create first thread
     for c in "First thread".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
     let first_thread_id = app.active_thread_id.clone().unwrap();
@@ -632,7 +632,7 @@ async fn test_open_thread_flow() {
 
     // Create second thread
     for c in "Second thread".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
     let second_thread_id = app.active_thread_id.clone().unwrap();
@@ -687,7 +687,7 @@ async fn test_open_thread_direct() {
 
     // Create a thread
     for c in "Test thread".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
     let thread_id = app.active_thread_id.clone().unwrap();
@@ -702,7 +702,7 @@ async fn test_open_thread_direct() {
     // Verify state
     assert_eq!(app.active_thread_id, Some(thread_id));
     assert_eq!(app.screen, Screen::Conversation);
-    assert!(app.input_box.is_empty());
+    assert!(app.textarea.is_empty());
 }
 
 /// Test open_selected_thread with invalid index (beyond thread list)
@@ -714,7 +714,7 @@ async fn test_open_selected_thread_invalid_index() {
 
     // Create one thread
     for c in "Single thread".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -747,7 +747,7 @@ async fn test_complete_end_to_end_workflow() {
 
     // === Phase 1: Create new thread ===
     for c in "What is Rust?".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -768,7 +768,7 @@ async fn test_complete_end_to_end_workflow() {
 
     // === Phase 2: Continue thread ===
     for c in "Tell me more".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -795,7 +795,7 @@ async fn test_complete_end_to_end_workflow() {
 
     // === Phase 4: Create second thread ===
     for c in "Different topic".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -855,7 +855,7 @@ async fn test_thread_updated_full_flow() {
 
     // Create a thread
     for c in "What is Rust?".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -914,7 +914,7 @@ async fn test_thread_updated_with_pending_id() {
 
     // Create a thread (pending)
     for c in "Test message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -1134,7 +1134,7 @@ async fn test_thread_updated_during_active_conversation() {
 
     // Create a thread and enter conversation
     for c in "Test message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -1275,7 +1275,7 @@ async fn test_rapid_submit_blocked_on_pending_thread() {
 
     // First submit creates pending thread
     for c in "First message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -1284,7 +1284,7 @@ async fn test_rapid_submit_blocked_on_pending_thread() {
 
     // Try to submit again while still pending
     for c in "Second message".chars() {
-        app.input_box.insert_char(c);
+        app.textarea.insert_char(c);
     }
     app.submit_input(ThreadType::Conversation);
 
@@ -1293,7 +1293,7 @@ async fn test_rapid_submit_blocked_on_pending_thread() {
     assert!(app.stream_error.as_ref().unwrap().contains("wait"));
 
     // Input should NOT be cleared (submission was rejected)
-    assert_eq!(app.input_box.content(), "Second message");
+    assert_eq!(app.textarea.content(), "Second message");
 
     // Should still be on same pending thread
     assert_eq!(app.active_thread_id, Some(pending_id));
