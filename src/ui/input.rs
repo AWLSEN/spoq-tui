@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Screen};
-use crate::state::session::AskUserQuestionData;
+use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
 use crate::widgets::input_box::InputBoxWidget;
 
 use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
@@ -166,14 +166,35 @@ pub fn build_contextual_keybinds(app: &App) -> Line<'static> {
 /// - Tool name and description
 /// - Preview of the action (file path, command, etc.)
 /// - Keyboard options: [y] Yes, [a] Always, [n] No
+///
+/// For AskUserQuestion tools, renders a special tabbed question UI instead.
 pub fn render_permission_prompt(frame: &mut Frame, area: Rect, app: &App) {
     if let Some(ref perm) = app.session_state.pending_permission {
-        render_permission_box(frame, area, perm);
+        render_permission_box(frame, area, perm, &app.question_state);
     }
 }
 
 /// Render the permission request box.
-pub fn render_permission_box(frame: &mut Frame, area: Rect, perm: &crate::state::session::PermissionRequest) {
+///
+/// For AskUserQuestion tools, delegates to `render_ask_user_question_box`.
+/// For other tools, renders the standard permission prompt.
+pub fn render_permission_box(
+    frame: &mut Frame,
+    area: Rect,
+    perm: &PermissionRequest,
+    question_state: &AskUserQuestionState,
+) {
+    // Check if this is an AskUserQuestion tool - render special UI
+    if perm.tool_name == "AskUserQuestion" {
+        if let Some(ref tool_input) = perm.tool_input {
+            if let Some(data) = parse_ask_user_question(tool_input) {
+                render_ask_user_question_box(frame, area, perm, &data, question_state);
+                return;
+            }
+        }
+    }
+
+    // Standard permission box for other tools
     // Calculate box dimensions - center in the given area
     // Need at least 12 lines: border(2) + tool(1) + empty(1) + preview(5) + empty(1) + options(1) + buffer(1)
     let box_width = 60u16.min(area.width.saturating_sub(4));
@@ -330,6 +351,301 @@ pub fn get_permission_preview(perm: &crate::state::session::PermissionRequest) -
     }
 
     String::new()
+}
+
+// ============================================================================
+// AskUserQuestion UI Renderer
+// ============================================================================
+
+/// Render the AskUserQuestion prompt as a tabbed question UI.
+///
+/// Displays:
+/// - Tab bar for multiple questions (only if > 1 question)
+/// - Current question text
+/// - Options with selection highlight
+/// - "Other..." option at bottom
+/// - Keybind help and countdown timer
+fn render_ask_user_question_box(
+    frame: &mut Frame,
+    area: Rect,
+    perm: &PermissionRequest,
+    data: &AskUserQuestionData,
+    state: &AskUserQuestionState,
+) {
+    if data.questions.is_empty() {
+        return;
+    }
+
+    // Calculate box dimensions - larger than standard permission box for questions
+    let box_width = 65u16.min(area.width.saturating_sub(4));
+    // Height: border(2) + tabs?(1) + question(2) + options(varies) + help(1) + padding
+    let num_options = data
+        .questions
+        .get(state.tab_index)
+        .map(|q| q.options.len())
+        .unwrap_or(0);
+    // Each option takes 2-3 lines (label + description)
+    let options_height = ((num_options + 1) * 3) as u16; // +1 for "Other"
+    let base_height = 8u16; // borders + question + help + padding
+    let box_height = (base_height + options_height).min(area.height.saturating_sub(2));
+
+    // Center the box
+    let x = area.x + (area.width.saturating_sub(box_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(box_height)) / 2;
+
+    let box_area = Rect {
+        x,
+        y,
+        width: box_width,
+        height: box_height,
+    };
+
+    // Create the question box with border
+    let block = Block::default()
+        .title(Span::styled(
+            " Question ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(COLOR_DIM));
+
+    frame.render_widget(block, box_area);
+
+    // Inner area for content
+    let inner = Rect {
+        x: box_area.x + 2,
+        y: box_area.y + 1,
+        width: box_area.width.saturating_sub(4),
+        height: box_area.height.saturating_sub(2),
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+    let current_question = &data.questions[state.tab_index.min(data.questions.len() - 1)];
+
+    // Tab bar (only for multiple questions)
+    if data.questions.len() > 1 {
+        let mut tab_spans: Vec<Span> = Vec::new();
+        for (i, q) in data.questions.iter().enumerate() {
+            if i > 0 {
+                tab_spans.push(Span::raw("  "));
+            }
+            if i == state.tab_index {
+                // Active tab: white with brackets
+                tab_spans.push(Span::styled(
+                    format!("[{}]", q.header),
+                    Style::default().fg(Color::White),
+                ));
+            } else {
+                // Inactive tab: dim gray
+                tab_spans.push(Span::styled(
+                    q.header.clone(),
+                    Style::default().fg(COLOR_DIM),
+                ));
+            }
+        }
+        lines.push(Line::from(tab_spans));
+        lines.push(Line::from("")); // Empty line after tabs
+    }
+
+    // Question text
+    lines.push(Line::from(Span::styled(
+        current_question.question.clone(),
+        Style::default().fg(Color::White),
+    )));
+    lines.push(Line::from("")); // Empty line after question
+
+    // Options
+    let current_selection = state.current_selection();
+
+    for (i, opt) in current_question.options.iter().enumerate() {
+        let is_selected = current_selection == Some(i);
+
+        if current_question.multi_select {
+            // Multi-select mode: show checkboxes
+            let checkbox = if state.is_multi_selected(i) {
+                "[×]"
+            } else {
+                "[ ]"
+            };
+            let marker = if is_selected { "› " } else { "  " };
+
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("{}{} ", marker, checkbox),
+                    if is_selected {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(COLOR_DIM)
+                    },
+                ),
+                Span::styled(
+                    opt.label.clone(),
+                    if is_selected {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(COLOR_DIM)
+                    },
+                ),
+            ]));
+        } else {
+            // Single-select mode: show arrow marker
+            let marker = if is_selected { "› " } else { "  " };
+
+            lines.push(Line::from(vec![
+                Span::styled(
+                    marker,
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    opt.label.clone(),
+                    if is_selected {
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(COLOR_DIM)
+                    },
+                ),
+            ]));
+        }
+
+        // Description (indented, dim)
+        if !opt.description.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("    {}", opt.description),
+                Style::default().fg(COLOR_DIM),
+            )));
+        }
+        lines.push(Line::from("")); // Spacing between options
+    }
+
+    // "Other..." option
+    let is_other_selected = current_selection.is_none();
+    let other_marker = if is_other_selected { "› " } else { "  " };
+    lines.push(Line::from(vec![
+        Span::styled(
+            other_marker,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Other...",
+            if is_other_selected {
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(COLOR_DIM)
+            },
+        ),
+    ]));
+
+    // "Other" text input (if active)
+    if state.other_active && is_other_selected {
+        let other_text = state.current_other_text();
+        let input_width = inner.width.saturating_sub(8) as usize;
+        let display_text = if other_text.len() > input_width {
+            &other_text[other_text.len() - input_width..]
+        } else {
+            other_text
+        };
+
+        // Input box top border
+        lines.push(Line::from(Span::styled(
+            format!("    ┌{}┐", "─".repeat(input_width + 2)),
+            Style::default().fg(COLOR_DIM),
+        )));
+        // Input content with cursor
+        lines.push(Line::from(vec![
+            Span::styled("    │ ", Style::default().fg(COLOR_DIM)),
+            Span::styled(display_text, Style::default().fg(Color::White)),
+            Span::styled("█", Style::default().fg(Color::White)),
+            Span::raw(" ".repeat(input_width.saturating_sub(display_text.len()))),
+            Span::styled("│", Style::default().fg(COLOR_DIM)),
+        ]));
+        // Input box bottom border
+        lines.push(Line::from(Span::styled(
+            format!("    └{}┘", "─".repeat(input_width + 2)),
+            Style::default().fg(COLOR_DIM),
+        )));
+    }
+
+    lines.push(Line::from("")); // Empty line before help
+
+    // Calculate timeout countdown
+    let elapsed_secs = perm.received_at.elapsed().as_secs();
+    let remaining_secs = 55u64.saturating_sub(elapsed_secs);
+
+    let countdown_color = if remaining_secs <= 5 {
+        Color::Red
+    } else {
+        COLOR_DIM
+    };
+
+    let countdown_text = if remaining_secs == 0 {
+        "(expired)".to_string()
+    } else {
+        format!("({}s)", remaining_secs)
+    };
+
+    // Help line - varies based on mode
+    let mut help_spans: Vec<Span> = Vec::new();
+
+    if state.other_active {
+        // "Other" text input mode
+        help_spans.push(Span::styled("esc", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled(" cancel  ", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled("enter", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled(" submit", Style::default().fg(COLOR_DIM)));
+    } else {
+        // Tab switching (only if multiple questions)
+        if data.questions.len() > 1 {
+            help_spans.push(Span::styled("tab", Style::default().fg(COLOR_DIM)));
+            help_spans.push(Span::styled(" switch  ", Style::default().fg(COLOR_DIM)));
+        }
+
+        if current_question.multi_select {
+            help_spans.push(Span::styled("space", Style::default().fg(COLOR_DIM)));
+            help_spans.push(Span::styled(" toggle  ", Style::default().fg(COLOR_DIM)));
+        }
+
+        help_spans.push(Span::styled("↑↓", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled(" navigate  ", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled("enter", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled(
+            if current_question.multi_select {
+                " submit"
+            } else {
+                " confirm"
+            },
+            Style::default().fg(COLOR_DIM),
+        ));
+    }
+
+    // Add countdown at the end with spacing
+    let help_text_len: usize = help_spans.iter().map(|s| s.content.len()).sum();
+    let countdown_len = countdown_text.len();
+    let padding_needed = (inner.width as usize)
+        .saturating_sub(help_text_len)
+        .saturating_sub(countdown_len);
+
+    help_spans.push(Span::raw(" ".repeat(padding_needed)));
+    help_spans.push(Span::styled(countdown_text, Style::default().fg(countdown_color)));
+
+    lines.push(Line::from(help_spans));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
 }
 
 #[cfg(test)]
