@@ -349,7 +349,7 @@ impl App {
     }
 
     /// Emit a debug state change event (helper for external callers like main.rs)
-    pub fn emit_debug_state_change(&self, state_type: &str, description: &str, current: &str) {
+    pub fn emit_debug_state_change(&self, _state_type: &str, description: &str, current: &str) {
         use crate::debug::{DebugEventKind, StateChangeData, StateType};
         emit_debug(
             &self.debug_tx,
