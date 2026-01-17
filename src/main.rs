@@ -252,18 +252,6 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                             // Handle permission prompt keys when a permission is pending
                             // This takes priority over all other key handling
                             if app.session_state.has_pending_permission() {
-                                // Shift+Escape cancels the permission request
-                                if key.code == KeyCode::Esc
-                                    && key.modifiers.contains(KeyModifiers::SHIFT)
-                                {
-                                    if let Some(ref perm) =
-                                        app.session_state.pending_permission.clone()
-                                    {
-                                        app.cancel_permission(&perm.permission_id);
-                                    }
-                                    continue;
-                                }
-
                                 // Check if this is an AskUserQuestion prompt
                                 // State is already initialized when permission is received
                                 if app.is_ask_user_question_pending() {
@@ -322,6 +310,13 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                             }
                                             continue;
                                         }
+                                        KeyCode::Esc => {
+                                            // Cancel the permission dialog
+                                            if let Some(ref perm) = app.session_state.pending_permission.clone() {
+                                                app.cancel_permission(&perm.permission_id);
+                                            }
+                                            continue;
+                                        }
                                         _ => continue,
                                     }
                                 }
@@ -347,6 +342,13 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         "Key not handled",
                                         &format!("key: '{}' -> not Y/N/A", c),
                                     );
+                                }
+                                // Plain Escape cancels the permission dialog
+                                if key.code == KeyCode::Esc {
+                                    if let Some(ref perm) = app.session_state.pending_permission.clone() {
+                                        app.cancel_permission(&perm.permission_id);
+                                    }
+                                    continue;
                                 }
                                 // When permission is pending, ignore all other keys except Ctrl+C
                                 continue;
