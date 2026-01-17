@@ -793,8 +793,8 @@ fn render_ask_user_question_box(
 
     if state.other_active {
         // "Other" text input mode
-        help_spans.push(Span::styled("esc", Style::default().fg(COLOR_DIM)));
-        help_spans.push(Span::styled(" cancel  ", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled("[Esc]", Style::default().fg(COLOR_DIM)));
+        help_spans.push(Span::styled(" Cancel  ", Style::default().fg(COLOR_DIM)));
         help_spans.push(Span::styled("enter", Style::default().fg(COLOR_DIM)));
         if is_multi_question && !will_complete_on_confirm {
             help_spans.push(Span::styled(" next", Style::default().fg(COLOR_DIM)));
