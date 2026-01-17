@@ -224,7 +224,7 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 }
                                 // Alt+P to submit as Programming thread (from CommandDeck)
                                 KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::ALT) => {
-                                    if app.screen == Screen::CommandDeck && !app.input_box.is_empty() {
+                                    if app.screen == Screen::CommandDeck && !app.textarea.is_empty() {
                                         app.submit_input(models::ThreadType::Programming);
                                     }
                                     continue;
@@ -387,32 +387,32 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 match key.code {
                                     // Alt+Backspace: Delete word backward
                                     KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
-                                        app.input_box.delete_word_backward();
+                                        app.textarea.delete_word_backward();
                                         continue;
                                     }
                                     // Super+Backspace (Cmd+Backspace): Delete to line start
                                     KeyCode::Backspace if key.modifiers.contains(KeyModifiers::SUPER) => {
-                                        app.input_box.delete_to_line_start();
+                                        app.textarea.delete_to_line_start();
                                         continue;
                                     }
                                     // Alt+Left: Move cursor word left
                                     KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
-                                        app.input_box.move_cursor_word_left();
+                                        app.textarea.move_cursor_word_left();
                                         continue;
                                     }
                                     // Super+Left (Cmd+Left): Move cursor to line start
                                     KeyCode::Left if key.modifiers.contains(KeyModifiers::SUPER) => {
-                                        app.input_box.move_cursor_home();
+                                        app.textarea.move_cursor_home();
                                         continue;
                                     }
                                     // Alt+Right: Move cursor word right
                                     KeyCode::Right if key.modifiers.contains(KeyModifiers::ALT) => {
-                                        app.input_box.move_cursor_word_right();
+                                        app.textarea.move_cursor_word_right();
                                         continue;
                                     }
                                     // Super+Right (Cmd+Right): Move cursor to line end
                                     KeyCode::Right if key.modifiers.contains(KeyModifiers::SUPER) => {
-                                        app.input_box.move_cursor_end();
+                                        app.textarea.move_cursor_end();
                                         continue;
                                     }
                                     _ => {}
@@ -423,51 +423,59 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     // Ctrl+J = ASCII LF (newline) - works in ALL terminals
                                     // MUST come before plain Char(c) handler
                                     KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                        app.input_box.insert_char('\n');
+                                        app.textarea.insert_newline();
                                         continue;
                                     }
                                     // Plain characters (no modifiers or only SHIFT)
                                     KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
-                                        app.input_box.insert_char(c);
+                                        app.textarea.insert_char(c);
                                         continue;
                                     }
                                     KeyCode::Backspace => {
-                                        app.input_box.backspace();
+                                        app.textarea.backspace();
                                         continue;
                                     }
                                     KeyCode::Delete => {
-                                        app.input_box.delete_char();
+                                        app.textarea.delete_char();
                                         continue;
                                     }
                                     KeyCode::Left => {
-                                        app.input_box.move_cursor_left();
+                                        app.textarea.move_cursor_left();
                                         continue;
                                     }
                                     KeyCode::Right => {
-                                        app.input_box.move_cursor_right();
+                                        app.textarea.move_cursor_right();
+                                        continue;
+                                    }
+                                    KeyCode::Up => {
+                                        app.textarea.move_cursor_up();
+                                        continue;
+                                    }
+                                    KeyCode::Down => {
+                                        app.textarea.move_cursor_down();
                                         continue;
                                     }
                                     KeyCode::Home => {
-                                        app.input_box.move_cursor_home();
+                                        app.textarea.move_cursor_home();
                                         continue;
                                     }
                                     KeyCode::End => {
-                                        app.input_box.move_cursor_end();
+                                        app.textarea.move_cursor_end();
                                         continue;
                                     }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
                                         // Shift+Enter inserts a newline (works in Kitty protocol terminals)
-                                        app.input_box.insert_char('\n');
+                                        app.textarea.insert_newline();
                                         continue;
                                     }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
                                         // Alt+Enter inserts a newline
-                                        app.input_box.insert_char('\n');
+                                        app.textarea.insert_newline();
                                         continue;
                                     }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                         // Ctrl+Enter inserts a newline (fallback - may not work in all terminals)
-                                        app.input_box.insert_char('\n');
+                                        app.textarea.insert_newline();
                                         continue;
                                     }
                                     KeyCode::Enter => {
@@ -478,7 +486,7 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     KeyCode::Esc => {
                                         // Plain Escape (no Shift) - depends on input state and screen
                                         if app.screen == Screen::Conversation {
-                                            if app.input_box.is_empty() {
+                                            if app.textarea.is_empty() {
                                                 // Empty input: go back to CommandDeck
                                                 app.navigate_to_command_deck();
                                             } else {
