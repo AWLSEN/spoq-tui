@@ -382,8 +382,52 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     continue;
                                 }
 
+                                // macOS-style text navigation shortcuts (modifier + key)
+                                // Check these BEFORE plain key handlers
                                 match key.code {
-                                    KeyCode::Char(c) => {
+                                    // Alt+Backspace: Delete word backward
+                                    KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
+                                        app.input_box.delete_word_backward();
+                                        continue;
+                                    }
+                                    // Super+Backspace (Cmd+Backspace): Delete to line start
+                                    KeyCode::Backspace if key.modifiers.contains(KeyModifiers::SUPER) => {
+                                        app.input_box.delete_to_line_start();
+                                        continue;
+                                    }
+                                    // Alt+Left: Move cursor word left
+                                    KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
+                                        app.input_box.move_cursor_word_left();
+                                        continue;
+                                    }
+                                    // Super+Left (Cmd+Left): Move cursor to line start
+                                    KeyCode::Left if key.modifiers.contains(KeyModifiers::SUPER) => {
+                                        app.input_box.move_cursor_home();
+                                        continue;
+                                    }
+                                    // Alt+Right: Move cursor word right
+                                    KeyCode::Right if key.modifiers.contains(KeyModifiers::ALT) => {
+                                        app.input_box.move_cursor_word_right();
+                                        continue;
+                                    }
+                                    // Super+Right (Cmd+Right): Move cursor to line end
+                                    KeyCode::Right if key.modifiers.contains(KeyModifiers::SUPER) => {
+                                        app.input_box.move_cursor_end();
+                                        continue;
+                                    }
+                                    _ => {}
+                                }
+
+                                // Plain key handlers (without modifiers)
+                                match key.code {
+                                    // Ctrl+J = ASCII LF (newline) - works in ALL terminals
+                                    // MUST come before plain Char(c) handler
+                                    KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        app.input_box.insert_char('\n');
+                                        continue;
+                                    }
+                                    // Plain characters (no modifiers or only SHIFT)
+                                    KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
                                         app.input_box.insert_char(c);
                                         continue;
                                     }
@@ -409,11 +453,6 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     }
                                     KeyCode::End => {
                                         app.input_box.move_cursor_end();
-                                        continue;
-                                    }
-                                    KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                        // Ctrl+J = ASCII LF (newline) - works in ALL terminals
-                                        app.input_box.insert_char('\n');
                                         continue;
                                     }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
