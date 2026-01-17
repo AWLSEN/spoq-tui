@@ -154,6 +154,50 @@ impl InputBox {
         self.cursor_position = pos;
     }
 
+    /// Delete from cursor position backward to the previous word boundary
+    ///
+    /// Uses the same word boundary logic as `move_cursor_word_left`:
+    /// 1. Skip any whitespace/non-word characters moving left
+    /// 2. Then skip contiguous word characters (alphanumeric + underscore)
+    /// 3. Delete all characters from that position to the cursor
+    ///
+    /// # Examples
+    ///
+    /// - From `"hello wor|ld"` -> `"hello |ld"` (deletes "wor")
+    /// - From `"hello |world"` -> `"|world"` (deletes "hello ")
+    pub fn delete_word_backward(&mut self) {
+        if self.cursor_position == 0 {
+            return;
+        }
+
+        // Collect characters to work with
+        let chars: Vec<char> = self.content.chars().collect();
+
+        // Find the word boundary using the same logic as move_cursor_word_left
+        let mut target_pos = self.cursor_position;
+
+        // Phase 1: Skip any non-word characters (whitespace, punctuation)
+        while target_pos > 0 && !Self::is_word_char(chars[target_pos - 1]) {
+            target_pos -= 1;
+        }
+
+        // Phase 2: Skip word characters to find start of word
+        while target_pos > 0 && Self::is_word_char(chars[target_pos - 1]) {
+            target_pos -= 1;
+        }
+
+        // Delete characters from target_pos to cursor_position
+        // We need to work with byte indices for string manipulation
+        let start_byte = self.char_to_byte_index(target_pos);
+        let end_byte = self.char_to_byte_index(self.cursor_position);
+
+        // Remove the range of characters
+        self.content.replace_range(start_byte..end_byte, "");
+
+        // Update cursor position
+        self.cursor_position = target_pos;
+    }
+
     /// Clear all content and reset cursor
     pub fn clear(&mut self) {
         self.content.clear();
