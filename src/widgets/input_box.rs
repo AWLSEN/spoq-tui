@@ -873,4 +873,119 @@ mod tests {
         assert_eq!(input.content, "line1\nline2");
         assert_eq!(input.cursor_position, 6);
     }
+
+    // Multi-line input tests (for Round 1)
+    #[test]
+    fn test_insert_newline_single_char() {
+        let mut input = InputBox::new();
+        input.insert_char('\n');
+        assert_eq!(input.content, "\n");
+        assert_eq!(input.cursor_position, 1);
+    }
+
+    #[test]
+    fn test_insert_newline_in_middle_of_text() {
+        let mut input = InputBox::new();
+        // "hello|world"
+        for c in "helloworld".chars() {
+            input.insert_char(c);
+        }
+        // Move cursor to middle
+        input.move_cursor_home();
+        for _ in 0..5 {
+            input.move_cursor_right();
+        }
+
+        // Insert newline
+        input.insert_char('\n');
+        assert_eq!(input.content, "hello\nworld");
+        assert_eq!(input.cursor_position, 6);
+    }
+
+    #[test]
+    fn test_multiline_line_count() {
+        let mut input = InputBox::new();
+        assert_eq!(input.line_count(), 1); // Empty is 1 line
+
+        input.insert_char('h');
+        assert_eq!(input.line_count(), 1);
+
+        // "h\n" - lines() returns 1 (trailing newline doesn't create a new line)
+        input.insert_char('\n');
+        assert_eq!(input.line_count(), 1);
+
+        // "h\nw" - lines() returns 2
+        input.insert_char('w');
+        assert_eq!(input.line_count(), 2);
+
+        // "h\nw\n" - lines() returns 2 (trailing newline doesn't create a new line)
+        input.insert_char('\n');
+        assert_eq!(input.line_count(), 2);
+
+        // "h\nw\nx" - lines() returns 3
+        input.insert_char('x');
+        assert_eq!(input.line_count(), 3);
+    }
+
+    #[test]
+    fn test_backspace_across_newline() {
+        let mut input = InputBox::new();
+        // "hello\n|world"
+        for c in "hello\nworld".chars() {
+            input.insert_char(c);
+        }
+        // Move cursor to after newline (position 6)
+        input.move_cursor_home();
+        for _ in 0..6 {
+            input.move_cursor_right();
+        }
+
+        // Backspace should delete the newline
+        input.backspace();
+        assert_eq!(input.content, "helloworld");
+        assert_eq!(input.cursor_position, 5);
+    }
+
+    #[test]
+    fn test_delete_char_at_newline() {
+        let mut input = InputBox::new();
+        // "hello|\nworld"
+        for c in "hello\nworld".chars() {
+            input.insert_char(c);
+        }
+        // Move cursor to before newline (position 5)
+        input.move_cursor_home();
+        for _ in 0..5 {
+            input.move_cursor_right();
+        }
+
+        // Delete should remove the newline
+        input.delete_char();
+        assert_eq!(input.content, "helloworld");
+        assert_eq!(input.cursor_position, 5);
+    }
+
+    #[test]
+    fn test_cursor_navigation_across_newlines() {
+        let mut input = InputBox::new();
+        // "line1\nline2\nline3"
+        for c in "line1\nline2\nline3".chars() {
+            input.insert_char(c);
+        }
+        assert_eq!(input.cursor_position, 17);
+
+        // Move to start
+        input.move_cursor_home();
+        assert_eq!(input.cursor_position, 0);
+
+        // Move across newlines
+        for _ in 0..6 {
+            input.move_cursor_right();
+        }
+        assert_eq!(input.cursor_position, 6); // At 'l' in "line2"
+
+        // Content at position 5 should be newline
+        let chars: Vec<char> = input.content.chars().collect();
+        assert_eq!(chars[5], '\n');
+    }
 }
