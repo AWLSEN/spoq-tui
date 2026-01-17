@@ -222,7 +222,17 @@ pub fn render_permission_box(
     // Render the block first
     frame.render_widget(block, box_area);
 
-    // Inner area for content
+    // Fill entire area inside the border with black background
+    let block_inner = Rect {
+        x: box_area.x + 1,
+        y: box_area.y + 1,
+        width: box_area.width.saturating_sub(2),
+        height: box_area.height.saturating_sub(2),
+    };
+    let bg_fill = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(bg_fill, block_inner);
+
+    // Content area with padding from the border
     let inner = Rect {
         x: box_area.x + 2,
         y: box_area.y + 1,
@@ -313,10 +323,6 @@ pub fn render_permission_box(
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
-    // Fill inner area with solid black background first
-    let inner_bg = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(inner_bg, inner);
-
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
 }
@@ -406,7 +412,17 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
 
     frame.render_widget(block, box_area);
 
-    // Inner area for content
+    // Fill entire area inside the border with black background
+    let block_inner = Rect {
+        x: box_area.x + 1,
+        y: box_area.y + 1,
+        width: box_area.width.saturating_sub(2),
+        height: box_area.height.saturating_sub(2),
+    };
+    let bg_fill = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(bg_fill, block_inner);
+
+    // Content area with padding from the border
     let inner = Rect {
         x: box_area.x + 2,
         y: box_area.y + 1,
@@ -479,10 +495,6 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         Span::raw(" No"),
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
-
-    // Fill inner area with solid black background first
-    let inner_bg = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(inner_bg, inner);
 
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
@@ -563,7 +575,17 @@ fn render_ask_user_question_box(
 
     frame.render_widget(block, box_area);
 
-    // Inner area for content
+    // Fill entire area inside the border with black background
+    let block_inner = Rect {
+        x: box_area.x + 1,
+        y: box_area.y + 1,
+        width: box_area.width.saturating_sub(2),
+        height: box_area.height.saturating_sub(2),
+    };
+    let bg_fill = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(bg_fill, block_inner);
+
+    // Content area with padding from the border
     let inner = Rect {
         x: box_area.x + 2,
         y: box_area.y + 1,
@@ -831,10 +853,6 @@ fn render_ask_user_question_box(
     help_spans.push(Span::styled(countdown_text, Style::default().fg(countdown_color)));
 
     lines.push(Line::from(help_spans));
-
-    // Fill inner area with solid black background first
-    let inner_bg = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(inner_bg, inner);
 
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
