@@ -19,7 +19,7 @@ pub struct InputBox {
     content: String,
     /// Current cursor position (character index)
     cursor_position: usize,
-    /// Scroll offset for horizontal scrolling
+    /// Horizontal scroll offset for when text exceeds widget width
     scroll_offset: usize,
 }
 

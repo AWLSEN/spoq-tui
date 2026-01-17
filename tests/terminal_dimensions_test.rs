@@ -244,8 +244,8 @@ fn test_is_compact() {
 fn test_content_width_with_border() {
     let ctx = LayoutContext::new(100, 50);
 
-    assert_eq!(ctx.content_width(4), 96, "Should subtract border width");
-    assert_eq!(ctx.content_width(10), 90, "Should subtract custom border width");
+    assert_eq!(ctx.available_content_width(4), 96, "Should subtract border width");
+    assert_eq!(ctx.available_content_width(10), 90, "Should subtract custom border width");
 }
 
 #[test]
@@ -253,15 +253,15 @@ fn test_content_width_handles_overflow() {
     let ctx = LayoutContext::new(10, 10);
 
     // Border larger than width - saturating_sub prevents underflow
-    assert_eq!(ctx.content_width(20), 0, "Should not go negative");
+    assert_eq!(ctx.available_content_width(20), 0, "Should not go negative");
 }
 
 #[test]
 fn test_content_height_with_chrome() {
     let ctx = LayoutContext::new(100, 50);
 
-    assert_eq!(ctx.content_height(6), 44, "Should subtract chrome height");
-    assert_eq!(ctx.content_height(10), 40, "Should subtract custom chrome height");
+    assert_eq!(ctx.available_content_height(6), 44, "Should subtract chrome height");
+    assert_eq!(ctx.available_content_height(10), 40, "Should subtract custom chrome height");
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn test_content_height_handles_overflow() {
     let ctx = LayoutContext::new(100, 10);
 
     // Chrome larger than height - saturating_sub prevents underflow
-    assert_eq!(ctx.content_height(20), 0, "Should not go negative");
+    assert_eq!(ctx.available_content_height(20), 0, "Should not go negative");
 }
 
 // =============================================================================
