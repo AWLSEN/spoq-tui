@@ -20,6 +20,7 @@ pub use websocket::{start_websocket, start_websocket_with_config};
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
+use crate::markdown::MarkdownCache;
 use crate::state::{
     AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
 };
@@ -176,6 +177,8 @@ pub struct App {
     pub migration_progress: Option<u8>,
     /// Thread and message cache
     pub cache: ThreadCache,
+    /// Markdown render cache for memoizing parsed output
+    pub markdown_cache: MarkdownCache,
     /// Receiver for async messages (streaming tokens, connection status)
     pub message_rx: Option<mpsc::UnboundedReceiver<AppMessage>>,
     /// Sender for async messages (clone this to pass to async tasks)
@@ -277,6 +280,7 @@ impl App {
             input_box: InputBox::new(),
             migration_progress: Some(0),
             cache,
+            markdown_cache: MarkdownCache::new(),
             message_rx: Some(message_rx),
             message_tx,
             connection_status: false,
