@@ -16,7 +16,7 @@ use crate::state::session::{AskUserQuestionData, AskUserQuestionState, Permissio
 use crate::widgets::input_box::InputBoxWidget;
 
 use super::layout::LayoutContext;
-use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
+use super::theme::{COLOR_ACCENT, COLOR_DIM};
 
 // ============================================================================
 // AskUserQuestion Parsing
@@ -56,17 +56,11 @@ pub fn calculate_input_area_height(line_count: usize) -> u16 {
 pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
     // Input is always "focused" since we removed panel focus cycling
     let input_focused = true;
-    let border_color = if input_focused { COLOR_HEADER } else { COLOR_BORDER };
 
-    let input_outer = Block::default()
-        .borders(Borders::TOP)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(border_color));
-    frame.render_widget(input_outer, area);
-
+    // No border - use spacing at top instead for visual separation
     let inner = Rect {
         x: area.x + 1,
-        y: area.y + 1,
+        y: area.y + 1, // 1 row spacing at top
         width: area.width.saturating_sub(2),
         height: area.height.saturating_sub(2),
     };
@@ -99,17 +93,11 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
     // Input is always "focused" since we removed panel focus cycling
     let input_focused = true;
     let is_streaming = app.is_streaming();
-    let border_color = if input_focused { COLOR_HEADER } else { COLOR_BORDER };
 
-    let input_outer = Block::default()
-        .borders(Borders::TOP)
-        .border_type(BorderType::Plain)
-        .border_style(Style::default().fg(border_color));
-    frame.render_widget(input_outer, area);
-
+    // No border - use spacing at top instead for visual separation
     let inner = Rect {
         x: area.x + 1,
-        y: area.y + 1,
+        y: area.y + 1, // 1 row spacing at top
         width: area.width.saturating_sub(2),
         height: area.height.saturating_sub(2),
     };

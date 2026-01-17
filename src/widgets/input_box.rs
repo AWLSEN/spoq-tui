@@ -90,11 +90,120 @@ impl InputBox {
         self.cursor_position = self.content.chars().count();
     }
 
+    /// Check if a character is a word character (alphanumeric or underscore)
+    fn is_word_char(c: char) -> bool {
+        c.is_alphanumeric() || c == '_'
+    }
+
+    /// Move cursor one word to the left
+    ///
+    /// Word boundary logic:
+    /// 1. Skip any whitespace/non-word characters moving left
+    /// 2. Then skip contiguous word characters (alphanumeric + underscore)
+    /// 3. Stop at the beginning of the word
+    pub fn move_cursor_word_left(&mut self) {
+        if self.cursor_position == 0 {
+            return;
+        }
+
+        // Collect characters before cursor position
+        let chars: Vec<char> = self.content.chars().collect();
+
+        // Start from position just before cursor
+        let mut pos = self.cursor_position;
+
+        // Phase 1: Skip any non-word characters (whitespace, punctuation)
+        while pos > 0 && !Self::is_word_char(chars[pos - 1]) {
+            pos -= 1;
+        }
+
+        // Phase 2: Skip word characters to find start of word
+        while pos > 0 && Self::is_word_char(chars[pos - 1]) {
+            pos -= 1;
+        }
+
+        self.cursor_position = pos;
+    }
+
+    /// Move cursor one word to the right
+    ///
+    /// Word boundary logic:
+    /// 1. Skip any whitespace/non-word characters moving right
+    /// 2. Then skip contiguous word characters (alphanumeric + underscore)
+    /// 3. Stop at the end of the word
+    pub fn move_cursor_word_right(&mut self) {
+        let chars: Vec<char> = self.content.chars().collect();
+        let len = chars.len();
+
+        if self.cursor_position >= len {
+            return;
+        }
+
+        let mut pos = self.cursor_position;
+
+        // Phase 1: Skip any non-word characters (whitespace, punctuation)
+        while pos < len && !Self::is_word_char(chars[pos]) {
+            pos += 1;
+        }
+
+        // Phase 2: Skip word characters to find end of word
+        while pos < len && Self::is_word_char(chars[pos]) {
+            pos += 1;
+        }
+
+        self.cursor_position = pos;
+    }
+
     /// Clear all content and reset cursor
     pub fn clear(&mut self) {
         self.content.clear();
         self.cursor_position = 0;
         self.scroll_offset = 0;
+    }
+
+    /// Delete from cursor position back to the start of the current line.
+    ///
+    /// In multi-line content, finds the previous newline character and deletes
+    /// from there to the cursor. If on the first line (no preceding newline),
+    /// deletes from the start of content to the cursor.
+    ///
+    /// # Examples
+    ///
+    /// - From `"line1\nli|ne2"` -> `"line1\n|ne2"` (deletes "li")
+    /// - From `"hel|lo"` -> `"|lo"` (deletes "hel", single line)
+    /// - From `"|hello"` -> `"|hello"` (cursor at start, nothing deleted)
+    pub fn delete_to_line_start(&mut self) {
+        if self.cursor_position == 0 {
+            return;
+        }
+
+        // Find the position of the last newline before cursor, if any
+        // We look at characters from index 0 to cursor_position - 1
+        let mut line_start_pos = 0;
+        for (char_idx, c) in self.content.chars().enumerate() {
+            if char_idx >= self.cursor_position {
+                break;
+            }
+            if c == '\n' {
+                // The line starts after this newline
+                line_start_pos = char_idx + 1;
+            }
+        }
+
+        // If cursor is already at line start, nothing to delete
+        if self.cursor_position == line_start_pos {
+            return;
+        }
+
+        // Delete from line_start_pos to cursor_position
+        let start_byte = self.char_to_byte_index(line_start_pos);
+        let end_byte = self.char_to_byte_index(self.cursor_position);
+
+        // Remove the range from the string
+        self.content.replace_range(start_byte..end_byte, "");
+
+        // Update cursor position to line start
+        self.cursor_position = line_start_pos;
     }
 
     /// Check if the input box is empty
