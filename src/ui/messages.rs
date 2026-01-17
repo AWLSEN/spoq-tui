@@ -1,6 +1,7 @@
 //! Message rendering functions
 //!
 //! Implements the message area, tool events, thinking blocks, and error banners.
+//! Uses `LayoutContext` for responsive layout calculations.
 
 use ratatui::{
     layout::Rect,
@@ -17,6 +18,7 @@ use crate::state::ToolDisplayStatus;
 
 use super::helpers::{format_tool_args, get_subagent_icon, get_tool_icon, inner_rect, MAX_VISIBLE_ERRORS, SPINNER_FRAMES};
 use super::input::render_permission_prompt;
+use super::layout::LayoutContext;
 use super::theme::{
     COLOR_ACCENT, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
     COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
@@ -27,8 +29,10 @@ use super::theme::{
 // ============================================================================
 
 /// Render inline error banners for a thread
+///
+/// Uses `LayoutContext` for responsive banner width that adapts to terminal size.
 /// Returns the lines to be added to the messages area
-pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
+pub fn render_inline_error_banners(app: &App, ctx: &LayoutContext) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
 
     // Get errors for the active thread
@@ -48,6 +52,11 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
     let focused_index = app.cache.focused_error_index();
     let total_errors = errors.len();
 
+    // Calculate responsive error box width based on terminal width
+    // Use 80% of terminal width, clamped between 40 and 80
+    let box_width = ctx.bounded_width(80, 40, 80) as usize;
+    let inner_width = box_width.saturating_sub(2); // Account for border chars
+
     // Only show up to MAX_VISIBLE_ERRORS
     for (i, error) in errors.iter().take(MAX_VISIBLE_ERRORS).enumerate() {
         let is_focused = i == focused_index;
@@ -57,7 +66,7 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
 
         // Top border with error code
         let header = format!("─[!] {} ", error.error_code);
-        let remaining_width = 50_usize.saturating_sub(header.len());
+        let remaining_width = inner_width.saturating_sub(header.len());
         let top_border = format!(
             "┌{}{}┐",
             header,
@@ -68,13 +77,14 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
             Style::default().fg(border_color),
         )));
 
-        // Error message line
-        let msg_display = if error.message.len() > 46 {
-            super::helpers::truncate_string(&error.message, 46)
+        // Error message line - truncate based on responsive width
+        let max_msg_len = inner_width.saturating_sub(4); // Account for borders and padding
+        let msg_display = if error.message.len() > max_msg_len {
+            super::helpers::truncate_string(&error.message, max_msg_len)
         } else {
             error.message.clone()
         };
-        let msg_padding = 48_usize.saturating_sub(msg_display.len());
+        let msg_padding = inner_width.saturating_sub(msg_display.len() + 2); // +2 for "│ " prefix
         lines.push(Line::from(vec![
             Span::styled("│ ", Style::default().fg(border_color)),
             Span::styled(msg_display, Style::default().fg(Color::White)),
@@ -84,9 +94,13 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
             ),
         ]));
 
-        // Dismiss hint line
-        let dismiss_text = "[d]ismiss";
-        let dismiss_padding = 48_usize.saturating_sub(dismiss_text.len());
+        // Dismiss hint line - abbreviate on narrow terminals
+        let dismiss_text = if ctx.is_extra_small() {
+            "[d]"
+        } else {
+            "[d]ismiss"
+        };
+        let dismiss_padding = inner_width.saturating_sub(dismiss_text.len() + 2);
         lines.push(Line::from(vec![
             Span::styled("│ ", Style::default().fg(border_color)),
             Span::styled(
@@ -103,7 +117,7 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
         // Bottom border
         let bottom_border = format!(
             "└{}┘",
-            border_char_bottom.repeat(48)
+            border_char_bottom.repeat(inner_width)
         );
         lines.push(Line::from(Span::styled(
             bottom_border,
@@ -134,6 +148,8 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
 
 /// Render a collapsible thinking block for assistant messages.
 ///
+/// Uses `LayoutContext` for responsive border width.
+///
 /// Collapsed: ▸ Thinking... (847 tokens)
 /// Expanded:
 /// ▾ Thinking
@@ -143,6 +159,7 @@ pub fn render_inline_error_banners(app: &App) -> Vec<Line<'static>> {
 pub fn render_thinking_block(
     message: &Message,
     tick_count: u64,
+    ctx: &LayoutContext,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line> = Vec::new();
 
@@ -165,7 +182,16 @@ pub fn render_thinking_block(
         ("▾", Color::Magenta)
     };
 
-    // Header line
+    // Calculate responsive bottom border width (use available content width)
+    let border_width = ctx.text_wrap_width(0).min(80) as usize;
+
+    // Header line - abbreviate toggle hint on narrow terminals
+    let toggle_hint = if ctx.is_extra_small() {
+        " [t]"
+    } else {
+        "  [t] toggle"
+    };
+
     if collapsed {
         // Collapsed: ▸ Thinking... (847 tokens)
         lines.push(Line::from(vec![
@@ -182,7 +208,7 @@ pub fn render_thinking_block(
                 Style::default().fg(COLOR_DIM),
             ),
             Span::styled(
-                "  [t] toggle",
+                toggle_hint,
                 Style::default().fg(COLOR_DIM),
             ),
         ]));
@@ -202,7 +228,7 @@ pub fn render_thinking_block(
                 Style::default().fg(COLOR_DIM),
             ),
             Span::styled(
-                "  [t] toggle",
+                toggle_hint,
                 Style::default().fg(COLOR_DIM),
             ),
         ]));
@@ -235,10 +261,10 @@ pub fn render_thinking_block(
             }
         }
 
-        // Bottom border
+        // Bottom border - responsive width
         lines.push(Line::from(vec![
             Span::styled(
-                "└──────────────────────────────────────────",
+                format!("└{}", "─".repeat(border_width.saturating_sub(1))),
                 Style::default().fg(Color::DarkGray),
             ),
         ]));
@@ -908,23 +934,19 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
 
 /// Render the messages area with user messages and AI responses
 ///
-/// Uses terminal dimensions for responsive layout:
+/// Uses `LayoutContext` for responsive layout:
 /// - Tool result previews are truncated based on available width
 /// - Message wrapping uses actual viewport width
-pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
+/// - Error banners adapt to terminal size
+pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &LayoutContext) {
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
 
-    // Calculate responsive max preview length based on terminal width
-    // Narrower terminals get shorter previews to prevent excessive wrapping
-    // Formula: ~80% of terminal width, with min of 60 and max of 200
-    let max_preview_len = {
-        let base = (app.terminal_width as usize * 80) / 100;
-        base.clamp(60, 200)
-    };
+    // Calculate responsive max preview length using LayoutContext
+    let max_preview_len = ctx.max_preview_length();
 
     // Show inline error banners for the thread
-    lines.extend(render_inline_error_banners(app));
+    lines.extend(render_inline_error_banners(app, ctx));
 
     // Note: Tool status is now rendered inline with messages via render_tool_event()
     // The legacy render_tool_status_lines and render_subagent_status_lines functions are kept
@@ -932,6 +954,13 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
 
     // Show stream error banner if there's a stream error (legacy, for non-thread errors)
     if let Some(error) = &app.stream_error {
+        // Truncate error message based on available width
+        let max_error_len = ctx.max_preview_length();
+        let display_error = if error.len() > max_error_len {
+            super::helpers::truncate_string(error, max_error_len)
+        } else {
+            error.clone()
+        };
         lines.push(Line::from(vec![
             Span::styled(
                 "  ⚠ ERROR: ",
@@ -940,12 +969,14 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                error.as_str(),
+                display_error,
                 Style::default().fg(Color::Red),
             ),
         ]));
+        // Responsive divider width
+        let divider_width = ctx.text_wrap_width(0).min(80) as usize;
         lines.push(Line::from(vec![Span::styled(
-            "═══════════════════════════════════════════════",
+            "═".repeat(divider_width),
             Style::default().fg(Color::Red),
         )]));
     }
@@ -986,7 +1017,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
 
             // Render thinking/reasoning block for assistant messages (before content)
             if message.role == MessageRole::Assistant {
-                lines.extend(render_thinking_block(message, app.tick_count));
+                lines.extend(render_thinking_block(message, app.tick_count, ctx));
             }
 
             // Use vertical bar prefix for user messages only, empty for assistant messages
@@ -1185,6 +1216,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ui::LayoutContext;
 
     #[test]
     fn test_estimate_wrapped_line_count_empty() {
@@ -1301,5 +1333,75 @@ mod tests {
         let lines = vec![Line::from("Hello World")]; // 11 chars
         // In 5-char viewport: ceil(11/5) = 3 lines
         assert_eq!(estimate_wrapped_line_count(&lines, 5), 3);
+    }
+
+    // ========================================================================
+    // Responsive Layout Tests
+    // ========================================================================
+
+    #[test]
+    fn test_layout_context_max_preview_length_extra_small() {
+        let ctx = LayoutContext::new(50, 24);
+        assert!(ctx.is_extra_small());
+        assert_eq!(ctx.max_preview_length(), 40);
+    }
+
+    #[test]
+    fn test_layout_context_max_preview_length_small() {
+        let ctx = LayoutContext::new(70, 24);
+        assert!(ctx.is_narrow());
+        assert!(!ctx.is_extra_small());
+        assert_eq!(ctx.max_preview_length(), 60);
+    }
+
+    #[test]
+    fn test_layout_context_max_preview_length_medium() {
+        let ctx = LayoutContext::new(100, 24);
+        assert!(!ctx.is_narrow());
+        assert_eq!(ctx.max_preview_length(), 100);
+    }
+
+    #[test]
+    fn test_layout_context_max_preview_length_large() {
+        let ctx = LayoutContext::new(160, 24);
+        assert_eq!(ctx.max_preview_length(), 150);
+    }
+
+    #[test]
+    fn test_layout_context_text_wrap_width() {
+        let ctx = LayoutContext::new(100, 40);
+        // 100 - 4 (borders/padding) = 96
+        assert_eq!(ctx.text_wrap_width(0), 96);
+        // 100 - 4 - 4 (2 indent levels) = 92
+        assert_eq!(ctx.text_wrap_width(2), 92);
+    }
+
+    #[test]
+    fn test_layout_context_input_area_height_compact() {
+        // Compact terminal (short or narrow)
+        let ctx = LayoutContext::new(60, 40); // Narrow
+        assert!(ctx.is_compact());
+        assert_eq!(ctx.input_area_height(), 4);
+    }
+
+    #[test]
+    fn test_layout_context_input_area_height_normal() {
+        let ctx = LayoutContext::new(120, 40);
+        assert!(!ctx.is_compact());
+        assert_eq!(ctx.input_area_height(), 6);
+    }
+
+    #[test]
+    fn test_layout_context_bounded_width() {
+        let ctx = LayoutContext::new(100, 24);
+        // 80% of 100 = 80, clamped between 40 and 80
+        assert_eq!(ctx.bounded_width(80, 40, 80), 80);
+    }
+
+    #[test]
+    fn test_layout_context_bounded_width_small_terminal() {
+        let ctx = LayoutContext::new(50, 24);
+        // 80% of 50 = 40, clamped between 40 and 80
+        assert_eq!(ctx.bounded_width(80, 40, 80), 40);
     }
 }

@@ -1,6 +1,7 @@
 //! Conversation screen rendering
 //!
 //! Implements the conversation view with header, messages, and streaming indicator.
+//! Uses the `LayoutContext` responsive layout system for all dimension calculations.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -13,8 +14,9 @@ use ratatui::{
 use crate::app::{App, ProgrammingMode};
 use crate::models::{MessageSegment, ToolEventStatus};
 
-use super::helpers::{inner_rect, SPINNER_FRAMES};
+use super::helpers::{inner_rect, truncate_string, SPINNER_FRAMES};
 use super::input::render_conversation_input;
+use super::layout::LayoutContext;
 use super::messages::render_messages_area;
 use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 
@@ -32,22 +34,18 @@ use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 /// This should only be called when the active thread is a Programming thread.
 pub fn create_mode_indicator_line(mode: ProgrammingMode) -> Option<Line<'static>> {
     match mode {
-        ProgrammingMode::PlanMode => Some(Line::from(vec![
-            Span::styled(
-                " [PLAN MODE]",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])),
-        ProgrammingMode::BypassPermissions => Some(Line::from(vec![
-            Span::styled(
-                " [BYPASS]",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])),
+        ProgrammingMode::PlanMode => Some(Line::from(vec![Span::styled(
+            " [PLAN MODE]",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )])),
+        ProgrammingMode::BypassPermissions => Some(Line::from(vec![Span::styled(
+            " [BYPASS]",
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        )])),
         ProgrammingMode::None => None,
     }
 }
@@ -57,8 +55,16 @@ pub fn create_mode_indicator_line(mode: ProgrammingMode) -> Option<Line<'static>
 // ============================================================================
 
 /// Render the conversation screen with header, messages area, and input
+///
+/// Layout adapts to terminal dimensions using `LayoutContext`:
+/// - Header height adjusts for compact terminals
+/// - Input area height adapts to available space
+/// - All sections use the full available width
 pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
+
+    // Create layout context for responsive calculations
+    let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
 
     // Main outer border
     let outer_block = Block::default()
@@ -81,23 +87,27 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     // Create main layout sections - conditionally include mode and streaming indicators
     let inner = inner_rect(size, 0);
 
+    // Calculate responsive layout heights using LayoutContext
+    let input_height = ctx.input_area_height();
+    let header_height = if ctx.is_short() { 2 } else { 3 };
+
     match (mode_indicator_line, show_streaming_indicator) {
         (Some(mode_line), true) => {
             // Layout with both mode and streaming indicators (5 sections)
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Thread header
-                    Constraint::Min(10),    // Messages area
-                    Constraint::Length(1),  // Streaming indicator
-                    Constraint::Length(1),  // Mode indicator
-                    Constraint::Length(6),  // Input area with keybinds
+                    Constraint::Length(header_height), // Thread header (responsive)
+                    Constraint::Min(10),               // Messages area
+                    Constraint::Length(1),             // Streaming indicator
+                    Constraint::Length(1),             // Mode indicator
+                    Constraint::Length(input_height),  // Input area (responsive)
                 ])
                 .split(inner);
 
-            render_conversation_header(frame, main_chunks[0], app);
-            render_messages_area(frame, main_chunks[1], app);
-            render_streaming_indicator(frame, main_chunks[2], app);
+            render_conversation_header(frame, main_chunks[0], app, &ctx);
+            render_messages_area(frame, main_chunks[1], app, &ctx);
+            render_streaming_indicator(frame, main_chunks[2], app, &ctx);
             render_mode_indicator(frame, main_chunks[3], mode_line);
             render_conversation_input(frame, main_chunks[4], app);
         }
@@ -106,15 +116,15 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Thread header
-                    Constraint::Min(10),    // Messages area
-                    Constraint::Length(1),  // Mode indicator
-                    Constraint::Length(6),  // Input area with keybinds
+                    Constraint::Length(header_height), // Thread header (responsive)
+                    Constraint::Min(10),               // Messages area
+                    Constraint::Length(1),             // Mode indicator
+                    Constraint::Length(input_height),  // Input area (responsive)
                 ])
                 .split(inner);
 
-            render_conversation_header(frame, main_chunks[0], app);
-            render_messages_area(frame, main_chunks[1], app);
+            render_conversation_header(frame, main_chunks[0], app, &ctx);
+            render_messages_area(frame, main_chunks[1], app, &ctx);
             render_mode_indicator(frame, main_chunks[2], mode_line);
             render_conversation_input(frame, main_chunks[3], app);
         }
@@ -123,16 +133,16 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Thread header
-                    Constraint::Min(10),    // Messages area
-                    Constraint::Length(1),  // Streaming indicator
-                    Constraint::Length(6),  // Input area with keybinds
+                    Constraint::Length(header_height), // Thread header (responsive)
+                    Constraint::Min(10),               // Messages area
+                    Constraint::Length(1),             // Streaming indicator
+                    Constraint::Length(input_height),  // Input area (responsive)
                 ])
                 .split(inner);
 
-            render_conversation_header(frame, main_chunks[0], app);
-            render_messages_area(frame, main_chunks[1], app);
-            render_streaming_indicator(frame, main_chunks[2], app);
+            render_conversation_header(frame, main_chunks[0], app, &ctx);
+            render_messages_area(frame, main_chunks[1], app, &ctx);
+            render_streaming_indicator(frame, main_chunks[2], app, &ctx);
             render_conversation_input(frame, main_chunks[3], app);
         }
         (None, false) => {
@@ -140,14 +150,14 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Thread header
-                    Constraint::Min(10),    // Messages area
-                    Constraint::Length(6),  // Input area with keybinds
+                    Constraint::Length(header_height), // Thread header (responsive)
+                    Constraint::Min(10),               // Messages area
+                    Constraint::Length(input_height),  // Input area (responsive)
                 ])
                 .split(inner);
 
-            render_conversation_header(frame, main_chunks[0], app);
-            render_messages_area(frame, main_chunks[1], app);
+            render_conversation_header(frame, main_chunks[0], app, &ctx);
+            render_messages_area(frame, main_chunks[1], app, &ctx);
             render_conversation_input(frame, main_chunks[2], app);
         }
     }
@@ -160,7 +170,11 @@ pub fn render_mode_indicator(frame: &mut Frame, area: Rect, mode_line: Line<'sta
 }
 
 /// Render the streaming indicator bar
-pub fn render_streaming_indicator(frame: &mut Frame, area: Rect, app: &App) {
+///
+/// Adapts to terminal width using `LayoutContext`:
+/// - On narrow terminals, tool names are truncated
+/// - Uses available width for status text
+pub fn render_streaming_indicator(frame: &mut Frame, area: Rect, app: &App, ctx: &LayoutContext) {
     // Get messages from cache if we have an active thread
     let cached_messages = app
         .active_thread_id
@@ -187,19 +201,26 @@ pub fn render_streaming_indicator(frame: &mut Frame, area: Rect, app: &App) {
             None
         });
 
+        // Calculate max tool name length based on LayoutContext
+        let max_tool_name_len = if ctx.is_extra_small() {
+            15 // Very short for extra small
+        } else if ctx.is_narrow() {
+            20 // Short for narrow
+        } else {
+            40 // Full length for normal terminals
+        };
+
         let status_text = if let Some(tool_name) = running_tool_name {
-            format!("Using {}...", tool_name)
+            let truncated_name = truncate_string(&tool_name, max_tool_name_len);
+            format!("Using {}...", truncated_name)
         } else {
             "Responding...".to_string()
         };
 
-        let indicator_line = Line::from(vec![
-            Span::styled(
-                format!("  {} {}", spinner, status_text),
-                Style::default()
-                    .fg(Color::DarkGray),
-            ),
-        ]);
+        let indicator_line = Line::from(vec![Span::styled(
+            format!("  {} {}", spinner, status_text),
+            Style::default().fg(Color::DarkGray),
+        )]);
 
         let indicator = Paragraph::new(indicator_line);
         frame.render_widget(indicator, area);
@@ -207,7 +228,16 @@ pub fn render_streaming_indicator(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Render the thread title header with connection status and badges
-pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
+///
+/// Adapts to terminal dimensions using `LayoutContext`:
+/// - On narrow terminals, badges are abbreviated
+/// - Title and description are truncated to fit based on available width
+/// - On compact terminals (short height), description may be hidden
+pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App, ctx: &LayoutContext) {
+    let is_narrow = ctx.is_narrow();
+    let is_extra_small = ctx.is_extra_small();
+    let is_compact = ctx.is_short();
+
     // Get thread title and description from cache or default
     let thread_info = app
         .active_thread_id
@@ -228,82 +258,131 @@ pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(COLOR_BORDER));
 
-    // Build badges
+    // Build badges - adapt to terminal width
     let mut badges: Vec<Span> = Vec::new();
 
-    // Skills badge [skills: N]
+    // Skills badge [skills: N] - abbreviated on narrow terminals, hidden on extra small
     let skills_count = app.session_state.skills.len();
-    if skills_count > 0 {
-        badges.push(Span::styled(
-            format!("[skills: {}] ", skills_count),
-            Style::default().fg(Color::Cyan),
-        ));
+    if skills_count > 0 && !is_extra_small {
+        let skills_badge = if is_narrow {
+            format!("[s:{}] ", skills_count)
+        } else {
+            format!("[skills: {}] ", skills_count)
+        };
+        badges.push(Span::styled(skills_badge, Style::default().fg(Color::Cyan)));
     }
 
-    // Context progress bar [████░░░░░░] 42% or [░░░░░░░░░░] -- when no data
-    let ctx_badge = match (app.session_state.context_tokens_used, app.session_state.context_token_limit) {
+    // Context progress bar - abbreviated on narrow terminals
+    let ctx_badge = match (
+        app.session_state.context_tokens_used,
+        app.session_state.context_token_limit,
+    ) {
         (Some(used), Some(limit)) if limit > 0 => {
             let percentage = (used as f64 / limit as f64 * 100.0).round() as u32;
-            let filled_blocks = (percentage / 10).min(10) as usize;
-            let empty_blocks = 10 - filled_blocks;
-            let bar = format!(
-                "[{}{}] {}% ",
-                "█".repeat(filled_blocks),
-                "░".repeat(empty_blocks),
-                percentage
-            );
-            bar
+            if is_extra_small {
+                // Minimal: just percentage
+                format!("{}% ", percentage)
+            } else if is_narrow {
+                // Short bar with 5 blocks
+                let filled_blocks = (percentage / 20).min(5) as usize;
+                let empty_blocks = 5 - filled_blocks;
+                format!(
+                    "[{}{}] {}% ",
+                    "\u{2588}".repeat(filled_blocks),
+                    "\u{2591}".repeat(empty_blocks),
+                    percentage
+                )
+            } else {
+                // Full bar with 10 blocks
+                let filled_blocks = (percentage / 10).min(10) as usize;
+                let empty_blocks = 10 - filled_blocks;
+                format!(
+                    "[{}{}] {}% ",
+                    "\u{2588}".repeat(filled_blocks),
+                    "\u{2591}".repeat(empty_blocks),
+                    percentage
+                )
+            }
         }
-        _ => "[░░░░░░░░░░] -- ".to_string(),
+        _ => {
+            if is_extra_small {
+                "-- ".to_string()
+            } else if is_narrow {
+                "[\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}] -- ".to_string()
+            } else {
+                "[\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}] -- ".to_string()
+            }
+        }
     };
     badges.push(Span::styled(ctx_badge, Style::default().fg(COLOR_DIM)));
 
-    // Model badge [sonnet] if available
+    // Model badge [sonnet] if available - abbreviated on narrow terminals
     if let Some(model) = model_name {
-        badges.push(Span::styled(
-            format!("[{}] ", model),
-            Style::default().fg(Color::Magenta),
-        ));
+        if !is_extra_small {
+            let model_badge = if is_narrow {
+                // Truncate model name on narrow terminals
+                let short_model = truncate_string(&model, 8);
+                format!("[{}] ", short_model)
+            } else {
+                format!("[{}] ", model)
+            };
+            badges.push(Span::styled(
+                model_badge,
+                Style::default().fg(Color::Magenta),
+            ));
+        }
     }
 
-    // Connection status badge
+    // Connection status badge (always shown)
     let (status_icon, status_color) = if app.connection_status {
-        ("●", Color::LightGreen)
+        ("\u{25CF}", Color::LightGreen)
     } else {
-        ("○", Color::Red)
+        ("\u{25CB}", Color::Red)
     };
-    badges.push(Span::styled(status_icon, Style::default().fg(status_color)));
+    badges.push(Span::styled(
+        status_icon,
+        Style::default().fg(status_color),
+    ));
 
     // Split header area to show title on left and badges on right
     let badges_width = badges.iter().map(|s| s.content.len()).sum::<usize>() + 2;
     let header_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Min(20),                        // Thread title (flexible)
-            Constraint::Length(badges_width as u16),   // Badges (dynamic)
+            Constraint::Min(20),                      // Thread title (flexible)
+            Constraint::Length(badges_width as u16), // Badges (dynamic)
         ])
         .split(area);
 
-    // Thread title and description (left side)
-    let mut title_lines = vec![
-        Line::from(vec![
-            Span::styled("  Thread: ", Style::default().fg(COLOR_DIM)),
-            Span::styled(
-                thread_title,
-                Style::default()
-                    .fg(COLOR_HEADER)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])
-    ];
+    // Calculate max title length using LayoutContext
+    let max_title_len = ctx.max_title_length();
 
-    // Add description line if present and not empty
-    if let Some(description) = thread_description {
-        if !description.is_empty() {
-            title_lines.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(description, Style::default().fg(COLOR_DIM)),
-            ]));
+    // Truncate title if needed
+    let display_title = truncate_string(thread_title, max_title_len);
+
+    // Thread title and description (left side)
+    let mut title_lines = vec![Line::from(vec![
+        Span::styled("  Thread: ", Style::default().fg(COLOR_DIM)),
+        Span::styled(
+            display_title,
+            Style::default()
+                .fg(COLOR_HEADER)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])];
+
+    // Add description line if present, not empty, and we have space (not compact)
+    if !is_compact {
+        if let Some(description) = thread_description {
+            if !description.is_empty() {
+                // Truncate description using LayoutContext's preview length
+                let max_desc_len = ctx.max_preview_length();
+                let display_desc = truncate_string(&description, max_desc_len);
+                title_lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default()),
+                    Span::styled(display_desc, Style::default().fg(COLOR_DIM)),
+                ]));
+            }
         }
     }
 
@@ -311,7 +390,7 @@ pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(title_widget, header_chunks[0]);
 
     // Badges (right side)
-    let badges_widget = Paragraph::new(Line::from(badges))
-        .alignment(ratatui::layout::Alignment::Right);
+    let badges_widget =
+        Paragraph::new(Line::from(badges)).alignment(ratatui::layout::Alignment::Right);
     frame.render_widget(badges_widget, header_chunks[1]);
 }
