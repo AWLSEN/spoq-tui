@@ -66,6 +66,10 @@ pub struct AskUserQuestionState {
     /// For multiSelect: which options are toggled per question
     /// Each inner Vec corresponds to a question, with bools for each option
     pub multi_selections: Vec<Vec<bool>>,
+    /// Tracks which questions have been answered (for multi-question flow)
+    /// When a user confirms an answer on a question, that index is marked true.
+    /// All must be true before final submission on multi-question prompts.
+    pub answered: Vec<bool>,
 }
 
 impl AskUserQuestionState {
@@ -92,6 +96,7 @@ impl AskUserQuestionState {
                 .iter()
                 .map(|&count| vec![false; count])
                 .collect(),
+            answered: vec![false; num_questions],
         }
     }
 
@@ -116,6 +121,7 @@ impl AskUserQuestionState {
         self.other_texts.clear();
         self.other_active = false;
         self.multi_selections.clear();
+        self.answered.clear();
     }
 
     /// Get the currently selected option index for the current tab
@@ -207,6 +213,46 @@ impl AskUserQuestionState {
                 self.tab_index - 1
             };
         }
+    }
+
+    /// Mark the current question as answered
+    pub fn mark_current_answered(&mut self) {
+        if self.tab_index < self.answered.len() {
+            self.answered[self.tab_index] = true;
+        }
+    }
+
+    /// Check if the current question has been answered
+    pub fn is_current_answered(&self) -> bool {
+        self.answered.get(self.tab_index).copied().unwrap_or(false)
+    }
+
+    /// Check if all questions have been answered
+    pub fn all_answered(&self) -> bool {
+        !self.answered.is_empty() && self.answered.iter().all(|&a| a)
+    }
+
+    /// Get the index of the first unanswered question, if any
+    pub fn first_unanswered(&self) -> Option<usize> {
+        self.answered.iter().position(|&a| !a)
+    }
+
+    /// Advance to the next unanswered question
+    /// Returns true if moved to a new tab, false if no unanswered questions
+    pub fn advance_to_next_unanswered(&mut self, num_questions: usize) -> bool {
+        if num_questions == 0 {
+            return false;
+        }
+
+        // Start from current position + 1 and wrap around
+        for offset in 1..=num_questions {
+            let idx = (self.tab_index + offset) % num_questions;
+            if !self.answered.get(idx).copied().unwrap_or(true) {
+                self.tab_index = idx;
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -1203,5 +1249,142 @@ mod tests {
         assert_eq!(cloned.other_texts[0], "custom");
         assert!(cloned.other_active);
         assert!(cloned.multi_selections[0][1]);
+    }
+
+    // ============= Answered Tracking Tests =============
+
+    #[test]
+    fn test_ask_user_question_state_answered_initialized() {
+        let state = AskUserQuestionState::new(3, &[2, 2, 2]);
+        assert_eq!(state.answered.len(), 3);
+        assert!(state.answered.iter().all(|&a| !a)); // All false initially
+    }
+
+    #[test]
+    fn test_ask_user_question_state_mark_current_answered() {
+        let mut state = AskUserQuestionState::new(3, &[2, 2, 2]);
+
+        // Mark first question as answered
+        state.mark_current_answered();
+        assert!(state.answered[0]);
+        assert!(!state.answered[1]);
+        assert!(!state.answered[2]);
+
+        // Move to second question and mark
+        state.tab_index = 1;
+        state.mark_current_answered();
+        assert!(state.answered[0]);
+        assert!(state.answered[1]);
+        assert!(!state.answered[2]);
+    }
+
+    #[test]
+    fn test_ask_user_question_state_is_current_answered() {
+        let mut state = AskUserQuestionState::new(2, &[2, 2]);
+
+        assert!(!state.is_current_answered());
+
+        state.answered[0] = true;
+        assert!(state.is_current_answered());
+
+        state.tab_index = 1;
+        assert!(!state.is_current_answered());
+    }
+
+    #[test]
+    fn test_ask_user_question_state_all_answered() {
+        let mut state = AskUserQuestionState::new(3, &[2, 2, 2]);
+
+        assert!(!state.all_answered()); // None answered
+
+        state.answered[0] = true;
+        assert!(!state.all_answered()); // Only one answered
+
+        state.answered[1] = true;
+        assert!(!state.all_answered()); // Two answered
+
+        state.answered[2] = true;
+        assert!(state.all_answered()); // All answered
+    }
+
+    #[test]
+    fn test_ask_user_question_state_all_answered_empty() {
+        let state = AskUserQuestionState::default();
+        assert!(!state.all_answered()); // Empty state should return false
+    }
+
+    #[test]
+    fn test_ask_user_question_state_first_unanswered() {
+        let mut state = AskUserQuestionState::new(3, &[2, 2, 2]);
+
+        assert_eq!(state.first_unanswered(), Some(0));
+
+        state.answered[0] = true;
+        assert_eq!(state.first_unanswered(), Some(1));
+
+        state.answered[1] = true;
+        assert_eq!(state.first_unanswered(), Some(2));
+
+        state.answered[2] = true;
+        assert_eq!(state.first_unanswered(), None); // All answered
+    }
+
+    #[test]
+    fn test_ask_user_question_state_advance_to_next_unanswered() {
+        let mut state = AskUserQuestionState::new(3, &[2, 2, 2]);
+
+        // From tab 0, advance to tab 1
+        state.answered[0] = true;
+        let advanced = state.advance_to_next_unanswered(3);
+        assert!(advanced);
+        assert_eq!(state.tab_index, 1);
+
+        // From tab 1, advance to tab 2
+        state.answered[1] = true;
+        let advanced = state.advance_to_next_unanswered(3);
+        assert!(advanced);
+        assert_eq!(state.tab_index, 2);
+
+        // All answered - no more to advance
+        state.answered[2] = true;
+        let advanced = state.advance_to_next_unanswered(3);
+        assert!(!advanced);
+        assert_eq!(state.tab_index, 2); // Should stay at current
+    }
+
+    #[test]
+    fn test_ask_user_question_state_advance_wraps_around() {
+        let mut state = AskUserQuestionState::new(3, &[2, 2, 2]);
+
+        // Answer tabs 1 and 2, current at 2
+        state.tab_index = 2;
+        state.answered[1] = true;
+        state.answered[2] = true;
+
+        // Should wrap to tab 0
+        let advanced = state.advance_to_next_unanswered(3);
+        assert!(advanced);
+        assert_eq!(state.tab_index, 0);
+    }
+
+    #[test]
+    fn test_ask_user_question_state_reset_clears_answered() {
+        let mut state = AskUserQuestionState::new(2, &[2, 2]);
+        state.answered[0] = true;
+        state.answered[1] = true;
+
+        state.reset();
+
+        assert!(state.answered.is_empty());
+    }
+
+    #[test]
+    fn test_ask_user_question_state_clone_includes_answered() {
+        let mut state = AskUserQuestionState::new(2, &[2, 2]);
+        state.answered[0] = true;
+
+        let cloned = state.clone();
+        assert!(cloned.answered[0]);
+        assert!(!cloned.answered[1]);
     }
 }

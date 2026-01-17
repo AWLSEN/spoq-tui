@@ -218,7 +218,7 @@ pub struct App {
     /// Timestamp of last Tab press (for double-tap detection)
     pub last_tab_press: Option<std::time::Instant>,
     /// WebSocket sender for sending messages to the server
-    pub ws_sender: Option<tokio::sync::mpsc::Sender<crate::websocket::WsCommandResponse>>,
+    pub ws_sender: Option<tokio::sync::mpsc::Sender<crate::websocket::WsOutgoingMessage>>,
     /// WebSocket connection state for UI status indicator
     pub ws_connection_state: WsConnectionState,
     /// State for AskUserQuestion prompt modal

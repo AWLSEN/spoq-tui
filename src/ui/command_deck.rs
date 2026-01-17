@@ -15,7 +15,7 @@ use crate::app::{ActivePanel, App};
 use crate::state::TaskStatus;
 
 use super::helpers::{format_tokens, inner_rect};
-use super::input::render_input_area;
+use super::input::{render_input_area, render_permission_prompt};
 use super::layout::LayoutContext;
 use super::panels::{render_left_panel, render_right_panel};
 use super::theme::{COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_QUEUED};
@@ -68,6 +68,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &App) {
     render_header(frame, main_chunks[0], app);
     render_main_content(frame, main_chunks[1], app, &ctx);
     render_input_area(frame, main_chunks[2], app);
+
+    // Render permission prompt overlay if pending (shown on both screens)
+    if app.session_state.has_pending_permission() {
+        render_permission_prompt(frame, inner, app);
+    }
 }
 
 // ============================================================================

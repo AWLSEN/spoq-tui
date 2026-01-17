@@ -5,19 +5,6 @@
 //! - Left panel: Notifications + Saved/Active task columns
 //! - Right panel: Thread cards
 //! - Bottom: Input box and keybind hints
-//!
-//! ## Responsive Layout System
-//!
-//! The UI uses a responsive layout system based on `LayoutContext`. This struct
-//! encapsulates terminal dimensions and provides methods for proportional sizing:
-//!
-//! - `percent_width()` / `percent_height()` - Calculate proportional dimensions
-//! - `should_stack_panels()` - Determine if panels should stack vertically
-//! - `available_content_width()` - Get usable width after borders/margins
-//! - `is_compact()` / `is_narrow()` / `is_short()` - Query terminal size state
-//!
-//! All render functions receive a `LayoutContext` parameter to enable responsive
-//! sizing decisions throughout the UI hierarchy.
 
 mod command_deck;
 mod conversation;
@@ -36,17 +23,14 @@ pub use theme::{
     COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
 
-// Re-export layout system for external use
-pub use layout::{
-    calculate_stacked_heights, calculate_two_column_widths, LayoutContext, SizeCategory,
-    breakpoints,
-};
-
 // Re-export helper functions for external use
 pub use helpers::format_tool_args;
 
 // Re-export rendering functions for external use
-pub use messages::{estimate_wrapped_line_count, render_tool_result_preview, truncate_preview};
+pub use messages::{render_tool_result_preview, truncate_preview};
+
+// Re-export layout utilities for external use
+pub use layout::{calculate_stacked_heights, calculate_two_column_widths, LayoutContext};
 
 use ratatui::Frame;
 
@@ -282,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn test_conversation_screen_shows_placeholder() {
+    fn test_conversation_screen_shows_ai_stub() {
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
@@ -294,21 +278,20 @@ mod tests {
             })
             .unwrap();
 
-        // Check that the buffer shows placeholder response with vertical bar
+        // Check that the buffer shows AI stub response
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer
             .content()
             .iter()
             .map(|cell| cell.symbol())
             .collect();
-        // Messages now use vertical bar prefix instead of role labels
         assert!(
             buffer_str.contains("│"),
             "Conversation screen should show vertical bar for messages"
         );
         assert!(
             buffer_str.contains("Waiting for your message"),
-            "Conversation screen should show placeholder text"
+            "Conversation screen should show AI stub response"
         );
     }
 
@@ -721,7 +704,6 @@ mod tests {
             buffer_str.contains("Hello from user"),
             "Conversation screen should show user message content"
         );
-        // Messages now use vertical bar prefix instead of role labels
         assert!(
             buffer_str.contains("│"),
             "Conversation screen should show vertical bar for user messages"
@@ -1261,7 +1243,7 @@ mod tests {
 
     #[test]
     fn test_contextual_keybinds_command_deck() {
-        let app = create_test_app();
+        let mut app = create_test_app();
         // app.screen defaults to CommandDeck
 
         let keybinds = build_contextual_keybinds(&app);

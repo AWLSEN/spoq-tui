@@ -1,13 +1,12 @@
 //! Input area rendering
 //!
 //! Implements the input box, keybind hints, and permission prompt UI.
-//! This module provides responsive rendering that adapts to terminal dimensions.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -16,7 +15,7 @@ use crate::state::session::{AskUserQuestionData, AskUserQuestionState, Permissio
 use crate::widgets::input_box::InputBoxWidget;
 
 use super::layout::LayoutContext;
-use super::theme::{COLOR_ACCENT, COLOR_DIM};
+use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 
 // ============================================================================
 // AskUserQuestion Parsing
@@ -28,25 +27,6 @@ use super::theme::{COLOR_ACCENT, COLOR_DIM};
 /// Returns `None` if the input doesn't match the expected structure.
 pub fn parse_ask_user_question(tool_input: &serde_json::Value) -> Option<AskUserQuestionData> {
     serde_json::from_value(tool_input.clone()).ok()
-}
-
-// ============================================================================
-// Input Height Calculation
-// ============================================================================
-
-/// Calculate the dynamic input box height based on line count.
-///
-/// Returns height in rows (including borders):
-/// - Min: 3 rows (border + 1 line + border)
-/// - Max: 7 rows (border + 5 lines + border)
-pub fn calculate_input_box_height(line_count: usize) -> u16 {
-    let content_lines = (line_count as u16).clamp(1, 5);
-    content_lines + 2 // +2 for top/bottom borders
-}
-
-/// Calculate the total input area height (input box + keybinds).
-pub fn calculate_input_area_height(line_count: usize) -> u16 {
-    calculate_input_box_height(line_count) + 1 // +1 for keybinds row
 }
 
 // ============================================================================
@@ -65,14 +45,11 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on content lines
-    let input_box_height = calculate_input_box_height(app.input_box.line_count());
-
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(input_box_height), // Input box (dynamic height)
-            Constraint::Length(1),                // Keybinds
+            Constraint::Length(5), // Input box (needs 5 for border + multi-line content)
+            Constraint::Length(1), // Keybinds
         ])
         .split(inner);
 
@@ -80,9 +57,8 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
     let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
     frame.render_widget(input_widget, input_chunks[0]);
 
-    // Build responsive keybind hints based on terminal dimensions
-    let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
-    let keybinds = build_responsive_keybinds(app, &ctx);
+    // Build contextual keybind hints
+    let keybinds = build_contextual_keybinds(app);
 
     let keybinds_widget = Paragraph::new(keybinds);
     frame.render_widget(keybinds_widget, input_chunks[1]);
@@ -102,14 +78,11 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on content lines
-    let input_box_height = calculate_input_box_height(app.input_box.line_count());
-
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(input_box_height), // Input box (dynamic height)
-            Constraint::Length(1),                // Keybinds
+            Constraint::Length(5), // Input box
+            Constraint::Length(1), // Keybinds
         ])
         .split(inner);
 
@@ -121,82 +94,46 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
     };
     frame.render_widget(input_widget, input_chunks[0]);
 
-    // Build responsive keybind hints based on terminal dimensions
-    let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
-    let keybinds = build_responsive_keybinds(app, &ctx);
+    // Build contextual keybind hints
+    let keybinds = build_contextual_keybinds(app);
 
     let keybinds_widget = Paragraph::new(keybinds);
     frame.render_widget(keybinds_widget, input_chunks[1]);
 }
 
-/// Build contextual keybind hints based on application state.
-///
-/// This is the legacy function for backwards compatibility. For responsive keybinds,
-/// use `build_responsive_keybinds` instead.
+/// Build contextual keybind hints based on application state
 pub fn build_contextual_keybinds(app: &App) -> Line<'static> {
-    build_responsive_keybinds(app, &LayoutContext::default())
-}
-
-/// Build responsive keybind hints based on application state and terminal dimensions.
-///
-/// On narrow terminals (< 80 columns), keybind hints are abbreviated:
-/// - "[Shift+Tab]" becomes "[S+Tab]"
-/// - "[Tab Tab]" becomes "[Tab]"
-/// - "cycle mode" becomes "mode"
-/// - "switch thread" becomes "switch"
-/// - "dismiss error" becomes "dismiss"
-///
-/// On extra small terminals (< 60 columns), only essential keybinds are shown.
-pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static> {
     let mut spans = vec![Span::raw(" ")];
 
     // Check for visible elements that need special keybinds
     let has_error = app.stream_error.is_some();
-    let is_narrow = ctx.is_narrow();
-    let is_extra_small = ctx.is_extra_small();
 
     // Always show basic navigation
     if app.screen == Screen::Conversation {
-        if app.is_active_thread_programming() && !is_extra_small {
-            // Programming thread: show mode cycling hint (skip on extra small)
-            if is_narrow {
-                spans.push(Span::styled("[S+Tab]", Style::default().fg(COLOR_ACCENT)));
-                spans.push(Span::raw(" mode | "));
-            } else {
-                spans.push(Span::styled("[Shift+Tab]", Style::default().fg(COLOR_ACCENT)));
-                spans.push(Span::raw(" cycle mode | "));
-            }
+        if app.is_active_thread_programming() {
+            // Programming thread: show mode cycling hint
+            spans.push(Span::styled("[Shift+Tab]", Style::default().fg(COLOR_ACCENT)));
+            spans.push(Span::raw(" cycle mode │ "));
         }
 
-        if has_error && !is_extra_small {
-            // Error visible: show dismiss hint (skip on extra small)
+        if has_error {
+            // Error visible: show dismiss hint
             spans.push(Span::styled("d", Style::default().fg(COLOR_ACCENT)));
-            if is_narrow {
-                spans.push(Span::raw(": dismiss | "));
-            } else {
-                spans.push(Span::raw(": dismiss error | "));
-            }
+            spans.push(Span::raw(": dismiss error │ "));
         }
 
         spans.push(Span::styled("[Enter]", Style::default().fg(COLOR_ACCENT)));
-        spans.push(Span::raw(" send | "));
+        spans.push(Span::raw(" send │ "));
 
         spans.push(Span::styled("[Esc]", Style::default().fg(COLOR_ACCENT)));
         spans.push(Span::raw(" back"));
     } else {
         // CommandDeck screen
-        if !is_extra_small {
-            if is_narrow {
-                spans.push(Span::styled("[Tab]", Style::default().fg(COLOR_ACCENT)));
-                spans.push(Span::raw(" switch | "));
-            } else {
-                spans.push(Span::styled("[Tab Tab]", Style::default().fg(COLOR_ACCENT)));
-                spans.push(Span::raw(" switch thread | "));
-            }
-        }
+        spans.push(Span::styled("[Tab Tab]", Style::default().fg(COLOR_ACCENT)));
+        spans.push(Span::raw(" switch thread │ "));
 
         spans.push(Span::styled("[Enter]", Style::default().fg(COLOR_ACCENT)));
-        spans.push(Span::raw(" send | "));
+        spans.push(Span::raw(" send │ "));
 
         spans.push(Span::styled("[Esc]", Style::default().fg(COLOR_ACCENT)));
         spans.push(Span::raw(" back"));
@@ -209,15 +146,6 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
 // Inline Permission Prompt
 // ============================================================================
 
-/// Minimum width for the permission box (must fit keyboard options)
-const MIN_PERMISSION_BOX_WIDTH: u16 = 30;
-/// Default/maximum width for the permission box
-const DEFAULT_PERMISSION_BOX_WIDTH: u16 = 60;
-/// Default height for the permission box
-const DEFAULT_PERMISSION_BOX_HEIGHT: u16 = 10;
-/// Minimum height for a compact permission box (skips preview)
-const MIN_PERMISSION_BOX_HEIGHT: u16 = 6;
-
 /// Render an inline permission prompt in the message flow.
 ///
 /// Shows a Claude Code-style permission box with:
@@ -228,21 +156,20 @@ const MIN_PERMISSION_BOX_HEIGHT: u16 = 6;
 /// For AskUserQuestion tools, renders a special tabbed question UI instead.
 pub fn render_permission_prompt(frame: &mut Frame, area: Rect, app: &App) {
     if let Some(ref perm) = app.session_state.pending_permission {
-        let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
-        render_permission_box(frame, area, perm, &app.question_state, &ctx);
+        render_permission_box(frame, area, perm, &app.question_state);
     }
 }
 
 /// Render the permission request box.
 ///
 /// For AskUserQuestion tools, delegates to `render_ask_user_question_box`.
-/// For other tools, renders the standard responsive permission prompt.
+/// For Skill tools, renders a compact stylized dialog.
+/// For other tools, renders the standard permission prompt.
 pub fn render_permission_box(
     frame: &mut Frame,
     area: Rect,
     perm: &PermissionRequest,
     question_state: &AskUserQuestionState,
-    ctx: &LayoutContext,
 ) {
     // Check if this is an AskUserQuestion tool - render special UI
     if perm.tool_name == "AskUserQuestion" {
@@ -254,29 +181,17 @@ pub fn render_permission_box(
         }
     }
 
-    // Standard responsive permission box for other tools
-    // Calculate responsive box dimensions
-    let available_width = area.width.saturating_sub(4);
-    let box_width = if ctx.is_extra_small() {
-        // Extra small: use minimum width or available space
-        MIN_PERMISSION_BOX_WIDTH.min(available_width)
-    } else if ctx.is_narrow() {
-        // Narrow: scale down from default
-        ctx.bounded_width(70, MIN_PERMISSION_BOX_WIDTH, DEFAULT_PERMISSION_BOX_WIDTH)
-            .min(available_width)
-    } else {
-        // Normal: use default width
-        DEFAULT_PERMISSION_BOX_WIDTH.min(available_width)
-    };
+    // Check if this is a Skill tool - render compact stylized dialog
+    if perm.tool_name == "Skill" {
+        render_skill_permission_box(frame, area, perm);
+        return;
+    }
 
-    // Calculate responsive height
-    let available_height = area.height.saturating_sub(2);
-    let show_preview = !ctx.is_short() && available_height >= DEFAULT_PERMISSION_BOX_HEIGHT;
-    let box_height = if show_preview {
-        DEFAULT_PERMISSION_BOX_HEIGHT.min(available_height)
-    } else {
-        MIN_PERMISSION_BOX_HEIGHT.min(available_height)
-    };
+    // Standard permission box for other tools
+    // Calculate box dimensions - center in the given area
+    // Need at least 12 lines: border(2) + tool(1) + empty(1) + preview(5) + empty(1) + options(1) + buffer(1)
+    let box_width = 60u16.min(area.width.saturating_sub(4));
+    let box_height = 14u16.min(area.height.saturating_sub(2));
 
     // Center the box
     let x = area.x + (area.width.saturating_sub(box_width)) / 2;
@@ -289,24 +204,21 @@ pub fn render_permission_box(
         height: box_height,
     };
 
-    // Choose title based on available width
-    let title = if ctx.is_narrow() {
-        " Permission "
-    } else {
-        " Permission Required "
-    };
+    // Clear the area first for solid background
+    frame.render_widget(Clear, box_area);
 
-    // Create the permission box with border
+    // Create the permission box with border and black background
     let block = Block::default()
         .title(Span::styled(
-            title,
+            " Permission Required ",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Yellow));
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(Style::default().bg(Color::Black));
 
     // Render the block first
     frame.render_widget(block, box_area);
@@ -322,14 +234,7 @@ pub fn render_permission_box(
     // Build content lines
     let mut lines: Vec<Line> = Vec::new();
 
-    // Tool name line - truncate description on narrow terminals
-    let max_desc_width = (inner.width as usize).saturating_sub(perm.tool_name.len() + 2);
-    let description = if perm.description.len() > max_desc_width && max_desc_width > 3 {
-        format!("{}...", &perm.description[..max_desc_width.saturating_sub(3)])
-    } else {
-        perm.description.clone()
-    };
-
+    // Tool name line
     lines.push(Line::from(vec![
         Span::styled(
             format!("{}: ", perm.tool_name),
@@ -337,51 +242,44 @@ pub fn render_permission_box(
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(description, Style::default().fg(Color::White)),
+        Span::styled(&perm.description, Style::default().fg(Color::White)),
     ]));
 
     lines.push(Line::from("")); // Empty line
 
-    // Preview box - only show if we have space
-    if show_preview {
-        let preview_content = get_permission_preview(perm);
-        if !preview_content.is_empty() {
-            // Preview border top
-            lines.push(Line::from(vec![Span::styled(
-                format!(
-                    "┌{}┐",
-                    "─".repeat((inner.width as usize).saturating_sub(2))
-                ),
+    // Preview box - show context or tool_input
+    let preview_content = get_permission_preview(perm);
+    if !preview_content.is_empty() {
+        // Preview border top
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("┌{}┐", "─".repeat((inner.width as usize).saturating_sub(2))),
                 Style::default().fg(COLOR_DIM),
-            )]));
+            ),
+        ]));
 
-            // Preview content (truncated if needed)
-            let max_preview_width = (inner.width as usize).saturating_sub(4);
-            let max_preview_lines = if ctx.is_short() { 1 } else { 3 };
-            for line in preview_content.lines().take(max_preview_lines) {
-                let truncated = if line.len() > max_preview_width && max_preview_width > 3 {
-                    format!("{}...", &line[..max_preview_width.saturating_sub(3)])
-                } else {
-                    line.to_string()
-                };
-                lines.push(Line::from(vec![
-                    Span::styled("| ", Style::default().fg(COLOR_DIM)),
-                    Span::styled(truncated, Style::default().fg(Color::Gray)),
-                    Span::raw(" "),
-                ]));
-            }
-
-            // Preview border bottom
-            lines.push(Line::from(vec![Span::styled(
-                format!(
-                    "└{}┘",
-                    "─".repeat((inner.width as usize).saturating_sub(2))
-                ),
-                Style::default().fg(COLOR_DIM),
-            )]));
+        // Preview content (truncated if needed)
+        let max_preview_width = (inner.width as usize).saturating_sub(4);
+        for line in preview_content.lines().take(3) {
+            let truncated = if line.len() > max_preview_width {
+                format!("{}...", &line[..max_preview_width.saturating_sub(3)])
+            } else {
+                line.to_string()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(COLOR_DIM)),
+                Span::styled(truncated, Style::default().fg(Color::Gray)),
+                Span::raw(" "),
+            ]));
         }
 
-        lines.push(Line::from("")); // Empty line
+        // Preview border bottom
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("└{}┘", "─".repeat((inner.width as usize).saturating_sub(2))),
+                Style::default().fg(COLOR_DIM),
+            ),
+        ]));
     }
 
     lines.push(Line::from("")); // Empty line
@@ -405,79 +303,16 @@ pub fn render_permission_box(
         format!(" ({}s)", remaining_secs)
     };
 
-    // Keyboard options - compact on narrow terminals, with countdown
-    if ctx.is_extra_small() {
-        // Extra compact: [y]/[a]/[n] (countdown)
-        lines.push(Line::from(vec![
-            Span::styled(
-                "[y]",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("/"),
-            Span::styled(
-                "[a]",
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw("/"),
-            Span::styled(
-                "[n]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(countdown_text, Style::default().fg(countdown_color)),
-        ]));
-    } else if ctx.is_narrow() {
-        // Compact: [y] Y  [a] A  [n] N (countdown)
-        lines.push(Line::from(vec![
-            Span::styled(
-                "[y]",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Y "),
-            Span::styled(
-                "[a]",
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" A "),
-            Span::styled(
-                "[n]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" N"),
-            Span::styled(countdown_text, Style::default().fg(countdown_color)),
-        ]));
-    } else {
-        // Full: [y] Yes  [a] Always  [n] No (countdown)
-        lines.push(Line::from(vec![
-            Span::styled(
-                "[y]",
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Yes  "),
-            Span::styled(
-                "[a]",
-                Style::default()
-                    .fg(Color::Blue)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" Always  "),
-            Span::styled(
-                "[n]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" No"),
-            Span::styled(countdown_text, Style::default().fg(countdown_color)),
-        ]));
-    }
+    // Keyboard options with countdown
+    lines.push(Line::from(vec![
+        Span::styled("[y]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        Span::raw(" Yes  "),
+        Span::styled("[a]", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD)),
+        Span::raw(" Always  "),
+        Span::styled("[n]", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        Span::raw(" No"),
+        Span::styled(countdown_text, Style::default().fg(countdown_color)),
+    ]));
 
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
@@ -513,6 +348,137 @@ pub fn get_permission_preview(perm: &PermissionRequest) -> String {
     }
 
     String::new()
+}
+
+// ============================================================================
+// Skill Permission UI Renderer
+// ============================================================================
+
+/// Render a compact stylized permission dialog for the Skill tool.
+///
+/// Shows:
+/// - Title: "Using Skill"
+/// - Skill name in cyan bold
+/// - Description if available
+/// - Standard [y] Yes [a] Always [n] No options
+fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionRequest) {
+    // Extract skill name from tool_input
+    let skill_name = perm
+        .tool_input
+        .as_ref()
+        .and_then(|v| v.get("skill"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+
+    // Compact box dimensions
+    let box_width = 40u16.min(area.width.saturating_sub(4));
+    let box_height = 9u16.min(area.height.saturating_sub(2));
+
+    // Center the box
+    let x = area.x + (area.width.saturating_sub(box_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(box_height)) / 2;
+
+    let box_area = Rect {
+        x,
+        y,
+        width: box_width,
+        height: box_height,
+    };
+
+    // Clear the area first for solid background
+    frame.render_widget(Clear, box_area);
+
+    // Create the skill box with border and black background
+    let block = Block::default()
+        .title(Span::styled(
+            " Using Skill ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Black));
+
+    frame.render_widget(block, box_area);
+
+    // Inner area for content
+    let inner = Rect {
+        x: box_area.x + 2,
+        y: box_area.y + 1,
+        width: box_area.width.saturating_sub(4),
+        height: box_area.height.saturating_sub(2),
+    };
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    lines.push(Line::from("")); // Empty line
+
+    // Skill name line
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!("Skill: {}", skill_name),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+
+    // Description line (if not empty/generic)
+    if !perm.description.is_empty() && perm.description != "Allow this action?" {
+        lines.push(Line::from(Span::styled(
+            &perm.description,
+            Style::default().fg(COLOR_DIM),
+        )));
+    }
+
+    lines.push(Line::from("")); // Empty line
+
+    // Calculate timeout countdown
+    let elapsed_secs = perm.received_at.elapsed().as_secs();
+    let remaining_secs = 55u64.saturating_sub(elapsed_secs);
+
+    let countdown_color = if remaining_secs <= 5 {
+        Color::Red
+    } else if remaining_secs <= 15 {
+        Color::Yellow
+    } else {
+        Color::Gray
+    };
+
+    let countdown_text = if remaining_secs == 0 {
+        " (expired)".to_string()
+    } else {
+        format!(" ({}s)", remaining_secs)
+    };
+
+    // Keyboard options
+    lines.push(Line::from(vec![
+        Span::styled(
+            "[y]",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" Yes  "),
+        Span::styled(
+            "[a]",
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" Always  "),
+        Span::styled(
+            "[n]",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" No"),
+        Span::styled(countdown_text, Style::default().fg(countdown_color)),
+    ]));
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
 }
 
 // ============================================================================
@@ -562,17 +528,31 @@ fn render_ask_user_question_box(
         height: box_height,
     };
 
-    // Create the question box with border
+    // Clear the area first for solid background
+    frame.render_widget(Clear, box_area);
+
+    // Build title based on question count
+    let title = if data.questions.len() == 1 {
+        // Single question: use the header as title
+        format!(" {} ", data.questions[0].header)
+    } else {
+        // Multiple questions: show progress
+        let answered_count = state.answered.iter().filter(|&&a| a).count();
+        format!(" Question {}/{} ", answered_count + 1, data.questions.len())
+    };
+
+    // Create the question box with border and black background
     let block = Block::default()
         .title(Span::styled(
-            " Question ",
+            title,
             Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(COLOR_DIM));
+        .border_style(Style::default().fg(COLOR_DIM))
+        .style(Style::default().bg(Color::Black));
 
     frame.render_widget(block, box_area);
 
@@ -594,18 +574,34 @@ fn render_ask_user_question_box(
             if i > 0 {
                 tab_spans.push(Span::raw("  "));
             }
+
+            // Check if this question is answered
+            let is_answered = state.answered.get(i).copied().unwrap_or(false);
+            let checkmark = if is_answered { "✓ " } else { "" };
+
             if i == state.tab_index {
                 // Active tab: white with brackets
                 tab_spans.push(Span::styled(
-                    format!("[{}]", q.header),
+                    format!("[{}{}]", checkmark, q.header),
                     Style::default().fg(Color::White),
                 ));
             } else {
-                // Inactive tab: dim gray
-                tab_spans.push(Span::styled(
-                    q.header.clone(),
-                    Style::default().fg(COLOR_DIM),
-                ));
+                // Inactive tab: dim gray, green checkmark if answered
+                if is_answered {
+                    tab_spans.push(Span::styled(
+                        "✓ ",
+                        Style::default().fg(Color::Green),
+                    ));
+                    tab_spans.push(Span::styled(
+                        q.header.clone(),
+                        Style::default().fg(COLOR_DIM),
+                    ));
+                } else {
+                    tab_spans.push(Span::styled(
+                        q.header.clone(),
+                        Style::default().fg(COLOR_DIM),
+                    ));
+                }
             }
         }
         lines.push(Line::from(tab_spans));
@@ -760,6 +756,16 @@ fn render_ask_user_question_box(
         format!("({}s)", remaining_secs)
     };
 
+    // Determine if this is the last unanswered question or if all are answered
+    let is_multi_question = data.questions.len() > 1;
+    let all_answered = state.all_answered();
+    let current_answered = state.is_current_answered();
+    // After marking current as answered, will all be done?
+    let will_complete_on_confirm = {
+        let unanswered_count = state.answered.iter().filter(|&&a| !a).count();
+        unanswered_count <= 1 && !current_answered
+    };
+
     // Help line - varies based on mode
     let mut help_spans: Vec<Span> = Vec::new();
 
@@ -768,10 +774,14 @@ fn render_ask_user_question_box(
         help_spans.push(Span::styled("esc", Style::default().fg(COLOR_DIM)));
         help_spans.push(Span::styled(" cancel  ", Style::default().fg(COLOR_DIM)));
         help_spans.push(Span::styled("enter", Style::default().fg(COLOR_DIM)));
-        help_spans.push(Span::styled(" submit", Style::default().fg(COLOR_DIM)));
+        if is_multi_question && !will_complete_on_confirm {
+            help_spans.push(Span::styled(" next", Style::default().fg(COLOR_DIM)));
+        } else {
+            help_spans.push(Span::styled(" submit", Style::default().fg(COLOR_DIM)));
+        }
     } else {
         // Tab switching (only if multiple questions)
-        if data.questions.len() > 1 {
+        if is_multi_question {
             help_spans.push(Span::styled("tab", Style::default().fg(COLOR_DIM)));
             help_spans.push(Span::styled(" switch  ", Style::default().fg(COLOR_DIM)));
         }
@@ -784,14 +794,23 @@ fn render_ask_user_question_box(
         help_spans.push(Span::styled("↑↓", Style::default().fg(COLOR_DIM)));
         help_spans.push(Span::styled(" navigate  ", Style::default().fg(COLOR_DIM)));
         help_spans.push(Span::styled("enter", Style::default().fg(COLOR_DIM)));
-        help_spans.push(Span::styled(
-            if current_question.multi_select {
-                " submit"
-            } else {
-                " confirm"
-            },
-            Style::default().fg(COLOR_DIM),
-        ));
+
+        // Determine what Enter does based on question state
+        let enter_action = if !is_multi_question {
+            // Single question: confirm/submit
+            if current_question.multi_select { " submit" } else { " confirm" }
+        } else if all_answered || will_complete_on_confirm {
+            // Multi-question: all done, final submit
+            " submit all"
+        } else if current_answered {
+            // Already answered this one, can re-confirm or navigate
+            " update"
+        } else {
+            // Multi-question: more to go
+            " next"
+        };
+
+        help_spans.push(Span::styled(enter_action, Style::default().fg(COLOR_DIM)));
     }
 
     // Add countdown at the end with spacing

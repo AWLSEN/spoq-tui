@@ -114,6 +114,10 @@ pub enum AppMessage {
     WsDisconnected,
     /// WebSocket reconnecting
     WsReconnecting { attempt: u8 },
+    /// WebSocket raw message received (for debugging)
+    WsRawMessage { message: String },
+    /// WebSocket message parse error (for debugging)
+    WsParseError { error: String, raw: String },
 }
 
 #[cfg(test)]

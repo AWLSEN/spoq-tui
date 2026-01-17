@@ -67,7 +67,7 @@ impl App {
                 );
                 // Auto-scroll to bottom when new content arrives, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
-                    self.reset_scroll();
+                    self.conversation_scroll = 0;
                 }
             }
             AppMessage::ReasoningToken { thread_id, token } => {
@@ -84,7 +84,7 @@ impl App {
                 );
                 // Auto-scroll to bottom when new reasoning content arrives, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
-                    self.reset_scroll();
+                    self.conversation_scroll = 0;
                 }
             }
             AppMessage::StreamComplete {
@@ -121,7 +121,7 @@ impl App {
                 );
                 // Auto-scroll to bottom when stream completes, but only for the active thread
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
-                    self.reset_scroll();
+                    self.conversation_scroll = 0;
                 }
             }
             AppMessage::StreamError { thread_id: _, error } => {
@@ -652,6 +652,29 @@ impl App {
                         StateType::SessionState,
                         "WebSocket reconnecting",
                         format!("attempt: {}", attempt),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::WsRawMessage { message } => {
+                // Emit debug event for raw WebSocket message (for debugging)
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::WebSocket,
+                        "WS raw message received",
+                        message,
+                    )),
+                    None,
+                );
+            }
+            AppMessage::WsParseError { error, raw } => {
+                // Emit debug event for WebSocket parse error (for debugging)
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(
+                        ErrorSource::WebSocket,
+                        format!("WS parse error: {} | raw: {}", error, raw),
                     )),
                     None,
                 );
