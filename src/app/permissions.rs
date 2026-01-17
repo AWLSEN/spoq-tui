@@ -196,8 +196,9 @@ impl App {
             }
         }
 
-        // Clear the pending permission
+        // Clear the pending permission and reset question state
         self.session_state.clear_pending_permission();
+        self.question_state.reset();
     }
 
     /// Allow the tool always for this session and approve (user pressed 'a')

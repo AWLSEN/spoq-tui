@@ -241,6 +241,7 @@ impl App {
                 } else {
                     // Store permission request for user approval
                     use crate::state::PermissionRequest;
+                    let is_ask_question = tool_name == "AskUserQuestion";
                     self.session_state
                         .set_pending_permission(PermissionRequest {
                             permission_id: permission_id.clone(),
@@ -250,6 +251,12 @@ impl App {
                             tool_input,
                             received_at: std::time::Instant::now(),
                         });
+
+                    // Initialize question state for AskUserQuestion tool
+                    if is_ask_question {
+                        self.init_question_state();
+                    }
+
                     // Emit StateChange for pending permission
                     emit_debug(
                         &self.debug_tx,

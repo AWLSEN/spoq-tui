@@ -218,11 +218,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                             // This takes priority over all other key handling
                             if app.session_state.has_pending_permission() {
                                 // Check if this is an AskUserQuestion prompt
+                                // State is already initialized when permission is received
                                 if app.is_ask_user_question_pending() {
-                                    // Initialize question state if needed (first key press)
-                                    if app.question_state.selections.is_empty() {
-                                        app.init_question_state();
-                                    }
 
                                     // Handle "Other" text input mode
                                     if app.question_state.other_active {
