@@ -5,11 +5,25 @@
 //! - Left panel: Notifications + Saved/Active task columns
 //! - Right panel: Thread cards
 //! - Bottom: Input box and keybind hints
+//!
+//! ## Responsive Layout System
+//!
+//! The UI uses a responsive layout system based on `LayoutContext`. This struct
+//! encapsulates terminal dimensions and provides methods for proportional sizing:
+//!
+//! - `percent_width()` / `percent_height()` - Calculate proportional dimensions
+//! - `should_stack_panels()` - Determine if panels should stack vertically
+//! - `available_content_width()` - Get usable width after borders/margins
+//! - `is_compact()` / `is_narrow()` / `is_short()` - Query terminal size state
+//!
+//! All render functions receive a `LayoutContext` parameter to enable responsive
+//! sizing decisions throughout the UI hierarchy.
 
 mod command_deck;
 mod conversation;
 mod helpers;
 mod input;
+mod layout;
 mod messages;
 mod panels;
 mod theme;
@@ -22,10 +36,14 @@ pub use theme::{
     COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
 
-// Re-export helper functions for external use
-pub use helpers::{
-    calculate_stacked_heights, calculate_two_column_widths, format_tool_args, LayoutContext,
+// Re-export layout system for external use
+pub use layout::{
+    calculate_stacked_heights, calculate_two_column_widths, LayoutContext, SizeCategory,
+    breakpoints,
 };
+
+// Re-export helper functions for external use
+pub use helpers::format_tool_args;
 
 // Re-export rendering functions for external use
 pub use messages::{render_tool_result_preview, truncate_preview};
