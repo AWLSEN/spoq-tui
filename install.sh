@@ -60,10 +60,10 @@ detect_arch() {
     arch=$(uname -m)
     case "$arch" in
         x86_64|amd64)
-            echo "x86_64"
+            echo "x64"
             ;;
         aarch64|arm64)
-            echo "aarch64"
+            echo "arm64"
             ;;
         *)
             error "Unsupported architecture: $arch"
