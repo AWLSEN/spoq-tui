@@ -92,7 +92,6 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
 pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
     // Input is always "focused" since we removed panel focus cycling
     let input_focused = true;
-    let is_streaming = app.is_streaming();
 
     // No border - use spacing at top instead for visual separation
     let inner = Rect {
@@ -113,12 +112,8 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget with appropriate border style
-    let input_widget = if is_streaming {
-        InputBoxWidget::dashed(&app.input_box, "", input_focused)
-    } else {
-        InputBoxWidget::new(&app.input_box, "", input_focused)
-    };
+    // Render the InputBox widget
+    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
     frame.render_widget(input_widget, input_chunks[0]);
 
     // Build responsive keybind hints based on terminal dimensions

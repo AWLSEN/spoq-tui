@@ -2,7 +2,6 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
-    symbols::border,
     widgets::{Block, Borders, Widget},
 };
 
@@ -363,8 +362,6 @@ pub struct InputBoxWidget<'a> {
     input_box: &'a InputBox,
     title: &'a str,
     focused: bool,
-    /// Whether to show dashed border (for streaming state)
-    dashed: bool,
 }
 
 impl<'a> InputBoxWidget<'a> {
@@ -373,17 +370,6 @@ impl<'a> InputBoxWidget<'a> {
             input_box,
             title,
             focused,
-            dashed: false,
-        }
-    }
-
-    /// Create an input box widget with dashed border (for streaming state)
-    pub fn dashed(input_box: &'a InputBox, title: &'a str, focused: bool) -> Self {
-        Self {
-            input_box,
-            title,
-            focused,
-            dashed: true,
         }
     }
 }
@@ -391,11 +377,7 @@ impl<'a> InputBoxWidget<'a> {
 impl Widget for InputBoxWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let show_cursor = self.focused;
-        if self.dashed {
-            self.render_with_dashed_border(area, buf);
-        } else {
-            self.render_normal(area, buf, show_cursor);
-        }
+        self.render_normal(area, buf, show_cursor);
     }
 }
 
@@ -485,87 +467,6 @@ impl InputBoxWidget<'_> {
                 );
             }
         }
-    }
-
-    /// Render with a custom dashed border for streaming state
-    fn render_with_dashed_border(&self, area: Rect, buf: &mut Buffer) {
-        // Calculate inner area (accounting for border)
-        let inner_width = area.width.saturating_sub(2);
-
-        // Create a mutable copy to update scroll
-        let mut scroll_offset = self.input_box.scroll_offset;
-
-        // Update scroll offset calculation
-        if inner_width > 0 {
-            if self.input_box.cursor_position < scroll_offset {
-                scroll_offset = self.input_box.cursor_position;
-            }
-            if self.input_box.cursor_position >= scroll_offset + inner_width as usize {
-                scroll_offset = self.input_box.cursor_position - inner_width as usize + 1;
-            }
-        }
-
-        // Draw custom dashed border
-        let border_color = if self.focused { Color::Gray } else { Color::DarkGray };
-        let border_style = Style::default().fg(border_color);
-
-        // Use custom border set with dashed horizontal lines
-        let dashed_border = border::Set {
-            top_left: "┌",
-            top_right: "┐",
-            bottom_left: "└",
-            bottom_right: "┘",
-            vertical_left: "│",
-            vertical_right: "│",
-            horizontal_top: "┄",     // Dashed line
-            horizontal_bottom: "┄",  // Dashed line
-        };
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_set(dashed_border)
-            .border_style(border_style)
-            .title(self.title);
-
-        // Render the block
-        block.render(area, buf);
-
-        // Calculate inner area for text (use available height for multi-line)
-        let inner_area = Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: inner_width,
-            height: area.height.saturating_sub(2),
-        };
-        let center_y = inner_area.y + inner_area.height.saturating_sub(1) / 2;
-
-        if inner_area.width == 0 || inner_area.height == 0 {
-            return;
-        }
-
-        // Get the visible portion of text
-        let visible_text: String = self.input_box
-            .content
-            .chars()
-            .skip(scroll_offset)
-            .take(inner_width as usize)
-            .collect();
-
-        // Render the text
-        let text_style = Style::default().fg(Color::White);
-        for (i, c) in visible_text.chars().enumerate() {
-            if i < inner_width as usize {
-                buf.set_string(
-                    inner_area.x + i as u16,
-                    center_y,
-                    c.to_string(),
-                    text_style,
-                );
-            }
-        }
-
-        // DO NOT render cursor when dashed (streaming state)
-        // Cursor is disabled during streaming
     }
 }
 
