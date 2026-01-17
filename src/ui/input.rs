@@ -3,13 +3,38 @@
 //! Implements the input box, keybind hints, and permission prompt UI.
 
 use ratatui::{
+    buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Widget},
     Frame,
 };
-use tracing::debug;
+
+/// A simple widget that fills an area with a solid background color.
+/// Unlike Block, this actually fills every cell in the area.
+struct SolidFill {
+    color: Color,
+}
+
+impl SolidFill {
+    fn new(color: Color) -> Self {
+        Self { color }
+    }
+}
+
+impl Widget for SolidFill {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let style = Style::default().bg(self.color);
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_style(style);
+                }
+            }
+        }
+    }
+}
 
 use crate::app::{App, Screen};
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
@@ -204,16 +229,10 @@ pub fn render_permission_box(
         height: box_height,
     };
 
-    debug!(
-        "render_permission_box: box_area=({}, {}, {}x{})",
-        box_area.x, box_area.y, box_area.width, box_area.height
-    );
+    // Fill entire area with solid black background first
+    frame.render_widget(SolidFill::new(Color::Black), box_area);
 
-    // Fill entire box area with black background first (don't use Clear - it shows terminal bg)
-    let box_bg = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(box_bg, box_area);
-
-    // Create the permission box with border and black background
+    // Create the permission box with border
     let block = Block::default()
         .title(Span::styled(
             " Permission Required ",
@@ -223,27 +242,12 @@ pub fn render_permission_box(
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Yellow))
-        .style(Style::default().bg(Color::Black));
+        .border_style(Style::default().fg(Color::Yellow));
 
-    // Render the block first
+    // Render the block (borders only, background already filled)
     frame.render_widget(block, box_area);
 
-    // Fill entire area inside the border with black background
-    let block_inner = Rect {
-        x: box_area.x + 1,
-        y: box_area.y + 1,
-        width: box_area.width.saturating_sub(2),
-        height: box_area.height.saturating_sub(2),
-    };
-    debug!(
-        "render_permission_box: block_inner=({}, {}, {}x{})",
-        block_inner.x, block_inner.y, block_inner.width, block_inner.height
-    );
-    let bg_fill = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(bg_fill, block_inner);
-
-    // Content area with padding from the border
+    // Inner area for content
     let inner = Rect {
         x: box_area.x + 2,
         y: box_area.y + 1,
@@ -405,11 +409,10 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         height: box_height,
     };
 
-    // Fill entire box area with black background first (don't use Clear - it shows terminal bg)
-    let box_bg = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(box_bg, box_area);
+    // Fill entire area with solid black background first
+    frame.render_widget(SolidFill::new(Color::Black), box_area);
 
-    // Create the skill box with border and black background
+    // Create the skill box with border
     let block = Block::default()
         .title(Span::styled(
             " Using Skill ",
@@ -419,22 +422,11 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().bg(Color::Black));
+        .border_style(Style::default().fg(Color::Cyan));
 
     frame.render_widget(block, box_area);
 
-    // Fill entire area inside the border with black background
-    let block_inner = Rect {
-        x: box_area.x + 1,
-        y: box_area.y + 1,
-        width: box_area.width.saturating_sub(2),
-        height: box_area.height.saturating_sub(2),
-    };
-    let bg_fill = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(bg_fill, block_inner);
-
-    // Content area with padding from the border
+    // Inner area for content
     let inner = Rect {
         x: box_area.x + 2,
         y: box_area.y + 1,
@@ -559,9 +551,8 @@ fn render_ask_user_question_box(
         height: box_height,
     };
 
-    // Fill entire box area with black background first (don't use Clear - it shows terminal bg)
-    let box_bg = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(box_bg, box_area);
+    // Fill entire area with solid black background first
+    frame.render_widget(SolidFill::new(Color::Black), box_area);
 
     // Build title based on question count
     let title = if data.questions.len() == 1 {
@@ -573,7 +564,7 @@ fn render_ask_user_question_box(
         format!(" Question {}/{} ", answered_count + 1, data.questions.len())
     };
 
-    // Create the question box with border and black background
+    // Create the question box with border
     let block = Block::default()
         .title(Span::styled(
             title,
@@ -583,22 +574,11 @@ fn render_ask_user_question_box(
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(COLOR_DIM))
-        .style(Style::default().bg(Color::Black));
+        .border_style(Style::default().fg(COLOR_DIM));
 
     frame.render_widget(block, box_area);
 
-    // Fill entire area inside the border with black background
-    let block_inner = Rect {
-        x: box_area.x + 1,
-        y: box_area.y + 1,
-        width: box_area.width.saturating_sub(2),
-        height: box_area.height.saturating_sub(2),
-    };
-    let bg_fill = Block::default().style(Style::default().bg(Color::Black));
-    frame.render_widget(bg_fill, block_inner);
-
-    // Content area with padding from the border
+    // Inner area for content
     let inner = Rect {
         x: box_area.x + 2,
         y: box_area.y + 1,
