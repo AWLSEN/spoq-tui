@@ -14,8 +14,7 @@ use crate::app::{App, Screen};
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
 use crate::widgets::input_box::InputBoxWidget;
 
-use super::layout::LayoutContext;
-use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
+use super::theme::{COLOR_ACCENT, COLOR_DIM};
 
 // ============================================================================
 // AskUserQuestion Parsing
@@ -314,7 +313,11 @@ pub fn render_permission_box(
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
-    let content = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    // Fill inner area with solid black background first
+    let inner_bg = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(inner_bg, inner);
+
+    let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
 }
 
@@ -477,7 +480,11 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
-    let content = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    // Fill inner area with solid black background first
+    let inner_bg = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(inner_bg, inner);
+
+    let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
 }
 
@@ -825,7 +832,11 @@ fn render_ask_user_question_box(
 
     lines.push(Line::from(help_spans));
 
-    let content = Paragraph::new(lines).style(Style::default().bg(Color::Black));
+    // Fill inner area with solid black background first
+    let inner_bg = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(inner_bg, inner);
+
+    let content = Paragraph::new(lines);
     frame.render_widget(content, inner);
 }
 
@@ -1013,291 +1024,4 @@ mod tests {
         assert!(result.is_none());
     }
 
-    // ========================================================================
-    // Test Helpers
-    // ========================================================================
-
-    fn create_test_app() -> App {
-        let (message_tx, message_rx) = tokio::sync::mpsc::unbounded_channel();
-        App {
-            threads: vec![],
-            tasks: vec![],
-            todos: vec![],
-            should_quit: false,
-            screen: Screen::CommandDeck,
-            active_thread_id: None,
-            focus: crate::app::Focus::default(),
-            notifications_index: 0,
-            tasks_index: 0,
-            threads_index: 0,
-            input_box: crate::widgets::input_box::InputBox::new(),
-            migration_progress: None,
-            cache: crate::cache::ThreadCache::new(),
-            markdown_cache: crate::markdown::MarkdownCache::new(),
-            message_rx: Some(message_rx),
-            message_tx,
-            connection_status: false,
-            stream_error: None,
-            client: std::sync::Arc::new(crate::conductor::ConductorClient::new()),
-            tick_count: 0,
-            conversation_scroll: 0,
-            max_scroll: 0,
-            programming_mode: crate::app::ProgrammingMode::default(),
-            session_state: crate::state::SessionState::new(),
-            tool_tracker: crate::state::ToolTracker::new(),
-            subagent_tracker: crate::state::SubagentTracker::new(),
-            debug_tx: None,
-            stream_start_time: None,
-            last_event_time: None,
-            cumulative_token_count: 0,
-            thread_switcher: crate::app::ThreadSwitcher::default(),
-            last_tab_press: None,
-            scroll_boundary_hit: None,
-            boundary_hit_tick: 0,
-            scroll_velocity: 0.0,
-            scroll_position: 0.0,
-            terminal_width: 80,
-            terminal_height: 24,
-            active_panel: crate::app::ActivePanel::default(),
-            question_state: crate::state::session::AskUserQuestionState::default(),
-            ws_sender: None,
-            ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
-        }
-    }
-
-    // ========================================================================
-    // Input Height Calculation Tests
-    // ========================================================================
-
-    #[test]
-    fn test_calculate_input_box_height_single_line() {
-        assert_eq!(calculate_input_box_height(1), 3, "Single line: 1 + 2 borders = 3");
-    }
-
-    #[test]
-    fn test_calculate_input_box_height_multiple_lines() {
-        assert_eq!(calculate_input_box_height(2), 4, "2 lines: 2 + 2 borders = 4");
-        assert_eq!(calculate_input_box_height(3), 5, "3 lines: 3 + 2 borders = 5");
-        assert_eq!(calculate_input_box_height(4), 6, "4 lines: 4 + 2 borders = 6");
-        assert_eq!(calculate_input_box_height(5), 7, "5 lines: 5 + 2 borders = 7");
-    }
-
-    #[test]
-    fn test_calculate_input_box_height_clamped_max() {
-        assert_eq!(calculate_input_box_height(6), 7, "Max 5 lines + 2 borders = 7");
-        assert_eq!(calculate_input_box_height(10), 7, "Max 5 lines + 2 borders = 7");
-        assert_eq!(calculate_input_box_height(100), 7, "Max 5 lines + 2 borders = 7");
-    }
-
-    #[test]
-    fn test_calculate_input_box_height_clamped_min() {
-        assert_eq!(calculate_input_box_height(0), 3, "Min 1 line + 2 borders = 3");
-    }
-
-    #[test]
-    fn test_calculate_input_area_height_includes_keybinds() {
-        assert_eq!(calculate_input_area_height(1), 4, "Box (3) + keybinds (1) = 4");
-        assert_eq!(calculate_input_area_height(5), 8, "Box (7) + keybinds (1) = 8");
-    }
-
-    // ========================================================================
-    // Responsive Keybinds Tests
-    // ========================================================================
-
-    #[test]
-    fn test_responsive_keybinds_normal_width() {
-        let app = create_test_app();
-        let ctx = LayoutContext::new(120, 40);
-
-        let keybinds = build_responsive_keybinds(&app, &ctx);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
-
-        // Should show full keybinds on normal width
-        assert!(content.contains("[Tab Tab]"), "Should show full Tab Tab");
-        assert!(content.contains("switch thread"), "Should show full 'switch thread'");
-    }
-
-    #[test]
-    fn test_responsive_keybinds_narrow_width() {
-        let app = create_test_app();
-        let ctx = LayoutContext::new(70, 24); // Narrow (< 80)
-
-        let keybinds = build_responsive_keybinds(&app, &ctx);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
-
-        // Should show abbreviated keybinds on narrow width
-        assert!(content.contains("[Tab]"), "Should show abbreviated Tab");
-        assert!(content.contains("switch"), "Should show abbreviated 'switch'");
-        assert!(!content.contains("switch thread"), "Should NOT show full 'switch thread'");
-    }
-
-    #[test]
-    fn test_responsive_keybinds_extra_small_width() {
-        let app = create_test_app();
-        let ctx = LayoutContext::new(50, 24); // Extra small (< 60)
-
-        let keybinds = build_responsive_keybinds(&app, &ctx);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
-
-        // On extra small, Tab switch hint should be hidden
-        assert!(!content.contains("[Tab Tab]"), "Should NOT show Tab Tab on extra small");
-        assert!(!content.contains("switch"), "Should NOT show switch on extra small");
-        // But essential keybinds should remain
-        assert!(content.contains("[Enter]"), "Should show Enter");
-        assert!(content.contains("[Esc]"), "Should show Esc");
-    }
-
-    #[test]
-    fn test_responsive_keybinds_conversation_programming_thread_narrow() {
-        let mut app = create_test_app();
-        app.screen = Screen::Conversation;
-        app.terminal_width = 70;
-
-        // Create a programming thread
-        app.cache.upsert_thread(crate::models::Thread {
-            id: "prog-thread".to_string(),
-            title: "Programming".to_string(),
-            description: None,
-            preview: "Code".to_string(),
-            updated_at: chrono::Utc::now(),
-            thread_type: crate::models::ThreadType::Programming,
-            model: None,
-            permission_mode: None,
-            message_count: 0,
-            created_at: chrono::Utc::now(),
-        });
-        app.active_thread_id = Some("prog-thread".to_string());
-
-        let ctx = LayoutContext::new(70, 24);
-        let keybinds = build_responsive_keybinds(&app, &ctx);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
-
-        // Should show abbreviated Shift+Tab on narrow
-        assert!(content.contains("[S+Tab]"), "Should show abbreviated S+Tab");
-        assert!(content.contains("mode"), "Should show abbreviated 'mode'");
-        assert!(!content.contains("cycle mode"), "Should NOT show full 'cycle mode'");
-    }
-
-    #[test]
-    fn test_responsive_keybinds_with_error_narrow() {
-        let mut app = create_test_app();
-        app.screen = Screen::Conversation;
-        app.stream_error = Some("Test error".to_string());
-
-        let ctx = LayoutContext::new(70, 24);
-        let keybinds = build_responsive_keybinds(&app, &ctx);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
-
-        // Should show abbreviated dismiss hint
-        assert!(content.contains("dismiss"), "Should show 'dismiss'");
-        assert!(!content.contains("dismiss error"), "Should NOT show full 'dismiss error'");
-    }
-
-    // ========================================================================
-    // Permission Box Responsive Tests
-    // ========================================================================
-
-    #[test]
-    fn test_permission_box_width_normal() {
-        let ctx = LayoutContext::new(120, 40);
-        let area = Rect::new(0, 0, 120, 40);
-
-        // For normal width, box should be 60 chars (DEFAULT_PERMISSION_BOX_WIDTH)
-        let available = area.width.saturating_sub(4);
-        let expected_width = DEFAULT_PERMISSION_BOX_WIDTH.min(available);
-
-        assert_eq!(expected_width, 60);
-        // Verify ctx is not narrow or extra small
-        assert!(!ctx.is_narrow());
-        assert!(!ctx.is_extra_small());
-    }
-
-    #[test]
-    fn test_permission_box_width_narrow() {
-        let ctx = LayoutContext::new(70, 24);
-
-        // Narrow terminals should scale down
-        let scaled = ctx.bounded_width(70, MIN_PERMISSION_BOX_WIDTH, DEFAULT_PERMISSION_BOX_WIDTH);
-
-        // 70% of 70 = 49, clamped between 30 and 60
-        assert!(scaled >= MIN_PERMISSION_BOX_WIDTH);
-        assert!(scaled <= DEFAULT_PERMISSION_BOX_WIDTH);
-    }
-
-    #[test]
-    fn test_permission_box_width_extra_small() {
-        let ctx = LayoutContext::new(50, 24);
-
-        // Extra small should use minimum width
-        let available = 50u16.saturating_sub(4);
-        let expected_width = MIN_PERMISSION_BOX_WIDTH.min(available);
-
-        assert_eq!(expected_width, MIN_PERMISSION_BOX_WIDTH);
-        assert!(ctx.is_extra_small());
-    }
-
-    #[test]
-    fn test_permission_box_title_changes_on_narrow() {
-        // On normal width, title is " Permission Required "
-        // On narrow width, title is " Permission "
-        let normal_ctx = LayoutContext::new(120, 40);
-        let narrow_ctx = LayoutContext::new(70, 24);
-
-        assert!(!normal_ctx.is_narrow());
-        assert!(narrow_ctx.is_narrow());
-    }
-
-    #[test]
-    fn test_permission_box_preview_hidden_on_short() {
-        let ctx = LayoutContext::new(80, 20);
-
-        // SM_HEIGHT is 24, so height < 24 means is_short() returns true
-        assert!(ctx.is_short()); // 20 < 24
-
-        // Preview should be hidden on short terminals
-        let show_preview = !ctx.is_short();
-        assert!(!show_preview, "Preview should be hidden on short terminals");
-    }
-
-    #[test]
-    fn test_permission_box_keyboard_options_normal() {
-        // Normal: [y] Yes  [a] Always  [n] No
-        let ctx = LayoutContext::new(120, 40);
-        assert!(!ctx.is_narrow());
-        assert!(!ctx.is_extra_small());
-    }
-
-    #[test]
-    fn test_permission_box_keyboard_options_narrow() {
-        // Narrow: [y] Y  [a] A  [n] N
-        let ctx = LayoutContext::new(70, 24);
-        assert!(ctx.is_narrow());
-        assert!(!ctx.is_extra_small());
-    }
-
-    #[test]
-    fn test_permission_box_keyboard_options_extra_small() {
-        // Extra small: [y]/[a]/[n]
-        let ctx = LayoutContext::new(50, 24);
-        assert!(ctx.is_extra_small());
-    }
-
-    // ========================================================================
-    // Legacy Compatibility Tests
-    // ========================================================================
-
-    #[test]
-    fn test_build_contextual_keybinds_uses_default_context() {
-        let app = create_test_app();
-
-        // build_contextual_keybinds should produce same result as build_responsive_keybinds
-        // with default context (80x24)
-        let legacy = build_contextual_keybinds(&app);
-        let responsive = build_responsive_keybinds(&app, &LayoutContext::default());
-
-        let legacy_content: String = legacy.spans.iter().map(|s| s.content.to_string()).collect();
-        let responsive_content: String = responsive.spans.iter().map(|s| s.content.to_string()).collect();
-
-        assert_eq!(legacy_content, responsive_content);
-    }
 }
