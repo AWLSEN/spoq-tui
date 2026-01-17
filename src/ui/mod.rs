@@ -28,9 +28,6 @@ pub use helpers::format_tool_args;
 // Re-export rendering functions for external use
 pub use messages::{render_tool_result_preview, truncate_preview};
 
-// Re-export input parsing functions for external use
-pub use input::parse_ask_user_question;
-
 use ratatui::Frame;
 
 use crate::app::{App, Screen};

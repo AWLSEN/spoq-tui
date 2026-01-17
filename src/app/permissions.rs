@@ -871,4 +871,343 @@ mod tests {
         assert!(WS_RETRY_DELAY_MS >= 100);
         assert!(WS_RETRY_DELAY_MS <= 1000);
     }
+
+    // ============================================================================
+    // AskUserQuestion Navigation Tests
+    // ============================================================================
+
+    /// Helper to create an AskUserQuestion permission
+    fn create_ask_user_question_permission(permission_id: &str) -> PermissionRequest {
+        PermissionRequest {
+            permission_id: permission_id.to_string(),
+            tool_name: "AskUserQuestion".to_string(),
+            description: "Answer questions".to_string(),
+            context: None,
+            tool_input: Some(serde_json::json!({
+                "questions": [
+                    {
+                        "question": "Select an option",
+                        "header": "Choice",
+                        "options": [
+                            {"label": "Option A", "description": "First option"},
+                            {"label": "Option B", "description": "Second option"},
+                            {"label": "Option C", "description": "Third option"}
+                        ],
+                        "multiSelect": false
+                    }
+                ],
+                "answers": {}
+            })),
+            received_at: Instant::now(),
+        }
+    }
+
+    /// Helper to create multi-question permission
+    fn create_multi_question_permission(permission_id: &str) -> PermissionRequest {
+        PermissionRequest {
+            permission_id: permission_id.to_string(),
+            tool_name: "AskUserQuestion".to_string(),
+            description: "Answer questions".to_string(),
+            context: None,
+            tool_input: Some(serde_json::json!({
+                "questions": [
+                    {
+                        "question": "First question",
+                        "header": "Q1",
+                        "options": [
+                            {"label": "A1", "description": ""},
+                            {"label": "A2", "description": ""}
+                        ],
+                        "multiSelect": false
+                    },
+                    {
+                        "question": "Second question",
+                        "header": "Q2",
+                        "options": [
+                            {"label": "B1", "description": ""},
+                            {"label": "B2", "description": ""},
+                            {"label": "B3", "description": ""}
+                        ],
+                        "multiSelect": true
+                    }
+                ],
+                "answers": {}
+            })),
+            received_at: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn test_is_ask_user_question_pending_true() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-q"));
+
+        assert!(app.is_ask_user_question_pending());
+    }
+
+    #[test]
+    fn test_is_ask_user_question_pending_false_wrong_tool() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_test_permission("perm-x"));
+
+        assert!(!app.is_ask_user_question_pending());
+    }
+
+    #[test]
+    fn test_is_ask_user_question_pending_false_no_permission() {
+        let app = App::default();
+        assert!(!app.is_ask_user_question_pending());
+    }
+
+    #[test]
+    fn test_init_question_state() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-init"));
+
+        app.init_question_state();
+
+        // Should have initialized selections for 1 question
+        assert_eq!(app.question_state.selections.len(), 1);
+        assert_eq!(app.question_state.tab_index, 0);
+        // First option should be selected by default
+        assert_eq!(app.question_state.selections[0], Some(0));
+    }
+
+    #[test]
+    fn test_question_next_option() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-next"));
+        app.init_question_state();
+
+        // Start at option 0
+        assert_eq!(app.question_state.current_selection(), Some(0));
+
+        // Move to option 1
+        app.question_next_option();
+        assert_eq!(app.question_state.current_selection(), Some(1));
+
+        // Move to option 2
+        app.question_next_option();
+        assert_eq!(app.question_state.current_selection(), Some(2));
+
+        // Wrap to "Other" (None)
+        app.question_next_option();
+        assert_eq!(app.question_state.current_selection(), None);
+
+        // Wrap back to option 0
+        app.question_next_option();
+        assert_eq!(app.question_state.current_selection(), Some(0));
+    }
+
+    #[test]
+    fn test_question_prev_option() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-prev"));
+        app.init_question_state();
+
+        // Start at option 0
+        assert_eq!(app.question_state.current_selection(), Some(0));
+
+        // Wrap to "Other" (None)
+        app.question_prev_option();
+        assert_eq!(app.question_state.current_selection(), None);
+
+        // Move to last option (2)
+        app.question_prev_option();
+        assert_eq!(app.question_state.current_selection(), Some(2));
+
+        // Move to option 1
+        app.question_prev_option();
+        assert_eq!(app.question_state.current_selection(), Some(1));
+
+        // Move to option 0
+        app.question_prev_option();
+        assert_eq!(app.question_state.current_selection(), Some(0));
+    }
+
+    #[test]
+    fn test_question_next_tab() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_multi_question_permission("perm-tab"));
+        app.init_question_state();
+
+        // Start at tab 0
+        assert_eq!(app.question_state.tab_index, 0);
+
+        // Move to tab 1
+        app.question_next_tab();
+        assert_eq!(app.question_state.tab_index, 1);
+
+        // Wrap back to tab 0
+        app.question_next_tab();
+        assert_eq!(app.question_state.tab_index, 0);
+    }
+
+    #[test]
+    fn test_question_next_tab_single_question_no_change() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-single"));
+        app.init_question_state();
+
+        // Start at tab 0
+        assert_eq!(app.question_state.tab_index, 0);
+
+        // Should not change (only 1 question)
+        app.question_next_tab();
+        assert_eq!(app.question_state.tab_index, 0);
+    }
+
+    #[test]
+    fn test_question_toggle_option_multi_select() {
+        let mut app = App::default();
+        let perm = create_multi_question_permission("perm-toggle");
+        app.session_state.pending_permission = Some(perm);
+        app.init_question_state();
+
+        // Switch to second question (multi-select)
+        app.question_next_tab();
+
+        // At option 0
+        assert_eq!(app.question_state.current_selection(), Some(0));
+        assert!(!app.question_state.is_multi_selected(0));
+
+        // Toggle option 0 on
+        app.question_toggle_option();
+        assert!(app.question_state.is_multi_selected(0));
+
+        // Toggle option 0 off
+        app.question_toggle_option();
+        assert!(!app.question_state.is_multi_selected(0));
+    }
+
+    #[test]
+    fn test_question_toggle_option_single_select_no_effect() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-no-toggle"));
+        app.init_question_state();
+
+        // First question is single-select
+        assert_eq!(app.question_state.current_selection(), Some(0));
+
+        // Toggle should have no effect in single-select mode
+        app.question_toggle_option();
+        assert!(!app.question_state.is_multi_selected(0));
+    }
+
+    #[test]
+    fn test_question_type_char_and_backspace() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-type"));
+        app.init_question_state();
+
+        // Move to "Other"
+        app.question_next_option();
+        app.question_next_option();
+        app.question_next_option();
+        assert_eq!(app.question_state.current_selection(), None);
+
+        // Activate "Other" text input
+        app.question_state.other_active = true;
+
+        // Type some characters
+        app.question_type_char('t');
+        app.question_type_char('e');
+        app.question_type_char('s');
+        app.question_type_char('t');
+
+        assert_eq!(app.question_state.current_other_text(), "test");
+
+        // Backspace
+        app.question_backspace();
+        assert_eq!(app.question_state.current_other_text(), "tes");
+
+        app.question_backspace();
+        app.question_backspace();
+        assert_eq!(app.question_state.current_other_text(), "t");
+
+        app.question_backspace();
+        assert_eq!(app.question_state.current_other_text(), "");
+    }
+
+    #[test]
+    fn test_question_cancel_other() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-cancel"));
+        app.init_question_state();
+
+        // Activate "Other" mode and type
+        app.question_state.other_active = true;
+        app.question_type_char('x');
+        assert_eq!(app.question_state.current_other_text(), "x");
+
+        // Cancel should clear text and deactivate
+        app.question_cancel_other();
+        assert!(!app.question_state.other_active);
+        assert_eq!(app.question_state.current_other_text(), "");
+    }
+
+    #[test]
+    fn test_question_confirm_activates_other() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-confirm"));
+        app.init_question_state();
+
+        // Move to "Other"
+        app.question_next_option();
+        app.question_next_option();
+        app.question_next_option();
+        assert_eq!(app.question_state.current_selection(), None);
+        assert!(!app.question_state.other_active);
+
+        // Confirm should activate "Other" text input (not submit)
+        let result = app.question_confirm();
+        assert!(!result); // Should not submit
+        assert!(app.question_state.other_active);
+    }
+
+    #[test]
+    fn test_question_confirm_on_option() {
+        let (mut app, _rx) = create_test_app_with_ws();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-submit"));
+        app.init_question_state();
+
+        // Select option 1
+        app.question_next_option();
+        assert_eq!(app.question_state.current_selection(), Some(1));
+
+        // Confirm should submit
+        let result = app.question_confirm();
+        assert!(result);
+
+        // Permission should be cleared
+        assert!(app.session_state.pending_permission.is_none());
+    }
+
+    #[test]
+    fn test_question_backspace_not_in_other_mode() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-bs"));
+        app.init_question_state();
+
+        // Not in "Other" mode
+        assert!(!app.question_state.other_active);
+
+        // Backspace should have no effect
+        app.question_backspace();
+        assert_eq!(app.question_state.current_other_text(), "");
+    }
+
+    #[test]
+    fn test_question_type_char_not_in_other_mode() {
+        let mut app = App::default();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-type-no"));
+        app.init_question_state();
+
+        // Not in "Other" mode
+        assert!(!app.question_state.other_active);
+
+        // Typing should have no effect
+        app.question_type_char('x');
+        assert_eq!(app.question_state.current_other_text(), "");
+    }
 }
