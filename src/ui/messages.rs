@@ -965,11 +965,12 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
                 lines.extend(render_thinking_block(message, app.tick_count));
             }
 
-            // Use vertical bar prefix instead of role labels (You:/AI:/etc.)
-            let (label, label_style) = (
-                "│ ",
-                Style::default().fg(COLOR_DIM),
-            );
+            // Use vertical bar prefix for user messages only, empty for assistant messages
+            let (label, label_style) = if message.role == MessageRole::User {
+                ("│ ", Style::default().fg(COLOR_DIM))
+            } else {
+                ("", Style::default().fg(COLOR_DIM))
+            };
 
             // Handle streaming vs completed messages
             if message.is_streaming {
