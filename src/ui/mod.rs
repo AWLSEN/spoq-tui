@@ -1344,10 +1344,12 @@ mod tests {
         assert!(!content.contains("cycle mode"));
     }
 
-    // ============= Phase 10: Streaming Input Border Tests =============
+    // ============= Phase 10: Input Border Tests =============
+    // Updated in Round 1: Removed dashed border streaming mode.
+    // Input box now always uses solid borders regardless of streaming state.
 
     #[test]
-    fn test_conversation_input_uses_dashed_border_when_streaming() {
+    fn test_conversation_input_uses_solid_border_when_streaming() {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
@@ -1370,10 +1372,15 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
 
-        // Should have dashed border characters (┄)
+        // Should have solid border characters (─)
         assert!(
-            buffer_str.contains("┄"),
-            "Input should use dashed border when streaming"
+            buffer_str.contains("─"),
+            "Input should use solid border (streaming mode removed in Round 1)"
+        );
+        // Should NOT have dashed border characters
+        assert!(
+            !buffer_str.contains("┄"),
+            "Input should not use dashed border (feature removed)"
         );
     }
 
