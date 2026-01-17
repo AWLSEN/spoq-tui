@@ -1014,7 +1014,6 @@ mod tests {
             input_box: crate::widgets::input_box::InputBox::new(),
             migration_progress: None,
             cache: crate::cache::ThreadCache::new(),
-            markdown_cache: crate::markdown::MarkdownCache::new(),
             message_rx: Some(message_rx),
             message_tx,
             connection_status: false,

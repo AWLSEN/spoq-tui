@@ -88,6 +88,7 @@ fn test_reasoning_token_count() {
         reasoning_content: "Let me think about this step by step carefully".to_string(),
         reasoning_collapsed: false,
         segments: Vec::new(),
+        render_version: 0,
     };
 
     // "Let me think about this step by step carefully" = 9 words
