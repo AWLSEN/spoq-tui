@@ -14,7 +14,7 @@ use crate::app::{App, Screen};
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
 use crate::widgets::input_box::InputBoxWidget;
 
-use super::theme::{COLOR_ACCENT, COLOR_DIM};
+use super::theme::{COLOR_ACCENT, COLOR_DIALOG_BG, COLOR_DIM};
 
 // ============================================================================
 // AskUserQuestion Parsing
@@ -204,19 +204,12 @@ pub fn render_permission_box(
         height: box_height,
     };
 
-    // Fill EVERY cell in box_area with solid background color directly
-    let bg_color = Color::Rgb(10, 15, 35);
-    let buf = frame.buffer_mut();
-    for py in box_area.y..box_area.y + box_area.height {
-        for px in box_area.x..box_area.x + box_area.width {
-            if let Some(cell) = buf.cell_mut((px, py)) {
-                cell.set_bg(bg_color);
-                cell.set_char(' ');
-            }
-        }
-    }
+    // Fill entire box_area with solid background color using idiomatic ratatui method
+    frame
+        .buffer_mut()
+        .set_style(box_area, Style::default().bg(COLOR_DIALOG_BG));
 
-    // Create the permission box with border and black background
+    // Create the permission box with border and background
     let block = Block::default()
         .title(Span::styled(
             " Permission Required ",
@@ -227,7 +220,7 @@ pub fn render_permission_box(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::Yellow))
-        .style(Style::default().bg(Color::Rgb(10, 15, 35)));
+        .style(Style::default().bg(COLOR_DIALOG_BG));
 
     // Render the block first
     frame.render_widget(block, box_area);
@@ -323,13 +316,13 @@ pub fn render_permission_box(
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
-    // Fill inner area with solid black background first
-    let inner_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
+    // Fill inner area with solid background first
+    let inner_bg = Block::default().style(Style::default().bg(COLOR_DIALOG_BG));
     frame.render_widget(inner_bg, inner);
 
     // Use .block() to ensure the entire inner area is filled with background
     let content = Paragraph::new(lines)
-        .block(Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35))));
+        .block(Block::default().style(Style::default().bg(COLOR_DIALOG_BG)));
     frame.render_widget(content, inner);
 }
 
@@ -400,19 +393,12 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         height: box_height,
     };
 
-    // Fill EVERY cell in box_area with solid background color directly
-    let bg_color = Color::Rgb(10, 15, 35);
-    let buf = frame.buffer_mut();
-    for py in box_area.y..box_area.y + box_area.height {
-        for px in box_area.x..box_area.x + box_area.width {
-            if let Some(cell) = buf.cell_mut((px, py)) {
-                cell.set_bg(bg_color);
-                cell.set_char(' ');
-            }
-        }
-    }
+    // Fill entire box_area with solid background color using idiomatic ratatui method
+    frame
+        .buffer_mut()
+        .set_style(box_area, Style::default().bg(COLOR_DIALOG_BG));
 
-    // Create the skill box with border and black background
+    // Create the skill box with border and background
     let block = Block::default()
         .title(Span::styled(
             " Using Skill ",
@@ -423,7 +409,7 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::Cyan))
-        .style(Style::default().bg(Color::Rgb(10, 15, 35)));
+        .style(Style::default().bg(COLOR_DIALOG_BG));
 
     frame.render_widget(block, box_area);
 
@@ -501,13 +487,13 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
-    // Fill inner area with solid black background first
-    let inner_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
+    // Fill inner area with solid background first
+    let inner_bg = Block::default().style(Style::default().bg(COLOR_DIALOG_BG));
     frame.render_widget(inner_bg, inner);
 
     // Use .block() to ensure the entire inner area is filled with background
     let content = Paragraph::new(lines)
-        .block(Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35))));
+        .block(Block::default().style(Style::default().bg(COLOR_DIALOG_BG)));
     frame.render_widget(content, inner);
 }
 
@@ -558,17 +544,10 @@ fn render_ask_user_question_box(
         height: box_height,
     };
 
-    // Fill EVERY cell in box_area with solid background color directly
-    let bg_color = Color::Rgb(10, 15, 35);
-    let buf = frame.buffer_mut();
-    for py in box_area.y..box_area.y + box_area.height {
-        for px in box_area.x..box_area.x + box_area.width {
-            if let Some(cell) = buf.cell_mut((px, py)) {
-                cell.set_bg(bg_color);
-                cell.set_char(' '); // Clear any existing character
-            }
-        }
-    }
+    // Fill entire box_area with solid background color using idiomatic ratatui method
+    frame
+        .buffer_mut()
+        .set_style(box_area, Style::default().bg(COLOR_DIALOG_BG));
 
     // Build title based on question count
     let title = if data.questions.len() == 1 {
@@ -580,7 +559,7 @@ fn render_ask_user_question_box(
         format!(" Question {}/{} ", answered_count + 1, data.questions.len())
     };
 
-    // Create the question box with border and black background
+    // Create the question box with border and background
     let block = Block::default()
         .title(Span::styled(
             title,
@@ -591,7 +570,7 @@ fn render_ask_user_question_box(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(COLOR_DIM))
-        .style(Style::default().bg(Color::Rgb(10, 15, 35)));
+        .style(Style::default().bg(COLOR_DIALOG_BG));
 
     frame.render_widget(block, box_area);
 
@@ -603,8 +582,8 @@ fn render_ask_user_question_box(
         height: box_area.height.saturating_sub(2),
     };
 
-    // Fill inner area with solid black background first
-    let inner_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
+    // Fill inner area with solid background first
+    let inner_bg = Block::default().style(Style::default().bg(COLOR_DIALOG_BG));
     frame.render_widget(inner_bg, inner);
 
     let mut lines: Vec<Line> = Vec::new();
@@ -870,7 +849,7 @@ fn render_ask_user_question_box(
 
     // Use .block() to ensure the entire inner area is filled with background
     let content = Paragraph::new(lines)
-        .block(Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35))));
+        .block(Block::default().style(Style::default().bg(COLOR_DIALOG_BG)));
     frame.render_widget(content, inner);
 }
 

@@ -62,3 +62,10 @@ pub const COLOR_SUBAGENT_RUNNING: Color = Color::Cyan;
 
 /// Subagent complete state - green (same as tool success for consistency)
 pub const COLOR_SUBAGENT_COMPLETE: Color = Color::Rgb(4, 181, 117); // green #04B575
+
+// ============================================================================
+// Dialog Colors
+// ============================================================================
+
+/// Background color for dialog boxes (permission, skill, AskUserQuestion)
+pub const COLOR_DIALOG_BG: Color = Color::Rgb(10, 15, 35);
