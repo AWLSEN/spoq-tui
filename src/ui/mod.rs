@@ -160,6 +160,8 @@ mod tests {
             terminal_height: 24,
             active_panel: crate::app::ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
+            textarea: crate::widgets::textarea_input::TextAreaInput::new(),
+            click_detector: crate::selection::ClickDetector::new(),
         }
     }
 

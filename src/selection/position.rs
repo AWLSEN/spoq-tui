@@ -951,4 +951,309 @@ mod tests {
         assert_eq!(m1, m2);
         assert_ne!(m1, m3);
     }
+
+    // ============= PositionMappingIndex Tests =============
+
+    #[test]
+    fn test_position_mapping_index_new() {
+        let index = PositionMappingIndex::new();
+        assert!(index.is_empty());
+        assert_eq!(index.len(), 0);
+    }
+
+    #[test]
+    fn test_position_mapping_index_with_area() {
+        let index = PositionMappingIndex::with_area(10, 5, 80, 30, 0);
+        assert!(index.is_empty());
+        assert_eq!(index.scroll_offset(), 0);
+    }
+
+    #[test]
+    fn test_position_mapping_index_add_mapping() {
+        let mut index = PositionMappingIndex::with_area(0, 0, 80, 24, 0);
+        index.add_mapping(ScreenToContentMapping::new(0, 0, 0, 40));
+        index.add_mapping(ScreenToContentMapping::new(1, 0, 40, 80));
+
+        assert_eq!(index.len(), 2);
+        assert!(!index.is_empty());
+    }
+
+    #[test]
+    fn test_position_mapping_index_is_within_area() {
+        let index = PositionMappingIndex::with_area(10, 5, 80, 30, 0);
+
+        // Inside area
+        assert!(index.is_within_area(ScreenPosition::new(10, 5)));
+        assert!(index.is_within_area(ScreenPosition::new(50, 20)));
+        assert!(index.is_within_area(ScreenPosition::new(89, 34)));
+
+        // Outside area
+        assert!(!index.is_within_area(ScreenPosition::new(9, 5))); // Left of area
+        assert!(!index.is_within_area(ScreenPosition::new(10, 4))); // Above area
+        assert!(!index.is_within_area(ScreenPosition::new(90, 5))); // Right of area
+        assert!(!index.is_within_area(ScreenPosition::new(10, 35))); // Below area
+    }
+
+    #[test]
+    fn test_position_mapping_index_screen_to_content_basic() {
+        let mut index = PositionMappingIndex::with_area(0, 0, 80, 24, 0);
+        index.add_mapping(ScreenToContentMapping::new(0, 0, 0, 80));
+        index.add_mapping(ScreenToContentMapping::new(1, 1, 0, 50));
+
+        // First line
+        let pos = index.screen_to_content(ScreenPosition::new(10, 0));
+        assert_eq!(pos, Some(ContentPosition::new(0, 10)));
+
+        // Second line
+        let pos = index.screen_to_content(ScreenPosition::new(20, 1));
+        assert_eq!(pos, Some(ContentPosition::new(1, 20)));
+    }
+
+    #[test]
+    fn test_position_mapping_index_screen_to_content_with_offset() {
+        let mut index = PositionMappingIndex::with_area(10, 5, 80, 24, 0);
+        index.add_mapping(ScreenToContentMapping::new(0, 0, 0, 80));
+
+        // Click at absolute (15, 5) = relative (5, 0) in area
+        let pos = index.screen_to_content(ScreenPosition::new(15, 5));
+        assert_eq!(pos, Some(ContentPosition::new(0, 5)));
+    }
+
+    #[test]
+    fn test_position_mapping_index_screen_to_content_with_scroll() {
+        let mut index = PositionMappingIndex::with_area(0, 0, 80, 24, 5);
+        index.add_mapping(ScreenToContentMapping::new(5, 3, 0, 80));
+        index.add_mapping(ScreenToContentMapping::new(6, 4, 0, 80));
+
+        // With scroll_offset=5, screen row 0 maps to content screen row 5
+        let pos = index.screen_to_content(ScreenPosition::new(10, 0));
+        assert_eq!(pos, Some(ContentPosition::new(3, 10)));
+
+        // Screen row 1 maps to content screen row 6
+        let pos = index.screen_to_content(ScreenPosition::new(20, 1));
+        assert_eq!(pos, Some(ContentPosition::new(4, 20)));
+    }
+
+    #[test]
+    fn test_position_mapping_index_screen_to_content_outside() {
+        let index = PositionMappingIndex::with_area(10, 5, 80, 24, 0);
+
+        // Outside content area
+        let pos = index.screen_to_content(ScreenPosition::new(5, 5));
+        assert_eq!(pos, None);
+    }
+
+    #[test]
+    fn test_position_mapping_index_content_to_screen_basic() {
+        let mut index = PositionMappingIndex::with_area(10, 5, 80, 24, 0);
+        index.add_mapping(ScreenToContentMapping::new(0, 0, 0, 80));
+        index.add_mapping(ScreenToContentMapping::new(1, 1, 0, 50));
+
+        // Content (0, 15) -> screen (10+15, 5+0) = (25, 5)
+        let pos = index.content_to_screen(ContentPosition::new(0, 15));
+        assert_eq!(pos, Some(ScreenPosition::new(25, 5)));
+
+        // Content (1, 30) -> screen (10+30, 5+1) = (40, 6)
+        let pos = index.content_to_screen(ContentPosition::new(1, 30));
+        assert_eq!(pos, Some(ScreenPosition::new(40, 6)));
+    }
+
+    #[test]
+    fn test_position_mapping_index_wrapped_line() {
+        let mut index = PositionMappingIndex::with_area(0, 0, 40, 24, 0);
+        // Line 0 wraps: first 40 chars on row 0, next 40 on row 1
+        index.add_mapping(ScreenToContentMapping::new(0, 0, 0, 40));
+        index.add_mapping(ScreenToContentMapping::new(1, 0, 40, 80));
+
+        // Click on screen row 0, column 10 -> content line 0, column 10
+        let pos = index.screen_to_content(ScreenPosition::new(10, 0));
+        assert_eq!(pos, Some(ContentPosition::new(0, 10)));
+
+        // Click on screen row 1, column 10 -> content line 0, column 50
+        let pos = index.screen_to_content(ScreenPosition::new(10, 1));
+        assert_eq!(pos, Some(ContentPosition::new(0, 50)));
+    }
+
+    #[test]
+    fn test_position_mapping_index_mappings_for_line() {
+        let mut index = PositionMappingIndex::new();
+        index.add_mapping(ScreenToContentMapping::new(0, 0, 0, 40));
+        index.add_mapping(ScreenToContentMapping::new(1, 0, 40, 80));
+        index.add_mapping(ScreenToContentMapping::new(2, 1, 0, 50));
+
+        let line0_mappings = index.mappings_for_line(0);
+        assert_eq!(line0_mappings.len(), 2);
+
+        let line1_mappings = index.mappings_for_line(1);
+        assert_eq!(line1_mappings.len(), 1);
+
+        let line2_mappings = index.mappings_for_line(2);
+        assert_eq!(line2_mappings.len(), 0);
+    }
+
+    #[test]
+    fn test_position_mapping_index_clear() {
+        let mut index = PositionMappingIndex::with_area(10, 5, 80, 24, 0);
+        index.add_mapping(ScreenToContentMapping::new(0, 0, 0, 80));
+        assert_eq!(index.len(), 1);
+
+        index.clear();
+        assert!(index.is_empty());
+    }
+
+    // ============= Unicode Width Utility Tests =============
+
+    #[test]
+    fn test_char_display_width_ascii() {
+        assert_eq!(char_display_width('a'), 1);
+        assert_eq!(char_display_width('Z'), 1);
+        assert_eq!(char_display_width('0'), 1);
+        assert_eq!(char_display_width(' '), 1);
+    }
+
+    #[test]
+    fn test_char_display_width_wide() {
+        // CJK characters are typically 2 cells wide
+        assert_eq!(char_display_width('世'), 2);
+        assert_eq!(char_display_width('界'), 2);
+        assert_eq!(char_display_width('日'), 2);
+    }
+
+    #[test]
+    fn test_string_display_width_ascii() {
+        assert_eq!(string_display_width("Hello"), 5);
+        assert_eq!(string_display_width(""), 0);
+        assert_eq!(string_display_width("abc def"), 7);
+    }
+
+    #[test]
+    fn test_string_display_width_mixed() {
+        // "Hello " = 6, "世界" = 4 (2+2)
+        assert_eq!(string_display_width("Hello 世界"), 10);
+    }
+
+    #[test]
+    fn test_screen_col_to_char_index_ascii() {
+        let s = "Hello";
+        assert_eq!(screen_col_to_char_index(s, 0), 0);
+        assert_eq!(screen_col_to_char_index(s, 1), 1);
+        assert_eq!(screen_col_to_char_index(s, 4), 4);
+        assert_eq!(screen_col_to_char_index(s, 5), 5); // Past end
+        assert_eq!(screen_col_to_char_index(s, 10), 5); // Way past end
+    }
+
+    #[test]
+    fn test_screen_col_to_char_index_wide_chars() {
+        let s = "A世界B";  // A=1, 世=2, 界=2, B=1 -> total 6 cells
+        assert_eq!(screen_col_to_char_index(s, 0), 0);  // 'A' at col 0
+        assert_eq!(screen_col_to_char_index(s, 1), 1);  // '世' starts at col 1
+        assert_eq!(screen_col_to_char_index(s, 2), 1);  // Still '世' (middle of wide char)
+        assert_eq!(screen_col_to_char_index(s, 3), 2);  // '界' starts at col 3
+        assert_eq!(screen_col_to_char_index(s, 4), 2);  // Still '界'
+        assert_eq!(screen_col_to_char_index(s, 5), 3);  // 'B' at col 5
+        assert_eq!(screen_col_to_char_index(s, 6), 4);  // Past end
+    }
+
+    #[test]
+    fn test_char_index_to_screen_col_ascii() {
+        let s = "Hello";
+        assert_eq!(char_index_to_screen_col(s, 0), 0);
+        assert_eq!(char_index_to_screen_col(s, 1), 1);
+        assert_eq!(char_index_to_screen_col(s, 5), 5);
+    }
+
+    #[test]
+    fn test_char_index_to_screen_col_wide_chars() {
+        let s = "A世界B";
+        assert_eq!(char_index_to_screen_col(s, 0), 0);  // 'A'
+        assert_eq!(char_index_to_screen_col(s, 1), 1);  // '世'
+        assert_eq!(char_index_to_screen_col(s, 2), 3);  // '界' (after 1+2)
+        assert_eq!(char_index_to_screen_col(s, 3), 5);  // 'B' (after 1+2+2)
+    }
+
+    #[test]
+    fn test_wrap_string_to_width_no_wrap() {
+        let s = "Hello";
+        let segments = wrap_string_to_width(s, 10);
+        assert_eq!(segments, vec![(0, 5)]);
+    }
+
+    #[test]
+    fn test_wrap_string_to_width_single_wrap() {
+        let s = "Hello World";
+        let segments = wrap_string_to_width(s, 8);
+        // Should break after "Hello " (6 chars) at word boundary
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0], (0, 6));  // "Hello "
+        assert_eq!(segments[1], (6, 11)); // "World"
+    }
+
+    #[test]
+    fn test_wrap_string_to_width_empty() {
+        let s = "";
+        let segments = wrap_string_to_width(s, 10);
+        assert_eq!(segments, vec![(0, 0)]);
+    }
+
+    #[test]
+    fn test_wrap_string_to_width_zero_width() {
+        let s = "Hello";
+        let segments = wrap_string_to_width(s, 0);
+        assert_eq!(segments, vec![(0, 5)]);
+    }
+
+    #[test]
+    fn test_wrap_string_to_width_exact_fit() {
+        let s = "Hello";
+        let segments = wrap_string_to_width(s, 5);
+        assert_eq!(segments, vec![(0, 5)]);
+    }
+
+    #[test]
+    fn test_wrap_string_to_width_wide_chars() {
+        let s = "A世界"; // 1 + 2 + 2 = 5 display width, 3 chars
+        let segments = wrap_string_to_width(s, 3);
+        // Should break after 'A世' (3 display width)
+        assert_eq!(segments.len(), 2);
+    }
+
+    #[test]
+    fn test_build_line_mappings_no_wrap() {
+        let (mappings, next_row) = build_line_mappings("Hello", 0, 0, 80);
+        assert_eq!(mappings.len(), 1);
+        assert_eq!(mappings[0].screen_row, 0);
+        assert_eq!(mappings[0].content_line, 0);
+        assert_eq!(mappings[0].content_start_column, 0);
+        assert_eq!(mappings[0].content_end_column, 5);
+        assert_eq!(next_row, 1);
+    }
+
+    #[test]
+    fn test_build_line_mappings_with_wrap() {
+        let (mappings, next_row) = build_line_mappings("Hello World Test", 0, 5, 8);
+        assert!(mappings.len() >= 2);
+        assert_eq!(mappings[0].screen_row, 5);
+        assert_eq!(mappings[0].content_line, 0);
+        assert_eq!(next_row, 5 + mappings.len() as u16);
+    }
+
+    #[test]
+    fn test_build_position_index() {
+        let lines = vec![(0, "Hello"), (1, "World")];
+        let index = build_position_index(
+            lines.into_iter(),
+            80,
+            0, 0, 80, 24,
+            0,
+        );
+
+        assert_eq!(index.len(), 2);
+
+        // Verify we can map positions
+        let pos = index.screen_to_content(ScreenPosition::new(2, 0));
+        assert_eq!(pos, Some(ContentPosition::new(0, 2)));
+
+        let pos = index.screen_to_content(ScreenPosition::new(3, 1));
+        assert_eq!(pos, Some(ContentPosition::new(1, 3)));
+    }
 }
