@@ -254,17 +254,14 @@ pub fn render_thinking_block(
 
 /// Render a single tool event as a Line
 ///
-/// Uses tool-specific icons, color-coded status indicators, and formatted arguments
+/// Uses color-coded status indicators and formatted arguments
 /// to provide rich visual feedback about tool execution status.
 ///
 /// # Display format
-/// - Running:  `[icon] [spinner] [tool_name]: [args_display]` (gray)
-/// - Complete: `[icon] ✓ [tool_name]: [args_display] (duration)` (green)
-/// - Failed:   `[icon] ✗ [tool_name]: [args_display]` (red)
+/// - Running:  `[spinner] [tool_name]: [args_display]` (gray)
+/// - Complete: `✓ [tool_name]: [args_display] (duration)` (green)
+/// - Failed:   `✗ [tool_name]: [args_display]` (red)
 pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
-    // Get the appropriate icon for this tool
-    let icon = get_tool_icon(&event.function_name);
-
     // Format the arguments display
     // Use pre-computed args_display if available, otherwise format from JSON
     let args_display = event.args_display.clone().unwrap_or_else(|| {
@@ -278,10 +275,6 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
             let spinner = SPINNER_FRAMES[frame_index];
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(
-                    format!("{} ", icon),
-                    Style::default().fg(COLOR_TOOL_ICON),
-                ),
                 Span::styled(
                     format!("{} ", spinner),
                     Style::default().fg(COLOR_TOOL_RUNNING),
@@ -307,10 +300,6 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
                 Line::from(vec![
                     Span::styled("  ", Style::default()),
                     Span::styled(
-                        format!("{} ", icon),
-                        Style::default().fg(COLOR_DIM),
-                    ),
-                    Span::styled(
                         "✗ ",
                         Style::default().fg(COLOR_DIM),
                     ),
@@ -330,10 +319,6 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
             } else {
                 Line::from(vec![
                     Span::styled("  ", Style::default()),
-                    Span::styled(
-                        format!("{} ", icon),
-                        Style::default().fg(COLOR_TOOL_ICON),
-                    ),
                     Span::styled(
                         "✓ ",
                         Style::default().fg(COLOR_TOOL_SUCCESS),
@@ -356,10 +341,6 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
         ToolEventStatus::Failed => {
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(
-                    format!("{} ", icon),
-                    Style::default().fg(COLOR_TOOL_ICON),
-                ),
                 Span::styled(
                     "✗ ",
                     Style::default().fg(COLOR_TOOL_ERROR),
@@ -486,7 +467,7 @@ impl TreeConnector {
 
 /// Render a single subagent event as a Line with optional tree connector
 ///
-/// Uses subagent-specific icons, color-coded status indicators, and tree connectors
+/// Uses color-coded status indicators and tree connectors
 /// to provide rich visual feedback about subagent execution status.
 ///
 /// # Display format
@@ -498,7 +479,6 @@ pub fn render_subagent_event(
     connector: TreeConnector,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let icon = get_subagent_icon(&event.subagent_type);
     let connector_str = connector.as_str();
 
     match event.status {
@@ -519,7 +499,7 @@ pub fn render_subagent_event(
                     Style::default().fg(COLOR_SUBAGENT_RUNNING),
                 ),
                 Span::styled(
-                    format!("{} Task(", icon),
+                    "Task(",
                     Style::default().fg(COLOR_SUBAGENT_RUNNING),
                 ),
                 Span::styled(
@@ -572,10 +552,6 @@ pub fn render_subagent_event(
                 Span::styled("  ", Style::default()),
                 Span::styled(
                     connector_str,
-                    Style::default().fg(COLOR_SUBAGENT_COMPLETE),
-                ),
-                Span::styled(
-                    format!("{} ", icon),
                     Style::default().fg(COLOR_SUBAGENT_COMPLETE),
                 ),
                 Span::styled(
