@@ -13,7 +13,7 @@ use ratatui::{
 
 use crate::app::{App, Screen};
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
-use crate::widgets::input_box::InputBoxWidget;
+use crate::widgets::textarea_input::TextAreaInputWidget;
 
 use super::layout::LayoutContext;
 use super::theme::{COLOR_ACCENT, COLOR_DIM};
@@ -53,7 +53,7 @@ pub fn calculate_input_area_height(line_count: usize) -> u16 {
 // Input Area
 // ============================================================================
 
-pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
     // Input is always "focused" since we removed panel focus cycling
     let input_focused = true;
 
@@ -65,8 +65,8 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on content lines
-    let input_box_height = calculate_input_box_height(app.input_box.line_count());
+    // Calculate dynamic input box height based on textarea content lines
+    let input_box_height = calculate_input_box_height(app.textarea.line_count());
 
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -76,8 +76,8 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget (never streaming on CommandDeck)
-    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
+    // Render the TextArea widget (never streaming on CommandDeck)
+    let input_widget = TextAreaInputWidget::new(&mut app.textarea, "", input_focused);
     frame.render_widget(input_widget, input_chunks[0]);
 
     // Build responsive keybind hints based on terminal dimensions
@@ -89,7 +89,7 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// Render the input area for conversation screen
-pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
+pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &mut App) {
     // Input is always "focused" since we removed panel focus cycling
     let input_focused = true;
 
@@ -101,8 +101,8 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on content lines
-    let input_box_height = calculate_input_box_height(app.input_box.line_count());
+    // Calculate dynamic input box height based on textarea content lines
+    let input_box_height = calculate_input_box_height(app.textarea.line_count());
 
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -112,8 +112,8 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget
-    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
+    // Render the TextArea widget
+    let input_widget = TextAreaInputWidget::new(&mut app.textarea, "", input_focused);
     frame.render_widget(input_widget, input_chunks[0]);
 
     // Build responsive keybind hints based on terminal dimensions
