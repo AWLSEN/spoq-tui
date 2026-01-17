@@ -9,7 +9,7 @@
 mod command_deck;
 mod conversation;
 mod helpers;
-mod input;
+pub mod input;
 mod messages;
 mod panels;
 mod theme;
@@ -27,6 +27,9 @@ pub use helpers::format_tool_args;
 
 // Re-export rendering functions for external use
 pub use messages::{render_tool_result_preview, truncate_preview};
+
+// Re-export input parsing functions for external use
+pub use input::parse_ask_user_question;
 
 use ratatui::Frame;
 

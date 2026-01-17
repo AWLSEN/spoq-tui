@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::state::session::AskUserQuestionState;
+use crate::ui::input::parse_ask_user_question;
 use crate::websocket::{WsCommandResponse, WsCommandResult, WsConnectionState, WsPermissionData};
 use tracing::{debug, error, info, warn};
 
@@ -237,6 +239,313 @@ impl App {
         } else {
             info!("No pending permission found");
             false
+        }
+    }
+
+    // ========================================================================
+    // AskUserQuestion Navigation Methods
+    // ========================================================================
+
+    /// Check if the current pending permission is an AskUserQuestion
+    pub fn is_ask_user_question_pending(&self) -> bool {
+        if let Some(ref perm) = self.session_state.pending_permission {
+            if perm.tool_name == "AskUserQuestion" {
+                if let Some(ref tool_input) = perm.tool_input {
+                    return parse_ask_user_question(tool_input).is_some();
+                }
+            }
+        }
+        false
+    }
+
+    /// Initialize question state from the pending AskUserQuestion permission
+    pub fn init_question_state(&mut self) {
+        if let Some(ref perm) = self.session_state.pending_permission {
+            if perm.tool_name == "AskUserQuestion" {
+                if let Some(ref tool_input) = perm.tool_input {
+                    if let Some(data) = parse_ask_user_question(tool_input) {
+                        self.question_state = AskUserQuestionState::from_data(&data);
+                        debug!("Initialized question state with {} questions", data.questions.len());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get the number of questions in the pending AskUserQuestion
+    fn get_question_count(&self) -> usize {
+        if let Some(ref perm) = self.session_state.pending_permission {
+            if perm.tool_name == "AskUserQuestion" {
+                if let Some(ref tool_input) = perm.tool_input {
+                    if let Some(data) = parse_ask_user_question(tool_input) {
+                        return data.questions.len();
+                    }
+                }
+            }
+        }
+        0
+    }
+
+    /// Get the number of options for the current question
+    fn get_current_option_count(&self) -> usize {
+        if let Some(ref perm) = self.session_state.pending_permission {
+            if perm.tool_name == "AskUserQuestion" {
+                if let Some(ref tool_input) = perm.tool_input {
+                    if let Some(data) = parse_ask_user_question(tool_input) {
+                        if let Some(question) = data.questions.get(self.question_state.tab_index) {
+                            return question.options.len();
+                        }
+                    }
+                }
+            }
+        }
+        0
+    }
+
+    /// Check if the current question is multi-select
+    fn is_current_question_multi_select(&self) -> bool {
+        if let Some(ref perm) = self.session_state.pending_permission {
+            if perm.tool_name == "AskUserQuestion" {
+                if let Some(ref tool_input) = perm.tool_input {
+                    if let Some(data) = parse_ask_user_question(tool_input) {
+                        if let Some(question) = data.questions.get(self.question_state.tab_index) {
+                            return question.multi_select;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Move to the next question tab
+    pub fn question_next_tab(&mut self) {
+        let count = self.get_question_count();
+        if count > 1 {
+            self.question_state.next_tab(count);
+            debug!("Moved to question tab {}", self.question_state.tab_index);
+        }
+    }
+
+    /// Move to the previous option in the current question
+    pub fn question_prev_option(&mut self) {
+        let option_count = self.get_current_option_count();
+
+        if let Some(current) = self.question_state.current_selection() {
+            if current > 0 {
+                self.question_state.set_current_selection(Some(current - 1));
+            } else {
+                // Wrap to "Other" (None)
+                self.question_state.set_current_selection(None);
+            }
+        } else {
+            // Currently on "Other", move to last option
+            if option_count > 0 {
+                self.question_state.set_current_selection(Some(option_count - 1));
+            }
+        }
+        debug!("Selection now: {:?}", self.question_state.current_selection());
+    }
+
+    /// Move to the next option in the current question
+    pub fn question_next_option(&mut self) {
+        let option_count = self.get_current_option_count();
+
+        if let Some(current) = self.question_state.current_selection() {
+            if current < option_count - 1 {
+                self.question_state.set_current_selection(Some(current + 1));
+            } else {
+                // Wrap to "Other" (None)
+                self.question_state.set_current_selection(None);
+            }
+        } else {
+            // Currently on "Other", wrap to first option
+            self.question_state.set_current_selection(Some(0));
+        }
+        debug!("Selection now: {:?}", self.question_state.current_selection());
+    }
+
+    /// Toggle the current option in multi-select mode
+    pub fn question_toggle_option(&mut self) {
+        if self.is_current_question_multi_select() {
+            if let Some(idx) = self.question_state.current_selection() {
+                self.question_state.toggle_multi_selection(idx);
+                debug!("Toggled option {}", idx);
+            }
+        }
+    }
+
+    /// Handle Enter key in question UI
+    /// Returns true if a response was sent
+    pub fn question_confirm(&mut self) -> bool {
+        // Check if "Other" is selected and not in text input mode
+        if self.question_state.current_selection().is_none() && !self.question_state.other_active {
+            // Activate "Other" text input mode
+            self.question_state.other_active = true;
+            debug!("Activated 'Other' text input mode");
+            return false;
+        }
+
+        // If in "Other" text input mode, submit the custom answer
+        if self.question_state.other_active {
+            let other_text = self.question_state.current_other_text().to_string();
+            if other_text.is_empty() {
+                // Don't submit empty "Other" text
+                return false;
+            }
+            return self.submit_question_answer();
+        }
+
+        // Submit the selected option
+        self.submit_question_answer()
+    }
+
+    /// Cancel "Other" text input mode
+    pub fn question_cancel_other(&mut self) {
+        if self.question_state.other_active {
+            self.question_state.other_active = false;
+            // Clear the other text
+            if let Some(text) = self.question_state.other_texts.get_mut(self.question_state.tab_index) {
+                text.clear();
+            }
+            debug!("Cancelled 'Other' text input mode");
+        }
+    }
+
+    /// Handle character input for "Other" text
+    pub fn question_type_char(&mut self, c: char) {
+        if self.question_state.other_active {
+            self.question_state.push_other_char(c);
+        }
+    }
+
+    /// Handle backspace for "Other" text
+    pub fn question_backspace(&mut self) {
+        if self.question_state.other_active {
+            self.question_state.pop_other_char();
+        }
+    }
+
+    /// Submit the question answer via WebSocket
+    fn submit_question_answer(&mut self) -> bool {
+        let perm = match self.session_state.pending_permission.clone() {
+            Some(p) => p,
+            None => return false,
+        };
+
+        if perm.tool_name != "AskUserQuestion" {
+            return false;
+        }
+
+        let tool_input = match &perm.tool_input {
+            Some(input) => input,
+            None => return false,
+        };
+
+        let data = match parse_ask_user_question(tool_input) {
+            Some(d) => d,
+            None => return false,
+        };
+
+        // Build the answers map
+        let mut answers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        for (i, question) in data.questions.iter().enumerate() {
+            let answer = if question.multi_select {
+                // Collect all selected options for multi-select
+                let selected: Vec<String> = question
+                    .options
+                    .iter()
+                    .enumerate()
+                    .filter(|(opt_idx, _)| {
+                        self.question_state
+                            .multi_selections
+                            .get(i)
+                            .map(|s: &Vec<bool>| s.get(*opt_idx).copied().unwrap_or(false))
+                            .unwrap_or(false)
+                    })
+                    .map(|(_, opt)| opt.label.clone())
+                    .collect();
+
+                // Also check if "Other" has text for this question
+                let other_text = self.question_state.other_texts.get(i).cloned().unwrap_or_default();
+                if !other_text.is_empty() {
+                    let mut with_other = selected;
+                    with_other.push(other_text);
+                    with_other.join(", ")
+                } else if selected.is_empty() {
+                    // No selections - skip this question
+                    continue;
+                } else {
+                    selected.join(", ")
+                }
+            } else {
+                // Single select
+                if let Some(selection) = self.question_state.selections.get(i).copied().flatten() {
+                    if let Some(opt) = question.options.get(selection) {
+                        opt.label.clone()
+                    } else {
+                        continue;
+                    }
+                } else {
+                    // "Other" selected - use the text
+                    let other_text = self.question_state.other_texts.get(i).cloned().unwrap_or_default();
+                    if other_text.is_empty() {
+                        continue;
+                    }
+                    other_text
+                }
+            };
+
+            answers.insert(question.question.clone(), answer);
+        }
+
+        // Send the response with answers
+        self.send_question_response(&perm.permission_id, answers);
+        self.session_state.clear_pending_permission();
+        self.question_state.reset();
+
+        true
+    }
+
+    /// Send question answers via WebSocket
+    fn send_question_response(
+        &self,
+        request_id: &str,
+        answers: std::collections::HashMap<String, String>,
+    ) {
+        let sender = match &self.ws_sender {
+            Some(s) => s,
+            None => {
+                warn!("No WebSocket sender for question response");
+                return;
+            }
+        };
+
+        if self.ws_connection_state != WsConnectionState::Connected {
+            warn!("WebSocket not connected for question response");
+            return;
+        }
+
+        // Convert answers to JSON Value
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: request_id.to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        if let Err(e) = sender.try_send(response) {
+            error!("Failed to send question response: {}", e);
+        } else {
+            debug!("Sent question response for {}", request_id);
         }
     }
 }

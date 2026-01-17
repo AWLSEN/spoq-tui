@@ -214,9 +214,75 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 _ => {}
                             }
 
-                            // Handle permission prompt keys (y/a/n) when a permission is pending
+                            // Handle permission prompt keys when a permission is pending
                             // This takes priority over all other key handling
                             if app.session_state.has_pending_permission() {
+                                // Check if this is an AskUserQuestion prompt
+                                if app.is_ask_user_question_pending() {
+                                    // Initialize question state if needed (first key press)
+                                    if app.question_state.selections.is_empty() {
+                                        app.init_question_state();
+                                    }
+
+                                    // Handle "Other" text input mode
+                                    if app.question_state.other_active {
+                                        match key.code {
+                                            KeyCode::Esc => {
+                                                app.question_cancel_other();
+                                                continue;
+                                            }
+                                            KeyCode::Enter => {
+                                                if app.question_confirm() {
+                                                    continue;
+                                                }
+                                                continue;
+                                            }
+                                            KeyCode::Backspace => {
+                                                app.question_backspace();
+                                                continue;
+                                            }
+                                            KeyCode::Char(c) => {
+                                                app.question_type_char(c);
+                                                continue;
+                                            }
+                                            _ => continue,
+                                        }
+                                    }
+
+                                    // Handle question navigation keys
+                                    match key.code {
+                                        KeyCode::Tab => {
+                                            app.question_next_tab();
+                                            continue;
+                                        }
+                                        KeyCode::Up => {
+                                            app.question_prev_option();
+                                            continue;
+                                        }
+                                        KeyCode::Down => {
+                                            app.question_next_option();
+                                            continue;
+                                        }
+                                        KeyCode::Char(' ') => {
+                                            app.question_toggle_option();
+                                            continue;
+                                        }
+                                        KeyCode::Enter => {
+                                            app.question_confirm();
+                                            continue;
+                                        }
+                                        KeyCode::Char('n') | KeyCode::Char('N') => {
+                                            // Allow 'n' to deny/cancel
+                                            if let Some(ref perm) = app.session_state.pending_permission.clone() {
+                                                app.deny_permission(&perm.permission_id);
+                                            }
+                                            continue;
+                                        }
+                                        _ => continue,
+                                    }
+                                }
+
+                                // Standard permission prompt (y/a/n)
                                 if let KeyCode::Char(c) = key.code {
                                     // Debug: emit key press to debug system
                                     app.emit_debug_state_change(
