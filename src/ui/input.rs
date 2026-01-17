@@ -82,9 +82,8 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget with blinking cursor (never streaming on CommandDeck)
-    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused)
-        .with_tick(app.tick_count);
+    // Render the InputBox widget (never streaming on CommandDeck)
+    let input_widget = InputBoxWidget::new(&app.input_box, "", input_focused);
     frame.render_widget(input_widget, input_chunks[0]);
 
     // Build responsive keybind hints based on terminal dimensions
@@ -126,13 +125,11 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &App) {
         ])
         .split(inner);
 
-    // Render the InputBox widget with appropriate border style and blinking cursor
+    // Render the InputBox widget with appropriate border style
     let input_widget = if is_streaming {
         InputBoxWidget::dashed(&app.input_box, "", input_focused)
-            .with_tick(app.tick_count)
     } else {
         InputBoxWidget::new(&app.input_box, "", input_focused)
-            .with_tick(app.tick_count)
     };
     frame.render_widget(input_widget, input_chunks[0]);
 

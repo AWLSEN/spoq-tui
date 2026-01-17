@@ -212,8 +212,6 @@ pub struct InputBoxWidget<'a> {
     focused: bool,
     /// Whether to show dashed border (for streaming state)
     dashed: bool,
-    /// Tick count for cursor blinking (cursor visible when tick_count % 62 < 31, ~500ms cycle at 16ms tick rate)
-    tick_count: u64,
 }
 
 impl<'a> InputBoxWidget<'a> {
@@ -223,7 +221,6 @@ impl<'a> InputBoxWidget<'a> {
             title,
             focused,
             dashed: false,
-            tick_count: 0,
         }
     }
 
@@ -234,26 +231,13 @@ impl<'a> InputBoxWidget<'a> {
             title,
             focused,
             dashed: true,
-            tick_count: 0,
         }
-    }
-
-    /// Set the tick count for cursor blinking
-    pub fn with_tick(mut self, tick_count: u64) -> Self {
-        self.tick_count = tick_count;
-        self
-    }
-
-    /// Check if cursor should be visible based on tick count (blink rate)
-    fn cursor_visible(&self) -> bool {
-        // Blink every ~500ms (31 ticks visible, 31 ticks hidden at 16ms tick rate)
-        (self.tick_count % 62) < 31
     }
 }
 
 impl Widget for InputBoxWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let show_cursor = self.focused && self.cursor_visible();
+        let show_cursor = self.focused;
         if self.dashed {
             self.render_with_dashed_border(area, buf);
         } else {
@@ -263,7 +247,7 @@ impl Widget for InputBoxWidget<'_> {
 }
 
 impl InputBoxWidget<'_> {
-    /// Render with normal border and optional blinking cursor
+    /// Render with normal border and optional cursor
     fn render_normal(&self, area: Rect, buf: &mut Buffer, show_cursor: bool) {
         // Calculate inner area (accounting for border)
         let inner_width = area.width.saturating_sub(2);
@@ -325,7 +309,7 @@ impl InputBoxWidget<'_> {
             }
         }
 
-        // Render the blinking cursor
+        // Render the cursor
         if show_cursor {
             let cursor_x = (self.input_box.cursor_position - scroll_offset) as u16;
             if cursor_x < inner_width {
