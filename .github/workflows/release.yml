@@ -262,4 +262,4 @@ jobs:
 
       - name: Publish to crates.io
         run: |
-          cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
+          cargo publish --allow-dirty --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || true
