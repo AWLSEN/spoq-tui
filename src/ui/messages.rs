@@ -15,10 +15,10 @@ use crate::markdown::render_markdown;
 use crate::models::{Message, MessageRole, MessageSegment, SubagentEvent, SubagentEventStatus, ToolEvent, ToolEventStatus};
 use crate::state::ToolDisplayStatus;
 
-use super::helpers::{format_tool_args, get_subagent_icon, get_tool_icon, inner_rect, MAX_VISIBLE_ERRORS, SPINNER_FRAMES};
+use super::helpers::{format_tool_args, inner_rect, MAX_VISIBLE_ERRORS, SPINNER_FRAMES};
 use super::theme::{
     COLOR_ACCENT, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
-    COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
+    COLOR_TOOL_ERROR, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
 
 // ============================================================================

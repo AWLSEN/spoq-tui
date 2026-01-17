@@ -59,7 +59,7 @@ mod tests {
     use super::*;
     use crate::app::ProgrammingMode;
     use conversation::create_mode_indicator_line;
-    use helpers::{extract_short_model_name, format_tokens, get_tool_icon, truncate_string};
+    use helpers::{extract_short_model_name, format_tokens, truncate_string};
     use input::{build_contextual_keybinds, get_permission_preview};
     use messages::{render_tool_event, render_tool_result_preview, truncate_preview};
     use ratatui::{backend::TestBackend, Terminal};
@@ -1566,28 +1566,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_tool_icon_known_tools() {
-        assert_eq!(get_tool_icon("Read"), "📄");
-        assert_eq!(get_tool_icon("Write"), "📝");
-        assert_eq!(get_tool_icon("Edit"), "✏️");
-        assert_eq!(get_tool_icon("Bash"), "$");
-        assert_eq!(get_tool_icon("Grep"), "🔍");
-        assert_eq!(get_tool_icon("Glob"), "🔍");
-        assert_eq!(get_tool_icon("Task"), "🤖");
-        assert_eq!(get_tool_icon("WebFetch"), "🌐");
-        assert_eq!(get_tool_icon("WebSearch"), "🌐");
-        assert_eq!(get_tool_icon("TodoWrite"), "📋");
-        assert_eq!(get_tool_icon("AskUserQuestion"), "❓");
-        assert_eq!(get_tool_icon("NotebookEdit"), "📓");
-    }
-
-    #[test]
-    fn test_get_tool_icon_unknown_tool() {
-        assert_eq!(get_tool_icon("UnknownTool"), "⚙️");
-        assert_eq!(get_tool_icon("CustomFunction"), "⚙️");
-    }
-
-    #[test]
     fn test_format_tool_args_read() {
         let args = r#"{"file_path": "/src/main.rs"}"#;
         assert_eq!(helpers::format_tool_args("Read", args), "Reading /src/main.rs");
@@ -1891,9 +1869,6 @@ mod tests {
         // Verify the line contains expected elements
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
-        // Should contain icon
-        assert!(line_text.contains("📄"));
-
         // Should contain formatted args
         assert!(line_text.contains("Reading /path/to/file.rs"));
 
@@ -1920,9 +1895,6 @@ mod tests {
         // Verify the line contains expected elements
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
-        // Should contain Bash icon ($ not ⚙️)
-        assert!(line_text.contains("$"));
-
         // Should contain command
         assert!(line_text.contains("invalid_command"));
 
@@ -1943,9 +1915,6 @@ mod tests {
 
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
-        // Should contain icon
-        assert!(line_text.contains("🔍"));
-
         // Should contain search pattern
         assert!(line_text.contains("Searching 'test'"));
 
@@ -1962,7 +1931,6 @@ mod tests {
         let mut tool = crate::models::ToolEvent::new("tool_lifecycle".to_string(), "Write".to_string());
         let line1 = render_tool_event(&tool, 0);
         let text1: String = line1.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text1.contains("📝"));  // Write icon is 📝 not ✍
         assert!(text1.contains("Write")); // Default to tool name
 
         // Step 2: Args stream in
@@ -1982,18 +1950,6 @@ mod tests {
     }
 
     // ============= Phase 8: Subagent Rendering Tests =============
-
-    #[test]
-    fn test_get_subagent_icon() {
-        use helpers::get_subagent_icon;
-
-        assert_eq!(get_subagent_icon("Explore"), "🔍");
-        assert_eq!(get_subagent_icon("Bash"), "$");
-        assert_eq!(get_subagent_icon("Plan"), "📋");
-        assert_eq!(get_subagent_icon("general-purpose"), "🤖");
-        assert_eq!(get_subagent_icon("unknown"), "●");
-        assert_eq!(get_subagent_icon("CustomAgent"), "●");
-    }
 
     #[test]
     fn test_tree_connector_as_str() {
