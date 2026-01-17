@@ -205,6 +205,10 @@ pub struct App {
     pub scroll_velocity: f32,
     /// Precise scroll position for smooth scrolling (fractional lines)
     pub scroll_position: f32,
+    /// Current terminal width in columns
+    pub terminal_width: u16,
+    /// Current terminal height in rows
+    pub terminal_height: u16,
 }
 
 impl App {
@@ -271,6 +275,8 @@ impl App {
             boundary_hit_tick: 0,
             scroll_velocity: 0.0,
             scroll_position: 0.0,
+            terminal_width: 80,  // Default, will be updated on first render
+            terminal_height: 24, // Default, will be updated on first render
         })
     }
 

@@ -47,6 +47,10 @@ async fn main() -> Result<()> {
     // Initialize application state with debug sender
     let mut app = App::with_debug(debug_tx)?;
 
+    // Capture initial terminal dimensions
+    let size = terminal.size()?;
+    app.update_terminal_dimensions(size.width, size.height);
+
     // Load threads from backend (async initialization)
     app.initialize().await;
 
@@ -164,8 +168,10 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
             event_result = event_stream.next() => {
                 if let Some(Ok(event)) = event_result {
                     match event {
-                        Event::Resize(_width, _height) => {
-                            // Terminal was resized, redraw will happen on next loop iteration
+                        Event::Resize(width, height) => {
+                            // Update app state with new terminal dimensions
+                            app.update_terminal_dimensions(width, height);
+                            // Redraw will happen on next loop iteration
                             continue;
                         }
                         Event::Key(key) if key.kind == KeyEventKind::Press => {

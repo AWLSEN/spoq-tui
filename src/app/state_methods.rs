@@ -140,4 +140,37 @@ impl App {
             self.cache.add_error_simple(thread_id, error_code, message);
         }
     }
+
+    /// Update terminal dimensions
+    ///
+    /// Called when the terminal is resized or on initial setup.
+    /// Updates both width and height in a single call.
+    pub fn update_terminal_dimensions(&mut self, width: u16, height: u16) {
+        self.terminal_width = width;
+        self.terminal_height = height;
+    }
+
+    /// Get the current terminal width
+    pub fn terminal_width(&self) -> u16 {
+        self.terminal_width
+    }
+
+    /// Get the current terminal height
+    pub fn terminal_height(&self) -> u16 {
+        self.terminal_height
+    }
+
+    /// Calculate the available content area width
+    ///
+    /// This accounts for borders and margins (2 cells on each side).
+    pub fn content_width(&self) -> u16 {
+        self.terminal_width.saturating_sub(4)
+    }
+
+    /// Calculate the available content area height
+    ///
+    /// This accounts for header, footer, and borders (approximately 6 rows).
+    pub fn content_height(&self) -> u16 {
+        self.terminal_height.saturating_sub(6)
+    }
 }

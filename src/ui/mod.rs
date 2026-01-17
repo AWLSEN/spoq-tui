@@ -23,7 +23,9 @@ pub use theme::{
 };
 
 // Re-export helper functions for external use
-pub use helpers::format_tool_args;
+pub use helpers::{
+    calculate_stacked_heights, calculate_two_column_widths, format_tool_args, LayoutContext,
+};
 
 // Re-export rendering functions for external use
 pub use messages::{render_tool_result_preview, truncate_preview};
@@ -99,6 +101,8 @@ mod tests {
             boundary_hit_tick: 0,
             scroll_velocity: 0.0,
             scroll_position: 0.0,
+            terminal_width: 80,
+            terminal_height: 24,
         }
     }
 
