@@ -1,6 +1,7 @@
 use spoq::app::{start_websocket, App, AppMessage, Focus, Screen, ScrollBoundary};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
+use spoq::selection::ScreenPosition;
 use spoq::ui;
 
 use color_eyre::Result;
@@ -570,6 +571,21 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                             app.boundary_hit_tick = app.tick_count;
                                         }
                                     }
+                                }
+                                MouseEventKind::Down(_button) => {
+                                    // Register click for multi-click detection
+                                    let screen_pos = ScreenPosition::new(mouse_event.column, mouse_event.row);
+                                    let selection_mode = app.click_detector.register_click(screen_pos);
+
+                                    // Log for debugging (will be used in later phases for selection)
+                                    // Click count: 1 = single (Character), 2 = double (Word), 3 = triple (Line)
+                                    let _click_count = app.click_detector.click_count();
+
+                                    // The selection_mode will be used in later phases:
+                                    // - Phase 4: Mouse drag selection
+                                    // - Phase 5: Text extraction
+                                    // For now, just detect the click pattern
+                                    let _ = selection_mode;
                                 }
                                 _ => {}
                             }

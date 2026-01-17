@@ -53,7 +53,12 @@ pub mod state;
 
 // Re-export commonly used types at the module level
 pub use multi_click::{ClickDetector, ClickResult};
-pub use position::{ContentPosition, ScreenPosition, ScreenToContentMapping};
+pub use position::{
+    ContentPosition, PositionMappingIndex, ScreenPosition, ScreenToContentMapping,
+    // Unicode width utilities
+    build_line_mappings, build_position_index, char_display_width, char_index_to_screen_col,
+    screen_col_to_char_index, string_display_width, wrap_string_to_width,
+};
 pub use state::{SelectionAnchor, SelectionMode, SelectionRange, SelectionState};
 
 #[cfg(test)]
