@@ -386,6 +386,7 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
 /// # Returns
 /// - `None` if the tool has no result preview or the preview is empty
 /// - `Some(Line)` with the formatted, truncated preview
+#[allow(dead_code)]
 pub fn render_tool_result_preview(tool: &ToolEvent) -> Option<Line<'static>> {
     // Return None if no result preview
     let preview = tool.result_preview.as_ref()?;
@@ -662,12 +663,6 @@ pub fn render_message_segments(
                 lines.push(prepend_bar(tool_line));
                 is_first_line = false;
 
-                // Add result preview if available (only for completed tools)
-                if event.duration_secs.is_some() {
-                    if let Some(preview_line) = render_tool_result_preview(event) {
-                        lines.push(prepend_bar(preview_line));
-                    }
-                }
                 i += 1;
             }
             MessageSegment::SubagentEvent(_) => {
