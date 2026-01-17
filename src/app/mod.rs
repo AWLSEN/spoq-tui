@@ -239,6 +239,8 @@ pub struct App {
     pub active_panel: ActivePanel,
     /// Cache for pre-rendered message lines (avoids re-rendering on every tick)
     pub rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache,
+    /// Click detector for multi-click detection (single/double/triple click)
+    pub click_detector: crate::selection::ClickDetector,
 }
 
 impl App {
@@ -313,6 +315,7 @@ impl App {
             terminal_height: 24, // Default, will be updated on first render
             active_panel: ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
+            click_detector: crate::selection::ClickDetector::new(),
         })
     }
 

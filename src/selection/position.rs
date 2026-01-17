@@ -222,6 +222,480 @@ impl ScreenToContentMapping {
     }
 }
 
+// ============================================================================
+// Position Mapping Index
+// ============================================================================
+
+/// A complete mapping index for a rendered content area.
+///
+/// This structure holds all the mappings from screen rows to content positions
+/// for a rendered message area. It's built during rendering and used during
+/// mouse event handling to convert screen clicks to content positions.
+///
+/// # Architecture
+///
+/// The mappings are stored in order of screen rows. Each mapping describes
+/// what content appears on that screen row. For wrapped lines, multiple
+/// screen rows may map to the same content line with different column ranges.
+///
+/// # Example
+///
+/// For content "Hello world" wrapped at width 6:
+/// - Screen row 0: content line 0, columns 0-6 ("Hello ")
+/// - Screen row 1: content line 0, columns 6-11 ("world")
+#[derive(Debug, Clone, Default)]
+pub struct PositionMappingIndex {
+    /// Mappings from screen rows to content positions, sorted by screen_row
+    mappings: Vec<ScreenToContentMapping>,
+    /// The scroll offset (in visual lines) from the top of content
+    scroll_offset: usize,
+    /// The content area's left edge (for converting absolute screen x to relative)
+    area_x: u16,
+    /// The content area's top edge (for converting absolute screen y to relative)
+    area_y: u16,
+    /// The content area width
+    area_width: u16,
+    /// The content area height
+    area_height: u16,
+}
+
+impl PositionMappingIndex {
+    /// Create a new empty position mapping index.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a position mapping index with the given content area bounds.
+    ///
+    /// # Arguments
+    /// * `area_x` - Left edge of the content area
+    /// * `area_y` - Top edge of the content area
+    /// * `area_width` - Width of the content area
+    /// * `area_height` - Height of the content area
+    /// * `scroll_offset` - Current scroll position in visual lines
+    pub fn with_area(
+        area_x: u16,
+        area_y: u16,
+        area_width: u16,
+        area_height: u16,
+        scroll_offset: usize,
+    ) -> Self {
+        Self {
+            mappings: Vec::new(),
+            scroll_offset,
+            area_x,
+            area_y,
+            area_width,
+            area_height,
+        }
+    }
+
+    /// Add a mapping for a screen row.
+    ///
+    /// Mappings should be added in order of screen rows for optimal performance.
+    pub fn add_mapping(&mut self, mapping: ScreenToContentMapping) {
+        self.mappings.push(mapping);
+    }
+
+    /// Add multiple mappings at once.
+    pub fn add_mappings(&mut self, mappings: impl IntoIterator<Item = ScreenToContentMapping>) {
+        self.mappings.extend(mappings);
+    }
+
+    /// Get the number of mappings in the index.
+    pub fn len(&self) -> usize {
+        self.mappings.len()
+    }
+
+    /// Check if the index is empty.
+    pub fn is_empty(&self) -> bool {
+        self.mappings.is_empty()
+    }
+
+    /// Get all mappings.
+    pub fn mappings(&self) -> &[ScreenToContentMapping] {
+        &self.mappings
+    }
+
+    /// Get the scroll offset.
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
+    }
+
+    /// Set the scroll offset.
+    pub fn set_scroll_offset(&mut self, offset: usize) {
+        self.scroll_offset = offset;
+    }
+
+    /// Check if an absolute screen position is within the content area.
+    ///
+    /// # Arguments
+    /// * `screen_pos` - Absolute screen position
+    pub fn is_within_area(&self, screen_pos: ScreenPosition) -> bool {
+        screen_pos.is_within(self.area_x, self.area_y, self.area_width, self.area_height)
+    }
+
+    /// Convert an absolute screen position to a content position.
+    ///
+    /// This is the main entry point for mouse click handling. It takes an
+    /// absolute screen position (from mouse events) and returns the
+    /// corresponding content position (line and column in the text).
+    ///
+    /// # Arguments
+    /// * `screen_pos` - Absolute screen position
+    ///
+    /// # Returns
+    /// - `Some(ContentPosition)` if the position maps to content
+    /// - `None` if the position is outside the content area or unmapped
+    pub fn screen_to_content(&self, screen_pos: ScreenPosition) -> Option<ContentPosition> {
+        // Check if within content area
+        if !self.is_within_area(screen_pos) {
+            return None;
+        }
+
+        // Convert to area-relative position
+        let relative = screen_pos.offset_from(self.area_x, self.area_y);
+
+        // Account for scroll offset to get the actual screen row in the content
+        let content_screen_row = self.scroll_offset + relative.y as usize;
+
+        // Find the mapping for this screen row
+        let mapping = self.mappings.iter().find(|m| m.screen_row as usize == content_screen_row)?;
+
+        // Convert screen column to content column
+        let content_column = mapping.screen_column_to_content(relative.x)?;
+
+        Some(ContentPosition::new(mapping.content_line, content_column))
+    }
+
+    /// Convert a content position to screen position(s).
+    ///
+    /// A content position may map to multiple screen positions when text is
+    /// wrapped, but this returns the first (primary) screen position.
+    ///
+    /// # Arguments
+    /// * `content_pos` - Content position to convert
+    ///
+    /// # Returns
+    /// - `Some(ScreenPosition)` with absolute screen coordinates
+    /// - `None` if the position is not currently visible
+    pub fn content_to_screen(&self, content_pos: ContentPosition) -> Option<ScreenPosition> {
+        // Find the mapping that contains this content position
+        for mapping in &self.mappings {
+            if mapping.content_line == content_pos.line && mapping.contains_column(content_pos.column) {
+                // Calculate screen column within this row
+                let screen_col = (content_pos.column - mapping.content_start_column) as u16;
+                let screen_row = mapping.screen_row;
+
+                // Check if this row is visible (accounting for scroll)
+                if (screen_row as usize) < self.scroll_offset {
+                    continue;
+                }
+
+                let visible_row = (screen_row as usize - self.scroll_offset) as u16;
+                if visible_row >= self.area_height {
+                    continue;
+                }
+
+                // Convert to absolute screen position
+                return Some(ScreenPosition::new(
+                    self.area_x + screen_col,
+                    self.area_y + visible_row,
+                ));
+            }
+        }
+
+        None
+    }
+
+    /// Find the mapping for a given screen row.
+    ///
+    /// # Arguments
+    /// * `screen_row` - Screen row (relative to content, accounting for scroll)
+    pub fn mapping_for_row(&self, screen_row: u16) -> Option<&ScreenToContentMapping> {
+        self.mappings.iter().find(|m| m.screen_row == screen_row)
+    }
+
+    /// Get all mappings for a given content line.
+    ///
+    /// Returns multiple mappings if the line is wrapped across screen rows.
+    pub fn mappings_for_line(&self, content_line: usize) -> Vec<&ScreenToContentMapping> {
+        self.mappings
+            .iter()
+            .filter(|m| m.content_line == content_line)
+            .collect()
+    }
+
+    /// Clear all mappings while preserving area settings.
+    pub fn clear(&mut self) {
+        self.mappings.clear();
+    }
+}
+
+// ============================================================================
+// Unicode Width Utilities
+// ============================================================================
+
+/// Calculate the display width of a character.
+///
+/// This properly handles:
+/// - ASCII characters (width 1)
+/// - Wide characters like CJK (width 2)
+/// - Emojis (typically width 2)
+/// - Zero-width characters (width 0)
+///
+/// # Arguments
+/// * `c` - The character to measure
+///
+/// # Returns
+/// The display width in terminal cells
+pub fn char_display_width(c: char) -> usize {
+    c.width().unwrap_or(0)
+}
+
+/// Calculate the display width of a string.
+///
+/// This sums the widths of all characters, properly handling Unicode.
+///
+/// # Arguments
+/// * `s` - The string to measure
+///
+/// # Returns
+/// The total display width in terminal cells
+pub fn string_display_width(s: &str) -> usize {
+    s.chars().map(char_display_width).sum()
+}
+
+/// Map a screen column to a character index in a string.
+///
+/// Given a target screen column, finds which character index in the string
+/// corresponds to that visual position. This is essential for click handling
+/// with Unicode text.
+///
+/// # Arguments
+/// * `s` - The string to search
+/// * `target_screen_col` - The target screen column (0-indexed)
+///
+/// # Returns
+/// The character index, or the string length if past the end.
+///
+/// # Example
+///
+/// ```ignore
+/// let s = "Hello 世界";  // "Hello " = 6 cells, "世" = 2 cells, "界" = 2 cells
+/// assert_eq!(screen_col_to_char_index(s, 0), 0);  // 'H'
+/// assert_eq!(screen_col_to_char_index(s, 6), 6);  // '世'
+/// assert_eq!(screen_col_to_char_index(s, 7), 6);  // Still '世' (middle of wide char)
+/// assert_eq!(screen_col_to_char_index(s, 8), 7);  // '界'
+/// ```
+pub fn screen_col_to_char_index(s: &str, target_screen_col: usize) -> usize {
+    let mut current_col = 0;
+
+    for (char_idx, c) in s.chars().enumerate() {
+        let char_width = char_display_width(c);
+
+        // Check if target is within this character's display range
+        if current_col + char_width > target_screen_col {
+            return char_idx;
+        }
+
+        current_col += char_width;
+    }
+
+    // Past the end of string - return length
+    s.chars().count()
+}
+
+/// Map a character index to a screen column in a string.
+///
+/// Given a character index, calculates the starting screen column for that character.
+///
+/// # Arguments
+/// * `s` - The string
+/// * `char_index` - The character index (0-indexed)
+///
+/// # Returns
+/// The screen column where the character starts
+pub fn char_index_to_screen_col(s: &str, char_index: usize) -> usize {
+    s.chars()
+        .take(char_index)
+        .map(char_display_width)
+        .sum()
+}
+
+/// Split a string into segments that fit within a given screen width.
+///
+/// This performs word-aware wrapping, trying to break at word boundaries
+/// when possible. Returns tuples of (start_char_index, end_char_index) for
+/// each segment.
+///
+/// # Arguments
+/// * `s` - The string to wrap
+/// * `max_width` - Maximum screen width for each segment
+///
+/// # Returns
+/// Vector of (start_index, end_index) tuples for each wrapped segment.
+/// The indices are character indices (not byte indices).
+pub fn wrap_string_to_width(s: &str, max_width: usize) -> Vec<(usize, usize)> {
+    if max_width == 0 {
+        return vec![(0, s.chars().count())];
+    }
+
+    let chars: Vec<char> = s.chars().collect();
+    let total_chars = chars.len();
+
+    if total_chars == 0 {
+        return vec![(0, 0)];
+    }
+
+    let mut segments = Vec::new();
+    let mut segment_start = 0;
+    let mut current_width = 0;
+    let mut last_break_point = None; // Character index of last word break opportunity
+
+    for (i, &c) in chars.iter().enumerate() {
+        let char_width = char_display_width(c);
+
+        // Track word break opportunities (spaces)
+        if c == ' ' {
+            last_break_point = Some(i + 1); // Break after the space
+        }
+
+        // Check if adding this character would exceed width
+        if current_width + char_width > max_width && current_width > 0 {
+            // Try to break at a word boundary
+            let break_at = if let Some(bp) = last_break_point {
+                if bp > segment_start {
+                    bp
+                } else {
+                    i // No good break point, break at current position
+                }
+            } else {
+                i // No break point found
+            };
+
+            // Ensure we make progress (at least one character per segment)
+            let actual_break = if break_at <= segment_start {
+                (segment_start + 1).min(total_chars)
+            } else {
+                break_at
+            };
+
+            segments.push((segment_start, actual_break));
+            segment_start = actual_break;
+            last_break_point = None;
+
+            // Skip leading spaces at start of new segment
+            while segment_start < total_chars && chars[segment_start] == ' ' {
+                segment_start += 1;
+            }
+
+            // Recalculate width from new segment start to current position
+            current_width = 0;
+            for &ch in &chars[segment_start..=i.min(total_chars - 1)] {
+                current_width += char_display_width(ch);
+            }
+        } else {
+            current_width += char_width;
+        }
+    }
+
+    // Add final segment if there's remaining content
+    if segment_start < total_chars {
+        segments.push((segment_start, total_chars));
+    }
+
+    // Ensure we have at least one segment
+    if segments.is_empty() {
+        segments.push((0, total_chars));
+    }
+
+    segments
+}
+
+/// Build mappings for a content line that may be wrapped.
+///
+/// Given a content line, its line number, and viewport width, creates
+/// the screen-to-content mappings for all wrapped segments.
+///
+/// # Arguments
+/// * `line_content` - The text content of the line
+/// * `content_line` - The line number in the content
+/// * `start_screen_row` - The starting screen row for this line
+/// * `viewport_width` - The viewport width for wrapping
+///
+/// # Returns
+/// Tuple of (mappings, next_screen_row)
+pub fn build_line_mappings(
+    line_content: &str,
+    content_line: usize,
+    start_screen_row: u16,
+    viewport_width: u16,
+) -> (Vec<ScreenToContentMapping>, u16) {
+    let segments = wrap_string_to_width(line_content, viewport_width as usize);
+    let mut mappings = Vec::with_capacity(segments.len());
+    let mut screen_row = start_screen_row;
+
+    for (start_char, end_char) in segments {
+        mappings.push(ScreenToContentMapping::new(
+            screen_row,
+            content_line,
+            start_char,
+            end_char,
+        ));
+        screen_row = screen_row.saturating_add(1);
+    }
+
+    (mappings, screen_row)
+}
+
+/// Build a complete position mapping index from lines of content.
+///
+/// This is a convenience function that creates mappings for multiple content lines.
+///
+/// # Arguments
+/// * `lines` - Iterator of (line_index, line_content) pairs
+/// * `viewport_width` - The viewport width for wrapping
+/// * `area_x` - Content area left edge
+/// * `area_y` - Content area top edge
+/// * `area_width` - Content area width
+/// * `area_height` - Content area height
+/// * `scroll_offset` - Current scroll position
+///
+/// # Returns
+/// A PositionMappingIndex with all mappings
+pub fn build_position_index<'a>(
+    lines: impl Iterator<Item = (usize, &'a str)>,
+    viewport_width: u16,
+    area_x: u16,
+    area_y: u16,
+    area_width: u16,
+    area_height: u16,
+    scroll_offset: usize,
+) -> PositionMappingIndex {
+    let mut index = PositionMappingIndex::with_area(
+        area_x,
+        area_y,
+        area_width,
+        area_height,
+        scroll_offset,
+    );
+
+    let mut screen_row: u16 = 0;
+    for (line_idx, line_content) in lines {
+        let (mappings, next_row) = build_line_mappings(
+            line_content,
+            line_idx,
+            screen_row,
+            viewport_width,
+        );
+        index.add_mappings(mappings);
+        screen_row = next_row;
+    }
+
+    index
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
