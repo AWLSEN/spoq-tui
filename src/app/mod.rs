@@ -465,8 +465,8 @@ mod tests {
     fn test_submit_input_with_whitespace_only_does_nothing() {
         use crate::models::ThreadType;
         let mut app = App::default();
-        app.input_box.insert_char(' ');
-        app.input_box.insert_char(' ');
+        app.textarea.insert_char(' ');
+        app.textarea.insert_char(' ');
         let initial_cache_count = app.cache.thread_count();
 
         app.submit_input(ThreadType::Conversation);
@@ -481,8 +481,8 @@ mod tests {
     async fn test_submit_input_creates_thread_and_navigates() {
         use crate::models::ThreadType;
         let mut app = App::default();
-        app.input_box.insert_char('H');
-        app.input_box.insert_char('i');
+        app.textarea.insert_char('H');
+        app.textarea.insert_char('i');
         let initial_cache_count = app.cache.thread_count();
 
         app.submit_input(ThreadType::Conversation);
@@ -495,17 +495,17 @@ mod tests {
         assert!(app.active_thread_id.is_some());
         assert!(uuid::Uuid::parse_str(app.active_thread_id.as_ref().unwrap()).is_ok());
         // Input should be cleared
-        assert!(app.input_box.is_empty());
+        assert!(app.textarea.is_empty());
     }
 
     #[tokio::test]
     async fn test_submit_input_adds_messages_to_thread() {
         use crate::models::ThreadType;
         let mut app = App::default();
-        app.input_box.insert_char('T');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('s');
-        app.input_box.insert_char('t');
+        app.textarea.insert_char('T');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('s');
+        app.textarea.insert_char('t');
 
         app.submit_input(ThreadType::Conversation);
 
@@ -531,9 +531,9 @@ mod tests {
     async fn test_submit_input_creates_pending_thread_at_front() {
         use crate::models::ThreadType;
         let mut app = App::default();
-        app.input_box.insert_char('N');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('w');
+        app.textarea.insert_char('N');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('w');
 
         app.submit_input(ThreadType::Conversation);
 
@@ -550,8 +550,8 @@ mod tests {
         use crate::models::ThreadType;
         let mut app = App::default();
         assert!(app.active_thread_id.is_none());
-        app.input_box.insert_char('H');
-        app.input_box.insert_char('i');
+        app.textarea.insert_char('H');
+        app.textarea.insert_char('i');
 
         app.submit_input(ThreadType::Conversation);
 
@@ -574,9 +574,9 @@ mod tests {
         // But we're on CommandDeck, not Conversation
         app.screen = Screen::CommandDeck;
 
-        app.input_box.insert_char('N');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('w');
+        app.textarea.insert_char('N');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('w');
 
         app.submit_input(ThreadType::Conversation);
 
@@ -626,12 +626,12 @@ mod tests {
         let initial_msg_count = app.cache.get_messages(&existing_id).unwrap().len();
 
         // Submit follow-up
-        app.input_box.insert_char('F');
-        app.input_box.insert_char('o');
-        app.input_box.insert_char('l');
-        app.input_box.insert_char('l');
-        app.input_box.insert_char('o');
-        app.input_box.insert_char('w');
+        app.textarea.insert_char('F');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('w');
         app.submit_input(ThreadType::Conversation);
 
         // Should NOT create a new thread
@@ -654,23 +654,23 @@ mod tests {
         let mut app = App::default();
 
         // First submit creates thread with streaming response
-        app.input_box.insert_char('F');
-        app.input_box.insert_char('i');
-        app.input_box.insert_char('r');
-        app.input_box.insert_char('s');
-        app.input_box.insert_char('t');
+        app.textarea.insert_char('F');
+        app.textarea.insert_char('i');
+        app.textarea.insert_char('r');
+        app.textarea.insert_char('s');
+        app.textarea.insert_char('t');
         app.submit_input(ThreadType::Conversation);
 
         let thread_id = app.active_thread_id.clone().unwrap();
         assert!(uuid::Uuid::parse_str(&thread_id).is_ok());
 
         // Try to submit again while still streaming
-        app.input_box.insert_char('S');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('c');
-        app.input_box.insert_char('o');
-        app.input_box.insert_char('n');
-        app.input_box.insert_char('d');
+        app.textarea.insert_char('S');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('c');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('n');
+        app.textarea.insert_char('d');
         app.submit_input(ThreadType::Conversation);
 
         // Should NOT create a new thread or add messages
@@ -679,8 +679,8 @@ mod tests {
         assert!(app.stream_error.as_ref().unwrap().contains("wait"));
 
         // Input should NOT be cleared (submission was rejected)
-        assert!(!app.input_box.is_empty());
-        assert_eq!(app.input_box.content(), "Second");
+        assert!(!app.textarea.is_empty());
+        assert_eq!(app.textarea.content(), "Second");
 
         // Should still be on the same thread
         assert_eq!(app.active_thread_id, Some(thread_id));
@@ -692,11 +692,11 @@ mod tests {
         let mut app = App::default();
 
         // First submit creates pending thread
-        app.input_box.insert_char('F');
-        app.input_box.insert_char('i');
-        app.input_box.insert_char('r');
-        app.input_box.insert_char('s');
-        app.input_box.insert_char('t');
+        app.textarea.insert_char('F');
+        app.textarea.insert_char('i');
+        app.textarea.insert_char('r');
+        app.textarea.insert_char('s');
+        app.textarea.insert_char('t');
         app.submit_input(ThreadType::Conversation);
 
         let pending_id = app.active_thread_id.clone().unwrap();
@@ -716,19 +716,19 @@ mod tests {
         app.cache.finalize_message("real-backend-id", 1);
 
         // Now second submit should work
-        app.input_box.insert_char('S');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('c');
-        app.input_box.insert_char('o');
-        app.input_box.insert_char('n');
-        app.input_box.insert_char('d');
+        app.textarea.insert_char('S');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('c');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('n');
+        app.textarea.insert_char('d');
         let before_count = app.cache.get_messages("real-backend-id").unwrap().len();
         app.submit_input(ThreadType::Conversation);
 
         // Should add to existing thread
         let messages = app.cache.get_messages("real-backend-id").unwrap();
         assert_eq!(messages.len(), before_count + 2);
-        assert!(app.input_box.is_empty());
+        assert!(app.textarea.is_empty());
     }
 
     #[tokio::test]
@@ -740,10 +740,10 @@ mod tests {
         app.active_thread_id = Some("deleted-thread".to_string());
         app.screen = Screen::Conversation;
 
-        app.input_box.insert_char('T');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('s');
-        app.input_box.insert_char('t');
+        app.textarea.insert_char('T');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('s');
+        app.textarea.insert_char('t');
         app.submit_input(ThreadType::Conversation);
 
         // Should show error about thread not existing
@@ -755,7 +755,7 @@ mod tests {
             .contains("no longer exists"));
 
         // Input should NOT be cleared
-        assert!(!app.input_box.is_empty());
+        assert!(!app.textarea.is_empty());
     }
 
     #[tokio::test]
@@ -764,8 +764,8 @@ mod tests {
         let mut app = App::default();
 
         // === Turn 1: New thread ===
-        app.input_box.insert_char('H');
-        app.input_box.insert_char('i');
+        app.textarea.insert_char('H');
+        app.textarea.insert_char('i');
         app.submit_input(ThreadType::Conversation);
 
         let thread_id = app.active_thread_id.clone().unwrap();
@@ -785,13 +785,13 @@ mod tests {
         assert_eq!(app.active_thread_id, Some(thread_id.clone()));
 
         // === Turn 2: Continue thread ===
-        app.input_box.insert_char('T');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('l');
-        app.input_box.insert_char('l');
-        app.input_box.insert_char(' ');
-        app.input_box.insert_char('m');
-        app.input_box.insert_char('e');
+        app.textarea.insert_char('T');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char(' ');
+        app.textarea.insert_char('m');
+        app.textarea.insert_char('e');
         app.submit_input(ThreadType::Conversation);
 
         // Should still be on same thread
@@ -809,9 +809,9 @@ mod tests {
         assert_eq!(app.screen, Screen::CommandDeck);
 
         // === Turn 3: New thread after navigating away ===
-        app.input_box.insert_char('N');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('w');
+        app.textarea.insert_char('N');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('w');
         app.submit_input(ThreadType::Conversation);
 
         // Should be a NEW thread with a valid UUID
@@ -1409,8 +1409,8 @@ mod tests {
         app.programming_mode = ProgrammingMode::PlanMode;
 
         // Submit input
-        app.input_box.insert_char('H');
-        app.input_box.insert_char('i');
+        app.textarea.insert_char('H');
+        app.textarea.insert_char('i');
         app.submit_input(ThreadType::Conversation);
 
         // Should add streaming message to the thread
@@ -1449,14 +1449,14 @@ mod tests {
         assert_eq!(app.programming_mode, ProgrammingMode::None);
 
         // Submit input
-        app.input_box.insert_char('T');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('s');
-        app.input_box.insert_char('t');
+        app.textarea.insert_char('T');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('s');
+        app.textarea.insert_char('t');
         app.submit_input(ThreadType::Conversation);
 
         // Input should be cleared (submission was accepted)
-        assert!(app.input_box.is_empty());
+        assert!(app.textarea.is_empty());
     }
 
     #[tokio::test]
@@ -1466,9 +1466,9 @@ mod tests {
         assert!(app.active_thread_id.is_none());
 
         // Submit creates a new non-programming thread
-        app.input_box.insert_char('N');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('w');
+        app.textarea.insert_char('N');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('w');
         app.submit_input(ThreadType::Conversation);
 
         // New thread should be at front with a valid UUID
@@ -1501,10 +1501,10 @@ mod tests {
         assert!(app.active_thread_id.is_none());
 
         // Submit with Programming thread type (like Shift+Enter on CommandDeck)
-        app.input_box.insert_char('C');
-        app.input_box.insert_char('o');
-        app.input_box.insert_char('d');
-        app.input_box.insert_char('e');
+        app.textarea.insert_char('C');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('d');
+        app.textarea.insert_char('e');
         app.submit_input(ThreadType::Programming);
 
         // New thread should be created with a valid UUID
