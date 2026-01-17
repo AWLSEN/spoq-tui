@@ -24,7 +24,6 @@ use crate::state::{
     AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
 };
 use crate::websocket::WsConnectionState;
-use crate::widgets::input_box::InputBox;
 use crate::widgets::textarea_input::TextAreaInput;
 use chrono::Utc;
 use color_eyre::Result;
@@ -171,9 +170,7 @@ pub struct App {
     pub tasks_index: usize,
     /// Selected index in threads panel
     pub threads_index: usize,
-    /// Input box state (legacy - will be removed in Phase 8)
-    pub input_box: InputBox,
-    /// TextArea input (tui-textarea wrapper, replacing input_box)
+    /// TextArea input (tui-textarea wrapper)
     pub textarea: TextAreaInput<'static>,
     /// Migration/indexing progress (0-100), None when complete
     pub migration_progress: Option<u8>,
@@ -281,7 +278,6 @@ impl App {
             notifications_index: 0,
             tasks_index: 0,
             threads_index: 0,
-            input_box: InputBox::new(),
             textarea: TextAreaInput::new(),
             migration_progress: Some(0),
             cache,

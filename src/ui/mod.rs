@@ -127,7 +127,6 @@ mod tests {
             notifications_index: 0,
             tasks_index: 0,
             threads_index: 0,
-            input_box: crate::widgets::input_box::InputBox::new(),
             textarea: crate::widgets::textarea_input::TextAreaInput::new(),
             migration_progress: None,
             cache: crate::cache::ThreadCache::new(),
@@ -295,11 +294,11 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
         app.screen = Screen::Conversation;
-        app.input_box.insert_char('H');
-        app.input_box.insert_char('e');
-        app.input_box.insert_char('l');
-        app.input_box.insert_char('l');
-        app.input_box.insert_char('o');
+        app.textarea.insert_char('H');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char('o');
 
         terminal
             .draw(|f| {
