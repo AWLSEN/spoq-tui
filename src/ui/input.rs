@@ -1039,6 +1039,8 @@ mod tests {
             ws_sender: None,
             ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
+            textarea: crate::widgets::textarea_input::TextAreaInput::new(),
+            click_detector: crate::selection::ClickDetector::new(),
         }
     }
 
