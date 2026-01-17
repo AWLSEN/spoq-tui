@@ -650,4 +650,227 @@ mod tests {
         input.clear();
         assert!(input.is_empty());
     }
+
+    #[test]
+    fn test_move_cursor_word_left_basic() {
+        let mut input = InputBox::new();
+        // "hello world|"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        assert_eq!(input.cursor_position, 11);
+
+        // Should move to start of "world"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 6); // "hello |world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_left_multiple_spaces() {
+        let mut input = InputBox::new();
+        // "hello   world|"
+        for c in "hello   world".chars() {
+            input.insert_char(c);
+        }
+
+        // Should skip spaces and move to start of "world"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 8); // "hello   |world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_left_punctuation() {
+        let mut input = InputBox::new();
+        // "hello, world|"
+        for c in "hello, world".chars() {
+            input.insert_char(c);
+        }
+
+        // Should skip punctuation and move to start of "world"
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 7); // "hello, |world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_left_at_start() {
+        let mut input = InputBox::new();
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        // Should not move if already at start
+        input.move_cursor_word_left();
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_basic() {
+        let mut input = InputBox::new();
+        // "|hello world"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+        assert_eq!(input.cursor_position, 0);
+
+        // Should move to end of "hello"
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 5); // "hello| world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_multiple_spaces() {
+        let mut input = InputBox::new();
+        // "|hello   world"
+        for c in "hello   world".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        // Should move to end of "hello"
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 5); // "hello|   world"
+    }
+
+    #[test]
+    fn test_move_cursor_word_right_at_end() {
+        let mut input = InputBox::new();
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+
+        // Should not move if already at end
+        input.move_cursor_word_right();
+        assert_eq!(input.cursor_position, 5);
+    }
+
+    #[test]
+    fn test_delete_word_backward_basic() {
+        let mut input = InputBox::new();
+        // "hello world|"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+
+        // Should delete "world"
+        input.delete_word_backward();
+        assert_eq!(input.content, "hello ");
+        assert_eq!(input.cursor_position, 6);
+    }
+
+    #[test]
+    fn test_delete_word_backward_with_spaces() {
+        let mut input = InputBox::new();
+        // "hello   world|"
+        for c in "hello   world".chars() {
+            input.insert_char(c);
+        }
+
+        // Should delete "world" and spaces
+        input.delete_word_backward();
+        assert_eq!(input.content, "hello   ");
+        assert_eq!(input.cursor_position, 8);
+    }
+
+    #[test]
+    fn test_delete_word_backward_middle_of_word() {
+        let mut input = InputBox::new();
+        // "hello wor|ld"
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_left();
+        input.move_cursor_left();
+
+        // Should delete "wor"
+        input.delete_word_backward();
+        assert_eq!(input.content, "hello ld");
+        assert_eq!(input.cursor_position, 6);
+    }
+
+    #[test]
+    fn test_delete_word_backward_at_start() {
+        let mut input = InputBox::new();
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        // Should not delete if at start
+        input.delete_word_backward();
+        assert_eq!(input.content, "hello");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_to_line_start_basic() {
+        let mut input = InputBox::new();
+        // "hel|lo"
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+        // Move cursor to position 3
+        input.move_cursor_home();
+        input.move_cursor_right();
+        input.move_cursor_right();
+        input.move_cursor_right();
+
+        // Should delete "hel"
+        input.delete_to_line_start();
+        assert_eq!(input.content, "lo");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_to_line_start_multiline() {
+        let mut input = InputBox::new();
+        // "line1\nli|ne2"
+        for c in "line1\nline2".chars() {
+            input.insert_char(c);
+        }
+        // Position cursor at "li|ne2" (position 8)
+        input.move_cursor_home();
+        for _ in 0..8 {
+            input.move_cursor_right();
+        }
+
+        // Should delete "li" from second line
+        input.delete_to_line_start();
+        assert_eq!(input.content, "line1\nne2");
+        assert_eq!(input.cursor_position, 6); // At start of line after newline
+    }
+
+    #[test]
+    fn test_delete_to_line_start_at_line_start() {
+        let mut input = InputBox::new();
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+        input.move_cursor_home();
+
+        // Should not delete if already at line start
+        input.delete_to_line_start();
+        assert_eq!(input.content, "hello");
+        assert_eq!(input.cursor_position, 0);
+    }
+
+    #[test]
+    fn test_delete_to_line_start_after_newline() {
+        let mut input = InputBox::new();
+        // "line1\n|line2"
+        for c in "line1\nline2".chars() {
+            input.insert_char(c);
+        }
+        // Position cursor right after newline (position 6)
+        input.move_cursor_home();
+        for _ in 0..6 {
+            input.move_cursor_right();
+        }
+
+        // Should not delete if at start of line
+        input.delete_to_line_start();
+        assert_eq!(input.content, "line1\nline2");
+        assert_eq!(input.cursor_position, 6);
+    }
 }
