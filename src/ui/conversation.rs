@@ -14,7 +14,7 @@ use crate::app::{App, ProgrammingMode};
 use crate::models::{MessageSegment, ToolEventStatus};
 
 use super::helpers::{inner_rect, SPINNER_FRAMES};
-use super::input::render_conversation_input;
+use super::input::{render_conversation_input, render_permission_prompt};
 use super::messages::render_messages_area;
 use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 
@@ -150,6 +150,11 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
             render_messages_area(frame, main_chunks[1], app);
             render_conversation_input(frame, main_chunks[2], app);
         }
+    }
+
+    // Render permission prompt overlay LAST to ensure it's on top of everything
+    if app.session_state.has_pending_permission() {
+        render_permission_prompt(frame, inner, app);
     }
 }
 

@@ -16,7 +16,6 @@ use crate::models::{Message, MessageRole, MessageSegment, SubagentEvent, Subagen
 use crate::state::ToolDisplayStatus;
 
 use super::helpers::{format_tool_args, get_subagent_icon, get_tool_icon, inner_rect, MAX_VISIBLE_ERRORS, SPINNER_FRAMES};
-use super::input::render_permission_prompt;
 use super::theme::{
     COLOR_ACCENT, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
     COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
@@ -1128,11 +1127,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
         .wrap(Wrap { trim: false })
         .scroll((actual_scroll, 0));
     frame.render_widget(messages_widget, inner);
-
-    // Render inline permission prompt if pending (overlays on top of messages)
-    if app.session_state.has_pending_permission() {
-        render_permission_prompt(frame, inner, app);
-    }
+    // Permission prompt is now rendered at the conversation screen level to ensure it's on top
 }
 
 // ============================================================================

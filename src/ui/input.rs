@@ -204,9 +204,17 @@ pub fn render_permission_box(
         height: box_height,
     };
 
-    // Fill the area with solid black first
-    let solid_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
-    frame.render_widget(solid_bg, box_area);
+    // Fill EVERY cell in box_area with solid background color directly
+    let bg_color = Color::Rgb(10, 15, 35);
+    let buf = frame.buffer_mut();
+    for py in box_area.y..box_area.y + box_area.height {
+        for px in box_area.x..box_area.x + box_area.width {
+            if let Some(cell) = buf.cell_mut((px, py)) {
+                cell.set_bg(bg_color);
+                cell.set_char(' ');
+            }
+        }
+    }
 
     // Create the permission box with border and black background
     let block = Block::default()
@@ -319,7 +327,9 @@ pub fn render_permission_box(
     let inner_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
     frame.render_widget(inner_bg, inner);
 
-    let content = Paragraph::new(lines).style(Style::default().bg(Color::Rgb(10, 15, 35)));
+    // Use .block() to ensure the entire inner area is filled with background
+    let content = Paragraph::new(lines)
+        .block(Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35))));
     frame.render_widget(content, inner);
 }
 
@@ -390,9 +400,17 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         height: box_height,
     };
 
-    // Fill the area with solid black first
-    let solid_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
-    frame.render_widget(solid_bg, box_area);
+    // Fill EVERY cell in box_area with solid background color directly
+    let bg_color = Color::Rgb(10, 15, 35);
+    let buf = frame.buffer_mut();
+    for py in box_area.y..box_area.y + box_area.height {
+        for px in box_area.x..box_area.x + box_area.width {
+            if let Some(cell) = buf.cell_mut((px, py)) {
+                cell.set_bg(bg_color);
+                cell.set_char(' ');
+            }
+        }
+    }
 
     // Create the skill box with border and black background
     let block = Block::default()
@@ -487,7 +505,9 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
     let inner_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
     frame.render_widget(inner_bg, inner);
 
-    let content = Paragraph::new(lines).style(Style::default().bg(Color::Rgb(10, 15, 35)));
+    // Use .block() to ensure the entire inner area is filled with background
+    let content = Paragraph::new(lines)
+        .block(Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35))));
     frame.render_widget(content, inner);
 }
 
@@ -538,9 +558,17 @@ fn render_ask_user_question_box(
         height: box_height,
     };
 
-    // Fill the area with solid black first
-    let solid_bg = Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35)));
-    frame.render_widget(solid_bg, box_area);
+    // Fill EVERY cell in box_area with solid background color directly
+    let bg_color = Color::Rgb(10, 15, 35);
+    let buf = frame.buffer_mut();
+    for py in box_area.y..box_area.y + box_area.height {
+        for px in box_area.x..box_area.x + box_area.width {
+            if let Some(cell) = buf.cell_mut((px, py)) {
+                cell.set_bg(bg_color);
+                cell.set_char(' '); // Clear any existing character
+            }
+        }
+    }
 
     // Build title based on question count
     let title = if data.questions.len() == 1 {
@@ -840,7 +868,9 @@ fn render_ask_user_question_box(
 
     lines.push(Line::from(help_spans));
 
-    let content = Paragraph::new(lines).style(Style::default().bg(Color::Rgb(10, 15, 35)));
+    // Use .block() to ensure the entire inner area is filled with background
+    let content = Paragraph::new(lines)
+        .block(Block::default().style(Style::default().bg(Color::Rgb(10, 15, 35))));
     frame.render_widget(content, inner);
 }
 
