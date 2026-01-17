@@ -8,7 +8,8 @@ use crossterm::{
     cursor::Show,
     event::{
         DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
-        KeyModifiers, MouseEventKind,
+        KeyModifiers, KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
+        PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -37,6 +38,15 @@ async fn main() -> Result<()> {
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
+
+    // Enable keyboard enhancement for modern terminals (Kitty protocol)
+    // This allows Ctrl+Enter and Shift+Enter to work properly
+    // Silently fails on unsupported terminals (Terminal.app, Warp, etc.)
+    let _ = execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    );
+
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -111,6 +121,7 @@ fn setup_panic_hook() {
 
 /// Restore terminal to normal mode
 fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mut Terminal<B>) -> Result<()> {
+    let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -400,8 +411,23 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         app.input_box.move_cursor_end();
                                         continue;
                                     }
+                                    KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        // Ctrl+J = ASCII LF (newline) - works in ALL terminals
+                                        app.input_box.insert_char('\n');
+                                        continue;
+                                    }
+                                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                                        // Shift+Enter inserts a newline (works in Kitty protocol terminals)
+                                        app.input_box.insert_char('\n');
+                                        continue;
+                                    }
+                                    KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
+                                        // Alt+Enter inserts a newline
+                                        app.input_box.insert_char('\n');
+                                        continue;
+                                    }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                        // Ctrl+Enter inserts a newline (works in more terminals than Shift+Enter)
+                                        // Ctrl+Enter inserts a newline (fallback - may not work in all terminals)
                                         app.input_box.insert_char('\n');
                                         continue;
                                     }
