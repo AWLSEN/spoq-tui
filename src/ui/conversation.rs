@@ -79,7 +79,7 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     let show_streaming_indicator = app.is_streaming();
 
     // Create main layout sections - conditionally include mode and streaming indicators
-    let inner = inner_rect(size, 1);
+    let inner = inner_rect(size, 0);
 
     match (mode_indicator_line, show_streaming_indicator) {
         (Some(mode_line), true) => {

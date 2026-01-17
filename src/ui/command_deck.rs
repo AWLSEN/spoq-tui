@@ -52,7 +52,7 @@ pub fn render_command_deck(frame: &mut Frame, app: &App) {
     frame.render_widget(outer_block, size);
 
     // Create main layout sections with responsive heights
-    let inner = inner_rect(size, 1);
+    let inner = inner_rect(size, 0);
     let header_height = ctx.header_height();
     let input_height = ctx.input_area_height();
 
