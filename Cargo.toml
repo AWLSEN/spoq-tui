@@ -2,6 +2,13 @@
 name = "spoq"
 version = "0.1.0"
 edition = "2021"
+description = "A TUI client for spoq"
+license = "MIT"
+repository = "https://github.com/AWLSEN/spoq-tui"
+homepage = "https://github.com/AWLSEN/spoq-tui"
+keywords = ["tui", "terminal", "cli"]
+categories = ["command-line-interface"]
+readme = "README.md"
 
 [dependencies]
 ratatui = "0.29"
@@ -23,3 +30,9 @@ tracing = "0.1"
 axum-extra = { version = "0.9", features = ["typed-header"] }
 tokio-tungstenite = "0.21"
 tower-http = { version = "0.5", features = ["cors"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+opt-level = 3
+codegen-units = 1
