@@ -268,7 +268,7 @@ pub fn render_permission_box(
             };
             lines.push(Line::from(vec![
                 Span::styled("│ ", Style::default().fg(COLOR_DIM)),
-                Span::styled(truncated, Style::default().fg(Color::Gray)),
+                Span::styled(truncated, Style::default().fg(Color::White)),
                 Span::raw(" "),
             ]));
         }
@@ -314,7 +314,7 @@ pub fn render_permission_box(
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
-    let content = Paragraph::new(lines);
+    let content = Paragraph::new(lines).style(Style::default().bg(Color::Black));
     frame.render_widget(content, inner);
 }
 
@@ -477,7 +477,7 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         Span::styled(countdown_text, Style::default().fg(countdown_color)),
     ]));
 
-    let content = Paragraph::new(lines);
+    let content = Paragraph::new(lines).style(Style::default().bg(Color::Black));
     frame.render_widget(content, inner);
 }
 
@@ -825,7 +825,7 @@ fn render_ask_user_question_box(
 
     lines.push(Line::from(help_spans));
 
-    let content = Paragraph::new(lines);
+    let content = Paragraph::new(lines).style(Style::default().bg(Color::Black));
     frame.render_widget(content, inner);
 }
 
