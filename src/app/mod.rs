@@ -25,6 +25,7 @@ use crate::state::{
 };
 use crate::websocket::WsConnectionState;
 use crate::widgets::input_box::InputBox;
+use crate::widgets::textarea_input::TextAreaInput;
 use chrono::Utc;
 use color_eyre::Result;
 use std::fs::OpenOptions;
@@ -170,8 +171,10 @@ pub struct App {
     pub tasks_index: usize,
     /// Selected index in threads panel
     pub threads_index: usize,
-    /// Input box state
+    /// Input box state (legacy - will be removed in Phase 8)
     pub input_box: InputBox,
+    /// TextArea input (tui-textarea wrapper, replacing input_box)
+    pub textarea: TextAreaInput<'static>,
     /// Migration/indexing progress (0-100), None when complete
     pub migration_progress: Option<u8>,
     /// Thread and message cache
@@ -277,6 +280,7 @@ impl App {
             tasks_index: 0,
             threads_index: 0,
             input_box: InputBox::new(),
+            textarea: TextAreaInput::new(),
             migration_progress: Some(0),
             cache,
             message_rx: Some(message_rx),
