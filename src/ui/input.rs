@@ -6,9 +6,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
+use tracing::debug;
 
 use crate::app::{App, Screen};
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
@@ -203,8 +204,14 @@ pub fn render_permission_box(
         height: box_height,
     };
 
-    // Clear the area first for solid background
-    frame.render_widget(Clear, box_area);
+    debug!(
+        "render_permission_box: box_area=({}, {}, {}x{})",
+        box_area.x, box_area.y, box_area.width, box_area.height
+    );
+
+    // Fill entire box area with black background first (don't use Clear - it shows terminal bg)
+    let box_bg = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(box_bg, box_area);
 
     // Create the permission box with border and black background
     let block = Block::default()
@@ -229,6 +236,10 @@ pub fn render_permission_box(
         width: box_area.width.saturating_sub(2),
         height: box_area.height.saturating_sub(2),
     };
+    debug!(
+        "render_permission_box: block_inner=({}, {}, {}x{})",
+        block_inner.x, block_inner.y, block_inner.width, block_inner.height
+    );
     let bg_fill = Block::default().style(Style::default().bg(Color::Black));
     frame.render_widget(bg_fill, block_inner);
 
@@ -394,8 +405,9 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         height: box_height,
     };
 
-    // Clear the area first for solid background
-    frame.render_widget(Clear, box_area);
+    // Fill entire box area with black background first (don't use Clear - it shows terminal bg)
+    let box_bg = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(box_bg, box_area);
 
     // Create the skill box with border and black background
     let block = Block::default()
@@ -547,8 +559,9 @@ fn render_ask_user_question_box(
         height: box_height,
     };
 
-    // Clear the area first for solid background
-    frame.render_widget(Clear, box_area);
+    // Fill entire box area with black background first (don't use Clear - it shows terminal bg)
+    let box_bg = Block::default().style(Style::default().bg(Color::Black));
+    frame.render_widget(box_bg, box_area);
 
     // Build title based on question count
     let title = if data.questions.len() == 1 {
