@@ -38,7 +38,7 @@ pub const SPOQ_LOGO: &[&str] = &[
 // ============================================================================
 
 /// Render the complete Command Deck UI
-pub fn render_command_deck(frame: &mut Frame, app: &App) {
+pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
     let size = frame.area();
 
     // Create layout context from terminal dimensions stored in app state

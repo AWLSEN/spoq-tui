@@ -34,7 +34,7 @@ impl App {
     /// The `new_thread_type` parameter specifies what type of thread to create if this
     /// is a NEW conversation. It's ignored when continuing an existing thread.
     pub fn submit_input(&mut self, new_thread_type: ThreadType) {
-        let content = self.input_box.content().to_string();
+        let content = self.textarea.content();
         if content.trim().is_empty() {
             return;
         }
@@ -101,7 +101,7 @@ impl App {
             (pending_id, true)
         };
 
-        self.input_box.clear();
+        self.textarea.clear();
 
         // Emit StreamLifecycle connecting event
         emit_debug(

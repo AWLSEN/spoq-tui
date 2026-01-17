@@ -94,7 +94,7 @@ impl App {
     pub fn navigate_to_command_deck(&mut self) {
         self.screen = Screen::CommandDeck;
         self.active_thread_id = None; // Clear so next submit creates new thread
-        self.input_box.clear(); // Clear any partial input
+        self.textarea.clear(); // Clear any partial input
     }
 
     /// Open a specific thread by ID for conversation
@@ -109,7 +109,7 @@ impl App {
         // Set active thread and navigate (existing logic)
         self.active_thread_id = Some(thread_id.clone());
         self.screen = Screen::Conversation;
-        self.input_box.clear();
+        self.textarea.clear();
         self.reset_scroll();
 
         // Check if messages need to be fetched

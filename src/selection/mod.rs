@@ -47,10 +47,12 @@
 //! }
 //! ```
 
+pub mod multi_click;
 pub mod position;
 pub mod state;
 
 // Re-export commonly used types at the module level
+pub use multi_click::{ClickDetector, ClickResult};
 pub use position::{ContentPosition, ScreenPosition, ScreenToContentMapping};
 pub use state::{SelectionAnchor, SelectionMode, SelectionRange, SelectionState};
 

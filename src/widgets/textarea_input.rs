@@ -36,6 +36,11 @@ impl<'a> TextAreaInput<'a> {
         // Configure default styling to match InputBox dark theme
         textarea.set_cursor_line_style(Style::default());
         textarea.set_cursor_style(Style::default().fg(Color::Black).bg(Color::White));
+
+        // Configure textarea behavior
+        textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)
+        // Line numbers are OFF by default in tui-textarea (no need to explicitly remove)
+
         Self { textarea }
     }
 
@@ -50,6 +55,11 @@ impl<'a> TextAreaInput<'a> {
         let mut textarea = TextArea::new(lines);
         textarea.set_cursor_line_style(Style::default());
         textarea.set_cursor_style(Style::default().fg(Color::Black).bg(Color::White));
+
+        // Configure textarea behavior
+        textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)
+        // Line numbers are OFF by default in tui-textarea (no need to explicitly remove)
+
         // Move cursor to end
         textarea.move_cursor(CursorMove::Bottom);
         textarea.move_cursor(CursorMove::End);
@@ -301,6 +311,11 @@ impl<'a> TextAreaInput<'a> {
     /// Set placeholder style
     pub fn set_placeholder_style(&mut self, style: Style) {
         self.textarea.set_placeholder_style(style);
+    }
+
+    /// Set tab width (number of spaces per tab character)
+    pub fn set_tab_length(&mut self, len: u8) {
+        self.textarea.set_tab_length(len);
     }
 
     /// Configure the textarea with a title and focus state (InputBox-compatible rendering)

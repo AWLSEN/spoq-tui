@@ -7,6 +7,7 @@
 //! - Rendering selection highlights at the correct screen positions
 
 use serde::{Deserialize, Serialize};
+use unicode_width::UnicodeWidthChar;
 
 /// Screen position in terminal cells (column, row)
 ///

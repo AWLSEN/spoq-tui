@@ -25,3 +25,4 @@ tokio-tungstenite = "0.21"
 tower-http = { version = "0.5", features = ["cors"] }
 arboard = "3"
 tui-textarea = "0.7"
+unicode-width = "0.2"
