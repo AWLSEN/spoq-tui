@@ -383,10 +383,14 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64) -> Line<'static> {
 /// Returns an indented, dim-colored line showing a truncated preview of the tool result.
 /// Success results are shown in dim gray, error results in red.
 ///
+/// # Arguments
+/// * `tool` - The tool event to render a preview for
+/// * `max_preview_len` - Maximum length for the preview text (responsive to terminal width)
+///
 /// # Returns
 /// - `None` if the tool has no result preview or the preview is empty
 /// - `Some(Line)` with the formatted, truncated preview
-pub fn render_tool_result_preview(tool: &ToolEvent) -> Option<Line<'static>> {
+pub fn render_tool_result_preview(tool: &ToolEvent, max_preview_len: usize) -> Option<Line<'static>> {
     // Return None if no result preview
     let preview = tool.result_preview.as_ref()?;
 
@@ -395,10 +399,10 @@ pub fn render_tool_result_preview(tool: &ToolEvent) -> Option<Line<'static>> {
         return None;
     }
 
-    // Truncate the preview:
-    // - Find first 2 newlines or ~150 chars, whichever comes first
+    // Truncate the preview using responsive max length:
+    // - Find first 2 newlines or max_preview_len chars, whichever comes first
     // - Append '...' if truncated
-    let truncated = truncate_preview(preview, 150, 2);
+    let truncated = truncate_preview(preview, max_preview_len, 2);
 
     // Choose color based on error state
     let color = if tool.result_is_error {
@@ -626,11 +630,19 @@ pub fn render_subagent_events_block(
 ///
 /// This function processes segments in order, but groups consecutive SubagentEvent segments
 /// to render them with proper tree connectors (├── └── for parallel agents).
+///
+/// # Arguments
+/// * `segments` - The message segments to render
+/// * `tick_count` - Current tick for animations
+/// * `label` - Label prefix (e.g., "│ " for user messages)
+/// * `label_style` - Style for the label
+/// * `max_preview_len` - Maximum length for tool result previews (responsive to terminal width)
 pub fn render_message_segments(
     segments: &[MessageSegment],
     tick_count: u64,
     label: &'static str,
     label_style: Style,
+    max_preview_len: usize,
 ) -> (Vec<Line<'static>>, bool) {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut is_first_line = true;
@@ -664,7 +676,7 @@ pub fn render_message_segments(
 
                 // Add result preview if available (only for completed tools)
                 if event.duration_secs.is_some() {
-                    if let Some(preview_line) = render_tool_result_preview(event) {
+                    if let Some(preview_line) = render_tool_result_preview(event, max_preview_len) {
                         lines.push(prepend_bar(preview_line));
                     }
                 }
@@ -895,9 +907,21 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
 // ============================================================================
 
 /// Render the messages area with user messages and AI responses
+///
+/// Uses terminal dimensions for responsive layout:
+/// - Tool result previews are truncated based on available width
+/// - Message wrapping uses actual viewport width
 pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
     let inner = inner_rect(area, 1);
     let mut lines: Vec<Line> = Vec::new();
+
+    // Calculate responsive max preview length based on terminal width
+    // Narrower terminals get shorter previews to prevent excessive wrapping
+    // Formula: ~80% of terminal width, with min of 60 and max of 200
+    let max_preview_len = {
+        let base = (app.terminal_width as usize * 80) / 100;
+        base.clamp(60, 200)
+    };
 
     // Show inline error banners for the thread
     lines.extend(render_inline_error_banners(app));
@@ -990,6 +1014,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
                         app.tick_count,
                         label,
                         label_style,
+                        max_preview_len,
                     );
                     lines.extend(segment_lines);
 
@@ -1033,7 +1058,16 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
                     }
                 }
             } else {
-                // Display completed message with interleaved text, tool events, and subagent events
+                // Display completed message - try cache first
+                if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version) {
+                    lines.extend(cached_lines.clone());
+                    lines.push(Line::from(""));
+                    continue;
+                }
+
+                // Not cached - render and cache
+                let mut message_lines: Vec<Line<'static>> = Vec::new();
+
                 // For assistant messages with segments, render segments in order
                 if message.role == MessageRole::Assistant && !message.segments.is_empty() {
                     let (segment_lines, is_first_line) = render_message_segments(
@@ -1041,30 +1075,34 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App) {
                         app.tick_count,
                         label,
                         label_style,
+                        max_preview_len,
                     );
-                    lines.extend(segment_lines);
+                    message_lines.extend(segment_lines);
 
                     // If we never added any content, show just the label
                     if is_first_line {
-                        lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                        message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
                     }
                 } else {
                     // Fall back to content field for non-assistant messages or empty segments
-
                     let content_lines = render_markdown(&message.content);
 
                     if content_lines.is_empty() {
                         // Empty content, just show vertical bar
-                        lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                        message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
                     } else {
                         // Prepend vertical bar to ALL lines
                         for line in content_lines {
                             let mut spans = vec![Span::styled(label, label_style)];
                             spans.extend(line.spans);
-                            lines.push(Line::from(spans));
+                            message_lines.push(Line::from(spans));
                         }
                     }
                 }
+
+                // Cache and add to output
+                app.rendered_lines_cache.insert(message.id, message.render_version, message_lines.clone());
+                lines.extend(message_lines);
             }
 
             lines.push(Line::from(""));

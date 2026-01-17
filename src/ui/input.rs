@@ -1043,6 +1043,7 @@ mod tests {
             question_state: crate::state::session::AskUserQuestionState::default(),
             ws_sender: None,
             ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
+            rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
         }
     }
 

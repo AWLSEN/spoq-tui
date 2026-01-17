@@ -237,6 +237,8 @@ pub struct App {
     pub terminal_height: u16,
     /// Active panel for narrow/stacked layout mode (when width < 60 cols)
     pub active_panel: ActivePanel,
+    /// Cache for pre-rendered message lines (avoids re-rendering on every tick)
+    pub rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache,
 }
 
 impl App {
@@ -310,6 +312,7 @@ impl App {
             terminal_width: 80,  // Default, will be updated on first render
             terminal_height: 24, // Default, will be updated on first render
             active_panel: ActivePanel::default(),
+            rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
         })
     }
 

@@ -127,12 +127,13 @@ impl ServerMessage {
             thread_id: thread_id.to_string(),
             role,
             content: full_text,
-            created_at: Utc::now(),  // Server doesn't provide per-message timestamps
+            created_at: Utc::now(),
             is_streaming: false,
             partial_content: String::new(),
-            reasoning_content: String::new(),  // Server may not provide reasoning history
+            reasoning_content: String::new(),
             reasoning_collapsed: true,
             segments,
+            render_version: 0,
         }
     }
 }
@@ -165,18 +166,28 @@ pub struct Message {
     /// Segments of content including inline tool events
     #[serde(default)]
     pub segments: Vec<MessageSegment>,
+    /// Version counter for rendered line cache invalidation
+    #[serde(default)]
+    pub render_version: u64,
 }
 
 impl Message {
+    #[inline]
+    fn invalidate_render_cache(&mut self) {
+        self.render_version = self.render_version.wrapping_add(1);
+    }
+
     /// Append a token to the partial content during streaming
     pub fn append_token(&mut self, token: &str) {
         self.partial_content.push_str(token);
         self.add_text_segment(token.to_string());
+        self.invalidate_render_cache();
     }
 
     /// Append a token to the reasoning content during streaming
     pub fn append_reasoning_token(&mut self, token: &str) {
         self.reasoning_content.push_str(token);
+        self.invalidate_render_cache();
     }
 
     /// Finalize the message by moving partial_content to content and marking as not streaming
@@ -184,16 +195,17 @@ impl Message {
         if self.is_streaming {
             self.content = std::mem::take(&mut self.partial_content);
             self.is_streaming = false;
-            // Collapse reasoning by default when message is finalized
             if !self.reasoning_content.is_empty() {
                 self.reasoning_collapsed = true;
             }
+            self.invalidate_render_cache();
         }
     }
 
     /// Toggle the reasoning collapsed state
     pub fn toggle_reasoning_collapsed(&mut self) {
         self.reasoning_collapsed = !self.reasoning_collapsed;
+        self.invalidate_render_cache();
     }
 
     /// Count tokens in the reasoning content (approximation using whitespace)
@@ -216,6 +228,7 @@ impl Message {
     pub fn start_tool_event(&mut self, tool_call_id: String, function_name: String) {
         let event = ToolEvent::new(tool_call_id, function_name);
         self.segments.push(MessageSegment::ToolEvent(event));
+        self.invalidate_render_cache();
     }
 
     /// Complete a tool event by its tool_call_id
@@ -224,7 +237,8 @@ impl Message {
             if let MessageSegment::ToolEvent(event) = segment {
                 if event.tool_call_id == tool_call_id {
                     event.complete();
-                    break;
+                    self.invalidate_render_cache();
+                    return;
                 }
             }
         }
@@ -236,7 +250,8 @@ impl Message {
             if let MessageSegment::ToolEvent(event) = segment {
                 if event.tool_call_id == tool_call_id {
                     event.fail();
-                    break;
+                    self.invalidate_render_cache();
+                    return;
                 }
             }
         }
@@ -267,7 +282,8 @@ impl Message {
             if let MessageSegment::ToolEvent(event) = segment {
                 if event.tool_call_id == tool_call_id {
                     event.display_name = Some(display_name);
-                    break;
+                    self.invalidate_render_cache();
+                    return;
                 }
             }
         }
@@ -279,7 +295,8 @@ impl Message {
             if let MessageSegment::ToolEvent(event) = segment {
                 if event.tool_call_id == tool_call_id {
                     event.append_arg_chunk(chunk);
-                    break;
+                    self.invalidate_render_cache();
+                    return;
                 }
             }
         }
@@ -289,6 +306,7 @@ impl Message {
     pub fn start_subagent_event(&mut self, task_id: String, description: String, subagent_type: String) {
         let event = SubagentEvent::new(task_id, description, subagent_type);
         self.segments.push(MessageSegment::SubagentEvent(event));
+        self.invalidate_render_cache();
     }
 
     /// Update subagent progress by its task_id
@@ -297,7 +315,8 @@ impl Message {
             if let MessageSegment::SubagentEvent(event) = segment {
                 if event.task_id == task_id {
                     event.update_progress(Some(message), false);
-                    break;
+                    self.invalidate_render_cache();
+                    return;
                 }
             }
         }
@@ -310,7 +329,8 @@ impl Message {
                 if event.task_id == task_id {
                     event.tool_call_count = tool_call_count;
                     event.complete(summary);
-                    break;
+                    self.invalidate_render_cache();
+                    return;
                 }
             }
         }
@@ -353,7 +373,68 @@ mod tests {
             reasoning_content: String::new(),
             reasoning_collapsed: true,
             segments: Vec::new(),
+            render_version: 0,
         }
+    }
+
+    #[test]
+    fn test_render_version_increments_on_append_token() {
+        let mut message = create_test_message();
+        message.is_streaming = true;
+        assert_eq!(message.render_version, 0);
+        message.append_token("Hello");
+        assert_eq!(message.render_version, 1);
+        message.append_token(" World");
+        assert_eq!(message.render_version, 2);
+    }
+
+    #[test]
+    fn test_render_version_increments_on_reasoning_token() {
+        let mut message = create_test_message();
+        assert_eq!(message.render_version, 0);
+        message.append_reasoning_token("Thinking...");
+        assert_eq!(message.render_version, 1);
+    }
+
+    #[test]
+    fn test_render_version_increments_on_finalize() {
+        let mut message = create_test_message();
+        message.is_streaming = true;
+        message.partial_content = "Test content".to_string();
+        assert_eq!(message.render_version, 0);
+        message.finalize();
+        assert_eq!(message.render_version, 1);
+    }
+
+    #[test]
+    fn test_render_version_increments_on_toggle_reasoning() {
+        let mut message = create_test_message();
+        message.reasoning_content = "Some reasoning".to_string();
+        assert_eq!(message.render_version, 0);
+        message.toggle_reasoning_collapsed();
+        assert_eq!(message.render_version, 1);
+    }
+
+    #[test]
+    fn test_render_version_increments_on_tool_events() {
+        let mut message = create_test_message();
+        assert_eq!(message.render_version, 0);
+        message.start_tool_event("tool-1".to_string(), "Read".to_string());
+        assert_eq!(message.render_version, 1);
+        message.complete_tool_event("tool-1");
+        assert_eq!(message.render_version, 2);
+    }
+
+    #[test]
+    fn test_render_version_increments_on_subagent_events() {
+        let mut message = create_test_message();
+        assert_eq!(message.render_version, 0);
+        message.start_subagent_event("task-1".to_string(), "Exploring".to_string(), "Explore".to_string());
+        assert_eq!(message.render_version, 1);
+        message.update_subagent_progress("task-1", "Reading files".to_string());
+        assert_eq!(message.render_version, 2);
+        message.complete_subagent_event("task-1", Some("Done".to_string()), 5);
+        assert_eq!(message.render_version, 3);
     }
 
     #[test]

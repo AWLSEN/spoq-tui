@@ -190,6 +190,7 @@ impl ThreadCache {
             reasoning_content: String::new(),
             reasoning_collapsed: true,
             segments: Vec::new(),
+            render_version: 0,
         };
 
         self.add_message(message);
@@ -239,6 +240,7 @@ impl ThreadCache {
             reasoning_content: String::new(),
             reasoning_collapsed: true,
             segments: Vec::new(),
+            render_version: 0,
         };
         self.add_message(user_message);
 
@@ -254,6 +256,7 @@ impl ThreadCache {
             reasoning_content: String::new(),
             reasoning_collapsed: false, // Show reasoning while streaming
             segments: Vec::new(),
+            render_version: 0,
         };
         self.add_message(assistant_message);
 
@@ -654,6 +657,7 @@ impl ThreadCache {
             reasoning_content: String::new(),
             reasoning_collapsed: true,
             segments: Vec::new(),
+            render_version: 0,
         };
         self.add_message(user_message);
 
@@ -669,6 +673,7 @@ impl ThreadCache {
             reasoning_content: String::new(),
             reasoning_collapsed: false, // Show reasoning while streaming
             segments: Vec::new(),
+            render_version: 0,
         };
         self.add_message(assistant_message);
 
@@ -713,6 +718,7 @@ impl ThreadCache {
             reasoning_content: String::new(),
             reasoning_collapsed: true,
             segments: Vec::new(),
+            render_version: 0,
         };
         self.add_message(user_message);
 
@@ -728,6 +734,7 @@ impl ThreadCache {
             reasoning_content: String::new(),
             reasoning_collapsed: false, // Show reasoning while streaming
             segments: Vec::new(),
+            render_version: 0,
         };
         self.add_message(assistant_message);
 
@@ -940,6 +947,7 @@ impl ThreadCache {
                 reasoning_content: String::new(),
                 reasoning_collapsed: true,
                 segments: Vec::new(),
+            render_version: 0,
             },
             Message {
                 id: 2,
@@ -952,6 +960,7 @@ impl ThreadCache {
                 reasoning_content: String::new(),
                 reasoning_collapsed: true,
                 segments: Vec::new(),
+            render_version: 0,
             },
         ];
 
@@ -981,6 +990,7 @@ impl ThreadCache {
                 reasoning_content: String::new(),
                 reasoning_collapsed: true,
                 segments: Vec::new(),
+            render_version: 0,
             },
             Message {
                 id: 4,
@@ -993,6 +1003,7 @@ impl ThreadCache {
                 reasoning_content: String::new(),
                 reasoning_collapsed: true,
                 segments: Vec::new(),
+            render_version: 0,
             },
         ];
 
@@ -1022,6 +1033,7 @@ impl ThreadCache {
                 reasoning_content: String::new(),
                 reasoning_collapsed: true,
                 segments: Vec::new(),
+            render_version: 0,
             },
             Message {
                 id: 6,
@@ -1034,6 +1046,7 @@ impl ThreadCache {
                 reasoning_content: String::new(),
                 reasoning_collapsed: true,
                 segments: Vec::new(),
+            render_version: 0,
             },
         ];
 
@@ -1171,6 +1184,7 @@ mod tests {
             reasoning_content: String::new(),
             reasoning_collapsed: true,
             segments: Vec::new(),
+            render_version: 0,
         };
 
         cache.add_message(message);
@@ -1196,6 +1210,7 @@ mod tests {
                 reasoning_content: String::new(),
                 reasoning_collapsed: true,
                 segments: Vec::new(),
+            render_version: 0,
             },
         ];
 

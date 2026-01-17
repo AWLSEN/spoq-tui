@@ -126,6 +126,7 @@ mod tests {
             terminal_width: 80,
             terminal_height: 24,
             active_panel: crate::app::ActivePanel::default(),
+            rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
         }
     }
 
@@ -1768,7 +1769,7 @@ mod tests {
         let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
         tool.result_preview = None;
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_none());
     }
 
@@ -1777,7 +1778,7 @@ mod tests {
         let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
         tool.result_preview = Some("   ".to_string());
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_none());
     }
 
@@ -1786,7 +1787,7 @@ mod tests {
         let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Read".to_string());
         tool.set_result("File contents here", false);
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_some());
 
         let line = result.unwrap();
@@ -1804,7 +1805,7 @@ mod tests {
         let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Read".to_string());
         tool.set_result("File not found", true);
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_some());
 
         let line = result.unwrap();
@@ -1821,7 +1822,7 @@ mod tests {
         let long_content = "a".repeat(200);
         tool.set_result(&long_content, false);
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_some());
 
         let line = result.unwrap();
@@ -1836,7 +1837,7 @@ mod tests {
         let multiline = "line1\nline2\nline3\nline4\nline5";
         tool.set_result(multiline, false);
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_some());
 
         let line = result.unwrap();
@@ -1863,7 +1864,7 @@ mod tests {
         let exactly_150 = "a".repeat(150);
         tool.set_result(&exactly_150, false);
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_some());
 
         let line = result.unwrap();
@@ -1880,7 +1881,7 @@ mod tests {
         let one_over = "a".repeat(151);
         tool.set_result(&one_over, false);
 
-        let result = render_tool_result_preview(&tool);
+        let result = render_tool_result_preview(&tool, 150);
         assert!(result.is_some());
 
         let line = result.unwrap();
