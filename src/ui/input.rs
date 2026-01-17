@@ -17,6 +17,69 @@ use crate::widgets::input_box::InputBoxWidget;
 use super::theme::{COLOR_ACCENT, COLOR_DIALOG_BG, COLOR_DIM};
 
 // ============================================================================
+// Text Wrapping Helper
+// ============================================================================
+
+/// Word-wrap text to fit within a given width, returning wrapped lines.
+///
+/// Uses simple word-boundary wrapping. Words longer than max_width are broken.
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return vec![text.to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+
+    for word in text.split_whitespace() {
+        if current_line.is_empty() {
+            // First word on this line
+            if word.len() > max_width {
+                // Word is longer than max width, need to break it
+                let mut remaining = word;
+                while remaining.len() > max_width {
+                    lines.push(remaining[..max_width].to_string());
+                    remaining = &remaining[max_width..];
+                }
+                current_line = remaining.to_string();
+            } else {
+                current_line = word.to_string();
+            }
+        } else if current_line.len() + 1 + word.len() <= max_width {
+            // Word fits on current line with a space
+            current_line.push(' ');
+            current_line.push_str(word);
+        } else {
+            // Word doesn't fit, start a new line
+            lines.push(current_line);
+            if word.len() > max_width {
+                // Word is longer than max width, need to break it
+                let mut remaining = word;
+                while remaining.len() > max_width {
+                    lines.push(remaining[..max_width].to_string());
+                    remaining = &remaining[max_width..];
+                }
+                current_line = remaining.to_string();
+            } else {
+                current_line = word.to_string();
+            }
+        }
+    }
+
+    // Don't forget the last line
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    // Handle empty text
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
+// ============================================================================
 // AskUserQuestion Parsing
 // ============================================================================
 
@@ -530,16 +593,27 @@ fn render_ask_user_question_box(
 
     // Calculate box dimensions - larger than standard permission box for questions
     let box_width = 65u16.min(area.width.saturating_sub(4));
-    // Height: border(2) + tabs?(1) + question(2) + options(varies) + help(1) + padding
+
+    // Calculate inner width for text wrapping (box_width - borders(2) - padding(4))
+    let inner_width = box_width.saturating_sub(4) as usize;
+
+    // Get current question and wrap its text
+    let current_question = &data.questions[state.tab_index.min(data.questions.len() - 1)];
+    let wrapped_question_lines = wrap_text(&current_question.question, inner_width);
+    let question_lines_count = wrapped_question_lines.len() as u16;
+
+    // Height: border(2) + tabs?(1) + question(wrapped) + empty(1) + options(varies) + help(1) + padding
     let num_options = data
         .questions
         .get(state.tab_index)
         .map(|q| q.options.len())
         .unwrap_or(0);
-    // Each option takes 2-3 lines (label + description)
+    // Each option takes 2-3 lines (label + description + spacing)
     let options_height = ((num_options + 1) * 3) as u16; // +1 for "Other"
-    let base_height = 8u16; // borders + question + help + padding
-    let box_height = (base_height + options_height).min(area.height.saturating_sub(2));
+    let tabs_height = if data.questions.len() > 1 { 2u16 } else { 0u16 }; // tabs + empty line
+    let base_height = 5u16; // borders(2) + empty after question(1) + help(1) + padding(1)
+    let box_height = (base_height + tabs_height + question_lines_count + options_height)
+        .min(area.height.saturating_sub(2));
 
     // Center the box
     let x = area.x + (area.width.saturating_sub(box_width)) / 2;
@@ -599,7 +673,7 @@ fn render_ask_user_question_box(
     frame.render_widget(inner_bg, inner);
 
     let mut lines: Vec<Line> = Vec::new();
-    let current_question = &data.questions[state.tab_index.min(data.questions.len() - 1)];
+    // Note: current_question and wrapped_question_lines already computed above for height calc
 
     // Tab bar (only for multiple questions)
     if data.questions.len() > 1 {
@@ -642,11 +716,13 @@ fn render_ask_user_question_box(
         lines.push(Line::from("")); // Empty line after tabs
     }
 
-    // Question text
-    lines.push(Line::from(Span::styled(
-        current_question.question.clone(),
-        Style::default().fg(Color::White),
-    )));
+    // Question text (wrapped to fit dialog width)
+    for wrapped_line in &wrapped_question_lines {
+        lines.push(Line::from(Span::styled(
+            wrapped_line.clone(),
+            Style::default().fg(Color::White),
+        )));
+    }
     lines.push(Line::from("")); // Empty line after question
 
     // Options
@@ -1049,4 +1125,63 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // ========================================================================
+    // wrap_text tests
+    // ========================================================================
+
+    #[test]
+    fn test_wrap_text_short_text() {
+        let result = wrap_text("Hello world", 20);
+        assert_eq!(result, vec!["Hello world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_exact_fit() {
+        let result = wrap_text("Hello world", 11);
+        assert_eq!(result, vec!["Hello world"]);
+    }
+
+    #[test]
+    fn test_wrap_text_needs_wrap() {
+        let result = wrap_text("Hello wonderful world today", 15);
+        assert_eq!(result, vec!["Hello wonderful", "world today"]);
+    }
+
+    #[test]
+    fn test_wrap_text_multiple_wraps() {
+        let result = wrap_text("one two three four five six", 10);
+        assert_eq!(result, vec!["one two", "three four", "five six"]);
+    }
+
+    #[test]
+    fn test_wrap_text_long_word() {
+        let result = wrap_text("supercalifragilisticexpialidocious", 10);
+        assert_eq!(result, vec![
+            "supercalif",
+            "ragilistic",
+            "expialidoc",
+            "ious"
+        ]);
+    }
+
+    #[test]
+    fn test_wrap_text_empty() {
+        let result = wrap_text("", 20);
+        assert_eq!(result, vec![""]);
+    }
+
+    #[test]
+    fn test_wrap_text_zero_width() {
+        let result = wrap_text("Hello", 0);
+        assert_eq!(result, vec!["Hello"]);
+    }
+
+    #[test]
+    fn test_wrap_text_realistic_question() {
+        let question = "Which library should we use for date formatting in the application? We need something with good timezone support.";
+        let result = wrap_text(question, 60);
+        assert_eq!(result.len(), 2);
+        assert!(result[0].len() <= 60);
+        assert!(result[1].len() <= 60);
+    }
 }

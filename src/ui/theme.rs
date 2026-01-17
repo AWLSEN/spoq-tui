@@ -41,9 +41,6 @@ pub const COLOR_PROGRESS_BG: Color = Color::DarkGray;
 // Claude Code Tool Colors
 // ============================================================================
 
-/// Tool icon color - Claude Code blue
-pub const COLOR_TOOL_ICON: Color = Color::Rgb(0, 122, 204); // blue #007ACC
-
 /// Tool running state - gray
 pub const COLOR_TOOL_RUNNING: Color = Color::Rgb(128, 128, 128); // gray for running state
 
