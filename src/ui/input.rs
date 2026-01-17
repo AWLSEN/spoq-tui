@@ -6,7 +6,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -204,10 +204,14 @@ pub fn render_permission_box(
         height: box_height,
     };
 
-    // Fill entire box_area with solid background color using idiomatic ratatui method
-    frame
-        .buffer_mut()
-        .set_style(box_area, Style::default().bg(COLOR_DIALOG_BG));
+    // Clear the area first (resets all cells), then fill with spaces + background color
+    frame.render_widget(Clear, box_area);
+    let bg_style = Style::default().bg(COLOR_DIALOG_BG);
+    let spaces = " ".repeat(box_area.width as usize);
+    let buf = frame.buffer_mut();
+    for y in box_area.y..box_area.y + box_area.height {
+        buf.set_string(box_area.x, y, &spaces, bg_style);
+    }
 
     // Create the permission box with border and background
     let block = Block::default()
@@ -393,10 +397,14 @@ fn render_skill_permission_box(frame: &mut Frame, area: Rect, perm: &PermissionR
         height: box_height,
     };
 
-    // Fill entire box_area with solid background color using idiomatic ratatui method
-    frame
-        .buffer_mut()
-        .set_style(box_area, Style::default().bg(COLOR_DIALOG_BG));
+    // Clear the area first (resets all cells), then fill with spaces + background color
+    frame.render_widget(Clear, box_area);
+    let bg_style = Style::default().bg(COLOR_DIALOG_BG);
+    let spaces = " ".repeat(box_area.width as usize);
+    let buf = frame.buffer_mut();
+    for y in box_area.y..box_area.y + box_area.height {
+        buf.set_string(box_area.x, y, &spaces, bg_style);
+    }
 
     // Create the skill box with border and background
     let block = Block::default()
@@ -544,10 +552,14 @@ fn render_ask_user_question_box(
         height: box_height,
     };
 
-    // Fill entire box_area with solid background color using idiomatic ratatui method
-    frame
-        .buffer_mut()
-        .set_style(box_area, Style::default().bg(COLOR_DIALOG_BG));
+    // Clear the area first (resets all cells), then fill with spaces + background color
+    frame.render_widget(Clear, box_area);
+    let bg_style = Style::default().bg(COLOR_DIALOG_BG);
+    let spaces = " ".repeat(box_area.width as usize);
+    let buf = frame.buffer_mut();
+    for y in box_area.y..box_area.y + box_area.height {
+        buf.set_string(box_area.x, y, &spaces, bg_style);
+    }
 
     // Build title based on question count
     let title = if data.questions.len() == 1 {
