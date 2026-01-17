@@ -21,6 +21,7 @@ fn test_deserialize_permission_request() {
             assert_eq!(req.description, "List directory contents");
             assert_eq!(req.timestamp, 1234567890);
         }
+        _ => panic!("Expected PermissionRequest variant"),
     }
 }
 
@@ -97,5 +98,6 @@ fn test_roundtrip_serialization() {
             assert_eq!(req.timestamp, 9876543210);
             assert_eq!(req.tool_input["file_path"], "/etc/hosts");
         }
+        _ => panic!("Expected PermissionRequest variant"),
     }
 }

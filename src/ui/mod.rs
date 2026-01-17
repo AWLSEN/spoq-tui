@@ -1243,7 +1243,7 @@ mod tests {
 
     #[test]
     fn test_contextual_keybinds_command_deck() {
-        let mut app = create_test_app();
+        let app = create_test_app();
         // app.screen defaults to CommandDeck
 
         let keybinds = build_contextual_keybinds(&app);

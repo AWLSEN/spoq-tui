@@ -879,8 +879,8 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
         if char_count == 0 {
             1 // Empty line still takes 1 row
         } else {
-            // Ceiling division: (char_count + viewport_width - 1) / viewport_width
-            (char_count + viewport_width - 1) / viewport_width
+            // Ceiling division
+            char_count.div_ceil(viewport_width)
         }
     }).sum()
 }
