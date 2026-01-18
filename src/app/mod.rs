@@ -97,10 +97,6 @@ pub enum Focus {
     Input,
 }
 
-/// Type alias for backward compatibility - use PermissionMode directly in new code
-#[deprecated(note = "Use PermissionMode from crate::models instead")]
-pub type ProgrammingMode = PermissionMode;
-
 /// Thread switcher dialog state (Tab to open)
 #[derive(Debug, Clone)]
 #[derive(Default)]

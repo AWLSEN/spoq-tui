@@ -9,10 +9,10 @@ use crate::debug::{
     DebugEventKind, ErrorData, ErrorSource, ProcessedEventData, StreamLifecycleData, StreamPhase,
 };
 use crate::events::SseEvent;
-use crate::models::{StreamRequest, ThreadType, PermissionMode};
+use crate::models::{StreamRequest, ThreadType};
 use crate::state::Todo;
 
-use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, ProgrammingMode, Screen};
+use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, Screen};
 use crate::debug::DebugEventSender;
 
 impl App {
