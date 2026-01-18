@@ -53,6 +53,13 @@ async fn main() -> Result<()> {
     // Enter alternate screen and enable bracketed paste (for paste detection)
     // Note: Mouse capture is intentionally NOT enabled to allow native terminal text selection
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+
+    // Enable alternate scroll mode: tells terminal to translate scroll wheel → arrow keys
+    // This allows scroll wheel to work without EnableMouseCapture (preserving native text selection)
+    // Escape sequence: CSI ? 1007 h (DEC private mode set)
+    use std::io::Write;
+    write!(stdout, "\x1b[?1007h")?;
+    stdout.flush()?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -130,6 +137,13 @@ where
     B::Error: Send + Sync + 'static,
 {
     let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+
+    // Disable alternate scroll mode before leaving
+    // Escape sequence: CSI ? 1007 l (DEC private mode reset)
+    use std::io::Write;
+    let _ = write!(terminal.backend_mut(), "\x1b[?1007l");
+    let _ = std::io::Write::flush(terminal.backend_mut());
+
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
@@ -539,6 +553,60 @@ where
                                 KeyCode::Enter if app.focus == Focus::Threads => {
                                     // Open selected thread when pressing Enter on Threads panel
                                     app.open_selected_thread();
+                                }
+                                // Arrow key scrolling in Conversation (when not in input)
+                                // Alternate scroll mode sends scroll wheel as arrow keys
+                                KeyCode::Up if app.screen == Screen::Conversation && app.focus != Focus::Input => {
+                                    // Scroll up = see older content = increase offset
+                                    if app.conversation_scroll < app.max_scroll {
+                                        app.conversation_scroll += 1;
+                                        app.scroll_position = app.conversation_scroll as f32;
+                                        app.mark_dirty();
+                                    } else if app.max_scroll > 0 {
+                                        app.scroll_boundary_hit = Some(ScrollBoundary::Top);
+                                        app.boundary_hit_tick = app.tick_count;
+                                        app.mark_dirty();
+                                    }
+                                }
+                                KeyCode::Down if app.screen == Screen::Conversation && app.focus != Focus::Input => {
+                                    // Scroll down = see newer content = decrease offset
+                                    if app.conversation_scroll > 0 {
+                                        app.conversation_scroll -= 1;
+                                        app.scroll_position = app.conversation_scroll as f32;
+                                        app.mark_dirty();
+                                    } else {
+                                        app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+                                        app.boundary_hit_tick = app.tick_count;
+                                        app.mark_dirty();
+                                    }
+                                }
+                                KeyCode::PageUp if app.screen == Screen::Conversation => {
+                                    // Page up = scroll by ~10 lines at once
+                                    let page_size = 10;
+                                    let new_scroll = (app.conversation_scroll + page_size).min(app.max_scroll);
+                                    if new_scroll != app.conversation_scroll {
+                                        app.conversation_scroll = new_scroll;
+                                        app.scroll_position = app.conversation_scroll as f32;
+                                        app.mark_dirty();
+                                    } else if app.max_scroll > 0 {
+                                        app.scroll_boundary_hit = Some(ScrollBoundary::Top);
+                                        app.boundary_hit_tick = app.tick_count;
+                                        app.mark_dirty();
+                                    }
+                                }
+                                KeyCode::PageDown if app.screen == Screen::Conversation => {
+                                    // Page down = scroll by ~10 lines at once
+                                    let page_size = 10;
+                                    let new_scroll = app.conversation_scroll.saturating_sub(page_size);
+                                    if new_scroll != app.conversation_scroll {
+                                        app.conversation_scroll = new_scroll;
+                                        app.scroll_position = app.conversation_scroll as f32;
+                                        app.mark_dirty();
+                                    } else {
+                                        app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
+                                        app.boundary_hit_tick = app.tick_count;
+                                        app.mark_dirty();
+                                    }
                                 }
                                 KeyCode::Up => {
                                     app.move_up();
