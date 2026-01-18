@@ -1659,17 +1659,57 @@ mod tests {
     }
 
     #[test]
-    fn test_build_input_section_contains_label() {
+    fn test_build_input_section_default_mode_empty_line() {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Second line should be empty for Default mode
+        // Second line should be empty for Default mode (no mode indicator)
         let mode_line = &lines[1];
         assert_eq!(mode_line.spans.len(), 0, "Default mode should show empty line");
     }
 
     #[test]
-    fn test_build_input_section_with_folder_chip() {
+    fn test_build_input_section_plan_mode_indicator() {
+        let mut app = App::default();
+        app.permission_mode = PermissionMode::Plan;
+
+        let lines = build_input_section(&app, 80);
+
+        // Second line should show [PLAN] indicator
+        let mode_line = &lines[1];
+        assert!(mode_line.spans.len() > 0, "Plan mode should show mode indicator");
+
+        let mode_text: String = mode_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(mode_text.contains("[PLAN]"), "Plan mode should display '[PLAN]'");
+
+        // Verify magenta color styling
+        if let Some(span) = mode_line.spans.first() {
+            assert_eq!(span.style.fg, Some(Color::Magenta), "Plan mode indicator should be magenta");
+        }
+    }
+
+    #[test]
+    fn test_build_input_section_execute_mode_indicator() {
+        let mut app = App::default();
+        app.permission_mode = PermissionMode::BypassPermissions;
+
+        let lines = build_input_section(&app, 80);
+
+        // Second line should show [EXECUTE] indicator
+        let mode_line = &lines[1];
+        assert!(mode_line.spans.len() > 0, "BypassPermissions mode should show mode indicator");
+
+        let mode_text: String = mode_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(mode_text.contains("[EXECUTE]"), "BypassPermissions mode should display '[EXECUTE]'");
+
+        // Verify orange color styling (RGB 255, 140, 0)
+        if let Some(span) = mode_line.spans.first() {
+            assert_eq!(span.style.fg, Some(Color::Rgb(255, 140, 0)), "Execute mode indicator should be orange");
+        }
+    }
+
+    #[test]
+    fn test_build_input_section_folder_does_not_affect_mode_line() {
         use crate::models::Folder;
 
         let mut app = App::default();
@@ -1680,9 +1720,30 @@ mod tests {
 
         let lines = build_input_section(&app, 80);
 
-        // Mode line should be empty for Default mode (folder chip is no longer shown)
+        // Mode line should still be empty for Default mode (folder chip is no longer shown in mode line)
         let mode_line = &lines[1];
-        assert_eq!(mode_line.spans.len(), 0, "Default mode should show empty line");
+        assert_eq!(mode_line.spans.len(), 0, "Default mode should show empty line even with folder selected");
+    }
+
+    #[test]
+    fn test_build_input_section_plan_mode_with_folder() {
+        use crate::models::Folder;
+
+        let mut app = App::default();
+        app.permission_mode = PermissionMode::Plan;
+        app.selected_folder = Some(Folder {
+            name: "my-project".to_string(),
+            path: "/path/to/project".to_string(),
+        });
+
+        let lines = build_input_section(&app, 80);
+
+        // Mode line should show [PLAN] regardless of folder
+        let mode_line = &lines[1];
+        let mode_text: String = mode_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(mode_text.contains("[PLAN]"), "Plan mode should display '[PLAN]' even with folder selected");
+        // Folder chip should NOT appear in mode line
+        assert!(!mode_text.contains("my-project"), "Folder chip should not appear in mode line");
     }
 
     #[test]
@@ -1728,12 +1789,40 @@ mod tests {
         let keybinds_text: String = keybinds_line.spans.iter().map(|s| s.content.as_ref()).collect();
 
         // Should contain key keybind hints
-        assert!(keybinds_text.contains("Enter"));
-        assert!(keybinds_text.contains("send"));
-        assert!(keybinds_text.contains("Shift+Enter"));
-        assert!(keybinds_text.contains("newline"));
-        assert!(keybinds_text.contains("Esc"));
-        assert!(keybinds_text.contains("menu"));
+        assert!(keybinds_text.contains("Enter"), "Should contain 'Enter'");
+        assert!(keybinds_text.contains("send"), "Should contain 'send'");
+        assert!(keybinds_text.contains("Shift+Enter"), "Should contain 'Shift+Enter'");
+        assert!(keybinds_text.contains("newline"), "Should contain 'newline'");
+        assert!(keybinds_text.contains("Esc"), "Should contain 'Esc'");
+        assert!(keybinds_text.contains("menu"), "Should contain 'menu'");
+
+        // Should use pipe separators between keybind hints
+        assert!(keybinds_text.contains("|"), "Keybind hints should use '|' as separator");
+
+        // Verify there are multiple pipe separators (at least 2 for 3 keybinds)
+        let pipe_count = keybinds_text.matches('|').count();
+        assert!(pipe_count >= 2, "Should have at least 2 pipe separators, found {}", pipe_count);
+    }
+
+    #[test]
+    fn test_build_input_section_keybind_styling() {
+        let app = App::default();
+        let lines = build_input_section(&app, 80);
+
+        // Second to last line should be keybind hints
+        let keybinds_line = &lines[lines.len() - 2];
+
+        // All spans in keybind hints should use COLOR_DIM
+        for span in &keybinds_line.spans {
+            if !span.content.trim().is_empty() {
+                assert_eq!(
+                    span.style.fg,
+                    Some(COLOR_DIM),
+                    "Keybind span '{}' should use COLOR_DIM",
+                    span.content
+                );
+            }
+        }
     }
 
     #[test]
