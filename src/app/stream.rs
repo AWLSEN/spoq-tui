@@ -44,16 +44,24 @@ impl App {
         // Conversation = continue the thread that was opened via open_thread()
         let is_command_deck = self.screen == Screen::CommandDeck;
 
+        // Extract working directory from selected folder (if any)
+        let working_directory = self
+            .selected_folder
+            .as_ref()
+            .map(|f| f.path.clone());
+
         // Determine thread_id based on screen
         let (thread_id, is_new_thread) = if is_command_deck {
             // NEW thread - create pending, will reconcile when backend responds
             let pending_id = self
                 .cache
-                .create_pending_thread(content.clone(), new_thread_type, None);
+                .create_pending_thread(content.clone(), new_thread_type, working_directory.clone());
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
             self.reset_scroll();
+            // Clear selected folder after successful thread creation
+            self.selected_folder = None;
             (pending_id, true)
         } else if let Some(existing_id) = &self.active_thread_id {
             // CONTINUING existing thread (we're on Conversation screen)
@@ -78,9 +86,11 @@ impl App {
             // Fall back to creating new thread
             let pending_id = self
                 .cache
-                .create_pending_thread(content.clone(), new_thread_type, None);
+                .create_pending_thread(content.clone(), new_thread_type, working_directory.clone());
             self.active_thread_id = Some(pending_id.clone());
             self.reset_scroll();
+            // Clear selected folder after successful thread creation
+            self.selected_folder = None;
             (pending_id, true)
         };
 
@@ -116,7 +126,8 @@ impl App {
         // The backend will use our client-generated UUID as the canonical thread_id
         let request = StreamRequest::with_thread(content, thread_id)
             .with_type(new_thread_type)
-            .with_permission_mode(self.permission_mode);
+            .with_permission_mode(self.permission_mode)
+            .with_working_directory(working_directory);
 
         // Spawn async task for unified stream endpoint
         tokio::spawn(async move {
