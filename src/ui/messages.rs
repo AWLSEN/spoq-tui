@@ -242,10 +242,11 @@ fn wrap_lines_with_prefix(
     prefix: &'static str,
     prefix_style: Style,
     max_width: usize,
+    bg_color: Option<Color>,
 ) -> Vec<Line<'static>> {
     let mut result = Vec::new();
     for line in lines {
-        result.extend(wrap_line_with_prefix(line, prefix, prefix_style, max_width));
+        result.extend(wrap_line_with_prefix(line, prefix, prefix_style, max_width, bg_color));
     }
     result
 }
