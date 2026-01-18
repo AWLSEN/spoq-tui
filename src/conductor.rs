@@ -5,7 +5,7 @@
 
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;
-use crate::models::{Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse};
+use crate::models::{Folder, Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse};
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
 use futures_util::stream::{self, Stream};
@@ -302,6 +302,22 @@ impl ConductorClient {
 
         let data: ThreadListResponse = response.json().await?;
         Ok(data.threads)
+    }
+
+    /// Fetch all folders from the backend.
+    ///
+    /// # Returns
+    /// A vector of folders, or an error if the request fails
+    pub async fn fetch_folders(&self) -> Result<Vec<Folder>, ConductorError> {
+        let url = format!("{}/v1/folders", self.base_url);
+        let response = self.client.get(&url).send().await?;
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+        let folders: Vec<Folder> = response.json().await?;
+        Ok(folders)
     }
 
     /// Fetch all tasks from the backend.

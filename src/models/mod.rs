@@ -1,8 +1,10 @@
+mod folder;
 mod message;
 mod request;
 mod thread;
 mod tools;
 
+pub use folder::Folder;
 pub use message::*;
 pub use request::PermissionMode;
 pub use request::*;
