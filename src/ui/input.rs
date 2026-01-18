@@ -1643,4 +1643,115 @@ mod tests {
         // Width = 3 + 20 + 1 = 24
         assert!(width <= 24);
     }
+
+    #[test]
+    fn test_build_input_section_basic_structure() {
+        let app = App::default();
+        let lines = build_input_section(&app, 80);
+
+        // Should have: blank, label, top border, content lines, bottom border, keybinds, blank
+        // Minimum is 7 lines (for empty input with 1 content line)
+        assert!(lines.len() >= 7);
+
+        // First line should be blank separator
+        assert_eq!(lines[0].spans.len(), 0);
+
+        // Last line should be blank padding
+        assert_eq!(lines[lines.len() - 1].spans.len(), 0);
+    }
+
+    #[test]
+    fn test_build_input_section_contains_label() {
+        let app = App::default();
+        let lines = build_input_section(&app, 80);
+
+        // Second line should contain the "Message" label
+        let label_line = &lines[1];
+        assert!(!label_line.spans.is_empty());
+        let label_text = label_line.spans[0].content.to_string();
+        assert!(label_text.contains("Message"));
+    }
+
+    #[test]
+    fn test_build_input_section_with_folder_chip() {
+        use crate::models::Folder;
+
+        let mut app = App::default();
+        app.selected_folder = Some(Folder {
+            name: "my-project".to_string(),
+            path: "/path/to/project".to_string(),
+        });
+
+        let lines = build_input_section(&app, 80);
+
+        // Label line should contain folder chip
+        let label_line = &lines[1];
+        assert!(label_line.spans.len() > 1);
+
+        // Find the chip span (contains folder emoji and name)
+        let has_folder_chip = label_line.spans.iter().any(|span| {
+            span.content.contains("📁") && span.content.contains("my-project")
+        });
+        assert!(has_folder_chip);
+    }
+
+    #[test]
+    fn test_build_input_section_multiline_input() {
+        let mut app = App::default();
+        app.textarea.set_content("First line\nSecond line\nThird line");
+
+        let lines = build_input_section(&app, 80);
+
+        // Should have more content lines for multiline input
+        // Structure: blank, label, top border, 3 content lines, bottom border, keybinds, blank
+        assert_eq!(lines.len(), 9);
+    }
+
+    #[test]
+    fn test_build_input_section_borders_present() {
+        let app = App::default();
+        let lines = build_input_section(&app, 80);
+
+        // Line 2 should be top border (contains ┌ and ─)
+        let top_border = &lines[2];
+        let top_text: String = top_border.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(top_text.contains("┌"));
+        assert!(top_text.contains("─"));
+        assert!(top_text.contains("┐"));
+
+        // Find bottom border (should contain └ and ─)
+        let bottom_border_idx = lines.len() - 3; // Before keybinds and blank
+        let bottom_border = &lines[bottom_border_idx];
+        let bottom_text: String = bottom_border.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(bottom_text.contains("└"));
+        assert!(bottom_text.contains("─"));
+        assert!(bottom_text.contains("┘"));
+    }
+
+    #[test]
+    fn test_build_input_section_keybind_hints() {
+        let app = App::default();
+        let lines = build_input_section(&app, 80);
+
+        // Second to last line should be keybind hints
+        let keybinds_line = &lines[lines.len() - 2];
+        let keybinds_text: String = keybinds_line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        // Should contain key keybind hints
+        assert!(keybinds_text.contains("Enter"));
+        assert!(keybinds_text.contains("send"));
+        assert!(keybinds_text.contains("Shift+Enter"));
+        assert!(keybinds_text.contains("newline"));
+        assert!(keybinds_text.contains("Esc"));
+        assert!(keybinds_text.contains("menu"));
+    }
+
+    #[test]
+    fn test_build_input_section_narrow_viewport() {
+        let app = App::default();
+        let lines = build_input_section(&app, 40);
+
+        // Should still render without panicking on narrow width
+        assert!(lines.len() >= 7);
+    }
 }
