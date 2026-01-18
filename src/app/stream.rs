@@ -26,7 +26,7 @@ impl App {
     /// The backend uses this client-provided UUID as the canonical thread_id.
     ///
     /// The unified stream endpoint routes based on thread_type parameter.
-    /// For programming threads, plan_mode is set based on the current programming mode.
+    /// The current permission_mode is sent with the request.
     ///
     /// Edge case: If the thread has a streaming response in progress, we block submission
     /// to prevent sending multiple messages before the current response completes.
@@ -34,7 +34,7 @@ impl App {
     /// The `new_thread_type` parameter specifies what type of thread to create if this
     /// is a NEW conversation. It's ignored when continuing an existing thread.
     pub fn submit_input(&mut self, new_thread_type: ThreadType) {
-        let content = self.textarea.content();
+        let content = self.textarea.content_expanded();
         if content.trim().is_empty() {
             return;
         }
@@ -85,6 +85,7 @@ impl App {
         };
 
         self.textarea.clear();
+        self.textarea.clear_paste_tokens();
         self.mark_dirty();
 
         // Emit StreamLifecycle connecting event

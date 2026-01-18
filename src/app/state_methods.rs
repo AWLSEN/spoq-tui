@@ -211,4 +211,11 @@ impl App {
     pub fn content_height(&self) -> u16 {
         self.terminal_height.saturating_sub(6)
     }
+
+    /// Check if pasted text should be summarized
+    pub fn should_summarize_paste(&self, text: &str) -> bool {
+        let line_count = text.lines().count();
+        let char_count = text.chars().count();
+        line_count > 3 || char_count > 150
+    }
 }

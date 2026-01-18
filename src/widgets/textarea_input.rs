@@ -20,8 +20,6 @@ use tui_textarea::{CursorMove, TextArea};
 /// the entire token, and the cursor cannot be positioned inside them.
 #[derive(Debug, Clone)]
 struct PasteToken {
-    /// Unique identifier for this token
-    id: u32,
     /// Line number where this token is located
     line: usize,
     /// Starting column (inclusive)
@@ -446,7 +444,6 @@ impl<'a> TextAreaInput<'a> {
 
         // Track this token
         self.paste_tokens.push(PasteToken {
-            id,
             line,
             col_start,
             col_end: col_start + display_len,

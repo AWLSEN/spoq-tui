@@ -768,7 +768,7 @@ mod tests {
     // ============= Mode Indicator Tests =============
 
     #[test]
-    fn test_create_mode_indicator_line_plan_mode() {
+    fn test_create_mode_indicator_line_plan() {
         let line = create_mode_indicator_line(PermissionMode::Plan);
         assert!(line.is_some());
         let line = line.unwrap();

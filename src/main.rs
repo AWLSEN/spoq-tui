@@ -718,10 +718,14 @@ where
                                 app.focus = Focus::Input;
                             }
 
-                            // Insert pasted text character by character into textarea
-                            // This handles both single-line and multi-line pastes correctly
-                            for ch in text.chars() {
-                                app.textarea.insert_char(ch);
+                            if app.should_summarize_paste(&text) {
+                                // Insert as atomic token
+                                app.textarea.insert_paste_token(text);
+                            } else {
+                                // Insert normally character by character
+                                for ch in text.chars() {
+                                    app.textarea.insert_char(ch);
+                                }
                             }
 
                             app.mark_dirty();
