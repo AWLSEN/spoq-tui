@@ -1969,7 +1969,7 @@ mod tests {
         // End should be 10 (all messages)
         assert_eq!(end, 10);
         // Start should be around message 7 - buffer = max(7 - 5, 0) = 2
-        assert!(start >= 0 && start <= 7);
+        assert!(start <= 7);
     }
 
     #[test]

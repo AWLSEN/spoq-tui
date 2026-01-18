@@ -253,21 +253,21 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     let card_width: u16 = ctx.bounded_width(card_percentage, min_width, max_width);
     let inner_width = card_width.saturating_sub(2) as usize; // Width inside borders (between ┌ and ┐)
 
-    // Generate dynamic border strings
-    let border_top = format!("┌{}┐", "─".repeat(inner_width));
-    let border_bottom = format!("└{}┘", "─".repeat(inner_width));
-
     // Content width: space between "│ " (2 chars) and "│" (1 char)
     // So content_width = card_width - 3 = inner_width - 1
     let content_width = inner_width.saturating_sub(1);
 
-    // Calculate centering padding
+    // Calculate centering padding (used by make_padding closure)
     let left_padding = if inner.width > card_width {
         (inner.width - card_width) / 2
     } else {
         0
     };
-    let padding_str: String = " ".repeat(left_padding as usize);
+
+    // Helper to create padding span (avoids repeated string cloning)
+    let make_padding = || -> Span<'static> {
+        Span::raw(" ".repeat(left_padding as usize))
+    };
 
     let header_style = if focused {
         Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
@@ -283,23 +283,20 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         Line::from(""),
     ];
 
-    // Use threads from cache (no mock fallback - show empty if no threads)
+    // Use threads from cache directly (no intermediate Vec allocation)
     let cached_threads = app.cache.threads();
-    let threads_to_render: Vec<(String, String)> = cached_threads.iter().map(|t| {
-        (t.title.clone(), t.preview.clone())
-    }).collect();
 
     // Show empty state if no threads
-    if threads_to_render.is_empty() {
+    if cached_threads.is_empty() {
         lines.push(Line::from(vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled(
                 "No conversations yet",
                 Style::default().fg(COLOR_DIM),
             ),
         ]));
         lines.push(Line::from(vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled(
                 "Type a message to start",
                 Style::default().fg(COLOR_DIM),
@@ -312,15 +309,16 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     let lines_per_card = 6;
     let max_visible_threads = (inner.height.saturating_sub(4) / lines_per_card as u16) as usize;
 
-    for (i, (title, preview)) in threads_to_render.iter().take(max_visible_threads.max(1)).enumerate() {
+    // Iterate directly over cached_threads (no intermediate Vec)
+    for (i, thread) in cached_threads.iter().take(max_visible_threads.max(1)).enumerate() {
         let is_selected = focused && i == app.threads_index;
         let card_border_color = if is_selected { COLOR_HEADER } else { COLOR_BORDER };
 
-        // Thread card top border (centered)
+        // Thread card top border (centered) - format directly into Span
         lines.push(Line::from(vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled(
-                border_top.clone(),
+                format!("┌{}┐", "─".repeat(inner_width)),
                 Style::default().fg(card_border_color),
             ),
         ]));
@@ -329,8 +327,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         let title_marker = if is_selected { "▶ " } else { "► " };
 
         // Check if this thread is streaming and compute dots
-        let thread_id = &cached_threads[i].id;
-        let is_streaming = app.cache.is_thread_streaming(thread_id);
+        let is_streaming = app.cache.is_thread_streaming(&thread.id);
         let dots = if is_streaming {
             match (app.tick_count / 5) % 3 {
                 0 => ".",
@@ -347,10 +344,11 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         let available_for_title = content_width.saturating_sub(10 + if is_streaming { 3 } else { 0 }); // 10 = marker(2) + "Thread: "(8)
         let max_title_len = base_max_title.min(available_for_title);
 
-        let display_title = truncate_to_width(title, max_title_len);
+        let display_title = truncate_to_width(&thread.title, max_title_len);
+        let display_title_chars = display_title.chars().count();
 
         let mut title_spans = vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled("│ ", Style::default().fg(card_border_color)),
             Span::styled(title_marker, Style::default().fg(if is_selected { COLOR_HEADER } else { COLOR_ACCENT })),
             Span::styled(
@@ -369,26 +367,26 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         }
 
         title_spans.push(Span::styled(
-            format!("{:>width$}│", "", width = content_width.saturating_sub(10 + display_title.chars().count() + dots.len())),
+            format!("{:>width$}│", "", width = content_width.saturating_sub(10 + display_title_chars + dots.len())),
             Style::default().fg(card_border_color),
         ));
 
         lines.push(Line::from(title_spans));
 
         // Thread description (centered, if present)
-        let thread = &cached_threads[i];
         if let Some(description) = &thread.description {
             if !description.is_empty() {
                 // Max description length constrained by content width and layout context
                 let max_desc_len = ctx.max_preview_length().min(content_width.saturating_sub(2));
                 let display_desc = truncate_to_width(description, max_desc_len);
+                let display_desc_chars = display_desc.chars().count();
 
                 lines.push(Line::from(vec![
-                    Span::raw(padding_str.clone()),
+                    make_padding(),
                     Span::styled("│   ", Style::default().fg(card_border_color)),
-                    Span::styled(display_desc.clone(), Style::default().fg(COLOR_DIM)),
+                    Span::styled(display_desc, Style::default().fg(COLOR_DIM)),
                     Span::styled(
-                        format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_desc.chars().count())),
+                        format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_desc_chars)),
                         Style::default().fg(card_border_color),
                     ),
                 ]));
@@ -402,7 +400,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         };
 
         let mut type_line_spans = vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled("│   ", Style::default().fg(card_border_color)),
             Span::styled(type_indicator, Style::default().fg(COLOR_ACCENT)),
         ];
@@ -443,23 +441,24 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         // Thread preview (centered)
         // Use layout context to determine max preview length, constrained by content width
         let max_preview_len = ctx.max_preview_length().min(content_width.saturating_sub(4)); // 4 = 2 for quotes, 2 for indent
-        let display_preview = truncate_to_width(preview, max_preview_len);
+        let display_preview = truncate_to_width(&thread.preview, max_preview_len);
+        let display_preview_chars = display_preview.chars().count();
 
         lines.push(Line::from(vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled("│   ", Style::default().fg(card_border_color)),
             Span::styled(format!("\"{}\"", display_preview), Style::default().fg(COLOR_DIM)),
             Span::styled(
-                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_preview.chars().count() + 2)), // +2 for quotes
+                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_preview_chars + 2)), // +2 for quotes
                 Style::default().fg(card_border_color),
             ),
         ]));
 
-        // Thread card bottom border (centered)
+        // Thread card bottom border (centered) - format directly into Span
         lines.push(Line::from(vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled(
-                border_bottom.clone(),
+                format!("└{}┘", "─".repeat(inner_width)),
                 Style::default().fg(card_border_color),
             ),
         ]));
@@ -470,7 +469,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     // Adjust hints based on available width
     let hints = if ctx.should_show_full_badges() {
         vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled("[Shift+N]", Style::default().fg(COLOR_ACCENT)),
             Span::raw(" New Thread  "),
             Span::styled("[TAB]", Style::default().fg(COLOR_ACCENT)),
@@ -479,7 +478,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     } else {
         // Compact hints for narrow terminals
         vec![
-            Span::raw(padding_str.clone()),
+            make_padding(),
             Span::styled("[N]", Style::default().fg(COLOR_ACCENT)),
             Span::raw(" New  "),
             Span::styled("[TAB]", Style::default().fg(COLOR_ACCENT)),
