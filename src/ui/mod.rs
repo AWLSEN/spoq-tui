@@ -162,6 +162,7 @@ mod tests {
             markdown_cache: crate::markdown::MarkdownCache::new(),
             cached_message_heights: std::collections::HashMap::new(),
             needs_redraw: false,
+            has_visible_links: false,
         }
     }
 
