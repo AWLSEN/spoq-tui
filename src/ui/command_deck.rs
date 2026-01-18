@@ -54,8 +54,10 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
     // Create main layout sections with responsive heights
     let inner = inner_rect(size, 0);
     let header_height = ctx.header_height();
-    // Input height is dynamic based on textarea content (lines typed)
-    let input_height = calculate_input_area_height(app.textarea.line_count());
+    // Input height is dynamic based on visual line count (accounting for soft wrap)
+    let input_width = inner.width.saturating_sub(4); // Account for margins/borders
+    let visual_lines = app.textarea.visual_line_count(input_width);
+    let input_height = calculate_input_area_height(visual_lines);
 
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)

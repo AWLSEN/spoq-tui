@@ -502,23 +502,12 @@ where
                                         continue;
                                     }
                                     KeyCode::Up => {
-                                        // In Conversation screen, Up/Down scroll instead of textarea navigation
-                                        // This allows scroll wheel (via alternate scroll mode) to work while typing
-                                        if app.screen == Screen::Conversation {
-                                            // Fall through to scroll handlers below
-                                        } else {
-                                            app.textarea.move_cursor_up();
-                                            continue;
-                                        }
+                                        app.textarea.move_cursor_up();
+                                        continue;
                                     }
                                     KeyCode::Down => {
-                                        // In Conversation screen, Up/Down scroll instead of textarea navigation
-                                        if app.screen == Screen::Conversation {
-                                            // Fall through to scroll handlers below
-                                        } else {
-                                            app.textarea.move_cursor_down();
-                                            continue;
-                                        }
+                                        app.textarea.move_cursor_down();
+                                        continue;
                                     }
                                     KeyCode::Home => {
                                         app.textarea.move_cursor_home();

@@ -11,6 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Widget},
 };
 use tui_textarea::{CursorMove, TextArea};
+use unicode_width::UnicodeWidthStr;
 
 /// A wrapper around tui-textarea that provides an API compatible with InputBox.
 ///
@@ -39,6 +40,7 @@ impl<'a> TextAreaInput<'a> {
 
         // Configure textarea behavior
         textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)
+        textarea.set_line_wrap(true); // Enable soft line wrapping
         // Line numbers are OFF by default in tui-textarea (no need to explicitly remove)
 
         Self { textarea }
@@ -58,6 +60,7 @@ impl<'a> TextAreaInput<'a> {
 
         // Configure textarea behavior
         textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)
+        textarea.set_line_wrap(true); // Enable soft line wrapping
         // Line numbers are OFF by default in tui-textarea (no need to explicitly remove)
 
         // Move cursor to end
@@ -175,6 +178,30 @@ impl<'a> TextAreaInput<'a> {
     /// Maps to: `line_count()` -> `lines().len()`
     pub fn line_count(&self) -> usize {
         self.textarea.lines().len().max(1)
+    }
+
+    /// Get the number of visual lines considering soft wrapping.
+    /// This calculates how many lines the content will occupy when rendered
+    /// at the given width (accounting for borders).
+    pub fn visual_line_count(&self, available_width: u16) -> usize {
+        // Callers already account for borders, use the width directly
+        let content_width = available_width as usize;
+        if content_width == 0 {
+            return self.line_count();
+        }
+
+        let mut visual_lines = 0;
+        for line in self.textarea.lines() {
+            let line_width = line.width();
+            if line_width == 0 {
+                // Empty line still takes 1 visual line
+                visual_lines += 1;
+            } else {
+                // Calculate how many visual lines this logical line needs
+                visual_lines += (line_width + content_width - 1) / content_width;
+            }
+        }
+        visual_lines.max(1)
     }
 
     // =========================================================================

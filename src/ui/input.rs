@@ -68,8 +68,9 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on textarea content lines
-    let input_box_height = calculate_input_box_height(app.textarea.line_count());
+    // Calculate dynamic input box height based on visual line count (accounting for soft wrap)
+    let visual_lines = app.textarea.visual_line_count(inner.width);
+    let input_box_height = calculate_input_box_height(visual_lines);
 
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -104,8 +105,9 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on textarea content lines
-    let input_box_height = calculate_input_box_height(app.textarea.line_count());
+    // Calculate dynamic input box height based on visual line count (accounting for soft wrap)
+    let visual_lines = app.textarea.visual_line_count(inner.width);
+    let input_box_height = calculate_input_box_height(visual_lines);
 
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
