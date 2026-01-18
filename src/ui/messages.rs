@@ -1172,7 +1172,7 @@ fn render_single_message(
         }
     } else {
         // Display completed message - try cache first
-        if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version) {
+        if let Some(cached_lines) = app.rendered_lines_cache.get(thread_id, message.id, message.render_version) {
             // Use iter().cloned() to avoid cloning the entire Vec; we only clone each Line as needed
             lines.extend(cached_lines.iter().cloned());
             lines.push(Line::from(""));
@@ -1216,7 +1216,7 @@ fn render_single_message(
         }
 
         // Cache and add to output
-        app.rendered_lines_cache.insert(message.id, message.render_version, message_lines.clone());
+        app.rendered_lines_cache.insert(thread_id, message.id, message.render_version, message_lines.clone());
         lines.extend(message_lines);
     }
 
@@ -1284,7 +1284,7 @@ fn estimate_message_height(
 ) -> usize {
     // For completed messages, try cache first
     if !message.is_streaming {
-        if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version)
+        if let Some(cached_lines) = app.rendered_lines_cache.get(thread_id, message.id, message.render_version)
         {
             return estimate_wrapped_line_count(cached_lines, viewport_width);
         }
@@ -1360,9 +1360,9 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
     // Phase 1: Calculate heights using FAST estimation with reference-based iteration
     // This avoids cloning the entire message Vec on every 16ms frame
+    let current_thread_id = app.active_thread_id.clone();
     let (message_heights, total_visual_lines, message_count) = {
-        let cached_messages = app
-            .active_thread_id
+        let cached_messages = current_thread_id
             .as_ref()
             .and_then(|id| {
                 crate::app::log_thread_update(&format!(
@@ -1377,10 +1377,10 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                 msgs
             });
 
-        match cached_messages {
-            None => (Vec::new(), header_visual_lines, 0usize),
-            Some(messages) if messages.is_empty() => (Vec::new(), header_visual_lines, 0usize),
-            Some(messages) => {
+        match (&current_thread_id, cached_messages) {
+            (_, None) => (Vec::new(), header_visual_lines, 0usize),
+            (_, Some(messages)) if messages.is_empty() => (Vec::new(), header_visual_lines, 0usize),
+            (Some(thread_id), Some(messages)) => {
                 // Log first message to debug
                 if let Some(first_msg) = messages.first() {
                     crate::app::log_thread_update(&format!(
@@ -1398,21 +1398,22 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                 let mut cumulative_offset = header_visual_lines;
 
                 for (i, message) in messages.iter().enumerate() {
-                    // Check cache first
-                    let cached = app.cached_message_heights.get(&message.id);
+                    // Check cache first using (thread_id, message_id) key
+                    let cache_key = (thread_id.clone(), message.id);
+                    let cached = app.cached_message_heights.get(&cache_key);
                     let visual_lines = if let Some((version, height)) = cached {
                         if *version == message.render_version {
                             *height  // Cache hit
                         } else {
                             // Stale cache, recalculate
                             let height = estimate_message_height_fast(message, viewport_width);
-                            app.cached_message_heights.insert(message.id, (message.render_version, height));
+                            app.cached_message_heights.insert(cache_key, (message.render_version, height));
                             height
                         }
                     } else {
                         // Cache miss, calculate and store
                         let height = estimate_message_height_fast(message, viewport_width);
-                        app.cached_message_heights.insert(message.id, (message.render_version, height));
+                        app.cached_message_heights.insert(cache_key, (message.render_version, height));
                         height
                     };
 
@@ -1427,6 +1428,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                 let count = messages.len();
                 (heights, cumulative_offset, count)
             }
+            (None, Some(_)) => (Vec::new(), header_visual_lines, 0usize),
         }
     };
     // Borrow of app.cache is now dropped
