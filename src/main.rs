@@ -482,12 +482,23 @@ where
                                         continue;
                                     }
                                     KeyCode::Up => {
-                                        app.textarea.move_cursor_up();
-                                        continue;
+                                        // In Conversation screen, Up/Down scroll instead of textarea navigation
+                                        // This allows scroll wheel (via alternate scroll mode) to work while typing
+                                        if app.screen == Screen::Conversation {
+                                            // Fall through to scroll handlers below
+                                        } else {
+                                            app.textarea.move_cursor_up();
+                                            continue;
+                                        }
                                     }
                                     KeyCode::Down => {
-                                        app.textarea.move_cursor_down();
-                                        continue;
+                                        // In Conversation screen, Up/Down scroll instead of textarea navigation
+                                        if app.screen == Screen::Conversation {
+                                            // Fall through to scroll handlers below
+                                        } else {
+                                            app.textarea.move_cursor_down();
+                                            continue;
+                                        }
                                     }
                                     KeyCode::Home => {
                                         app.textarea.move_cursor_home();
@@ -553,9 +564,10 @@ where
                                     // Open selected thread when pressing Enter on Threads panel
                                     app.open_selected_thread();
                                 }
-                                // Arrow key scrolling in Conversation (when not in input)
+                                // Arrow key scrolling in Conversation
                                 // Alternate scroll mode sends scroll wheel as arrow keys
-                                KeyCode::Up if app.screen == Screen::Conversation && app.focus != Focus::Input => {
+                                // Works regardless of focus - scroll always scrolls the conversation
+                                KeyCode::Up if app.screen == Screen::Conversation => {
                                     // Scroll up = see older content = increase offset
                                     if app.conversation_scroll < app.max_scroll {
                                         app.conversation_scroll += 1;
@@ -567,7 +579,7 @@ where
                                         app.mark_dirty();
                                     }
                                 }
-                                KeyCode::Down if app.screen == Screen::Conversation && app.focus != Focus::Input => {
+                                KeyCode::Down if app.screen == Screen::Conversation => {
                                     // Scroll down = see newer content = decrease offset
                                     if app.conversation_scroll > 0 {
                                         app.conversation_scroll -= 1;
