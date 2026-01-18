@@ -159,11 +159,7 @@ mod tests {
             terminal_height: 24,
             active_panel: crate::app::ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
-            click_detector: crate::selection::ClickDetector::new(),
             markdown_cache: crate::markdown::MarkdownCache::new(),
-            selection_state: crate::selection::SelectionState::new(),
-            position_mapping: crate::selection::PositionMappingIndex::new(),
-            copy_pill: crate::selection::CopyPillState::new(),
         }
     }
 

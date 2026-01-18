@@ -1064,11 +1064,7 @@ mod tests {
             ws_sender: None,
             ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
-            click_detector: crate::selection::ClickDetector::new(),
             markdown_cache: crate::markdown::MarkdownCache::new(),
-            selection_state: crate::selection::SelectionState::new(),
-            position_mapping: crate::selection::PositionMappingIndex::new(),
-            copy_pill: crate::selection::CopyPillState::new(),
         }
     }
 
