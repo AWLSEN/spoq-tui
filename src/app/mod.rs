@@ -12,125 +12,30 @@ mod navigation;
 mod permissions;
 mod state_methods;
 mod stream;
+mod types;
+mod utils;
 mod websocket;
 
 pub use messages::AppMessage;
+pub use types::{ActivePanel, Focus, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 
 use crate::cache::ThreadCache;
-use crate::models::{Folder, PermissionMode};
 use crate::conductor::ConductorClient;
-use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
+use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
+use crate::models::{Folder, PermissionMode};
 use crate::state::{
     AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
 };
 use crate::websocket::WsConnectionState;
 use crate::widgets::textarea_input::TextAreaInput;
-use chrono::Utc;
 use color_eyre::Result;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// Truncate a string for debug output, adding "..." if truncated.
-/// Uses char boundaries to avoid panicking on multi-byte UTF-8 characters.
-pub(super) fn truncate_for_debug(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        // Find a valid char boundary at or before max_len - 3
-        let target = max_len.saturating_sub(3);
-        let boundary = s
-            .char_indices()
-            .take_while(|(i, _)| *i <= target)
-            .last()
-            .map(|(i, _)| i)
-            .unwrap_or(0);
-        format!("{}...", &s[..boundary])
-    }
-}
-
-/// Log thread metadata updates to a dedicated file for debugging
-pub(super) fn log_thread_update(message: &str) {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-    let log_path = format!("{}/spoq_thread.log", home);
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
-        let timestamp = Utc::now().format("%Y-%m-%d %H:%M:%S%.3f");
-        let _ = writeln!(file, "[{}] {}", timestamp, message);
-        let _ = file.flush();
-    }
-}
-
-/// Helper to emit a debug event if debug channel is available.
-pub(super) fn emit_debug(
-    debug_tx: &Option<DebugEventSender>,
-    kind: DebugEventKind,
-    thread_id: Option<&str>,
-) {
-    if let Some(ref tx) = debug_tx {
-        let event = DebugEvent::with_context(kind, thread_id.map(String::from), None);
-        let _ = tx.send(event);
-    }
-}
-
-/// Represents which screen is currently active
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Screen {
-    #[default]
-    CommandDeck,
-    Conversation,
-}
-
-/// Represents which UI component has focus
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum Focus {
-    Notifications,
-    Tasks,
-    #[default]
-    Threads,
-    Input,
-}
-
-/// Thread switcher dialog state (Tab to open)
-#[derive(Debug, Clone)]
-#[derive(Default)]
-pub struct ThreadSwitcher {
-    /// Whether the thread switcher dialog is visible
-    pub visible: bool,
-    /// Currently selected index in the thread list (MRU order)
-    pub selected_index: usize,
-    /// Scroll offset for the thread list (first visible thread index)
-    pub scroll_offset: usize,
-    /// Timestamp of last navigation key press (for auto-confirm on release)
-    pub last_nav_time: Option<std::time::Instant>,
-}
-
-
-/// Represents which scroll boundary was hit (for visual feedback)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollBoundary {
-    Top,
-    Bottom,
-}
-
-/// Represents which panel is active in narrow/stacked layout mode.
-/// When the terminal is too narrow for side-by-side panels (< 60 cols),
-/// only one panel is shown at a time and users can switch between them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ActivePanel {
-    /// Left panel (Notifications + Tasks/Todos)
-    #[default]
-    Left,
-    /// Right panel (Threads)
-    Right,
-}
+pub(crate) use utils::{emit_debug, log_thread_update, truncate_for_debug};
 
 /// Main application state
 pub struct App {
