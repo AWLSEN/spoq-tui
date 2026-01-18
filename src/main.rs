@@ -674,6 +674,22 @@ where
                             }
                             continue;
                         }
+                        Event::Paste(text) => {
+                            // Handle paste events from bracketed paste mode
+                            // Auto-focus to input if not already focused
+                            if app.focus != Focus::Input {
+                                app.focus = Focus::Input;
+                            }
+
+                            // Insert pasted text character by character into textarea
+                            // This handles both single-line and multi-line pastes correctly
+                            for ch in text.chars() {
+                                app.textarea.insert_char(ch);
+                            }
+
+                            app.mark_dirty();
+                            continue;
+                        }
                         _ => {
                             // Ignore other events (focus, etc.)
                         }
