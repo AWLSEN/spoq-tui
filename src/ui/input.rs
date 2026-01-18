@@ -706,6 +706,94 @@ pub fn get_permission_preview(perm: &PermissionRequest) -> String {
 }
 
 // ============================================================================
+// Input Section Builder (Unified Scroll)
+// ============================================================================
+
+/// Build the input section as content lines for unified scroll.
+///
+/// Returns lines for: separator, label, input content with border, keybinds.
+pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let content_width = viewport_width.saturating_sub(4) as usize; // margins
+
+    // 1. Blank line separator
+    lines.push(Line::from(""));
+
+    // 2. Input label with optional folder chip
+    let mut label_spans: Vec<Span<'static>> = vec![Span::styled(
+        "  Message",
+        Style::default().fg(COLOR_DIM),
+    )];
+    if let Some(folder) = &app.selected_folder {
+        let chip_name = if folder.name.len() > MAX_CHIP_FOLDER_NAME_LEN {
+            format!(
+                "{}...",
+                &folder.name[..MAX_CHIP_FOLDER_NAME_LEN.saturating_sub(3)]
+            )
+        } else {
+            folder.name.clone()
+        };
+        label_spans.push(Span::raw(" "));
+        label_spans.push(Span::styled(
+            format!("[📁 {}]", chip_name),
+            Style::default().fg(COLOR_CHIP_TEXT).bg(COLOR_CHIP_BG),
+        ));
+    }
+    lines.push(Line::from(label_spans));
+
+    // 3. Input top border
+    let border_width = content_width.min(70);
+    lines.push(Line::from(vec![
+        Span::styled("  ┌", Style::default().fg(COLOR_ACCENT)),
+        Span::styled(
+            "─".repeat(border_width),
+            Style::default().fg(COLOR_ACCENT),
+        ),
+        Span::styled("┐", Style::default().fg(COLOR_ACCENT)),
+    ]));
+
+    // 4. Input content lines (from tui-textarea)
+    for input_line in app.textarea.to_content_lines() {
+        let mut styled_spans = vec![Span::styled("  │ ", Style::default().fg(COLOR_ACCENT))];
+        styled_spans.extend(input_line.spans);
+        // Pad to border width
+        let line_width: usize = styled_spans.iter().skip(1).map(|s| s.width()).sum();
+        let padding = border_width.saturating_sub(line_width);
+        if padding > 0 {
+            styled_spans.push(Span::raw(" ".repeat(padding)));
+        }
+        styled_spans.push(Span::styled(" │", Style::default().fg(COLOR_ACCENT)));
+        lines.push(Line::from(styled_spans));
+    }
+
+    // 5. Input bottom border
+    lines.push(Line::from(vec![
+        Span::styled("  └", Style::default().fg(COLOR_ACCENT)),
+        Span::styled(
+            "─".repeat(border_width),
+            Style::default().fg(COLOR_ACCENT),
+        ),
+        Span::styled("┘", Style::default().fg(COLOR_ACCENT)),
+    ]));
+
+    // 6. Keybind hints
+    lines.push(Line::from(vec![
+        Span::styled("    ", Style::default()),
+        Span::styled("Enter", Style::default().fg(COLOR_DIM)),
+        Span::styled(" send  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Shift+Enter", Style::default().fg(COLOR_DIM)),
+        Span::styled(" newline  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(COLOR_DIM)),
+        Span::styled(" menu", Style::default().fg(Color::DarkGray)),
+    ]));
+
+    // 7. Bottom padding
+    lines.push(Line::from(""));
+
+    lines
+}
+
+// ============================================================================
 // AskUserQuestion UI Renderer
 // ============================================================================
 
