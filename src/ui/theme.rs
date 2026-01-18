@@ -69,3 +69,10 @@ pub const COLOR_SUBAGENT_COMPLETE: Color = Color::Rgb(4, 181, 117); // green #04
 
 /// Background color for dialog boxes (permission, skill, AskUserQuestion)
 pub const COLOR_DIALOG_BG: Color = Color::Rgb(10, 15, 35);
+
+// ============================================================================
+// Human Message Colors
+// ============================================================================
+
+/// Background color for human/user messages - subtle blue-gray tint
+pub const COLOR_HUMAN_BG: Color = Color::Rgb(35, 40, 48);
