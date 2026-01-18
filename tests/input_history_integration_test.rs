@@ -456,3 +456,122 @@ fn test_integration_workflow_complete_cycle() {
     // Verify history has all three entries
     assert_eq!(history.len(), 3);
 }
+
+// =============================================================================
+// Round 3: Submit Flow Integration Tests
+// =============================================================================
+
+#[test]
+fn test_submit_flow_adds_to_history_and_resets_navigation() {
+    let mut history = InputHistory::new();
+    let mut textarea = TextAreaInput::new();
+
+    // Simulate the exact sequence in submit_input():
+    // 1. User types content
+    textarea.set_content("Fix the bug in main.rs");
+    let content = textarea.content();
+
+    // 2. Add to history (line 91 in stream.rs)
+    history.add(content);
+
+    // 3. Clear textarea (line 93)
+    textarea.clear();
+
+    // 4. Reset navigation (line 96)
+    history.reset_navigation();
+
+    // Verify:
+    assert_eq!(history.len(), 1);
+    assert!(history.current_index().is_none(), "Navigation should be reset");
+    assert!(textarea.is_empty(), "Textarea should be cleared");
+}
+
+#[test]
+fn test_submit_flow_preserves_history_across_multiple_submits() {
+    let mut history = InputHistory::new();
+    let mut textarea = TextAreaInput::new();
+
+    // First submit
+    textarea.set_content("Create a new feature");
+    history.add(textarea.content());
+    textarea.clear();
+    history.reset_navigation();
+
+    // Second submit
+    textarea.set_content("Write tests for the feature");
+    history.add(textarea.content());
+    textarea.clear();
+    history.reset_navigation();
+
+    // Third submit
+    textarea.set_content("Update documentation");
+    history.add(textarea.content());
+    textarea.clear();
+    history.reset_navigation();
+
+    // Verify all entries are preserved
+    assert_eq!(history.len(), 3);
+
+    // Navigate up through history
+    let entry = history.navigate_up("");
+    assert_eq!(entry, Some("Update documentation"));
+
+    let entry = history.navigate_up("");
+    assert_eq!(entry, Some("Write tests for the feature"));
+
+    let entry = history.navigate_up("");
+    assert_eq!(entry, Some("Create a new feature"));
+}
+
+#[test]
+fn test_submit_flow_with_navigation_then_submit() {
+    let mut history = InputHistory::new();
+    let mut textarea = TextAreaInput::new();
+
+    // Add initial history
+    history.add("First command".to_string());
+    history.add("Second command".to_string());
+
+    // User navigates up
+    if let Some(entry) = history.navigate_up("") {
+        textarea.set_content(entry);
+    }
+    assert_eq!(textarea.content(), "Second command");
+    assert!(history.current_index().is_some(), "Should be navigating");
+
+    // User submits (re-running a historical command)
+    let content = textarea.content();
+    history.add(content);
+    textarea.clear();
+    history.reset_navigation();
+
+    // Verify:
+    // - History length stays 2 (duplicate not added)
+    assert_eq!(history.len(), 2);
+    // - Navigation is reset
+    assert!(history.current_index().is_none());
+    // - Textarea is cleared
+    assert!(textarea.is_empty());
+}
+
+#[test]
+fn test_submit_flow_navigation_reset_allows_fresh_navigation() {
+    let mut history = InputHistory::new();
+    history.add("Command 1".to_string());
+    history.add("Command 2".to_string());
+    history.add("Command 3".to_string());
+
+    // Navigate up twice
+    history.navigate_up("typing");
+    history.navigate_up("");
+
+    // Simulate submit (which resets navigation)
+    history.reset_navigation();
+
+    // Now navigate up again - should start from most recent
+    let entry = history.navigate_up("new input");
+    assert_eq!(entry, Some("Command 3"), "Should start from most recent after reset");
+
+    // And saved input should be the new input
+    assert_eq!(history.get_current_input(), "new input");
+}
