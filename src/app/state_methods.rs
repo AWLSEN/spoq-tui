@@ -846,4 +846,178 @@ mod tests {
 
         assert!(!app.should_clear_folder_on_backspace());
     }
+
+    // =========================================================================
+    // Additional edge case tests for @ trigger
+    // =========================================================================
+
+    #[test]
+    fn test_folder_picker_no_trigger_email_address() {
+        let app = create_test_app();
+        // Simulating typing "email@test.com" - the @ comes after "email"
+        // Position 5 is where @ would be inserted (after 'email')
+        assert!(!app.is_folder_picker_trigger("email", 5));
+    }
+
+    #[test]
+    fn test_folder_picker_no_trigger_mid_word_various() {
+        let app = create_test_app();
+        // Various mid-word positions should NOT trigger
+        assert!(!app.is_folder_picker_trigger("user", 4));     // user@ (email pattern)
+        assert!(!app.is_folder_picker_trigger("test", 2));     // te@st
+        assert!(!app.is_folder_picker_trigger("name123", 4));  // name@123
+    }
+
+    #[test]
+    fn test_folder_picker_trigger_start_of_line() {
+        let app = create_test_app();
+        // @ at position 0 on line with content should trigger
+        // (user will type @ before existing content)
+        assert!(app.is_folder_picker_trigger("existing text", 0));
+    }
+
+    #[test]
+    fn test_folder_picker_trigger_after_multiple_spaces() {
+        let app = create_test_app();
+        // @ after multiple spaces should trigger
+        assert!(app.is_folder_picker_trigger("hello   ", 8));
+    }
+
+    // =========================================================================
+    // Filtering edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_filtered_folders_no_matches() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("project1", "/home/user/project1"),
+            create_test_folder("project2", "/home/user/project2"),
+        ];
+        app.folder_picker_filter = "xyz_nonexistent".to_string();
+
+        let filtered = app.filtered_folders();
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn test_filtered_folders_partial_match() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("my-awesome-project", "/home/user/my-awesome-project"),
+            create_test_folder("another-project", "/home/user/another-project"),
+            create_test_folder("something-else", "/home/user/something-else"),
+        ];
+        app.folder_picker_filter = "awe".to_string();
+
+        let filtered = app.filtered_folders();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "my-awesome-project");
+    }
+
+    #[test]
+    fn test_filtered_folders_matches_path_not_name() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("project", "/home/special-user/project"),
+            create_test_folder("other", "/home/normal-user/other"),
+        ];
+        app.folder_picker_filter = "special".to_string();
+
+        let filtered = app.filtered_folders();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "project");
+    }
+
+    // =========================================================================
+    // Navigation edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_folder_picker_cursor_down_empty_list() {
+        let mut app = create_test_app();
+        app.folders = vec![];
+        app.folder_picker_cursor = 0;
+
+        // Should not panic with empty list
+        app.folder_picker_cursor_down();
+
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    #[test]
+    fn test_folder_picker_cursor_up_empty_list() {
+        let mut app = create_test_app();
+        app.folders = vec![];
+        app.folder_picker_cursor = 0;
+
+        // Should not panic with empty list
+        app.folder_picker_cursor_up();
+
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    #[test]
+    fn test_folder_picker_cursor_clamps_after_filter_reduces_list() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("a", "/a"),
+            create_test_folder("b", "/b"),
+            create_test_folder("c", "/c"),
+        ];
+        app.folder_picker_cursor = 2; // Pointing to 'c'
+
+        // Now filter to just one item
+        app.folder_picker_filter = "a".to_string();
+
+        // Type a character to trigger cursor reset
+        app.folder_picker_type_char('a');
+
+        // Cursor should be reset to 0 when filter changes
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    #[test]
+    fn test_folder_picker_select_with_filter_active() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("alpha", "/alpha"),
+            create_test_folder("beta", "/beta"),
+            create_test_folder("gamma", "/gamma"),
+        ];
+        app.folder_picker_filter = "bet".to_string();
+        app.folder_picker_cursor = 0;
+
+        let selected = app.folder_picker_select();
+
+        assert!(selected.is_some());
+        // Should select 'beta' which is the only match
+        assert_eq!(selected.unwrap().name, "beta");
+    }
+
+    // =========================================================================
+    // Thread creation with working_directory tests
+    // =========================================================================
+
+    #[test]
+    fn test_working_directory_extracted_from_selected_folder() {
+        let mut app = create_test_app();
+        let folder = create_test_folder("my-project", "/Users/dev/my-project");
+        app.selected_folder = Some(folder);
+
+        // The working_directory extraction happens in stream.rs
+        // Here we just verify the selected_folder is accessible
+        let wd = app.selected_folder.as_ref().map(|f| f.path.clone());
+        assert_eq!(wd, Some("/Users/dev/my-project".to_string()));
+    }
+
+    #[test]
+    fn test_no_working_directory_when_no_folder_selected() {
+        let app = create_test_app();
+        // No folder selected
+        assert!(app.selected_folder.is_none());
+
+        let wd = app.selected_folder.as_ref().map(|f| f.path.clone());
+        assert!(wd.is_none());
+    }
 }
