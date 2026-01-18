@@ -246,4 +246,456 @@ impl App {
             }
         });
     }
+
+    // =========================================================================
+    // Folder Picker Methods
+    // =========================================================================
+
+    /// Check if @ at the given position should trigger the folder picker.
+    ///
+    /// Trigger rules:
+    /// - ONLY on CommandDeck screen (not Conversation)
+    /// - @ at position 0 → trigger
+    /// - @ immediately after whitespace → trigger
+    /// - @ inside a word → no trigger, type literal @
+    ///
+    /// # Arguments
+    /// * `line_content` - The content of the current line
+    /// * `col` - Column position within the line where @ would be inserted
+    ///
+    /// # Returns
+    /// `true` if @ should trigger the folder picker, `false` otherwise
+    pub fn is_folder_picker_trigger(&self, line_content: &str, col: usize) -> bool {
+        // Only trigger on CommandDeck screen
+        if self.screen != super::Screen::CommandDeck {
+            return false;
+        }
+
+        // @ at position 0 always triggers
+        if col == 0 {
+            return true;
+        }
+
+        // Check character before cursor position
+        // Get the character at position col-1
+        if let Some(prev_char) = line_content.chars().nth(col.saturating_sub(1)) {
+            // @ after whitespace triggers
+            prev_char.is_whitespace()
+        } else {
+            // Empty line or at start
+            true
+        }
+    }
+
+    /// Open the folder picker overlay.
+    ///
+    /// Sends the FolderPickerOpen message to set visibility and reset state.
+    pub fn open_folder_picker(&mut self) {
+        self.handle_message(super::AppMessage::FolderPickerOpen);
+    }
+
+    /// Close the folder picker overlay.
+    ///
+    /// Sends the FolderPickerClose message to hide and reset state.
+    pub fn close_folder_picker(&mut self) {
+        self.handle_message(super::AppMessage::FolderPickerClose);
+    }
+
+    /// Get filtered folders based on the current filter text.
+    ///
+    /// Performs case-insensitive matching on folder name and path.
+    ///
+    /// # Returns
+    /// Vector of references to folders that match the filter.
+    pub fn filtered_folders(&self) -> Vec<&crate::models::Folder> {
+        if self.folder_picker_filter.is_empty() {
+            // No filter - return all folders
+            self.folders.iter().collect()
+        } else {
+            let filter_lower = self.folder_picker_filter.to_lowercase();
+            self.folders
+                .iter()
+                .filter(|f| {
+                    f.name.to_lowercase().contains(&filter_lower)
+                        || f.path.to_lowercase().contains(&filter_lower)
+                })
+                .collect()
+        }
+    }
+
+    /// Handle a character typed while the folder picker is open.
+    ///
+    /// Appends the character to the filter text.
+    pub fn folder_picker_type_char(&mut self, c: char) {
+        self.folder_picker_filter.push(c);
+        self.folder_picker_cursor = 0; // Reset cursor when filter changes
+        self.mark_dirty();
+    }
+
+    /// Handle backspace while the folder picker is open.
+    ///
+    /// If filter has text, removes last character.
+    /// If filter is empty, closes the picker and removes @ from input.
+    ///
+    /// # Returns
+    /// `true` if the picker should be closed (filter was empty), `false` otherwise
+    pub fn folder_picker_backspace(&mut self) -> bool {
+        if self.folder_picker_filter.is_empty() {
+            // Close picker when backspacing with empty filter
+            true
+        } else {
+            // Remove last character from filter
+            self.folder_picker_filter.pop();
+            self.folder_picker_cursor = 0; // Reset cursor when filter changes
+            self.mark_dirty();
+            false
+        }
+    }
+
+    /// Move the folder picker cursor up.
+    ///
+    /// Clamps at 0 (top of list).
+    pub fn folder_picker_cursor_up(&mut self) {
+        if self.folder_picker_cursor > 0 {
+            self.folder_picker_cursor -= 1;
+            self.mark_dirty();
+        }
+    }
+
+    /// Move the folder picker cursor down.
+    ///
+    /// Clamps at the last item in the filtered list.
+    pub fn folder_picker_cursor_down(&mut self) {
+        let filtered_count = self.filtered_folders().len();
+        if filtered_count > 0 && self.folder_picker_cursor < filtered_count - 1 {
+            self.folder_picker_cursor += 1;
+            self.mark_dirty();
+        }
+    }
+
+    /// Select the currently highlighted folder in the picker.
+    ///
+    /// # Returns
+    /// The selected folder, or None if no valid selection.
+    pub fn folder_picker_select(&mut self) -> Option<crate::models::Folder> {
+        let filtered = self.filtered_folders();
+        if let Some(folder) = filtered.get(self.folder_picker_cursor) {
+            let folder_clone = (*folder).clone();
+            self.handle_message(super::AppMessage::FolderSelected(folder_clone.clone()));
+            Some(folder_clone)
+        } else {
+            None
+        }
+    }
+
+    /// Remove the @ and any filter text from the textarea input.
+    ///
+    /// This is called when closing the picker via Escape to clean up
+    /// the @ trigger character and any typed filter text.
+    pub fn remove_at_and_filter_from_input(&mut self) {
+        // Calculate how many characters to remove: @ + filter length
+        let chars_to_remove = 1 + self.folder_picker_filter.len();
+
+        // Remove characters by calling backspace repeatedly
+        for _ in 0..chars_to_remove {
+            self.textarea.backspace();
+        }
+        self.mark_dirty();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Folder;
+
+    fn create_test_app() -> App {
+        App::default()
+    }
+
+    fn create_test_folder(name: &str, path: &str) -> Folder {
+        Folder {
+            name: name.to_string(),
+            path: path.to_string(),
+            is_dir: true,
+        }
+    }
+
+    // =========================================================================
+    // is_folder_picker_trigger tests
+    // =========================================================================
+
+    #[test]
+    fn test_folder_picker_trigger_at_position_0() {
+        let app = create_test_app();
+        // @ at position 0 on empty line should trigger
+        assert!(app.is_folder_picker_trigger("", 0));
+    }
+
+    #[test]
+    fn test_folder_picker_trigger_after_whitespace() {
+        let app = create_test_app();
+        // @ after space should trigger
+        assert!(app.is_folder_picker_trigger("hello ", 6));
+        // @ after tab should trigger
+        assert!(app.is_folder_picker_trigger("hello\t", 6));
+    }
+
+    #[test]
+    fn test_folder_picker_no_trigger_inside_word() {
+        let app = create_test_app();
+        // @ in middle of word should NOT trigger
+        assert!(!app.is_folder_picker_trigger("hello", 3));
+        assert!(!app.is_folder_picker_trigger("email", 2));
+    }
+
+    #[test]
+    fn test_folder_picker_no_trigger_on_conversation_screen() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::Conversation;
+        // @ should NOT trigger on Conversation screen
+        assert!(!app.is_folder_picker_trigger("", 0));
+        assert!(!app.is_folder_picker_trigger("hello ", 6));
+    }
+
+    #[test]
+    fn test_folder_picker_trigger_on_command_deck_only() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::CommandDeck;
+        // @ should trigger on CommandDeck
+        assert!(app.is_folder_picker_trigger("", 0));
+    }
+
+    // =========================================================================
+    // filtered_folders tests
+    // =========================================================================
+
+    #[test]
+    fn test_filtered_folders_no_filter_returns_all() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("project1", "/home/user/project1"),
+            create_test_folder("project2", "/home/user/project2"),
+        ];
+        app.folder_picker_filter = String::new();
+
+        let filtered = app.filtered_folders();
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_filtered_folders_by_name() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("my-project", "/home/user/my-project"),
+            create_test_folder("other-app", "/home/user/other-app"),
+        ];
+        app.folder_picker_filter = "proj".to_string();
+
+        let filtered = app.filtered_folders();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "my-project");
+    }
+
+    #[test]
+    fn test_filtered_folders_by_path() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("project1", "/home/alice/project1"),
+            create_test_folder("project2", "/home/bob/project2"),
+        ];
+        app.folder_picker_filter = "bob".to_string();
+
+        let filtered = app.filtered_folders();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "project2");
+    }
+
+    #[test]
+    fn test_filtered_folders_case_insensitive() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("MyProject", "/home/user/MyProject"),
+        ];
+        app.folder_picker_filter = "myproject".to_string();
+
+        let filtered = app.filtered_folders();
+        assert_eq!(filtered.len(), 1);
+    }
+
+    // =========================================================================
+    // folder_picker_type_char tests
+    // =========================================================================
+
+    #[test]
+    fn test_folder_picker_type_char_appends_to_filter() {
+        let mut app = create_test_app();
+        app.folder_picker_filter = "proj".to_string();
+
+        app.folder_picker_type_char('e');
+
+        assert_eq!(app.folder_picker_filter, "proje");
+    }
+
+    #[test]
+    fn test_folder_picker_type_char_resets_cursor() {
+        let mut app = create_test_app();
+        app.folder_picker_cursor = 5;
+
+        app.folder_picker_type_char('a');
+
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    // =========================================================================
+    // folder_picker_backspace tests
+    // =========================================================================
+
+    #[test]
+    fn test_folder_picker_backspace_removes_char() {
+        let mut app = create_test_app();
+        app.folder_picker_filter = "proj".to_string();
+
+        let should_close = app.folder_picker_backspace();
+
+        assert!(!should_close);
+        assert_eq!(app.folder_picker_filter, "pro");
+    }
+
+    #[test]
+    fn test_folder_picker_backspace_empty_filter_returns_true() {
+        let mut app = create_test_app();
+        app.folder_picker_filter = String::new();
+
+        let should_close = app.folder_picker_backspace();
+
+        assert!(should_close);
+    }
+
+    // =========================================================================
+    // folder_picker_cursor tests
+    // =========================================================================
+
+    #[test]
+    fn test_folder_picker_cursor_up_decrements() {
+        let mut app = create_test_app();
+        app.folder_picker_cursor = 2;
+
+        app.folder_picker_cursor_up();
+
+        assert_eq!(app.folder_picker_cursor, 1);
+    }
+
+    #[test]
+    fn test_folder_picker_cursor_up_clamps_at_zero() {
+        let mut app = create_test_app();
+        app.folder_picker_cursor = 0;
+
+        app.folder_picker_cursor_up();
+
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    #[test]
+    fn test_folder_picker_cursor_down_increments() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("a", "/a"),
+            create_test_folder("b", "/b"),
+            create_test_folder("c", "/c"),
+        ];
+        app.folder_picker_cursor = 0;
+
+        app.folder_picker_cursor_down();
+
+        assert_eq!(app.folder_picker_cursor, 1);
+    }
+
+    #[test]
+    fn test_folder_picker_cursor_down_clamps_at_end() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("a", "/a"),
+            create_test_folder("b", "/b"),
+        ];
+        app.folder_picker_cursor = 1; // Already at last item
+
+        app.folder_picker_cursor_down();
+
+        assert_eq!(app.folder_picker_cursor, 1); // Should stay at 1
+    }
+
+    // =========================================================================
+    // folder_picker_select tests
+    // =========================================================================
+
+    #[test]
+    fn test_folder_picker_select_returns_folder() {
+        let mut app = create_test_app();
+        app.folders = vec![
+            create_test_folder("project1", "/home/project1"),
+            create_test_folder("project2", "/home/project2"),
+        ];
+        app.folder_picker_cursor = 1;
+
+        let selected = app.folder_picker_select();
+
+        assert!(selected.is_some());
+        assert_eq!(selected.unwrap().name, "project2");
+    }
+
+    #[test]
+    fn test_folder_picker_select_empty_list_returns_none() {
+        let mut app = create_test_app();
+        app.folders = vec![];
+        app.folder_picker_cursor = 0;
+
+        let selected = app.folder_picker_select();
+
+        assert!(selected.is_none());
+    }
+
+    #[test]
+    fn test_folder_picker_select_closes_picker() {
+        let mut app = create_test_app();
+        app.folders = vec![create_test_folder("project", "/home/project")];
+        app.folder_picker_visible = true;
+        app.folder_picker_cursor = 0;
+
+        app.folder_picker_select();
+
+        assert!(!app.folder_picker_visible);
+    }
+
+    // =========================================================================
+    // open_folder_picker and close_folder_picker tests
+    // =========================================================================
+
+    #[test]
+    fn test_open_folder_picker() {
+        let mut app = create_test_app();
+        app.folder_picker_visible = false;
+        app.folder_picker_filter = "old".to_string();
+        app.folder_picker_cursor = 5;
+
+        app.open_folder_picker();
+
+        assert!(app.folder_picker_visible);
+        assert!(app.folder_picker_filter.is_empty());
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    #[test]
+    fn test_close_folder_picker() {
+        let mut app = create_test_app();
+        app.folder_picker_visible = true;
+        app.folder_picker_filter = "filter".to_string();
+        app.folder_picker_cursor = 3;
+
+        app.close_folder_picker();
+
+        assert!(!app.folder_picker_visible);
+        assert!(app.folder_picker_filter.is_empty());
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
 }

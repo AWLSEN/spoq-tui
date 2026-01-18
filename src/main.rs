@@ -420,6 +420,52 @@ where
                                 }
                             }
 
+                            // =========================================================
+                            // Folder Picker Key Handling (when picker is visible)
+                            // =========================================================
+                            if app.folder_picker_visible {
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        // Close picker, remove @ + filter from input
+                                        app.remove_at_and_filter_from_input();
+                                        app.close_folder_picker();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        // Select folder, close picker, clear @ + filter
+                                        // The @ and filter text should be removed since we're selecting
+                                        app.remove_at_and_filter_from_input();
+                                        app.folder_picker_select();
+                                        continue;
+                                    }
+                                    KeyCode::Backspace => {
+                                        if app.folder_picker_backspace() {
+                                            // Filter was empty, close picker and remove @
+                                            app.textarea.backspace(); // Remove the @
+                                            app.close_folder_picker();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Up => {
+                                        app.folder_picker_cursor_up();
+                                        continue;
+                                    }
+                                    KeyCode::Down => {
+                                        app.folder_picker_cursor_down();
+                                        continue;
+                                    }
+                                    KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
+                                        // Append character to filter
+                                        app.folder_picker_type_char(c);
+                                        continue;
+                                    }
+                                    _ => {
+                                        // Other keys are ignored while picker is open
+                                        continue;
+                                    }
+                                }
+                            }
+
                             // Auto-focus to Input when user starts typing
                             // (printable characters only, not Ctrl combinations)
                             if let KeyCode::Char(_) = key.code {
@@ -501,6 +547,22 @@ where
                                     }
                                     // Plain characters (no modifiers or only SHIFT)
                                     KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
+                                        // Check for @ trigger for folder picker (only on CommandDeck)
+                                        if c == '@' && app.screen == Screen::CommandDeck {
+                                            // Get current line content and cursor position
+                                            let (row, col) = app.textarea.cursor();
+                                            let lines = app.textarea.lines();
+                                            let line_content = lines.get(row).map(|s| s.as_str()).unwrap_or("");
+
+                                            if app.is_folder_picker_trigger(line_content, col) {
+                                                // Insert the @ character first
+                                                app.textarea.insert_char('@');
+                                                // Then open the folder picker
+                                                app.open_folder_picker();
+                                                continue;
+                                            }
+                                        }
+                                        // Normal character insertion
                                         app.textarea.insert_char(c);
                                         continue;
                                     }
