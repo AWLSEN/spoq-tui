@@ -1,24 +1,10 @@
 //! Tests for paste text summarization threshold check
 
 use spoq::app::App;
-use spoq::cache::ThreadCache;
-use spoq::conductor::ConductorClient;
-use std::sync::Arc;
-use tokio::sync::mpsc;
 
 /// Helper to create a minimal App instance for testing
 fn create_test_app() -> App {
-    let (message_tx, message_rx) = mpsc::unbounded_channel();
-    let cache = ThreadCache::new();
-    let client = Arc::new(ConductorClient::new("http://localhost:8080"));
-
-    App::new_with_config(
-        cache,
-        client,
-        message_tx,
-        Some(message_rx),
-        None, // no debug tx for tests
-    )
+    App::new().expect("Failed to create test app")
 }
 
 #[test]
