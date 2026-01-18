@@ -783,9 +783,9 @@ mod tests {
         let line = create_mode_indicator_line(PermissionMode::BypassPermissions);
         assert!(line.is_some());
         let line = line.unwrap();
-        // Check that the line contains "[AUTONOMOUS]"
+        // Check that the line contains "[EXECUTE]"
         let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(content.contains("[AUTONOMOUS]"));
+        assert!(content.contains("[EXECUTE]"));
     }
 
     #[test]
@@ -916,8 +916,8 @@ mod tests {
             .collect();
 
         assert!(
-            buffer_str.contains("[AUTONOMOUS]"),
-            "Mode indicator should show '[AUTONOMOUS]' in BypassPermissions mode"
+            buffer_str.contains("[EXECUTE]"),
+            "Mode indicator should show '[EXECUTE]' in BypassPermissions mode"
         );
     }
 
@@ -963,8 +963,8 @@ mod tests {
             "Mode indicator should not show '[PLAN]' when mode is Default"
         );
         assert!(
-            !buffer_str.contains("[AUTONOMOUS]"),
-            "Mode indicator should not show '[AUTONOMOUS]' when mode is Default"
+            !buffer_str.contains("[EXECUTE]"),
+            "Mode indicator should not show '[EXECUTE]' when mode is Default"
         );
     }
 
