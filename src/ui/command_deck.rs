@@ -15,6 +15,7 @@ use crate::app::{ActivePanel, App};
 use crate::state::TaskStatus;
 
 use super::conversation::{create_mode_indicator_line, render_mode_indicator};
+use super::folder_picker::render_folder_picker;
 use super::helpers::{format_tokens, inner_rect};
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
@@ -92,6 +93,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         render_header(frame, main_chunks[0], app);
         render_main_content(frame, main_chunks[1], app, &ctx);
         render_input_area(frame, main_chunks[2], app);
+    }
+
+    // Render folder picker overlay (if visible) - must be last for proper layering
+    if app.folder_picker_visible {
+        render_folder_picker(frame, app, size);
     }
 }
 

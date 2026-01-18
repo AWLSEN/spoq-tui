@@ -21,6 +21,7 @@
 
 mod command_deck;
 mod conversation;
+mod folder_picker;
 mod helpers;
 pub mod input;
 mod layout;
