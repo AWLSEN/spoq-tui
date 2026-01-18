@@ -75,6 +75,9 @@ pub struct Thread {
     /// When the thread was created
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
+    /// Working directory for this thread (programming threads)
+    #[serde(default)]
+    pub working_directory: Option<String>,
 }
 
 /// Response from the thread list endpoint

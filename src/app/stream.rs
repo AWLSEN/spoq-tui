@@ -49,7 +49,7 @@ impl App {
             // NEW thread - create pending, will reconcile when backend responds
             let pending_id = self
                 .cache
-                .create_pending_thread(content.clone(), new_thread_type);
+                .create_pending_thread(content.clone(), new_thread_type, None);
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
@@ -78,7 +78,7 @@ impl App {
             // Fall back to creating new thread
             let pending_id = self
                 .cache
-                .create_pending_thread(content.clone(), new_thread_type);
+                .create_pending_thread(content.clone(), new_thread_type, None);
             self.active_thread_id = Some(pending_id.clone());
             self.reset_scroll();
             (pending_id, true)
