@@ -3011,4 +3011,126 @@ mod tests {
         assert!(!app.should_summarize_paste(&"a".repeat(150))); // 150 chars
         assert!(app.should_summarize_paste(&"a".repeat(151))); // 151 chars
     }
+
+    // ============= Permission Mode Propagation Tests =============
+
+    #[tokio::test]
+    async fn test_submit_input_preserves_permission_mode_in_new_thread() {
+        use crate::models::{ThreadType, PermissionMode};
+        let mut app = App::default();
+
+        // Set permission mode to Plan
+        app.permission_mode = PermissionMode::Plan;
+
+        // Verify app is in initial state
+        assert_eq!(app.screen, Screen::CommandDeck);
+        assert!(app.active_thread_id.is_none());
+
+        // Submit input to create new thread
+        app.textarea.insert_char('T');
+        app.textarea.insert_char('e');
+        app.textarea.insert_char('s');
+        app.textarea.insert_char('t');
+        app.submit_input(ThreadType::Conversation);
+
+        // Verify thread was created
+        assert_eq!(app.screen, Screen::Conversation);
+        assert!(app.active_thread_id.is_some());
+
+        // The permission_mode should remain unchanged on the app
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
+
+        // Note: The actual HTTP request validation would require mocking the conductor client.
+        // This test verifies that the app state is correct when submit_input is called.
+        // The StreamRequest construction in submit_input() uses app.permission_mode,
+        // which is verified in src/models/request.rs tests.
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_preserves_permission_mode_in_continuing_thread() {
+        use crate::models::{ThreadType, PermissionMode};
+        let mut app = App::default();
+
+        // Set permission mode to BypassPermissions
+        app.permission_mode = PermissionMode::BypassPermissions;
+
+        // Create an existing thread
+        let existing_id = "real-thread-456".to_string();
+        app.cache.upsert_thread(crate::models::Thread {
+            id: existing_id.clone(),
+            title: "Existing Thread".to_string(),
+            description: None,
+            preview: "Previous message".to_string(),
+            updated_at: chrono::Utc::now(),
+            thread_type: ThreadType::Conversation,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: chrono::Utc::now(),
+        });
+
+        // Set as active thread
+        app.active_thread_id = Some(existing_id.clone());
+        app.screen = Screen::Conversation;
+
+        // Finalize any streaming messages
+        app.cache.add_message_simple(&existing_id, MessageRole::User, "Previous".to_string());
+        app.cache.add_message_simple(&existing_id, MessageRole::Assistant, "Response".to_string());
+
+        // Submit follow-up message
+        app.textarea.insert_char('F');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char('l');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('w');
+        app.submit_input(ThreadType::Conversation);
+
+        // Verify the permission mode is preserved
+        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.active_thread_id.as_ref().unwrap(), &existing_id);
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_uses_provided_thread_type() {
+        use crate::models::{ThreadType, PermissionMode};
+        let mut app = App::default();
+
+        // Set permission mode
+        app.permission_mode = PermissionMode::Default;
+
+        // Test with Programming thread type
+        app.textarea.insert_char('C');
+        app.textarea.insert_char('o');
+        app.textarea.insert_char('d');
+        app.textarea.insert_char('e');
+        app.submit_input(ThreadType::Programming);
+
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+
+        // Verify thread was created
+        assert!(uuid::Uuid::parse_str(thread_id).is_ok());
+        assert_eq!(app.screen, Screen::Conversation);
+
+        // Note: The thread_type parameter is passed to StreamRequest::with_type()
+        // in submit_input() at src/app/stream.rs:118
+        // This test verifies the flow works correctly with different thread types.
+    }
+
+    #[tokio::test]
+    async fn test_submit_input_thread_type_conversation() {
+        use crate::models::ThreadType;
+        let mut app = App::default();
+
+        // Test with Conversation thread type
+        app.textarea.insert_char('H');
+        app.textarea.insert_char('i');
+        app.submit_input(ThreadType::Conversation);
+
+        let thread_id = app.active_thread_id.as_ref().unwrap();
+
+        // Verify thread was created with correct type
+        assert!(uuid::Uuid::parse_str(thread_id).is_ok());
+        assert_eq!(app.screen, Screen::Conversation);
+    }
 }

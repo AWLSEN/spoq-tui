@@ -115,7 +115,7 @@ impl App {
         // Always send thread_id - for new threads, we generate a UUID upfront
         // The backend will use our client-generated UUID as the canonical thread_id
         let request = StreamRequest::with_thread(content, thread_id)
-            .with_type(ThreadType::Programming)
+            .with_type(new_thread_type)
             .with_permission_mode(self.permission_mode);
 
         // Spawn async task for unified stream endpoint
