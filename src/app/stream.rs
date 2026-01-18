@@ -9,7 +9,7 @@ use crate::debug::{
     DebugEventKind, ErrorData, ErrorSource, ProcessedEventData, StreamLifecycleData, StreamPhase,
 };
 use crate::events::SseEvent;
-use crate::models::{StreamRequest, ThreadType};
+use crate::models::{StreamRequest, ThreadType, PermissionMode};
 use crate::state::Todo;
 
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, ProgrammingMode, Screen};
@@ -43,9 +43,6 @@ impl App {
         // CommandDeck = ALWAYS new thread (regardless of any stale active_thread_id)
         // Conversation = continue the thread that was opened via open_thread()
         let is_command_deck = self.screen == Screen::CommandDeck;
-
-        // Determine plan_mode based on current programming mode
-        let plan_mode = matches!(self.programming_mode, ProgrammingMode::PlanMode);
 
         // Determine thread_id based on screen
         let (thread_id, is_new_thread) = if is_command_deck {
@@ -109,14 +106,9 @@ impl App {
         // Build unified StreamRequest with thread_type
         // Always send thread_id - for new threads, we generate a UUID upfront
         // The backend will use our client-generated UUID as the canonical thread_id
-        let request = StreamRequest::with_thread(content, thread_id).with_type(ThreadType::Programming);
-
-        // Apply plan_mode if needed
-        let request = if plan_mode {
-            request.with_plan_mode(true)
-        } else {
-            request
-        };
+        let request = StreamRequest::with_thread(content, thread_id)
+            .with_type(ThreadType::Programming)
+            .with_permission_mode(self.permission_mode);
 
         // Spawn async task for unified stream endpoint
         tokio::spawn(async move {
