@@ -548,6 +548,11 @@ where
                                     }
                                     // Plain characters (no modifiers or only SHIFT)
                                     KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
+                                        // Reset scroll to show input when typing (unified scroll)
+                                        if app.screen == Screen::Conversation {
+                                            app.user_has_scrolled = false;
+                                            app.unified_scroll = 0;
+                                        }
                                         // Check for @ trigger for folder picker (only on CommandDeck)
                                         if c == '@' && app.screen == Screen::CommandDeck {
                                             // Get current line content and cursor position
@@ -693,14 +698,14 @@ where
                                     // Open selected thread when pressing Enter on Threads panel
                                     app.open_selected_thread();
                                 }
-                                // Page scroll keys for conversation
+                                // Page scroll keys for conversation (unified scroll)
                                 KeyCode::PageUp if app.screen == Screen::Conversation => {
-                                    // Page up = scroll by ~10 lines at once
-                                    let page_size = 10;
-                                    let new_scroll = (app.conversation_scroll + page_size).min(app.max_scroll);
-                                    if new_scroll != app.conversation_scroll {
-                                        app.conversation_scroll = new_scroll;
-                                        app.scroll_position = app.conversation_scroll as f32;
+                                    // Page up = scroll up to see older content
+                                    app.user_has_scrolled = true;
+                                    let new_scroll = (app.unified_scroll + 10).min(app.max_scroll);
+                                    if new_scroll != app.unified_scroll {
+                                        app.unified_scroll = new_scroll;
+                                        app.scroll_position = app.unified_scroll as f32;
                                         app.mark_dirty();
                                     } else if app.max_scroll > 0 {
                                         app.scroll_boundary_hit = Some(ScrollBoundary::Top);
@@ -709,12 +714,14 @@ where
                                     }
                                 }
                                 KeyCode::PageDown if app.screen == Screen::Conversation => {
-                                    // Page down = scroll by ~10 lines at once
-                                    let page_size = 10;
-                                    let new_scroll = app.conversation_scroll.saturating_sub(page_size);
-                                    if new_scroll != app.conversation_scroll {
-                                        app.conversation_scroll = new_scroll;
-                                        app.scroll_position = app.conversation_scroll as f32;
+                                    // Page down = scroll down to see newer content / input
+                                    let new_scroll = app.unified_scroll.saturating_sub(10);
+                                    if new_scroll != app.unified_scroll {
+                                        app.unified_scroll = new_scroll;
+                                        app.scroll_position = app.unified_scroll as f32;
+                                        if app.unified_scroll == 0 {
+                                            app.user_has_scrolled = false; // Back at bottom
+                                        }
                                         app.mark_dirty();
                                     } else {
                                         app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
@@ -752,13 +759,18 @@ where
                             // Click/drag events are ignored - terminal handles text selection natively.
                             match mouse_event.kind {
                                 // Simple line-based scrolling (like native terminal apps)
-                                // Each scroll event moves 1 line
+                                // Each scroll event moves 3 lines (unified scroll)
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll down = see newer content = decrease offset
-                                        if app.conversation_scroll > 0 {
-                                            app.conversation_scroll -= 1;
-                                            app.scroll_position = app.conversation_scroll as f32;
+                                        // Scroll down = see newer content / input
+                                        if app.unified_scroll >= 3 {
+                                            app.unified_scroll -= 3;
+                                            app.scroll_position = app.unified_scroll as f32;
+                                            app.mark_dirty();
+                                        } else if app.unified_scroll > 0 {
+                                            app.unified_scroll = 0;
+                                            app.user_has_scrolled = false; // Back at bottom
+                                            app.scroll_position = 0.0;
                                             app.mark_dirty();
                                         } else {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
@@ -769,10 +781,12 @@ where
                                 }
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll up = see older content = increase offset
-                                        if app.conversation_scroll < app.max_scroll {
-                                            app.conversation_scroll += 1;
-                                            app.scroll_position = app.conversation_scroll as f32;
+                                        // Scroll up = see older content
+                                        app.user_has_scrolled = true;
+                                        let new_scroll = (app.unified_scroll + 3).min(app.max_scroll);
+                                        if new_scroll != app.unified_scroll {
+                                            app.unified_scroll = new_scroll;
+                                            app.scroll_position = app.unified_scroll as f32;
                                             app.mark_dirty();
                                         } else if app.max_scroll > 0 {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Top);

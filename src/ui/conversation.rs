@@ -15,7 +15,6 @@ use crate::app::App;
 use crate::models::{MessageSegment, PermissionMode, ToolEventStatus};
 
 use super::helpers::{inner_rect, truncate_string, SPINNER_FRAMES};
-use super::input::{calculate_input_area_height, render_conversation_input};
 use super::layout::LayoutContext;
 use super::messages::render_messages_area;
 use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
@@ -75,22 +74,19 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     let inner = inner_rect(size, 0);
 
     // Calculate responsive layout heights
-    // Input height is dynamic based on line count (hard wrap inserts actual newlines)
-    let line_count = app.textarea.line_count();
-    let input_height = calculate_input_area_height(line_count);
+    // Input is now part of unified scroll in render_messages_area
     let header_height = if ctx.is_short() { 2 } else { 3 };
 
     match (mode_indicator_line, show_streaming_indicator) {
         (Some(mode_line), true) => {
-            // Layout with both mode and streaming indicators (5 sections)
+            // Layout with both mode and streaming indicators (4 sections)
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(header_height), // Thread header (responsive)
-                    Constraint::Min(10),               // Messages area
+                    Constraint::Min(10),               // Unified content (messages + input)
                     Constraint::Length(1),             // Streaming indicator
                     Constraint::Length(1),             // Mode indicator
-                    Constraint::Length(input_height),  // Input area (responsive)
                 ])
                 .split(inner);
 
@@ -98,56 +94,49 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
             render_messages_area(frame, main_chunks[1], app, &ctx);
             render_streaming_indicator(frame, main_chunks[2], app, &ctx);
             render_mode_indicator(frame, main_chunks[3], mode_line);
-            render_conversation_input(frame, main_chunks[4], app);
         }
         (Some(mode_line), false) => {
-            // Layout with mode indicator only (4 sections)
+            // Layout with mode indicator only (3 sections)
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(header_height), // Thread header (responsive)
-                    Constraint::Min(10),               // Messages area
+                    Constraint::Min(10),               // Unified content (messages + input)
                     Constraint::Length(1),             // Mode indicator
-                    Constraint::Length(input_height),  // Input area (responsive)
                 ])
                 .split(inner);
 
             render_conversation_header(frame, main_chunks[0], app, &ctx);
             render_messages_area(frame, main_chunks[1], app, &ctx);
             render_mode_indicator(frame, main_chunks[2], mode_line);
-            render_conversation_input(frame, main_chunks[3], app);
         }
         (None, true) => {
-            // Layout with streaming indicator only (4 sections)
+            // Layout with streaming indicator only (3 sections)
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(header_height), // Thread header (responsive)
-                    Constraint::Min(10),               // Messages area
+                    Constraint::Min(10),               // Unified content (messages + input)
                     Constraint::Length(1),             // Streaming indicator
-                    Constraint::Length(input_height),  // Input area (responsive)
                 ])
                 .split(inner);
 
             render_conversation_header(frame, main_chunks[0], app, &ctx);
             render_messages_area(frame, main_chunks[1], app, &ctx);
             render_streaming_indicator(frame, main_chunks[2], app, &ctx);
-            render_conversation_input(frame, main_chunks[3], app);
         }
         (None, false) => {
-            // Layout without indicators (3 sections)
+            // Layout without indicators (2 sections)
             let main_chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(header_height), // Thread header (responsive)
-                    Constraint::Min(10),               // Messages area
-                    Constraint::Length(input_height),  // Input area (responsive)
+                    Constraint::Min(10),               // Unified content (messages + input)
                 ])
                 .split(inner);
 
             render_conversation_header(frame, main_chunks[0], app, &ctx);
             render_messages_area(frame, main_chunks[1], app, &ctx);
-            render_conversation_input(frame, main_chunks[2], app);
         }
     }
 }
