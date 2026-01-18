@@ -1,18 +1,77 @@
 //! Markdown parser for terminal rendering
 //!
 //! Converts markdown text to styled ratatui Lines for display in the TUI.
-//! Handles code blocks, inline code, bold, italic, and headings.
+//! Handles code blocks, inline code, bold, italic, headings, and hyperlinks.
 //!
 //! Includes a memoization layer (`MarkdownCache`) that caches parsed output
 //! keyed by content hash to avoid re-parsing unchanged content.
+//!
+//! URL Detection:
+//! - Detects markdown links `[text](url)` via pulldown_cmark events
+//! - Detects plain text URLs using regex pattern `https?://[^\s<>\[\]]+`
+//! - Returns `LinkInfo` metadata for rendering OSC 8 hyperlinks
 
+use once_cell::sync::Lazy;
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
 };
+use regex::Regex;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+
+/// Regex pattern for detecting plain text URLs (http:// or https://)
+/// Matches URLs that don't contain whitespace, angle brackets, or square brackets
+static URL_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"https?://[^\s<>\[\]]+").expect("Invalid URL regex pattern")
+});
+
+/// Information about a detected link in markdown content
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkInfo {
+    /// The URL/destination of the link
+    pub url: String,
+    /// The display text for the link
+    pub text: String,
+    /// Start byte position in the original text (for plain URLs)
+    pub start: usize,
+    /// End byte position in the original text (for plain URLs)
+    pub end: usize,
+}
+
+impl LinkInfo {
+    /// Create a new LinkInfo
+    pub fn new(url: String, text: String, start: usize, end: usize) -> Self {
+        Self { url, text, start, end }
+    }
+}
+
+/// Detect plain text URLs in a string using regex
+/// Returns a vector of LinkInfo for each URL found
+pub fn detect_plain_urls(text: &str) -> Vec<LinkInfo> {
+    URL_REGEX
+        .find_iter(text)
+        .map(|m| {
+            let url = m.as_str().to_string();
+            LinkInfo::new(
+                url.clone(),
+                url, // For plain URLs, text and url are the same
+                m.start(),
+                m.end(),
+            )
+        })
+        .collect()
+}
+
+/// Result of parsing markdown with link detection
+#[derive(Debug, Clone)]
+pub struct ParsedMarkdown {
+    /// The rendered lines
+    pub lines: Vec<Line<'static>>,
+    /// All links detected in the content (both markdown links and plain URLs)
+    pub links: Vec<LinkInfo>,
+}
 
 /// Maximum number of entries in the markdown cache before eviction
 const MARKDOWN_CACHE_MAX_ENTRIES: usize = 500;
@@ -139,6 +198,11 @@ const STYLE_INLINE_CODE: Style = Style::new().fg(Color::Cyan);
 /// Style for headings - cyan and bold
 const STYLE_HEADING: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD);
 
+/// Style for links - blue and underlined
+const STYLE_LINK: Style = Style::new()
+    .fg(Color::Blue)
+    .add_modifier(Modifier::UNDERLINED);
+
 /// Render markdown text to a vector of styled Lines.
 ///
 /// Each newline in the input becomes a separate Line object, which is critical
@@ -154,13 +218,45 @@ const STYLE_HEADING: Style = Style::new().fg(Color::Cyan).add_modifier(Modifier:
 /// Gracefully handles incomplete markdown during streaming by rendering
 /// partial content without crashing.
 pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
+    render_markdown_with_links(text).lines
+}
+
+/// Render markdown text to styled Lines with link detection.
+///
+/// Returns a `ParsedMarkdown` struct containing:
+/// - `lines`: The rendered lines for display
+/// - `links`: All detected links (markdown links and plain text URLs)
+///
+/// This is the primary function for rendering markdown when you need link
+/// information for creating OSC 8 hyperlinks.
+///
+/// Supports:
+/// - Code blocks (fenced with ```) - gray/dim color, preserves whitespace
+/// - Inline code (`code`) - cyan color
+/// - Bold (**text**) - bold modifier
+/// - Italic (*text*) - italic modifier
+/// - Headings (# Heading) - cyan and bold
+/// - Markdown links [text](url) - blue and underlined
+/// - Plain text URLs (http:// and https://) - detected via regex
+///
+/// Gracefully handles incomplete markdown during streaming by rendering
+/// partial content without crashing.
+pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
     let parser = Parser::new(text);
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
+    let mut links: Vec<LinkInfo> = Vec::new();
 
     // Style stack for nested formatting
     let mut style_stack: Vec<Style> = vec![Style::default()];
     let mut in_code_block = false;
+
+    // Track current link context
+    let mut current_link_url: Option<String> = None;
+    let mut current_link_text = String::new();
+
+    // Track byte position for plain URL detection
+    let mut byte_position: usize = 0;
 
     for event in parser {
         match event {
@@ -200,6 +296,14 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                         let current_style = *style_stack.last().unwrap_or(&Style::default());
                         current_spans.push(Span::styled("• ".to_string(), current_style));
                     }
+                    Tag::Link { dest_url, .. } => {
+                        // Start of a markdown link - store URL and apply link style
+                        current_link_url = Some(dest_url.to_string());
+                        current_link_text.clear();
+                        let current = *style_stack.last().unwrap_or(&Style::default());
+                        // Combine current style with link style
+                        style_stack.push(current.fg(Color::Blue).add_modifier(Modifier::UNDERLINED));
+                    }
                     _ => {}
                 }
             }
@@ -235,12 +339,29 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                             lines.push(Line::from(std::mem::take(&mut current_spans)));
                         }
                     }
+                    TagEnd::Link => {
+                        // End of markdown link - record the link info
+                        if let Some(url) = current_link_url.take() {
+                            links.push(LinkInfo::new(
+                                url,
+                                std::mem::take(&mut current_link_text),
+                                0, // Position tracking for markdown links is not byte-based
+                                0,
+                            ));
+                        }
+                        style_stack.pop();
+                    }
                     _ => {}
                 }
             }
-            Event::Text(text) => {
+            Event::Text(text_content) => {
                 let current_style = *style_stack.last().unwrap_or(&Style::default());
-                let text_str = text.to_string();
+                let text_str = text_content.to_string();
+
+                // If we're inside a link, accumulate the text
+                if current_link_url.is_some() {
+                    current_link_text.push_str(&text_str);
+                }
 
                 if in_code_block {
                     // In code blocks, preserve all whitespace and split on newlines
@@ -259,8 +380,19 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                             ));
                         }
                     }
+                } else if current_link_url.is_some() {
+                    // Inside a markdown link - just render styled text (URL already tracked)
+                    for (i, part) in text_str.split('\n').enumerate() {
+                        if i > 0 {
+                            lines.push(Line::from(std::mem::take(&mut current_spans)));
+                            lines.push(Line::from(""));
+                        }
+                        if !part.is_empty() {
+                            current_spans.push(Span::styled(part.to_string(), current_style));
+                        }
+                    }
                 } else {
-                    // Normal text - handle newlines with visual separation
+                    // Normal text - detect plain URLs and handle newlines
                     for (i, part) in text_str.split('\n').enumerate() {
                         if i > 0 {
                             // Flush current line and start new with blank line for separation
@@ -268,8 +400,11 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
                             lines.push(Line::from("")); // Visual separation
                         }
                         if !part.is_empty() {
-                            current_spans.push(Span::styled(part.to_string(), current_style));
+                            // Check for plain text URLs and create styled spans
+                            let spans_with_urls = render_text_with_urls(part, current_style, &mut links, byte_position);
+                            current_spans.extend(spans_with_urls);
                         }
+                        byte_position += part.len() + 1; // +1 for newline
                     }
                 }
             }
@@ -301,7 +436,58 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
         lines.push(Line::from(""));
     }
 
-    lines
+    ParsedMarkdown { lines, links }
+}
+
+/// Render text with plain URL detection
+/// Splits text into spans where URLs are styled differently and tracked in links vec
+fn render_text_with_urls(
+    text: &str,
+    base_style: Style,
+    links: &mut Vec<LinkInfo>,
+    base_position: usize,
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut last_end = 0;
+
+    for m in URL_REGEX.find_iter(text) {
+        // Add text before the URL
+        if m.start() > last_end {
+            let before = &text[last_end..m.start()];
+            if !before.is_empty() {
+                spans.push(Span::styled(before.to_string(), base_style));
+            }
+        }
+
+        // Add the URL with link style
+        let url = m.as_str().to_string();
+        spans.push(Span::styled(url.clone(), STYLE_LINK));
+
+        // Track the link
+        links.push(LinkInfo::new(
+            url.clone(),
+            url,
+            base_position + m.start(),
+            base_position + m.end(),
+        ));
+
+        last_end = m.end();
+    }
+
+    // Add remaining text after last URL
+    if last_end < text.len() {
+        let after = &text[last_end..];
+        if !after.is_empty() {
+            spans.push(Span::styled(after.to_string(), base_style));
+        }
+    }
+
+    // If no URLs found, return the whole text as one span
+    if spans.is_empty() && !text.is_empty() {
+        spans.push(Span::styled(text.to_string(), base_style));
+    }
+
+    spans
 }
 
 #[cfg(test)]
@@ -822,6 +1008,264 @@ fn main() {
         cache.render("  word  ");
 
         assert_eq!(cache.len(), 4);
+    }
+
+    // ========================================================================
+    // URL Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_plain_urls_http() {
+        let urls = detect_plain_urls("Visit http://example.com for more info");
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "http://example.com");
+        assert_eq!(urls[0].text, "http://example.com");
+        assert_eq!(urls[0].start, 6);
+        assert_eq!(urls[0].end, 24);
+    }
+
+    #[test]
+    fn test_detect_plain_urls_https() {
+        let urls = detect_plain_urls("Visit https://example.com for more info");
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://example.com");
+        assert_eq!(urls[0].text, "https://example.com");
+    }
+
+    #[test]
+    fn test_detect_plain_urls_with_path() {
+        let urls = detect_plain_urls("Check https://github.com/user/repo/issues/123");
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://github.com/user/repo/issues/123");
+    }
+
+    #[test]
+    fn test_detect_plain_urls_with_query() {
+        let urls = detect_plain_urls("Search at https://google.com/search?q=rust+programming");
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://google.com/search?q=rust+programming");
+    }
+
+    #[test]
+    fn test_detect_plain_urls_multiple() {
+        let urls = detect_plain_urls("Visit https://one.com and https://two.com today");
+        assert_eq!(urls.len(), 2);
+        assert_eq!(urls[0].url, "https://one.com");
+        assert_eq!(urls[1].url, "https://two.com");
+    }
+
+    #[test]
+    fn test_detect_plain_urls_no_urls() {
+        let urls = detect_plain_urls("This is plain text without URLs");
+        assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn test_detect_plain_urls_only_url() {
+        let urls = detect_plain_urls("https://example.com");
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://example.com");
+        assert_eq!(urls[0].start, 0);
+        assert_eq!(urls[0].end, 19);
+    }
+
+    #[test]
+    fn test_detect_plain_urls_not_ftp() {
+        // Should not match ftp:// URLs
+        let urls = detect_plain_urls("Visit ftp://files.example.com for files");
+        assert!(urls.is_empty());
+    }
+
+    #[test]
+    fn test_markdown_link_detection() {
+        let parsed = render_markdown_with_links("Click [here](https://example.com) for info");
+        assert_eq!(parsed.links.len(), 1);
+        assert_eq!(parsed.links[0].url, "https://example.com");
+        assert_eq!(parsed.links[0].text, "here");
+    }
+
+    #[test]
+    fn test_markdown_link_styled_blue_underlined() {
+        let parsed = render_markdown_with_links("Click [here](https://example.com) for info");
+
+        // Find the link span
+        let link_span = parsed.lines[0]
+            .spans
+            .iter()
+            .find(|s| s.content == "here")
+            .expect("Should have link text span");
+
+        assert_eq!(link_span.style.fg, Some(Color::Blue));
+        assert!(link_span.style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn test_markdown_link_multiple() {
+        let md = "Visit [GitHub](https://github.com) and [Rust](https://rust-lang.org)";
+        let parsed = render_markdown_with_links(md);
+
+        assert_eq!(parsed.links.len(), 2);
+        assert_eq!(parsed.links[0].url, "https://github.com");
+        assert_eq!(parsed.links[0].text, "GitHub");
+        assert_eq!(parsed.links[1].url, "https://rust-lang.org");
+        assert_eq!(parsed.links[1].text, "Rust");
+    }
+
+    #[test]
+    fn test_plain_url_in_text() {
+        let parsed = render_markdown_with_links("Visit https://example.com for more info");
+
+        assert_eq!(parsed.links.len(), 1);
+        assert_eq!(parsed.links[0].url, "https://example.com");
+        assert_eq!(parsed.links[0].text, "https://example.com");
+    }
+
+    #[test]
+    fn test_plain_url_styled_blue_underlined() {
+        let parsed = render_markdown_with_links("Visit https://example.com for info");
+
+        // Find the URL span
+        let url_span = parsed.lines[0]
+            .spans
+            .iter()
+            .find(|s| s.content == "https://example.com")
+            .expect("Should have URL span");
+
+        assert_eq!(url_span.style.fg, Some(Color::Blue));
+        assert!(url_span.style.add_modifier.contains(Modifier::UNDERLINED));
+    }
+
+    #[test]
+    fn test_mixed_markdown_and_plain_urls() {
+        let md = "See [docs](https://docs.rs) or https://github.com for code";
+        let parsed = render_markdown_with_links(md);
+
+        assert_eq!(parsed.links.len(), 2);
+        // First link is from markdown
+        assert_eq!(parsed.links[0].url, "https://docs.rs");
+        assert_eq!(parsed.links[0].text, "docs");
+        // Second link is plain URL
+        assert_eq!(parsed.links[1].url, "https://github.com");
+        assert_eq!(parsed.links[1].text, "https://github.com");
+    }
+
+    #[test]
+    fn test_url_not_detected_in_code_block() {
+        let md = "```\nhttps://example.com\n```";
+        let parsed = render_markdown_with_links(md);
+
+        // URL inside code block should NOT be detected as a link
+        // (code blocks should preserve content as-is)
+        assert!(parsed.links.is_empty(), "URLs in code blocks should not be detected as links");
+    }
+
+    #[test]
+    fn test_url_not_detected_in_inline_code() {
+        let md = "Use `https://example.com` as the base URL";
+        let parsed = render_markdown_with_links(md);
+
+        // URL inside inline code should NOT be detected as a link
+        assert!(parsed.links.is_empty(), "URLs in inline code should not be detected as links");
+    }
+
+    #[test]
+    fn test_link_info_struct() {
+        let link = LinkInfo::new(
+            "https://example.com".to_string(),
+            "Example".to_string(),
+            10,
+            29,
+        );
+
+        assert_eq!(link.url, "https://example.com");
+        assert_eq!(link.text, "Example");
+        assert_eq!(link.start, 10);
+        assert_eq!(link.end, 29);
+    }
+
+    #[test]
+    fn test_link_info_equality() {
+        let link1 = LinkInfo::new("https://a.com".to_string(), "A".to_string(), 0, 10);
+        let link2 = LinkInfo::new("https://a.com".to_string(), "A".to_string(), 0, 10);
+        let link3 = LinkInfo::new("https://b.com".to_string(), "B".to_string(), 0, 10);
+
+        assert_eq!(link1, link2);
+        assert_ne!(link1, link3);
+    }
+
+    #[test]
+    fn test_parsed_markdown_struct() {
+        let parsed = render_markdown_with_links("Hello [world](https://world.com)");
+
+        assert!(!parsed.lines.is_empty());
+        assert_eq!(parsed.links.len(), 1);
+    }
+
+    #[test]
+    fn test_render_markdown_backward_compatible() {
+        // Original render_markdown should still work
+        let lines = render_markdown("Hello **world**");
+
+        assert_eq!(lines.len(), 1);
+        let has_bold = lines[0]
+            .spans
+            .iter()
+            .any(|s| s.content == "world" && s.style.add_modifier.contains(Modifier::BOLD));
+        assert!(has_bold);
+    }
+
+    #[test]
+    fn test_empty_link_text() {
+        // Edge case: empty link text (valid markdown but unusual)
+        let parsed = render_markdown_with_links("[](https://example.com)");
+
+        // Should still detect the link even with empty text
+        assert_eq!(parsed.links.len(), 1);
+        assert_eq!(parsed.links[0].url, "https://example.com");
+        assert!(parsed.links[0].text.is_empty());
+    }
+
+    #[test]
+    fn test_url_with_fragment() {
+        let parsed = render_markdown_with_links("See https://example.com/page#section for details");
+
+        assert_eq!(parsed.links.len(), 1);
+        assert_eq!(parsed.links[0].url, "https://example.com/page#section");
+    }
+
+    #[test]
+    fn test_url_with_port() {
+        let parsed = render_markdown_with_links("Server at http://localhost:8080/api");
+
+        assert_eq!(parsed.links.len(), 1);
+        assert_eq!(parsed.links[0].url, "http://localhost:8080/api");
+    }
+
+    #[test]
+    fn test_url_stops_at_angle_bracket() {
+        // URLs should not include angle brackets (common in markdown/email contexts)
+        let parsed = render_markdown_with_links("Check <https://example.com> for info");
+
+        assert_eq!(parsed.links.len(), 1);
+        assert_eq!(parsed.links[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn test_url_stops_at_square_bracket() {
+        // URLs should not include square brackets
+        let urls = detect_plain_urls("See [https://example.com] for info");
+
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, "https://example.com");
+    }
+
+    #[test]
+    fn test_complex_url_with_params() {
+        let url = "https://example.com/path?param1=value1&param2=value2";
+        let urls = detect_plain_urls(&format!("Visit {} today", url));
+
+        assert_eq!(urls.len(), 1);
+        assert_eq!(urls[0].url, url);
     }
 }
 
