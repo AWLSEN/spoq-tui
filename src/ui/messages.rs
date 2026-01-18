@@ -917,7 +917,7 @@ pub fn render_message_segments(
                 let segment_lines = markdown_cache.render(text);
                 // Wrap and prepend vertical bar to ALL text lines
                 // This ensures wrapped continuations also get the prefix
-                lines.extend(wrap_lines_with_prefix(segment_lines, label, label_style, max_width));
+                lines.extend(wrap_lines_with_prefix(segment_lines, label, label_style, max_width, None));
                 if !lines.is_empty() {
                     is_first_line = false;
                 }
@@ -926,7 +926,7 @@ pub fn render_message_segments(
             MessageSegment::ToolEvent(event) => {
                 // Tool events are usually short, but wrap if needed
                 let tool_line = render_tool_event(event, tick_count, ctx);
-                lines.extend(wrap_line_with_prefix(tool_line, label, label_style, max_width));
+                lines.extend(wrap_line_with_prefix(tool_line, label, label_style, max_width, None));
                 is_first_line = false;
                 i += 1;
             }
@@ -944,7 +944,7 @@ pub fn render_message_segments(
 
                 // Render the block with tree connectors, wrap if needed
                 for line in render_subagent_events_block(&subagent_events, tick_count, ctx) {
-                    lines.extend(wrap_line_with_prefix(line, label, label_style, max_width));
+                    lines.extend(wrap_line_with_prefix(line, label, label_style, max_width, None));
                 }
                 is_first_line = false;
             }
@@ -1338,7 +1338,8 @@ fn render_single_message(
                 lines.push(empty_line);
             } else {
                 // Wrap lines with prefix, then append cursor to last line
-                let mut wrapped_lines = wrap_lines_with_prefix(content_lines, label, label_style, max_width);
+                let bg = if message.role == MessageRole::User { Some(COLOR_HUMAN_BG) } else { None };
+                let mut wrapped_lines = wrap_lines_with_prefix(content_lines, label, label_style, max_width, bg);
                 if let Some(last_line) = wrapped_lines.last_mut() {
                     last_line.spans.push(cursor_span);
                 }
@@ -1393,7 +1394,8 @@ fn render_single_message(
                 message_lines.push(empty_line);
             } else {
                 // Wrap and prepend vertical bar to ALL lines
-                message_lines.extend(wrap_lines_with_prefix(content_lines, label, label_style, max_width));
+                let bg = if message.role == MessageRole::User { Some(COLOR_HUMAN_BG) } else { None };
+                message_lines.extend(wrap_lines_with_prefix(content_lines, label, label_style, max_width, bg));
             }
         }
 
