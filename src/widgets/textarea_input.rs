@@ -757,6 +757,26 @@ impl<'a> TextAreaInput<'a> {
         // Use reference rendering (tui-textarea 0.7+ supports rendering &TextArea directly)
         (&self.textarea).render(area, buf);
     }
+
+    /// Render the textarea without any border (raw content only).
+    ///
+    /// Used when the caller wants to handle border rendering separately,
+    /// such as when rendering a chip alongside the input.
+    pub fn render_without_border(&mut self, area: Rect, buf: &mut Buffer, focused: bool) {
+        // Configure cursor visibility based on focus
+        if focused {
+            self.textarea
+                .set_cursor_style(Style::default().fg(Color::Black).bg(Color::White));
+        } else {
+            self.textarea.set_cursor_style(Style::default());
+        }
+
+        // Clear any existing block (no border)
+        self.textarea.set_block(Block::default());
+
+        // Render the textarea
+        (&self.textarea).render(area, buf);
+    }
 }
 
 /// A renderable wrapper for TextAreaInput that implements the Widget trait

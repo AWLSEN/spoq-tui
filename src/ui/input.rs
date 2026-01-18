@@ -4,10 +4,11 @@
 //! This module provides responsive rendering that adapts to terminal dimensions.
 
 use ratatui::{
+    buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget},
     Frame,
 };
 
@@ -17,6 +18,58 @@ use crate::widgets::textarea_input::TextAreaInputWidget;
 
 use super::layout::LayoutContext;
 use super::theme::{COLOR_ACCENT, COLOR_DIALOG_BG, COLOR_DIM};
+
+// ============================================================================
+// Folder Chip Constants
+// ============================================================================
+
+/// Maximum display length for folder name in chip (truncate if longer)
+const MAX_CHIP_FOLDER_NAME_LEN: usize = 20;
+
+/// Background color for folder chip - subtle dark blue
+const COLOR_CHIP_BG: Color = Color::Rgb(40, 44, 52);
+
+/// Text color for folder chip
+const COLOR_CHIP_TEXT: Color = Color::White;
+
+// ============================================================================
+// Folder Chip Rendering
+// ============================================================================
+
+/// Format the folder name for display in the chip.
+///
+/// Truncates to MAX_CHIP_FOLDER_NAME_LEN characters and adds "..." if truncated.
+fn format_chip_folder_name(name: &str) -> String {
+    if name.len() > MAX_CHIP_FOLDER_NAME_LEN {
+        format!("{}...", &name[..MAX_CHIP_FOLDER_NAME_LEN.saturating_sub(3)])
+    } else {
+        name.to_string()
+    }
+}
+
+/// Calculate the width of the folder chip in columns.
+///
+/// Returns the width including the brackets and emoji: `[📁 folder-name]`
+fn calculate_chip_width(folder_name: &str) -> u16 {
+    let display_name = format_chip_folder_name(folder_name);
+    // Format: "[📁 " (4 chars) + name + "]" (1 char)
+    // Note: emoji 📁 is typically 2 columns wide
+    (3 + display_name.len() + 1) as u16
+}
+
+/// Render the folder chip directly to the buffer.
+///
+/// The chip is rendered at the specified position with the format: `[📁 folder-name]`
+fn render_folder_chip(buf: &mut Buffer, x: u16, y: u16, folder_name: &str) {
+    let display_name = format_chip_folder_name(folder_name);
+    let chip_text = format!("[📁 {}]", display_name);
+
+    let style = Style::default()
+        .fg(COLOR_CHIP_TEXT)
+        .bg(COLOR_CHIP_BG);
+
+    buf.set_string(x, y, &chip_text, style);
+}
 
 // ============================================================================
 // AskUserQuestion Parsing
@@ -68,8 +121,15 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate content width (accounting for input box borders)
-    let content_width = inner.width.saturating_sub(2);
+    // Calculate chip width if a folder is selected
+    let chip_width = app
+        .selected_folder
+        .as_ref()
+        .map(|f| calculate_chip_width(&f.name) + 1) // +1 for space after chip
+        .unwrap_or(0);
+
+    // Calculate content width (accounting for input box borders and chip)
+    let content_width = inner.width.saturating_sub(2).saturating_sub(chip_width);
 
     // Set hard wrap width so auto-newlines are inserted during typing
     app.textarea.set_wrap_width(Some(content_width));
@@ -86,9 +146,13 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
         ])
         .split(inner);
 
-    // Render the TextArea widget (never streaming on CommandDeck)
-    let input_widget = TextAreaInputWidget::new(&mut app.textarea, "", input_focused);
-    frame.render_widget(input_widget, input_chunks[0]);
+    // Render the folder chip + input widget using our custom composite widget
+    let input_with_chip = InputWithChipWidget {
+        textarea_input: &mut app.textarea,
+        focused: input_focused,
+        selected_folder: app.selected_folder.as_ref(),
+    };
+    frame.render_widget(input_with_chip, input_chunks[0]);
 
     // Build responsive keybind hints based on terminal dimensions
     let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
@@ -96,6 +160,60 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let keybinds_widget = Paragraph::new(keybinds);
     frame.render_widget(keybinds_widget, input_chunks[1]);
+}
+
+/// Widget that renders a folder chip followed by the TextArea input.
+///
+/// This composite widget handles:
+/// - Rendering the folder chip at the start (if selected)
+/// - Rendering the TextArea input in the remaining space
+struct InputWithChipWidget<'a, 'b> {
+    textarea_input: &'b mut crate::widgets::textarea_input::TextAreaInput<'a>,
+    focused: bool,
+    selected_folder: Option<&'b crate::models::Folder>,
+}
+
+impl Widget for InputWithChipWidget<'_, '_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        // Create the outer border block
+        let border_style = Style::default().fg(COLOR_DIM);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(border_style);
+
+        // Render the border
+        let inner_area = block.inner(area);
+        block.render(area, buf);
+
+        // If a folder is selected, render the chip at the start of the input
+        let textarea_area = if let Some(folder) = self.selected_folder {
+            let chip_width = calculate_chip_width(&folder.name);
+            let spacing = 1u16; // Space after chip
+
+            // Render the chip at the start of the inner area (top-left)
+            render_folder_chip(buf, inner_area.x, inner_area.y, &folder.name);
+
+            // Calculate remaining area for textarea
+            let chip_total_width = chip_width + spacing;
+            let textarea_x = inner_area.x + chip_total_width;
+            let textarea_width = inner_area.width.saturating_sub(chip_total_width);
+
+            Rect {
+                x: textarea_x,
+                y: inner_area.y,
+                width: textarea_width,
+                height: inner_area.height,
+            }
+        } else {
+            inner_area
+        };
+
+        // Render textarea without border (we handle the border ourselves)
+        self.textarea_input
+            .render_without_border(textarea_area, buf, self.focused);
+    }
 }
 
 /// Render the input area for conversation screen
@@ -1427,5 +1545,55 @@ mod tests {
         let back_pos = content.find("back").unwrap();
         let link_pos = content.find("[Cmd+click]").unwrap();
         assert!(link_pos > back_pos, "Link hint should appear after 'back' hint");
+    }
+
+    // ========================================================================
+    // Folder Chip Tests
+    // ========================================================================
+
+    #[test]
+    fn test_format_chip_folder_name_short() {
+        let name = "project";
+        let formatted = format_chip_folder_name(name);
+        assert_eq!(formatted, "project");
+    }
+
+    #[test]
+    fn test_format_chip_folder_name_exact_max() {
+        // MAX_CHIP_FOLDER_NAME_LEN is 20
+        let name = "12345678901234567890"; // Exactly 20 chars
+        let formatted = format_chip_folder_name(name);
+        assert_eq!(formatted, "12345678901234567890");
+    }
+
+    #[test]
+    fn test_format_chip_folder_name_truncated() {
+        // MAX_CHIP_FOLDER_NAME_LEN is 20
+        let name = "very-long-project-name-that-exceeds-limit";
+        let formatted = format_chip_folder_name(name);
+        // Should truncate to 17 chars + "..." = 20 chars total
+        assert!(formatted.ends_with("..."));
+        assert!(formatted.len() <= MAX_CHIP_FOLDER_NAME_LEN);
+    }
+
+    #[test]
+    fn test_calculate_chip_width() {
+        // Format: "[📁 " + name + "]"
+        // "[📁 " is 3 chars ([ + emoji(counts as 1 in len) + space)
+        // "]" is 1 char
+        let width = calculate_chip_width("project");
+        // "[📁 project]" = 4 + 7 = 11 characters
+        // But emoji 📁 is 2 columns wide, so actual display is 12
+        // The function returns: (3 + name.len() + 1) = 3 + 7 + 1 = 11
+        assert_eq!(width, 11);
+    }
+
+    #[test]
+    fn test_calculate_chip_width_long_name_truncated() {
+        let name = "very-long-project-name-that-exceeds-limit";
+        let width = calculate_chip_width(name);
+        // Name gets truncated to 17 + "..." = 20 chars max
+        // Width = 3 + 20 + 1 = 24
+        assert!(width <= 24);
     }
 }

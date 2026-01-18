@@ -402,6 +402,54 @@ impl App {
         }
         self.mark_dirty();
     }
+
+    // =========================================================================
+    // Folder Selection Methods
+    // =========================================================================
+
+    /// Select a folder and display it as a chip in the input area.
+    ///
+    /// This is called when the user presses Enter on a highlighted folder
+    /// in the folder picker. It:
+    /// 1. Sets the selected folder
+    /// 2. Closes the folder picker
+    /// 3. Clears the @ and filter text from the textarea
+    pub fn select_folder(&mut self, folder: crate::models::Folder) {
+        self.selected_folder = Some(folder.clone());
+        self.folder_picker_visible = false;
+        self.folder_picker_filter.clear();
+        self.folder_picker_cursor = 0;
+
+        // Remove @ + filter from textarea
+        self.remove_at_and_filter_from_input();
+
+        self.mark_dirty();
+    }
+
+    /// Clear the currently selected folder.
+    ///
+    /// Called when the user presses backspace at cursor position 0
+    /// while a folder chip is displayed.
+    pub fn clear_folder(&mut self) {
+        if self.selected_folder.is_some() {
+            self.selected_folder = None;
+            self.handle_message(super::AppMessage::FolderCleared);
+            self.mark_dirty();
+        }
+    }
+
+    /// Check if backspace at the current cursor position should clear the folder chip.
+    ///
+    /// Returns true if:
+    /// - A folder is selected (chip is displayed)
+    /// - Cursor is at position (0, 0) - start of input
+    pub fn should_clear_folder_on_backspace(&self) -> bool {
+        if self.selected_folder.is_none() {
+            return false;
+        }
+        let (row, col) = self.textarea.cursor();
+        row == 0 && col == 0
+    }
 }
 
 #[cfg(test)]
@@ -697,5 +745,105 @@ mod tests {
         assert!(!app.folder_picker_visible);
         assert!(app.folder_picker_filter.is_empty());
         assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    // =========================================================================
+    // select_folder and clear_folder tests
+    // =========================================================================
+
+    #[test]
+    fn test_select_folder_sets_selected_folder() {
+        let mut app = create_test_app();
+        let folder = create_test_folder("my-project", "/home/user/my-project");
+
+        app.select_folder(folder.clone());
+
+        assert!(app.selected_folder.is_some());
+        assert_eq!(app.selected_folder.as_ref().unwrap().name, "my-project");
+    }
+
+    #[test]
+    fn test_select_folder_closes_picker() {
+        let mut app = create_test_app();
+        app.folder_picker_visible = true;
+        app.folder_picker_filter = "proj".to_string();
+        app.folder_picker_cursor = 2;
+        let folder = create_test_folder("my-project", "/home/user/my-project");
+
+        app.select_folder(folder);
+
+        assert!(!app.folder_picker_visible);
+        assert!(app.folder_picker_filter.is_empty());
+        assert_eq!(app.folder_picker_cursor, 0);
+    }
+
+    #[test]
+    fn test_clear_folder() {
+        let mut app = create_test_app();
+        let folder = create_test_folder("my-project", "/home/user/my-project");
+        app.selected_folder = Some(folder);
+
+        app.clear_folder();
+
+        assert!(app.selected_folder.is_none());
+    }
+
+    #[test]
+    fn test_clear_folder_when_none_selected() {
+        let mut app = create_test_app();
+        app.selected_folder = None;
+
+        // Should not panic when no folder is selected
+        app.clear_folder();
+
+        assert!(app.selected_folder.is_none());
+    }
+
+    // =========================================================================
+    // should_clear_folder_on_backspace tests
+    // =========================================================================
+
+    #[test]
+    fn test_should_clear_folder_on_backspace_at_start() {
+        let mut app = create_test_app();
+        let folder = create_test_folder("my-project", "/home/user/my-project");
+        app.selected_folder = Some(folder);
+        // Cursor should be at (0, 0) by default for empty input
+
+        assert!(app.should_clear_folder_on_backspace());
+    }
+
+    #[test]
+    fn test_should_not_clear_folder_when_cursor_not_at_start() {
+        let mut app = create_test_app();
+        let folder = create_test_folder("my-project", "/home/user/my-project");
+        app.selected_folder = Some(folder);
+        // Type something to move cursor away from start
+        app.textarea.insert_char('h');
+        app.textarea.insert_char('i');
+
+        assert!(!app.should_clear_folder_on_backspace());
+    }
+
+    #[test]
+    fn test_should_not_clear_folder_when_no_folder_selected() {
+        let mut app = create_test_app();
+        app.selected_folder = None;
+        // Cursor at (0, 0)
+
+        assert!(!app.should_clear_folder_on_backspace());
+    }
+
+    #[test]
+    fn test_should_not_clear_folder_when_on_second_line() {
+        let mut app = create_test_app();
+        let folder = create_test_folder("my-project", "/home/user/my-project");
+        app.selected_folder = Some(folder);
+        // Add content and a newline
+        app.textarea.insert_char('x');
+        app.textarea.insert_newline();
+        // Cursor is now on line 1, column 0
+
+        assert!(!app.should_clear_folder_on_backspace());
     }
 }

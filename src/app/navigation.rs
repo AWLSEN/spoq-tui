@@ -135,6 +135,12 @@ impl App {
         // Touch thread to update LRU (prevents eviction and moves to front)
         self.cache.touch_thread(&thread_id);
 
+        // Clear selected folder when navigating to an existing thread
+        // (folder context is only for new thread creation from CommandDeck)
+        if self.selected_folder.is_some() {
+            self.selected_folder = None;
+        }
+
         // Set active thread and navigate (existing logic)
         self.active_thread_id = Some(thread_id.clone());
         self.screen = Screen::Conversation;

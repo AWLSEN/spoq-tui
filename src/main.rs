@@ -567,7 +567,12 @@ where
                                         continue;
                                     }
                                     KeyCode::Backspace => {
-                                        app.textarea.backspace();
+                                        // Check if we should clear the folder chip instead of backspace
+                                        if app.should_clear_folder_on_backspace() {
+                                            app.clear_folder();
+                                        } else {
+                                            app.textarea.backspace();
+                                        }
                                         continue;
                                     }
                                     KeyCode::Delete => {
