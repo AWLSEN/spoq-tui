@@ -80,7 +80,11 @@ fn wrap_line_with_prefix(
     if content_width < 5 {
         let mut spans = vec![Span::styled(prefix, prefix_style)];
         spans.extend(line.spans);
-        return vec![Line::from(spans)];
+        let mut result_line = Line::from(spans);
+        if let Some(bg) = bg_color {
+            apply_background_to_line(&mut result_line, bg, max_width);
+        }
+        return vec![result_line];
     }
 
     // Collect all text content with style information
@@ -94,7 +98,11 @@ fn wrap_line_with_prefix(
 
     // If empty, return single line with just prefix
     if segments.is_empty() {
-        return vec![Line::from(vec![Span::styled(prefix, prefix_style)])];
+        let mut result_line = Line::from(vec![Span::styled(prefix, prefix_style)]);
+        if let Some(bg) = bg_color {
+            apply_background_to_line(&mut result_line, bg, max_width);
+        }
+        return vec![result_line];
     }
 
     // Calculate total width
@@ -106,7 +114,11 @@ fn wrap_line_with_prefix(
         for (text, style) in segments {
             spans.push(Span::styled(text, style));
         }
-        return vec![Line::from(spans)];
+        let mut result_line = Line::from(spans);
+        if let Some(bg) = bg_color {
+            apply_background_to_line(&mut result_line, bg, max_width);
+        }
+        return vec![result_line];
     }
 
     // Need to wrap - process character by character, tracking style
@@ -2376,7 +2388,7 @@ mod tests {
     #[test]
     fn test_wrap_line_short_content_no_wrap() {
         let line = Line::from("Hello world");
-        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80);
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80, None);
         assert_eq!(result.len(), 1);
         // First span should be the prefix
         assert_eq!(result[0].spans[0].content.as_ref(), "│ ");
@@ -2385,7 +2397,7 @@ mod tests {
     #[test]
     fn test_wrap_line_empty_content() {
         let line = Line::from("");
-        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80);
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80, None);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].spans[0].content.as_ref(), "│ ");
     }
@@ -2395,7 +2407,7 @@ mod tests {
         // Create a line that's 100 chars, should wrap in 50-char viewport
         let long_text = "word ".repeat(20); // 100 chars
         let line = Line::from(long_text);
-        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 50);
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 50, None);
         // Should produce multiple lines
         assert!(result.len() > 1, "Expected multiple lines, got {}", result.len());
         // Each line should have the prefix
@@ -2410,7 +2422,7 @@ mod tests {
             Span::styled("hello ", Style::default().fg(Color::Red)),
             Span::styled("world", Style::default().fg(Color::Blue)),
         ]);
-        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80);
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80, None);
         assert_eq!(result.len(), 1);
         // Should have prefix + two styled spans
         assert!(result[0].spans.len() >= 2); // prefix + content
@@ -2422,11 +2434,59 @@ mod tests {
             Line::from("Short line"),
             Line::from("Another short line"),
         ];
-        let result = wrap_lines_with_prefix(lines, "│ ", Style::default(), 80);
+        let result = wrap_lines_with_prefix(lines, "│ ", Style::default(), 80, None);
         assert_eq!(result.len(), 2);
         // Both should have prefix
         for l in &result {
             assert_eq!(l.spans[0].content.as_ref(), "│ ");
+        }
+    }
+
+    #[test]
+    fn test_apply_background_to_line() {
+        let mut line = Line::from(vec![
+            Span::raw("│ "),
+            Span::raw("Hello"),
+        ]);
+        apply_background_to_line(&mut line, Color::Rgb(35, 40, 48), 20);
+
+        // All spans should have background
+        for span in &line.spans {
+            assert!(span.style.bg.is_some());
+        }
+        // Should have padding span added (original width was 7, padded to 20)
+        assert!(line.spans.len() >= 3);
+    }
+
+    #[test]
+    fn test_wrap_with_background_applies_to_all_lines() {
+        let line = Line::from(vec![Span::raw("Test content")]);
+        let result = wrap_line_with_prefix(
+            line,
+            "│ ",
+            Style::default(),
+            30,
+            Some(Color::Rgb(35, 40, 48)),
+        );
+
+        // All spans in all lines should have background
+        for line in &result {
+            for span in &line.spans {
+                assert!(span.style.bg.is_some(), "Span '{}' missing background", span.content);
+            }
+        }
+    }
+
+    #[test]
+    fn test_wrap_without_background() {
+        let line = Line::from(vec![Span::raw("Test")]);
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 30, None);
+
+        // No spans should have background
+        for line in &result {
+            for span in &line.spans {
+                assert!(span.style.bg.is_none());
+            }
         }
     }
 }
