@@ -11,8 +11,8 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, ProgrammingMode};
-use crate::models::{MessageSegment, ToolEventStatus};
+use crate::app::App;
+use crate::models::{MessageSegment, PermissionMode, ToolEventStatus};
 
 use super::helpers::{inner_rect, truncate_string, SPINNER_FRAMES};
 use super::input::{calculate_input_area_height, render_conversation_input};
@@ -24,29 +24,21 @@ use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 // Mode Indicator
 // ============================================================================
 
-/// Create the mode indicator line for programming threads.
-///
-/// Returns Some(Line) with the mode indicator styled appropriately:
-/// - PlanMode: '[PLAN MODE]' in yellow
-/// - BypassPermissions: '[BYPASS]' in red
-/// - None: returns None (no indicator shown)
-///
-/// This should only be called when the active thread is a Programming thread.
-pub fn create_mode_indicator_line(mode: ProgrammingMode) -> Option<Line<'static>> {
+pub fn create_mode_indicator_line(mode: PermissionMode) -> Option<Line<'static>> {
     match mode {
-        ProgrammingMode::PlanMode => Some(Line::from(vec![Span::styled(
-            " [PLAN MODE]",
+        PermissionMode::Default => None,
+        PermissionMode::Plan => Some(Line::from(vec![Span::styled(
+            " [PLAN]",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )])),
-        ProgrammingMode::BypassPermissions => Some(Line::from(vec![Span::styled(
-            " [BYPASS]",
+        PermissionMode::BypassPermissions => Some(Line::from(vec![Span::styled(
+            " [AUTONOMOUS]",
             Style::default()
                 .fg(Color::Red)
                 .add_modifier(Modifier::BOLD),
         )])),
-        ProgrammingMode::None => None,
     }
 }
 
@@ -73,13 +65,8 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
         .border_style(Style::default().fg(COLOR_BORDER));
     frame.render_widget(outer_block, size);
 
-    // Determine if we should show the mode indicator
-    let show_mode_indicator = app.is_active_thread_programming();
-    let mode_indicator_line = if show_mode_indicator {
-        create_mode_indicator_line(app.programming_mode)
-    } else {
-        None
-    };
+    // Show mode indicator on all threads
+    let mode_indicator_line = create_mode_indicator_line(app.permission_mode);
 
     // Determine if we should show the streaming indicator
     let show_streaming_indicator = app.is_streaming();

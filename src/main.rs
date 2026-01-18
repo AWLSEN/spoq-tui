@@ -427,6 +427,14 @@ where
                                     continue;
                                 }
 
+                                // Shift+Tab cycles permission mode (works while typing, all threads)
+                                if key.code == KeyCode::BackTab {
+                                    if app.screen == Screen::Conversation {
+                                        app.cycle_permission_mode();
+                                    }
+                                    continue;
+                                }
+
                                 // macOS-style text navigation shortcuts (modifier + key)
                                 // Check these BEFORE plain key handlers
                                 match key.code {
@@ -581,6 +589,12 @@ where
                                     // Double-tap Tab opens thread switcher
                                     app.handle_tab_press();
                                 }
+                                KeyCode::BackTab => {
+                                    // Shift+Tab in Conversation screen: cycle permission mode (all threads)
+                                    if app.screen == Screen::Conversation {
+                                        app.cycle_permission_mode();
+                                    }
+                                }
                                 KeyCode::Esc if app.focus != Focus::Input => {
                                     // Escape when not in input: go back to CommandDeck
                                     if app.screen == Screen::Conversation {
@@ -719,10 +733,14 @@ where
                                 app.focus = Focus::Input;
                             }
 
-                            // Insert pasted text character by character into textarea
-                            // This handles both single-line and multi-line pastes correctly
-                            for ch in text.chars() {
-                                app.textarea.insert_char(ch);
+                            if app.should_summarize_paste(&text) {
+                                // Insert as atomic token
+                                app.textarea.insert_paste_token(text);
+                            } else {
+                                // Insert normally character by character
+                                for ch in text.chars() {
+                                    app.textarea.insert_char(ch);
+                                }
                             }
 
                             app.mark_dirty();

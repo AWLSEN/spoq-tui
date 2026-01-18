@@ -12,7 +12,7 @@ use crate::events::SseEvent;
 use crate::models::{StreamRequest, ThreadType};
 use crate::state::Todo;
 
-use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, ProgrammingMode, Screen};
+use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, Screen};
 use crate::debug::DebugEventSender;
 
 impl App {
@@ -26,7 +26,7 @@ impl App {
     /// The backend uses this client-provided UUID as the canonical thread_id.
     ///
     /// The unified stream endpoint routes based on thread_type parameter.
-    /// For programming threads, plan_mode is set based on the current programming mode.
+    /// The current permission_mode is sent with the request.
     ///
     /// Edge case: If the thread has a streaming response in progress, we block submission
     /// to prevent sending multiple messages before the current response completes.
@@ -34,7 +34,7 @@ impl App {
     /// The `new_thread_type` parameter specifies what type of thread to create if this
     /// is a NEW conversation. It's ignored when continuing an existing thread.
     pub fn submit_input(&mut self, new_thread_type: ThreadType) {
-        let content = self.textarea.content();
+        let content = self.textarea.content_expanded();
         if content.trim().is_empty() {
             return;
         }
@@ -43,9 +43,6 @@ impl App {
         // CommandDeck = ALWAYS new thread (regardless of any stale active_thread_id)
         // Conversation = continue the thread that was opened via open_thread()
         let is_command_deck = self.screen == Screen::CommandDeck;
-
-        // Determine plan_mode based on current programming mode
-        let plan_mode = matches!(self.programming_mode, ProgrammingMode::PlanMode);
 
         // Determine thread_id based on screen
         let (thread_id, is_new_thread) = if is_command_deck {
@@ -91,6 +88,7 @@ impl App {
         self.input_history.add(content.clone());
 
         self.textarea.clear();
+        self.textarea.clear_paste_tokens();
 
         // Reset history navigation after submit
         self.input_history.reset_navigation();
@@ -116,14 +114,9 @@ impl App {
         // Build unified StreamRequest with thread_type
         // Always send thread_id - for new threads, we generate a UUID upfront
         // The backend will use our client-generated UUID as the canonical thread_id
-        let request = StreamRequest::with_thread(content, thread_id).with_type(ThreadType::Programming);
-
-        // Apply plan_mode if needed
-        let request = if plan_mode {
-            request.with_plan_mode(true)
-        } else {
-            request
-        };
+        let request = StreamRequest::with_thread(content, thread_id)
+            .with_type(ThreadType::Programming)
+            .with_permission_mode(self.permission_mode);
 
         // Spawn async task for unified stream endpoint
         tokio::spawn(async move {

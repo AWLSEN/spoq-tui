@@ -28,7 +28,7 @@ async fn test_stream_request_construction() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
     assert_eq!(request.prompt, "Hello, world!");
     assert!(!request.session_id.is_empty());
@@ -42,7 +42,7 @@ async fn test_stream_request_construction() {
         thread_id: Some("thread-123".to_string()),
         reply_to: None,
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
     assert_eq!(request_with_thread.thread_id, Some("thread-123".to_string()));
 
@@ -53,7 +53,7 @@ async fn test_stream_request_construction() {
         thread_id: Some("thread-123".to_string()),
         reply_to: Some(456),
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
     assert_eq!(request_with_reply.reply_to, Some(456));
 }
@@ -69,7 +69,7 @@ async fn test_conductor_error_handling() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
     let result = client.stream(&request).await;
 
@@ -98,7 +98,7 @@ async fn test_conductor_client_methods_exist() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
 
     // Verify stream method exists (will fail to connect but that's expected)
@@ -131,7 +131,7 @@ async fn test_stream_request_with_different_configurations() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
     // Validate request structure
     assert_eq!(request1.prompt, "Hello");
@@ -144,7 +144,7 @@ async fn test_stream_request_with_different_configurations() {
         thread_id: Some("thread-123".to_string()),
         reply_to: None,
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
     assert_eq!(request2.thread_id, Some("thread-123".to_string()));
 
@@ -155,7 +155,7 @@ async fn test_stream_request_with_different_configurations() {
         thread_id: Some("thread-123".to_string()),
         reply_to: Some(456),
         thread_type: None,
-        plan_mode: None,
+        permission_mode: None,
     };
     assert_eq!(request3.session_id, "session-789");
     assert_eq!(request3.reply_to, Some(456));

@@ -3,7 +3,7 @@
 //! This module contains the core [`App`] struct and related types:
 //! - [`Screen`] - Which screen is currently displayed
 //! - [`Focus`] - Which UI component has focus
-//! - [`ProgrammingMode`] - Current programming mode for Claude interactions
+//! - [`PermissionMode`] - Current permission mode for Claude interactions
 //! - [`AppMessage`] - Messages for async communication
 
 mod handlers;
@@ -18,6 +18,7 @@ pub use messages::AppMessage;
 pub use websocket::{start_websocket, start_websocket_with_config};
 
 use crate::cache::ThreadCache;
+use crate::models::PermissionMode;
 use crate::conductor::ConductorClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
 use crate::input_history::InputHistory;
@@ -97,18 +98,6 @@ pub enum Focus {
     Input,
 }
 
-/// Represents the current programming mode for Claude interactions
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ProgrammingMode {
-    /// Plan mode - Claude creates plans before executing
-    PlanMode,
-    /// Bypass permissions - skip confirmation prompts
-    BypassPermissions,
-    /// No special mode active
-    #[default]
-    None,
-}
-
 /// Thread switcher dialog state (Tab to open)
 #[derive(Debug, Clone)]
 #[derive(Default)]
@@ -185,8 +174,8 @@ pub struct App {
     pub conversation_scroll: u16,
     /// Maximum scroll value (calculated during render, used for clamping)
     pub max_scroll: u16,
-    /// Current programming mode for Claude interactions
-    pub programming_mode: ProgrammingMode,
+    /// Current permission mode for Claude interactions
+    pub permission_mode: PermissionMode,
     /// Session-level state (skills, permissions, oauth, tokens)
     pub session_state: SessionState,
     /// Tool execution tracking per-thread (cleared on done event)
@@ -293,7 +282,7 @@ impl App {
             tick_count: 0,
             conversation_scroll: 0,
             max_scroll: 0,
-            programming_mode: ProgrammingMode::default(),
+            permission_mode: PermissionMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
             subagent_tracker: SubagentTracker::new(),
@@ -1169,109 +1158,109 @@ mod tests {
         assert_eq!(app.conversation_scroll, 0);
     }
 
-    // ============= ProgrammingMode Tests =============
+    // ============= PermissionMode Tests =============
 
     #[test]
-    fn test_programming_mode_default_is_none() {
-        assert_eq!(ProgrammingMode::default(), ProgrammingMode::None);
+    fn test_permission_mode_default_is_default() {
+        assert_eq!(PermissionMode::default(), PermissionMode::Default);
     }
 
     #[test]
-    fn test_programming_mode_equality() {
-        assert_eq!(ProgrammingMode::PlanMode, ProgrammingMode::PlanMode);
+    fn test_permission_mode_equality() {
+        assert_eq!(PermissionMode::Plan, PermissionMode::Plan);
         assert_eq!(
-            ProgrammingMode::BypassPermissions,
-            ProgrammingMode::BypassPermissions
+            PermissionMode::BypassPermissions,
+            PermissionMode::BypassPermissions
         );
-        assert_eq!(ProgrammingMode::None, ProgrammingMode::None);
-        assert_ne!(ProgrammingMode::PlanMode, ProgrammingMode::None);
+        assert_eq!(PermissionMode::Default, PermissionMode::Default);
+        assert_ne!(PermissionMode::Plan, PermissionMode::Default);
         assert_ne!(
-            ProgrammingMode::BypassPermissions,
-            ProgrammingMode::PlanMode
+            PermissionMode::BypassPermissions,
+            PermissionMode::Plan
         );
     }
 
     #[test]
-    fn test_programming_mode_copy() {
-        let mode = ProgrammingMode::PlanMode;
+    fn test_permission_mode_copy() {
+        let mode = PermissionMode::Plan;
         let copied = mode;
         assert_eq!(mode, copied);
     }
 
     #[test]
-    fn test_app_initializes_with_no_programming_mode() {
+    fn test_app_initializes_with_default_permission_mode() {
         let app = App::default();
-        assert_eq!(app.programming_mode, ProgrammingMode::None);
+        assert_eq!(app.permission_mode, PermissionMode::Default);
     }
 
     #[test]
-    fn test_cycle_programming_mode_from_none_to_plan() {
+    fn test_cycle_permission_mode_from_default_to_plan() {
         let mut app = App::default();
-        assert_eq!(app.programming_mode, ProgrammingMode::None);
+        assert_eq!(app.permission_mode, PermissionMode::Default);
 
-        app.cycle_programming_mode();
+        app.cycle_permission_mode();
 
-        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
     }
 
     #[test]
-    fn test_cycle_programming_mode_from_plan_to_bypass() {
+    fn test_cycle_permission_mode_from_plan_to_bypass() {
         let mut app = App::default();
-        app.programming_mode = ProgrammingMode::PlanMode;
+        app.permission_mode = PermissionMode::Plan;
 
-        app.cycle_programming_mode();
+        app.cycle_permission_mode();
 
-        assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
     }
 
     #[test]
-    fn test_cycle_programming_mode_from_bypass_to_none() {
+    fn test_cycle_permission_mode_from_bypass_to_default() {
         let mut app = App::default();
-        app.programming_mode = ProgrammingMode::BypassPermissions;
+        app.permission_mode = PermissionMode::BypassPermissions;
 
-        app.cycle_programming_mode();
+        app.cycle_permission_mode();
 
-        assert_eq!(app.programming_mode, ProgrammingMode::None);
+        assert_eq!(app.permission_mode, PermissionMode::Default);
     }
 
     #[test]
-    fn test_cycle_programming_mode_full_cycle() {
+    fn test_cycle_permission_mode_full_cycle() {
         let mut app = App::default();
 
-        // Start at None (default)
-        assert_eq!(app.programming_mode, ProgrammingMode::None);
+        // Start at Default
+        assert_eq!(app.permission_mode, PermissionMode::Default);
 
-        // Cycle: None → PlanMode
-        app.cycle_programming_mode();
-        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+        // Cycle: Default → Plan
+        app.cycle_permission_mode();
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
 
-        // Cycle: PlanMode → BypassPermissions
-        app.cycle_programming_mode();
-        assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+        // Cycle: Plan → BypassPermissions
+        app.cycle_permission_mode();
+        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
 
-        // Cycle: BypassPermissions → None
-        app.cycle_programming_mode();
-        assert_eq!(app.programming_mode, ProgrammingMode::None);
+        // Cycle: BypassPermissions → Default
+        app.cycle_permission_mode();
+        assert_eq!(app.permission_mode, PermissionMode::Default);
 
-        // Cycle: None → PlanMode (wraps around)
-        app.cycle_programming_mode();
-        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+        // Cycle: Default → Plan (wraps around)
+        app.cycle_permission_mode();
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
     }
 
     #[test]
-    fn test_cycle_programming_mode_multiple_cycles() {
+    fn test_cycle_permission_mode_multiple_cycles() {
         let mut app = App::default();
 
         // Cycle through 3 complete cycles (9 transitions)
         for _ in 0..3 {
-            app.cycle_programming_mode(); // None → PlanMode
-            assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+            app.cycle_permission_mode(); // Default → Plan
+            assert_eq!(app.permission_mode, PermissionMode::Plan);
 
-            app.cycle_programming_mode(); // PlanMode → BypassPermissions
-            assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+            app.cycle_permission_mode(); // Plan → BypassPermissions
+            assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
 
-            app.cycle_programming_mode(); // BypassPermissions → None
-            assert_eq!(app.programming_mode, ProgrammingMode::None);
+            app.cycle_permission_mode(); // BypassPermissions → Default
+            assert_eq!(app.permission_mode, PermissionMode::Default);
         }
     }
 
@@ -1381,7 +1370,7 @@ mod tests {
     // ============= Submit Input with Programming Thread Tests =============
 
     #[tokio::test]
-    async fn test_submit_input_on_programming_thread_uses_programming_mode() {
+    async fn test_submit_input_on_programming_thread_uses_permission_mode() {
         use crate::models::ThreadType;
         let mut app = App::default();
 
@@ -1410,7 +1399,7 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Set plan mode
-        app.programming_mode = ProgrammingMode::PlanMode;
+        app.permission_mode = PermissionMode::Plan;
 
         // Submit input
         app.textarea.insert_char('H');
@@ -1424,7 +1413,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_submit_input_programming_mode_none_sets_correct_flags() {
+    async fn test_submit_input_permission_mode_default_sets_correct_flags() {
         use crate::models::ThreadType;
         let mut app = App::default();
 
@@ -1449,8 +1438,8 @@ mod tests {
         app.active_thread_id = Some("prog-thread-456".to_string());
         app.screen = Screen::Conversation;
 
-        // Mode is None by default
-        assert_eq!(app.programming_mode, ProgrammingMode::None);
+        // Mode is Default by default
+        assert_eq!(app.permission_mode, PermissionMode::Default);
 
         // Submit input
         app.textarea.insert_char('T');
@@ -1617,16 +1606,16 @@ mod tests {
         assert!(app.is_active_thread_programming());
 
         // Mode cycling should work
-        assert_eq!(app.programming_mode, ProgrammingMode::None);
-        app.cycle_programming_mode();
-        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+        assert_eq!(app.permission_mode, PermissionMode::Default);
+        app.cycle_permission_mode();
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
     }
 
     #[test]
-    fn test_shift_tab_should_not_cycle_mode_for_normal_thread() {
+    fn test_shift_tab_cycles_mode_for_all_threads() {
         let mut app = App::default();
 
-        // Create a normal thread
+        // Create a normal (conversation) thread
         let thread = crate::models::Thread {
             id: "conv-thread".to_string(),
             title: "Normal".to_string(),
@@ -1643,10 +1632,14 @@ mod tests {
         app.active_thread_id = Some("conv-thread".to_string());
         app.screen = Screen::Conversation;
 
-        // Shift+Tab should NOT cycle mode for conversation threads
-        // (it should cycle focus instead, but that logic is in main.rs)
+        // Shift+Tab should cycle mode for ALL threads now (not just Programming)
         assert_eq!(app.screen, Screen::Conversation);
-        assert!(!app.is_active_thread_programming());
+        assert!(!app.is_active_thread_programming()); // It's a conversation thread
+
+        // Mode cycling works on all thread types
+        assert_eq!(app.permission_mode, PermissionMode::Default);
+        app.cycle_permission_mode();
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
     }
 
     #[test]
@@ -1673,18 +1666,18 @@ mod tests {
         // Even with programming thread, Shift+Tab should not cycle mode
         // because we're not on Conversation screen
         assert_eq!(app.screen, Screen::CommandDeck);
-        // The condition for mode cycling is both screen AND thread type
+        // The condition for mode cycling is being on Conversation screen
     }
 
-    // ============= Programming Mode Persistence Tests =============
+    // ============= Permission Mode Persistence Tests =============
 
     #[test]
-    fn test_programming_mode_persists_across_thread_switches() {
+    fn test_permission_mode_persists_across_thread_switches() {
         use crate::models::ThreadType;
         let mut app = App::default();
 
-        // Set programming mode
-        app.programming_mode = ProgrammingMode::PlanMode;
+        // Set permission mode
+        app.permission_mode = PermissionMode::Plan;
 
         // Create and switch to a programming thread
         let thread1 = crate::models::Thread {
@@ -1705,7 +1698,7 @@ mod tests {
         app.open_thread("prog-1".to_string());
 
         // Mode should persist
-        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
 
         // Switch to another thread
         let thread2 = crate::models::Thread {
@@ -1726,21 +1719,21 @@ mod tests {
         app.open_thread("prog-2".to_string());
 
         // Mode should still persist
-        assert_eq!(app.programming_mode, ProgrammingMode::PlanMode);
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
     }
 
     #[test]
-    fn test_programming_mode_persists_after_navigate_to_command_deck() {
+    fn test_permission_mode_persists_after_navigate_to_command_deck() {
         let mut app = App::default();
 
-        // Set programming mode
-        app.programming_mode = ProgrammingMode::BypassPermissions;
+        // Set permission mode
+        app.permission_mode = PermissionMode::BypassPermissions;
 
         // Navigate to command deck
         app.navigate_to_command_deck();
 
         // Mode should persist (it's app-level, not thread-level)
-        assert_eq!(app.programming_mode, ProgrammingMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
     }
 
     // ============= Thread Type with Add Streaming Message Tests =============
@@ -3003,5 +2996,19 @@ mod tests {
         let app = App::default();
         assert_eq!(app.terminal_width, 80);
         assert_eq!(app.terminal_height, 24);
+    }
+
+    #[test]
+    fn test_should_summarize_paste_by_lines() {
+        let app = App::default();
+        assert!(!app.should_summarize_paste("1\n2\n3")); // 3 lines
+        assert!(app.should_summarize_paste("1\n2\n3\n4")); // 4 lines
+    }
+
+    #[test]
+    fn test_should_summarize_paste_by_chars() {
+        let app = App::default();
+        assert!(!app.should_summarize_paste(&"a".repeat(150))); // 150 chars
+        assert!(app.should_summarize_paste(&"a".repeat(151))); // 151 chars
     }
 }

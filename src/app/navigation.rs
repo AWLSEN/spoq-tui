@@ -16,13 +16,13 @@ impl App {
         self.mark_dirty();
     }
 
-    /// Cycle programming mode: PlanMode → BypassPermissions → None → PlanMode
-    pub fn cycle_programming_mode(&mut self) {
-        use super::ProgrammingMode;
-        self.programming_mode = match self.programming_mode {
-            ProgrammingMode::PlanMode => ProgrammingMode::BypassPermissions,
-            ProgrammingMode::BypassPermissions => ProgrammingMode::None,
-            ProgrammingMode::None => ProgrammingMode::PlanMode,
+    /// Cycle through permission modes: Default → Plan → BypassPermissions → Default
+    pub fn cycle_permission_mode(&mut self) {
+        use crate::models::PermissionMode;
+        self.permission_mode = match self.permission_mode {
+            PermissionMode::Default => PermissionMode::Plan,
+            PermissionMode::Plan => PermissionMode::BypassPermissions,
+            PermissionMode::BypassPermissions => PermissionMode::Default,
         };
         self.mark_dirty();
     }
