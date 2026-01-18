@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::app::App;
 use crate::markdown::MarkdownCache;
@@ -23,6 +24,200 @@ use super::theme::{
     COLOR_ACCENT, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
     COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
+
+// ============================================================================
+// Line Wrapping with Prefix
+// ============================================================================
+
+/// Wrap a line of styled spans to fit within max_width, prepending a prefix to each wrapped line.
+///
+/// This handles the case where text content is longer than the viewport width.
+/// Instead of relying on ratatui's Wrap (which doesn't add prefix to continuation lines),
+/// we pre-wrap the content so each visual line gets the vertical bar prefix.
+///
+/// # Arguments
+/// * `line` - The line to wrap (may contain multiple styled spans)
+/// * `prefix` - The prefix to prepend to each line (e.g., "│ ")
+/// * `prefix_style` - Style for the prefix
+/// * `max_width` - Maximum width including prefix
+///
+/// # Returns
+/// Vec of Lines, each fitting within max_width and having the prefix
+fn wrap_line_with_prefix(
+    line: Line<'static>,
+    prefix: &'static str,
+    prefix_style: Style,
+    max_width: usize,
+) -> Vec<Line<'static>> {
+    let prefix_width = prefix.width();
+    let content_width = max_width.saturating_sub(prefix_width);
+
+    // If content width is too small, just return the line with prefix (edge case)
+    if content_width < 5 {
+        let mut spans = vec![Span::styled(prefix, prefix_style)];
+        spans.extend(line.spans);
+        return vec![Line::from(spans)];
+    }
+
+    // Collect all text content with style information
+    // We'll rebuild spans as we wrap
+    let mut segments: Vec<(String, Style)> = Vec::new();
+    for span in line.spans {
+        if !span.content.is_empty() {
+            segments.push((span.content.to_string(), span.style));
+        }
+    }
+
+    // If empty, return single line with just prefix
+    if segments.is_empty() {
+        return vec![Line::from(vec![Span::styled(prefix, prefix_style)])];
+    }
+
+    // Calculate total width
+    let total_width: usize = segments.iter().map(|(s, _)| s.width()).sum();
+
+    // Fast path: if it fits, no wrapping needed
+    if total_width <= content_width {
+        let mut spans = vec![Span::styled(prefix, prefix_style)];
+        for (text, style) in segments {
+            spans.push(Span::styled(text, style));
+        }
+        return vec![Line::from(spans)];
+    }
+
+    // Need to wrap - process character by character, tracking style
+    let mut result: Vec<Line<'static>> = Vec::new();
+    let mut current_line_spans: Vec<Span<'static>> = vec![Span::styled(prefix, prefix_style)];
+    let mut current_line_width: usize = 0;
+    let mut current_word = String::new();
+    let mut current_word_style: Option<Style> = None;
+
+    // Helper to flush current word to current line or start new line
+    let flush_word = |current_line_spans: &mut Vec<Span<'static>>,
+                          current_line_width: &mut usize,
+                          result: &mut Vec<Line<'static>>,
+                          word: &mut String,
+                          word_style: Style| {
+        if word.is_empty() {
+            return;
+        }
+
+        let word_width = word.width();
+
+        // If word fits on current line, add it
+        if *current_line_width + word_width <= content_width {
+            current_line_spans.push(Span::styled(std::mem::take(word), word_style));
+            *current_line_width += word_width;
+        } else {
+            // Word doesn't fit - start new line
+            // First, save current line if it has content beyond prefix
+            if current_line_spans.len() > 1 || *current_line_width > 0 {
+                result.push(Line::from(std::mem::take(current_line_spans)));
+                *current_line_spans = vec![Span::styled(prefix, prefix_style)];
+                *current_line_width = 0;
+            }
+
+            // If word itself is wider than content_width, break it
+            if word_width > content_width {
+                let mut remaining = std::mem::take(word);
+                while !remaining.is_empty() {
+                    let mut chunk = String::new();
+                    let mut chunk_width = 0;
+                    let mut chars = remaining.chars().peekable();
+
+                    while let Some(c) = chars.peek() {
+                        let c_width = c.to_string().width();
+                        if chunk_width + c_width > content_width && !chunk.is_empty() {
+                            break;
+                        }
+                        chunk.push(chars.next().unwrap());
+                        chunk_width += c_width;
+                    }
+
+                    remaining = chars.collect();
+
+                    if !remaining.is_empty() {
+                        // More to come, finish this line
+                        current_line_spans.push(Span::styled(chunk, word_style));
+                        result.push(Line::from(std::mem::take(current_line_spans)));
+                        *current_line_spans = vec![Span::styled(prefix, prefix_style)];
+                        *current_line_width = 0;
+                    } else {
+                        // Last chunk
+                        current_line_spans.push(Span::styled(chunk.clone(), word_style));
+                        *current_line_width = chunk.width();
+                    }
+                }
+            } else {
+                // Word fits on new line
+                current_line_spans.push(Span::styled(std::mem::take(word), word_style));
+                *current_line_width = word_width;
+            }
+        }
+    };
+
+    for (text, style) in segments {
+        for c in text.chars() {
+            if c == ' ' || c == '\t' {
+                // Flush current word
+                if let Some(ws) = current_word_style {
+                    flush_word(&mut current_line_spans, &mut current_line_width, &mut result, &mut current_word, ws);
+                }
+                current_word_style = None;
+
+                // Add space if it fits
+                let space_width = 1;
+                if current_line_width + space_width <= content_width {
+                    current_line_spans.push(Span::styled(" ", style));
+                    current_line_width += space_width;
+                }
+                // If space doesn't fit, just skip it (line break)
+            } else {
+                // Accumulate character into current word
+                if current_word_style.is_none() {
+                    current_word_style = Some(style);
+                }
+                // If style changed mid-word, flush and start new word segment
+                if current_word_style != Some(style) {
+                    if let Some(ws) = current_word_style {
+                        flush_word(&mut current_line_spans, &mut current_line_width, &mut result, &mut current_word, ws);
+                    }
+                    current_word_style = Some(style);
+                }
+                current_word.push(c);
+            }
+        }
+    }
+
+    // Flush any remaining word
+    if let Some(ws) = current_word_style {
+        flush_word(&mut current_line_spans, &mut current_line_width, &mut result, &mut current_word, ws);
+    }
+
+    // Add final line if it has content
+    if current_line_spans.len() > 1 || current_line_width > 0 {
+        result.push(Line::from(current_line_spans));
+    } else if result.is_empty() {
+        // Ensure at least one line with prefix
+        result.push(Line::from(vec![Span::styled(prefix, prefix_style)]));
+    }
+
+    result
+}
+
+/// Wrap multiple lines with prefix, used for text content from markdown rendering
+fn wrap_lines_with_prefix(
+    lines: Vec<Line<'static>>,
+    prefix: &'static str,
+    prefix_style: Style,
+    max_width: usize,
+) -> Vec<Line<'static>> {
+    let mut result = Vec::new();
+    for line in lines {
+        result.extend(wrap_line_with_prefix(line, prefix, prefix_style, max_width));
+    }
+    result
+}
 
 // ============================================================================
 // Inline Error Banners
@@ -680,30 +875,26 @@ pub fn render_message_segments(
     let mut is_first_line = true;
     let mut i = 0;
 
-    // Helper to prepend vertical bar to a line
-    let prepend_bar = |line: Line<'static>| -> Line<'static> {
-        let mut spans = vec![Span::styled(label, label_style)];
-        spans.extend(line.spans);
-        Line::from(spans)
-    };
+    // Calculate max width for wrapping (text_wrap_width accounts for borders/margins)
+    // We use indent_level=0 since the prefix handles indentation
+    let max_width = ctx.text_wrap_width(0) as usize;
 
     while i < segments.len() {
         match &segments[i] {
             MessageSegment::Text(text) => {
                 let segment_lines = markdown_cache.render(text);
-                // Prepend vertical bar to ALL text lines
-                for line in segment_lines {
-                    lines.push(prepend_bar(line));
-                }
+                // Wrap and prepend vertical bar to ALL text lines
+                // This ensures wrapped continuations also get the prefix
+                lines.extend(wrap_lines_with_prefix(segment_lines, label, label_style, max_width));
                 if !lines.is_empty() {
                     is_first_line = false;
                 }
                 i += 1;
             }
             MessageSegment::ToolEvent(event) => {
-                // Prepend vertical bar to tool event line (with responsive args truncation)
+                // Tool events are usually short, but wrap if needed
                 let tool_line = render_tool_event(event, tick_count, ctx);
-                lines.push(prepend_bar(tool_line));
+                lines.extend(wrap_line_with_prefix(tool_line, label, label_style, max_width));
                 is_first_line = false;
                 i += 1;
             }
@@ -719,9 +910,9 @@ pub fn render_message_segments(
                     }
                 }
 
-                // Render the block with tree connectors (with responsive truncation), prepend bar to each line
+                // Render the block with tree connectors, wrap if needed
                 for line in render_subagent_events_block(&subagent_events, tick_count, ctx) {
-                    lines.push(prepend_bar(line));
+                    lines.extend(wrap_line_with_prefix(line, label, label_style, max_width));
                 }
                 is_first_line = false;
             }
@@ -1053,11 +1244,11 @@ fn render_single_message(
         lines.extend(render_thinking_block(message, app.tick_count, ctx));
     }
 
-    // Use vertical bar prefix for user messages only, empty for assistant messages
+    // Use vertical bar prefix for all messages (user and assistant)
     let (label, label_style) = if message.role == MessageRole::User {
         ("│ ", Style::default().fg(COLOR_DIM))
     } else {
-        ("", Style::default().fg(COLOR_DIM))
+        ("│ ", Style::default().fg(COLOR_DIM))
     };
 
     // Handle streaming vs completed messages
@@ -1100,8 +1291,9 @@ fn render_single_message(
             // (non-assistant messages or when segments is empty)
 
             let content_lines = app.markdown_cache.render(&message.partial_content);
+            let max_width = ctx.text_wrap_width(0) as usize;
 
-            // Prepend vertical bar to ALL lines, append cursor to last line
+            // Wrap and prepend vertical bar to ALL lines, append cursor to last line
             if content_lines.is_empty() {
                 // No content yet, just show vertical bar with cursor
                 lines.push(Line::from(vec![
@@ -1109,17 +1301,12 @@ fn render_single_message(
                     cursor_span,
                 ]));
             } else {
-                // Prepend vertical bar to all lines
-                let line_count = content_lines.len();
-                for (idx, line) in content_lines.into_iter().enumerate() {
-                    let mut spans = vec![Span::styled(label, label_style)];
-                    spans.extend(line.spans);
-                    // Append cursor to last line
-                    if idx == line_count - 1 {
-                        spans.push(cursor_span.clone());
-                    }
-                    lines.push(Line::from(spans));
+                // Wrap lines with prefix, then append cursor to last line
+                let mut wrapped_lines = wrap_lines_with_prefix(content_lines, label, label_style, max_width);
+                if let Some(last_line) = wrapped_lines.last_mut() {
+                    last_line.spans.push(cursor_span);
                 }
+                lines.extend(wrapped_lines);
             }
         }
     } else {
@@ -1127,7 +1314,8 @@ fn render_single_message(
         if let Some(cached_lines) = app.rendered_lines_cache.get(thread_id, message.id, message.render_version) {
             // Use iter().cloned() to avoid cloning the entire Vec; we only clone each Line as needed
             lines.extend(cached_lines.iter().cloned());
-            lines.push(Line::from(""));
+            // Add trailing line with vertical bar for visual continuity
+            lines.push(Line::from(vec![Span::styled(label, label_style)]));
             return lines;
         }
 
@@ -1153,17 +1341,14 @@ fn render_single_message(
         } else {
             // Fall back to content field for non-assistant messages or empty segments
             let content_lines = app.markdown_cache.render(&message.content);
+            let max_width = ctx.text_wrap_width(0) as usize;
 
             if content_lines.is_empty() {
                 // Empty content, just show vertical bar
                 message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
             } else {
-                // Prepend vertical bar to ALL lines
-                for line in content_lines {
-                    let mut spans = vec![Span::styled(label, label_style)];
-                    spans.extend(line.spans);
-                    message_lines.push(Line::from(spans));
-                }
+                // Wrap and prepend vertical bar to ALL lines
+                message_lines.extend(wrap_lines_with_prefix(content_lines, label, label_style, max_width));
             }
         }
 
@@ -1172,7 +1357,8 @@ fn render_single_message(
         lines.extend(message_lines);
     }
 
-    lines.push(Line::from(""));
+    // Add trailing line with vertical bar for visual continuity
+    lines.push(Line::from(vec![Span::styled(label, label_style)]));
     lines
 }
 

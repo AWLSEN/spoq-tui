@@ -329,6 +329,14 @@ impl App {
     pub fn folder_picker_type_char(&mut self, c: char) {
         self.folder_picker_filter.push(c);
         self.folder_picker_cursor = 0; // Reset cursor when filter changes
+
+        // Debug: emit filter change event
+        self.emit_debug_state_change(
+            "FolderPickerFilter",
+            &format!("char='{}' filter='{}'", c, self.folder_picker_filter),
+            &format!("matches={}", self.filtered_folders().len()),
+        );
+
         self.mark_dirty();
     }
 

@@ -44,29 +44,24 @@ fn calculate_dialog_height(visible_count: usize, area_height: u16) -> u16 {
 }
 
 /// Render the folder picker dialog as a bottom-anchored overlay
-pub fn render_folder_picker(frame: &mut Frame, app: &App, _area: Rect) {
+pub fn render_folder_picker(frame: &mut Frame, app: &App, input_area: Rect) {
     if !app.folder_picker_visible {
         return;
     }
 
     let area = frame.area();
 
-    // Create layout context from app's terminal dimensions
-    let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
-
     // Get filtered folders
     let filtered_folders = app.filtered_folders();
     let visible_count = filtered_folders.len().min(MAX_VISIBLE_ROWS);
 
-    // Calculate dimensions
-    let dialog_width = calculate_dialog_width(&ctx, area.width);
+    // Calculate dimensions - use full width of input area
+    let dialog_width = input_area.width;
     let dialog_height = calculate_dialog_height(visible_count.max(1), area.height);
 
-    // Position: centered horizontally, bottom-anchored (above input area)
-    // Leave space for input area (approximately 4-6 rows from bottom)
-    let input_height = 6;
-    let x = (area.width.saturating_sub(dialog_width)) / 2;
-    let y = area.height.saturating_sub(dialog_height + input_height);
+    // Position: horizontally aligned with input area, bottom-anchored (above input area)
+    let x = input_area.x;
+    let y = input_area.y.saturating_sub(dialog_height);
 
     let dialog_area = Rect {
         x,

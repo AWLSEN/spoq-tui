@@ -129,6 +129,18 @@ impl App {
             .with_permission_mode(self.permission_mode)
             .with_working_directory(working_directory);
 
+        // Emit debug event with full StreamRequest JSON
+        if let Ok(json_string) = serde_json::to_string_pretty(&request) {
+            emit_debug(
+                &self.debug_tx,
+                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                    "StreamRequest",
+                    json_string,
+                )),
+                Some(&thread_id_for_task),
+            );
+        }
+
         // Spawn async task for unified stream endpoint
         tokio::spawn(async move {
             match client.stream(&request).await {

@@ -381,47 +381,9 @@ where
                                 continue;
                             }
 
-                            // Thread switcher handling (takes priority when visible)
-                            if app.thread_switcher.visible {
-                                match key.code {
-                                    KeyCode::Tab | KeyCode::Down => {
-                                        app.cycle_switcher_forward();
-                                        continue;
-                                    }
-                                    KeyCode::Up => {
-                                        app.cycle_switcher_backward();
-                                        continue;
-                                    }
-                                    KeyCode::Esc => {
-                                        app.close_switcher();
-                                        continue;
-                                    }
-                                    KeyCode::Enter => {
-                                        app.confirm_switcher_selection();
-                                        continue;
-                                    }
-                                    _ => {
-                                        // Any other key closes and confirms
-                                        app.confirm_switcher_selection();
-                                        continue;
-                                    }
-                                }
-                            }
-
-                            // Handle OAuth consent 'o' key to open URL in browser
-                            if let KeyCode::Char('o') = key.code {
-                                if let Some(url) = &app.session_state.oauth_url {
-                                    // Open URL in browser using the 'open' crate
-                                    if let Err(_e) = open::that(url) {
-                                        // Silently ignore errors - user can manually copy URL from UI
-                                    }
-                                    // Don't clear the URL yet - leave it until OAuth is completed
-                                    continue;
-                                }
-                            }
-
                             // =========================================================
-                            // Folder Picker Key Handling (when picker is visible)
+                            // Folder Picker Key Handling (HIGHEST PRIORITY when visible)
+                            // Must come BEFORE thread switcher to capture typed characters
                             // =========================================================
                             if app.folder_picker_visible {
                                 match key.code {
@@ -463,6 +425,45 @@ where
                                         // Other keys are ignored while picker is open
                                         continue;
                                     }
+                                }
+                            }
+
+                            // Thread switcher handling (takes priority when visible)
+                            if app.thread_switcher.visible {
+                                match key.code {
+                                    KeyCode::Tab | KeyCode::Down => {
+                                        app.cycle_switcher_forward();
+                                        continue;
+                                    }
+                                    KeyCode::Up => {
+                                        app.cycle_switcher_backward();
+                                        continue;
+                                    }
+                                    KeyCode::Esc => {
+                                        app.close_switcher();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        app.confirm_switcher_selection();
+                                        continue;
+                                    }
+                                    _ => {
+                                        // Any other key closes and confirms
+                                        app.confirm_switcher_selection();
+                                        continue;
+                                    }
+                                }
+                            }
+
+                            // Handle OAuth consent 'o' key to open URL in browser
+                            if let KeyCode::Char('o') = key.code {
+                                if let Some(url) = &app.session_state.oauth_url {
+                                    // Open URL in browser using the 'open' crate
+                                    if let Err(_e) = open::that(url) {
+                                        // Silently ignore errors - user can manually copy URL from UI
+                                    }
+                                    // Don't clear the URL yet - leave it until OAuth is completed
+                                    continue;
                                 }
                             }
 

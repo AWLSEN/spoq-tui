@@ -79,6 +79,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         render_main_content(frame, main_chunks[1], app, &ctx);
         render_mode_indicator(frame, main_chunks[2], mode_line);
         render_input_area(frame, main_chunks[3], app);
+
+        // Render folder picker overlay (if visible) - must be last for proper layering
+        if app.folder_picker_visible {
+            render_folder_picker(frame, app, main_chunks[3]);
+        }
     } else {
         // Layout without mode indicator (3 sections)
         let main_chunks = Layout::default()
@@ -93,11 +98,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         render_header(frame, main_chunks[0], app);
         render_main_content(frame, main_chunks[1], app, &ctx);
         render_input_area(frame, main_chunks[2], app);
-    }
 
-    // Render folder picker overlay (if visible) - must be last for proper layering
-    if app.folder_picker_visible {
-        render_folder_picker(frame, app, size);
+        // Render folder picker overlay (if visible) - must be last for proper layering
+        if app.folder_picker_visible {
+            render_folder_picker(frame, app, main_chunks[2]);
+        }
     }
 }
 
