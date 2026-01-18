@@ -122,7 +122,7 @@ impl App {
         // Build unified StreamRequest with thread_type
         // Always send thread_id - for new threads, we generate a UUID upfront
         // The backend will use our client-generated UUID as the canonical thread_id
-        let request = StreamRequest::with_thread(content, thread_id).with_type(thread_type);
+        let request = StreamRequest::with_thread(content, thread_id).with_type(ThreadType::Programming);
 
         // Apply plan_mode if needed
         let request = if plan_mode {
@@ -316,6 +316,7 @@ impl App {
                                 Some(thread_id),
                             );
                             let _ = message_tx.send(AppMessage::ToolStarted {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id: tool_event.tool_call_id,
                                 tool_name: tool_event.tool_name,
                             });
@@ -323,6 +324,7 @@ impl App {
                         SseEvent::ToolCallArgument(arg_event) => {
                             // Send argument chunk to be accumulated in the ToolEvent
                             let _ = message_tx.send(AppMessage::ToolArgumentChunk {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id: arg_event.tool_call_id,
                                 chunk: arg_event.chunk,
                             });
@@ -343,6 +345,7 @@ impl App {
                                 Some(thread_id),
                             );
                             let _ = message_tx.send(AppMessage::ToolExecuting {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id,
                                 display_name,
                             });
@@ -402,6 +405,7 @@ impl App {
                                 Some(thread_id),
                             );
                             let _ = message_tx.send(AppMessage::ToolCompleted {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id: tool_event.tool_call_id,
                                 success,
                                 summary,

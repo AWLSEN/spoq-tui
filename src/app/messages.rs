@@ -44,16 +44,19 @@ pub enum AppMessage {
     },
     /// Tool call started
     ToolStarted {
+        thread_id: String,
         tool_call_id: String,
         tool_name: String,
     },
     /// Tool is executing with display info
     ToolExecuting {
+        thread_id: String,
         tool_call_id: String,
         display_name: String,
     },
     /// Tool completed with result
     ToolCompleted {
+        thread_id: String,
         tool_call_id: String,
         success: bool,
         summary: String,
@@ -62,6 +65,7 @@ pub enum AppMessage {
     },
     /// Tool argument chunk received
     ToolArgumentChunk {
+        thread_id: String,
         tool_call_id: String,
         chunk: String,
     },

@@ -270,6 +270,7 @@ impl App {
                 }
             }
             AppMessage::ToolStarted {
+                thread_id,
                 tool_call_id,
                 tool_name,
             } => {
@@ -287,15 +288,14 @@ impl App {
                         "Tool started",
                         format!("tool: {}", tool_name),
                     )),
-                    self.active_thread_id.as_deref(),
+                    Some(&thread_id),
                 );
                 // Also add tool event inline to the streaming message
-                if let Some(thread_id) = &self.active_thread_id {
-                    self.cache
-                        .start_tool_in_message(thread_id, tool_call_id, tool_name);
-                }
+                self.cache
+                    .start_tool_in_message(&thread_id, tool_call_id, tool_name);
             }
             AppMessage::ToolExecuting {
+                thread_id,
                 tool_call_id,
                 display_name,
             } => {
@@ -303,10 +303,8 @@ impl App {
                 self.tool_tracker
                     .set_tool_executing(&tool_call_id, display_name.clone());
                 // Update the display_name in the message segments
-                if let Some(thread_id) = &self.active_thread_id {
-                    self.cache
-                        .set_tool_display_name(thread_id, &tool_call_id, display_name.clone());
-                }
+                self.cache
+                    .set_tool_display_name(&thread_id, &tool_call_id, display_name.clone());
                 // Emit StateChange for tool executing
                 emit_debug(
                     &self.debug_tx,
@@ -315,10 +313,11 @@ impl App {
                         "Tool executing",
                         format!("display: {}", truncate_for_debug(&display_name, 40)),
                     )),
-                    self.active_thread_id.as_deref(),
+                    Some(&thread_id),
                 );
             }
             AppMessage::ToolCompleted {
+                thread_id,
                 tool_call_id,
                 success,
                 summary,
@@ -343,26 +342,26 @@ impl App {
                             truncate_for_debug(&summary, 30)
                         ),
                     )),
-                    self.active_thread_id.as_deref(),
+                    Some(&thread_id),
                 );
                 // Also update the inline tool event in the streaming message
-                if let Some(thread_id) = &self.active_thread_id {
-                    // Store the result content in the tool event
-                    self.cache
-                        .set_tool_result(thread_id, &tool_call_id, &result, !success);
-                    if success {
-                        self.cache.complete_tool_in_message(thread_id, &tool_call_id);
-                    } else {
-                        self.cache.fail_tool_in_message(thread_id, &tool_call_id);
-                    }
+                // Store the result content in the tool event
+                self.cache
+                    .set_tool_result(&thread_id, &tool_call_id, &result, !success);
+                if success {
+                    self.cache.complete_tool_in_message(&thread_id, &tool_call_id);
+                } else {
+                    self.cache.fail_tool_in_message(&thread_id, &tool_call_id);
                 }
             }
-            AppMessage::ToolArgumentChunk { tool_call_id, chunk } => {
+            AppMessage::ToolArgumentChunk {
+                thread_id,
+                tool_call_id,
+                chunk,
+            } => {
                 // Append argument chunk to the tool event for live display
-                if let Some(thread_id) = &self.active_thread_id {
-                    self.cache
-                        .append_tool_argument(thread_id, &tool_call_id, &chunk);
-                }
+                self.cache
+                    .append_tool_argument(&thread_id, &tool_call_id, &chunk);
             }
             AppMessage::SkillsInjected { skills } => {
                 let count = skills.len();
