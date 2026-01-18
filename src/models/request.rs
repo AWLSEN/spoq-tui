@@ -16,6 +16,13 @@ pub enum PermissionMode {
     BypassPermissions,
 }
 
+/// Metadata for stream requests
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct StreamMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub working_directory: Option<String>,
+}
+
 /// Request structure for streaming API calls
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StreamRequest {
@@ -35,6 +42,9 @@ pub struct StreamRequest {
     /// Permission mode for tool execution
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<PermissionMode>,
+    /// Additional metadata for the request
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<StreamMetadata>,
 }
 
 impl StreamRequest {
@@ -47,6 +57,7 @@ impl StreamRequest {
             reply_to: None,
             thread_type: None,
             permission_mode: None,
+            metadata: None,
         }
     }
 
@@ -59,6 +70,7 @@ impl StreamRequest {
             reply_to: None,
             thread_type: None,
             permission_mode: None,
+            metadata: None,
         }
     }
 
@@ -72,6 +84,7 @@ impl StreamRequest {
             reply_to: Some(reply_to),
             thread_type: None,
             permission_mode: None,
+            metadata: None,
         }
     }
 
@@ -84,6 +97,14 @@ impl StreamRequest {
     /// Set permission mode for this request (builder pattern)
     pub fn with_permission_mode(mut self, mode: PermissionMode) -> Self {
         self.permission_mode = Some(mode);
+        self
+    }
+
+    /// Set working directory for this request (builder pattern)
+    pub fn with_working_directory(mut self, path: Option<String>) -> Self {
+        if let Some(p) = path {
+            self.metadata = Some(StreamMetadata { working_directory: Some(p) });
+        }
         self
     }
 }
