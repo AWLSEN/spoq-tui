@@ -50,6 +50,9 @@ pub const COLOR_TOOL_SUCCESS: Color = Color::Rgb(4, 181, 117); // green #04B575
 /// Tool error state - red
 pub const COLOR_TOOL_ERROR: Color = Color::Red;
 
+/// Tool icon color - gray
+pub const COLOR_TOOL_ICON: Color = Color::Gray;
+
 // ============================================================================
 // Subagent Colors
 // ============================================================================

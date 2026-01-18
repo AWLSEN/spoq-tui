@@ -78,8 +78,7 @@ async fn main() -> Result<()> {
 
     // Connect WebSocket for real-time communication
     // If connection fails, app continues in SSE-only mode
-    let ws_sender = start_websocket(app.message_tx.clone()).await;
-    app.ws_sender = ws_sender;
+    app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
 
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;

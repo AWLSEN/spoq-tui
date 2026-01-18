@@ -11,6 +11,16 @@ use serde_json::Value;
 /// Spinner frames for tool status animation
 pub const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/// Get icon for a tool (icons disabled for cleaner display)
+pub fn get_tool_icon(_function_name: &str) -> &'static str {
+    ""
+}
+
+/// Get icon for a subagent (icons disabled for cleaner display)
+pub fn get_subagent_icon(_subagent_type: &str) -> &'static str {
+    ""
+}
+
 /// Maximum number of inline error banners to display
 pub const MAX_VISIBLE_ERRORS: usize = 2;
 
