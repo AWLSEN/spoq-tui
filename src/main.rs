@@ -519,18 +519,22 @@ where
                                         continue;
                                     }
                                     KeyCode::Down => {
-                                        // If cursor is on last line, try to navigate history down
+                                        // If cursor is on last line and navigating history, go forward
                                         if app.textarea.is_cursor_on_last_line() {
-                                            if let Some(history_entry) = app.input_history.navigate_down() {
-                                                let entry = history_entry.to_string();
-                                                app.textarea.set_content(&entry);
-                                            } else {
-                                                // At bottom of history, restore original input
-                                                let original = app.input_history.get_current_input().to_string();
-                                                app.textarea.set_content(&original);
+                                            // Only handle history navigation if we're currently navigating
+                                            if app.input_history.is_navigating() {
+                                                if let Some(history_entry) = app.input_history.navigate_down() {
+                                                    let entry = history_entry.to_string();
+                                                    app.textarea.set_content(&entry);
+                                                } else {
+                                                    // At bottom of history, restore original input
+                                                    let original = app.input_history.get_current_input().to_string();
+                                                    app.textarea.set_content(&original);
+                                                }
                                             }
+                                            // If not navigating, Down on last line does nothing
                                         } else {
-                                            // Normal cursor movement
+                                            // Normal cursor movement in multi-line input
                                             app.textarea.move_cursor_down();
                                         }
                                         continue;

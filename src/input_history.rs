@@ -200,6 +200,11 @@ impl InputHistory {
         &self.current_input
     }
 
+    /// Check if currently navigating through history.
+    pub fn is_navigating(&self) -> bool {
+        self.index.is_some()
+    }
+
     /// Get the number of entries in history.
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
