@@ -118,9 +118,19 @@ async fn start_debug_system() -> (Option<spoq::debug::DebugEventSender>, Option<
 
 /// Setup panic hook to restore terminal on panic
 fn setup_panic_hook() {
+    use std::io::Write;
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         // Try to restore terminal state
+        // CRITICAL: Pop keyboard enhancement flags BEFORE disabling raw mode
+        // This exits Kitty keyboard protocol mode which causes key codes like [97;5u
+        let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
+        // Disable alternate scroll mode (CSI ? 1007 l)
+        let _ = write!(io::stdout(), "\x1b[?1007l");
+        // Explicit Kitty protocol reset fallback for terminals that need it
+        let _ = write!(io::stdout(), "\x1b[<u");
+        let _ = io::stdout().flush();
+
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
         let _ = execute!(io::stdout(), Show);
