@@ -71,6 +71,9 @@ async fn main() -> Result<()> {
     // Load threads from backend (async initialization)
     app.initialize().await;
 
+    // Load folders for the folder picker (async, non-blocking)
+    app.load_folders();
+
     // Connect WebSocket for real-time communication
     // If connection fails, app continues in SSE-only mode
     app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
@@ -622,33 +625,7 @@ where
                                     // Open selected thread when pressing Enter on Threads panel
                                     app.open_selected_thread();
                                 }
-                                // Arrow key scrolling in Conversation
-                                // Alternate scroll mode sends scroll wheel as arrow keys
-                                // Works regardless of focus - scroll always scrolls the conversation
-                                KeyCode::Up if app.screen == Screen::Conversation => {
-                                    // Scroll up = see older content = increase offset
-                                    if app.conversation_scroll < app.max_scroll {
-                                        app.conversation_scroll += 1;
-                                        app.scroll_position = app.conversation_scroll as f32;
-                                        app.mark_dirty();
-                                    } else if app.max_scroll > 0 {
-                                        app.scroll_boundary_hit = Some(ScrollBoundary::Top);
-                                        app.boundary_hit_tick = app.tick_count;
-                                        app.mark_dirty();
-                                    }
-                                }
-                                KeyCode::Down if app.screen == Screen::Conversation => {
-                                    // Scroll down = see newer content = decrease offset
-                                    if app.conversation_scroll > 0 {
-                                        app.conversation_scroll -= 1;
-                                        app.scroll_position = app.conversation_scroll as f32;
-                                        app.mark_dirty();
-                                    } else {
-                                        app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
-                                        app.boundary_hit_tick = app.tick_count;
-                                        app.mark_dirty();
-                                    }
-                                }
+                                // Page scroll keys for conversation
                                 KeyCode::PageUp if app.screen == Screen::Conversation => {
                                     // Page up = scroll by ~10 lines at once
                                     let page_size = 10;
@@ -703,9 +680,8 @@ where
                             }
                         }
                         Event::Mouse(mouse_event) => {
-                            // Mouse capture is disabled, but scroll wheel events still come through.
-                            // Handle scroll for conversation navigation; all other mouse events ignored
-                            // to allow native terminal text selection.
+                            // Handle scroll wheel for conversation navigation.
+                            // Click/drag events are ignored - terminal handles text selection natively.
                             match mouse_event.kind {
                                 // Simple line-based scrolling (like native terminal apps)
                                 // Each scroll event moves 1 line
@@ -737,8 +713,7 @@ where
                                         }
                                     }
                                 }
-                                // Ignore all other mouse events (click, drag, etc.)
-                                // Mouse capture is disabled so native terminal selection works
+                                // Ignore click/drag events - terminal handles selection natively
                                 _ => {}
                             }
                             continue;

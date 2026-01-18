@@ -218,4 +218,32 @@ impl App {
         let char_count = text.chars().count();
         line_count > 3 || char_count > 150
     }
+
+    /// Load folders from the backend API.
+    ///
+    /// Sets folders_loading = true and spawns an async task to fetch folders.
+    /// On success, sends FoldersLoaded message with the folder list.
+    /// On error, sends FoldersLoadFailed message with the error description.
+    pub fn load_folders(&mut self) {
+        // Set loading state
+        self.folders_loading = true;
+        self.folders_error = None;
+        self.mark_dirty();
+
+        // Spawn async task to fetch folders
+        let tx = self.message_tx.clone();
+        let client = Arc::clone(&self.client);
+
+        tokio::spawn(async move {
+            match client.fetch_folders().await {
+                Ok(folders) => {
+                    let _ = tx.send(AppMessage::FoldersLoaded(folders));
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to load folders: {}", e);
+                    let _ = tx.send(AppMessage::FoldersLoadFailed(error_msg));
+                }
+            }
+        });
+    }
 }
