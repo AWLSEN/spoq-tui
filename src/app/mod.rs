@@ -174,6 +174,14 @@ pub struct App {
     pub conversation_scroll: u16,
     /// Maximum scroll value (calculated during render, used for clamping)
     pub max_scroll: u16,
+    /// Unified scroll offset (0 = input visible at bottom, higher = scrolled up)
+    pub unified_scroll: u16,
+    /// True when user manually scrolled (disables auto-scroll)
+    pub user_has_scrolled: bool,
+    /// Line index where input section begins (for scroll calculations)
+    pub input_section_start: usize,
+    /// Total content lines from last render
+    pub total_content_lines: usize,
     /// Current permission mode for Claude interactions
     pub permission_mode: PermissionMode,
     /// Session-level state (skills, permissions, oauth, tokens)
@@ -296,6 +304,10 @@ impl App {
             tick_count: 0,
             conversation_scroll: 0,
             max_scroll: 0,
+            unified_scroll: 0,
+            user_has_scrolled: false,
+            input_section_start: 0,
+            total_content_lines: 0,
             permission_mode: PermissionMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
