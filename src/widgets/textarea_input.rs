@@ -1387,4 +1387,41 @@ mod tests {
             assert!(new_row < initial_row);
         }
     }
+
+    #[test]
+    fn test_to_content_lines() {
+        let mut input = TextAreaInput::new();
+        for c in "hello".chars() {
+            input.insert_char(c);
+        }
+        input.insert_newline();
+        for c in "world".chars() {
+            input.insert_char(c);
+        }
+
+        let lines = input.to_content_lines();
+        assert_eq!(lines.len(), 2);
+
+        // Lines should be owned (static lifetime)
+        // Just verify we get the expected number of lines
+        // The actual styling/rendering is handled by tui-textarea
+    }
+
+    #[test]
+    fn test_to_content_lines_empty() {
+        let input = TextAreaInput::new();
+        let lines = input.to_content_lines();
+        assert_eq!(lines.len(), 1); // Empty textarea has one line
+    }
+
+    #[test]
+    fn test_to_content_lines_single_line() {
+        let mut input = TextAreaInput::new();
+        for c in "single line".chars() {
+            input.insert_char(c);
+        }
+
+        let lines = input.to_content_lines();
+        assert_eq!(lines.len(), 1);
+    }
 }
