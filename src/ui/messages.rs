@@ -10,7 +10,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
     Frame,
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::App;
 use crate::markdown::MarkdownCache;
@@ -126,7 +126,7 @@ fn wrap_line_with_prefix(
                     let mut chars = remaining.chars().peekable();
 
                     while let Some(c) = chars.peek() {
-                        let c_width = c.to_string().width();
+                        let c_width = c.width().unwrap_or(1);
                         if chunk_width + c_width > content_width && !chunk.is_empty() {
                             break;
                         }
@@ -1459,6 +1459,10 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     let viewport_height = inner.height as usize;
     let viewport_width = inner.width as usize;
 
+    // Invalidate rendered lines cache if viewport width changed (terminal resize)
+    // This ensures wrapped lines are re-rendered with correct width
+    app.rendered_lines_cache.invalidate_if_width_changed(inner.width);
+
     // Collect header lines (error banners, stream errors)
     let mut header_lines: Vec<Line> = Vec::new();
 
@@ -1581,13 +1585,32 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         ]));
         lines.push(Line::from(""));
 
-        let total_lines = estimate_wrapped_line_count(&lines, viewport_width);
-        let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
-        app.max_scroll = max_scroll;
+        // === UNIFIED SCROLL: Record where input section starts ===
+        app.input_section_start = lines.len();
+
+        // === UNIFIED SCROLL: Append input section ===
+        let input_lines = super::input::build_input_section(app, inner.width);
+        lines.extend(input_lines);
+
+        // === UNIFIED SCROLL: Record total for scroll calculations ===
+        app.total_content_lines = lines.len();
+
+        // === UNIFIED SCROLL: Calculate scroll ===
+        let total_visual = lines.len() as u16;
+        let unified_scroll_from_top = if total_visual <= inner.height {
+            0 // Content fits, no scroll
+        } else if !app.user_has_scrolled {
+            total_visual.saturating_sub(inner.height)
+        } else {
+            let unified_max_scroll = total_visual.saturating_sub(inner.height);
+            unified_max_scroll.saturating_sub(app.unified_scroll)
+        };
+
+        app.max_scroll = total_visual.saturating_sub(inner.height);
 
         let messages_widget = Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .scroll((0, 0));
+            .scroll((unified_scroll_from_top, 0));
         frame.render_widget(messages_widget, inner);
 
         // Render inline permission prompt if pending
@@ -1711,9 +1734,35 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         }
     }
 
+    // === UNIFIED SCROLL: Record where input section starts ===
+    app.input_section_start = lines.len();
+
+    // === UNIFIED SCROLL: Append input section ===
+    let input_lines = super::input::build_input_section(app, inner.width);
+    lines.extend(input_lines);
+
+    // === UNIFIED SCROLL: Record total for scroll calculations ===
+    app.total_content_lines = lines.len();
+
+    // === UNIFIED SCROLL: Calculate scroll to show input by default ===
+    let total_visual = lines.len() as u16;
+    let unified_scroll_from_top = if total_visual <= inner.height {
+        0 // Content fits, no scroll
+    } else if !app.user_has_scrolled {
+        // Auto-scroll: show input at bottom
+        total_visual.saturating_sub(inner.height)
+    } else {
+        // User scrolled: convert unified_scroll (from-bottom) to from-top
+        let unified_max_scroll = total_visual.saturating_sub(inner.height);
+        unified_max_scroll.saturating_sub(app.unified_scroll)
+    };
+
+    // Update max_scroll for event handlers
+    app.max_scroll = total_visual.saturating_sub(inner.height);
+
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .scroll((scroll_from_top as u16, 0));
+        .scroll((unified_scroll_from_top, 0));
     frame.render_widget(messages_widget, inner);
 
     // Render inline permission prompt if pending (overlays on top of messages)
@@ -2265,6 +2314,67 @@ mod tests {
                         i, msg_start, msg_end, visible_start, visible_end, start, end);
                 }
             }
+        }
+    }
+
+    // ========================================================================
+    // Line Wrapping Tests
+    // ========================================================================
+
+    #[test]
+    fn test_wrap_line_short_content_no_wrap() {
+        let line = Line::from("Hello world");
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80);
+        assert_eq!(result.len(), 1);
+        // First span should be the prefix
+        assert_eq!(result[0].spans[0].content.as_ref(), "│ ");
+    }
+
+    #[test]
+    fn test_wrap_line_empty_content() {
+        let line = Line::from("");
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].spans[0].content.as_ref(), "│ ");
+    }
+
+    #[test]
+    fn test_wrap_line_long_content_wraps() {
+        // Create a line that's 100 chars, should wrap in 50-char viewport
+        let long_text = "word ".repeat(20); // 100 chars
+        let line = Line::from(long_text);
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 50);
+        // Should produce multiple lines
+        assert!(result.len() > 1, "Expected multiple lines, got {}", result.len());
+        // Each line should have the prefix
+        for (i, l) in result.iter().enumerate() {
+            assert_eq!(l.spans[0].content.as_ref(), "│ ", "Line {} missing prefix", i);
+        }
+    }
+
+    #[test]
+    fn test_wrap_line_preserves_style() {
+        let line = Line::from(vec![
+            Span::styled("hello ", Style::default().fg(Color::Red)),
+            Span::styled("world", Style::default().fg(Color::Blue)),
+        ]);
+        let result = wrap_line_with_prefix(line, "│ ", Style::default(), 80);
+        assert_eq!(result.len(), 1);
+        // Should have prefix + two styled spans
+        assert!(result[0].spans.len() >= 2); // prefix + content
+    }
+
+    #[test]
+    fn test_wrap_lines_multiple() {
+        let lines = vec![
+            Line::from("Short line"),
+            Line::from("Another short line"),
+        ];
+        let result = wrap_lines_with_prefix(lines, "│ ", Style::default(), 80);
+        assert_eq!(result.len(), 2);
+        // Both should have prefix
+        for l in &result {
+            assert_eq!(l.spans[0].content.as_ref(), "│ ");
         }
     }
 }
