@@ -21,7 +21,7 @@ use super::helpers::{format_tool_args, get_subagent_icon, get_tool_icon, inner_r
 use super::input::render_permission_prompt;
 use super::layout::LayoutContext;
 use super::theme::{
-    COLOR_ACCENT, COLOR_DIM, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
+    COLOR_ACCENT, COLOR_DIM, COLOR_HUMAN_BG, COLOR_SUBAGENT_COMPLETE, COLOR_SUBAGENT_RUNNING,
     COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
 
@@ -1327,10 +1327,14 @@ fn render_single_message(
             // Wrap and prepend vertical bar to ALL lines, append cursor to last line
             if content_lines.is_empty() {
                 // No content yet, just show vertical bar with cursor
-                lines.push(Line::from(vec![
+                let mut empty_line = Line::from(vec![
                     Span::styled(label, label_style),
                     cursor_span,
-                ]));
+                ]);
+                if message.role == MessageRole::User {
+                    apply_background_to_line(&mut empty_line, COLOR_HUMAN_BG, max_width);
+                }
+                lines.push(empty_line);
             } else {
                 // Wrap lines with prefix, then append cursor to last line
                 let mut wrapped_lines = wrap_lines_with_prefix(content_lines, label, label_style, max_width);
@@ -1346,7 +1350,12 @@ fn render_single_message(
             // Use iter().cloned() to avoid cloning the entire Vec; we only clone each Line as needed
             lines.extend(cached_lines.iter().cloned());
             // Add trailing line with vertical bar for visual continuity
-            lines.push(Line::from(vec![Span::styled(label, label_style)]));
+            let mut trailing_line = Line::from(vec![Span::styled(label, label_style)]);
+            if message.role == MessageRole::User {
+                let max_width = ctx.text_wrap_width(0) as usize;
+                apply_background_to_line(&mut trailing_line, COLOR_HUMAN_BG, max_width);
+            }
+            lines.push(trailing_line);
             return lines;
         }
 
@@ -1376,7 +1385,11 @@ fn render_single_message(
 
             if content_lines.is_empty() {
                 // Empty content, just show vertical bar
-                message_lines.push(Line::from(vec![Span::styled(label, label_style)]));
+                let mut empty_line = Line::from(vec![Span::styled(label, label_style)]);
+                if message.role == MessageRole::User {
+                    apply_background_to_line(&mut empty_line, COLOR_HUMAN_BG, max_width);
+                }
+                message_lines.push(empty_line);
             } else {
                 // Wrap and prepend vertical bar to ALL lines
                 message_lines.extend(wrap_lines_with_prefix(content_lines, label, label_style, max_width));
@@ -1389,7 +1402,12 @@ fn render_single_message(
     }
 
     // Add trailing line with vertical bar for visual continuity
-    lines.push(Line::from(vec![Span::styled(label, label_style)]));
+    let mut trailing_line = Line::from(vec![Span::styled(label, label_style)]);
+    if message.role == MessageRole::User {
+        let max_width = ctx.text_wrap_width(0) as usize;
+        apply_background_to_line(&mut trailing_line, COLOR_HUMAN_BG, max_width);
+    }
+    lines.push(trailing_line);
     lines
 }
 
