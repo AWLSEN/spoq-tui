@@ -8,6 +8,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
+    text::Line,
     widgets::{Block, Borders, Widget},
 };
 use tui_textarea::{CursorMove, TextArea};
@@ -533,6 +534,11 @@ impl<'a> TextAreaInput<'a> {
     /// Get the lines as a slice
     pub fn lines(&self) -> &[String] {
         self.textarea.lines()
+    }
+
+    /// Get styled content lines for unified scroll rendering.
+    pub fn to_content_lines(&self) -> Vec<Line<'static>> {
+        self.textarea.to_content_lines()
     }
 
     /// Check if cursor is on the first line

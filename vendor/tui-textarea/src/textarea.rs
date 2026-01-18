@@ -8,11 +8,11 @@ use crate::ratatui::widgets::{Block, Widget};
 use crate::scroll::Scrolling;
 #[cfg(feature = "search")]
 use crate::search::Search;
-use crate::util::{spaces, Pos};
+use crate::util::{num_digits, spaces, Pos};
 use crate::widget::Viewport;
 use crate::word::{find_word_exclusive_end_forward, find_word_start_backward};
 #[cfg(feature = "ratatui")]
-use ratatui_core::text::Line;
+use ratatui_core::text::{Line, Span};
 use std::cmp::Ordering;
 use std::fmt;
 #[cfg(feature = "tuirs")]
@@ -1615,6 +1615,50 @@ impl<'a> TextArea<'a> {
         }
 
         hl.into_spans()
+    }
+
+    /// Extract all lines as owned styled content for external rendering.
+    ///
+    /// Returns lines with cursor, selection, and highlighting already applied.
+    /// Use this to embed textarea content in unified scroll systems.
+    pub fn to_content_lines(&self) -> Vec<Line<'static>> {
+        let lines_len = self.lines().len();
+        let lnum_len = if self.line_number_style.is_some() {
+            num_digits(lines_len)
+        } else {
+            0
+        };
+
+        if !self.placeholder.is_empty() && self.is_empty() {
+            // Return placeholder with cursor
+            let cursor = Span::styled(" ", self.cursor_style);
+            let text = Span::raw(self.placeholder.clone());
+            return vec![Line::from(vec![cursor, text])];
+        }
+
+        self.lines()
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                let styled = self.line_spans(line.as_str(), i, lnum_len);
+                Self::line_to_owned(styled)
+            })
+            .collect()
+    }
+
+    fn line_to_owned(line: Line<'_>) -> Line<'static> {
+        let spans: Vec<Span<'static>> = line
+            .spans
+            .into_iter()
+            .map(|span| {
+                Span::styled(span.content.into_owned(), span.style)
+            })
+            .collect();
+
+        let mut result = Line::from(spans);
+        result.style = line.style;
+        result.alignment = line.alignment;
+        result
     }
 
     /// Build a ratatui (or tui-rs) widget to render the current state of the textarea. The widget instance returned
