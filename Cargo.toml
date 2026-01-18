@@ -35,9 +35,11 @@ tower-http = { version = "0.5", features = ["cors"] }
 arboard = "3"
 tui-textarea = { path = "vendor/tui-textarea", features = ["crossterm_0_28"] }
 unicode-width = "0.2"
+dirs = "5"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+tempfile = "3"
 
 [[bench]]
 name = "render_benchmark"

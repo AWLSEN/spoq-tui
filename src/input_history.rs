@@ -3,7 +3,7 @@
 //! This module provides functionality for storing submitted inputs,
 //! navigating through history, and persisting to `~/.spoq_history`.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 
@@ -222,8 +222,6 @@ impl InputHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::tempdir;
 
     #[test]
     fn test_new_creates_empty_history() {
