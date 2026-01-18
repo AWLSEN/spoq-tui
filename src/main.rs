@@ -574,6 +574,12 @@ where
                                     // Double-tap Tab opens thread switcher
                                     app.handle_tab_press();
                                 }
+                                KeyCode::BackTab => {
+                                    // Shift+Tab in Conversation screen with Programming thread: cycle permission mode
+                                    if app.screen == Screen::Conversation && app.is_active_thread_programming() {
+                                        app.cycle_permission_mode();
+                                    }
+                                }
                                 KeyCode::Esc if app.focus != Focus::Input => {
                                     // Escape when not in input: go back to CommandDeck
                                     if app.screen == Screen::Conversation {
