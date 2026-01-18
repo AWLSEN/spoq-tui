@@ -668,53 +668,52 @@ pub fn get_permission_preview(perm: &PermissionRequest) -> String {
 
 /// Build the input section as content lines for unified scroll.
 ///
-/// Returns lines for: separator, label, input content with border, keybinds.
+/// Returns lines for: top border, input content, bottom border, keybinds.
 pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    let content_width = viewport_width.saturating_sub(4) as usize; // margins
+    let border_width = viewport_width as usize;
 
-    // 1. Blank line separator
-    lines.push(Line::from(""));
-
-    // 2. Mode indicator (only shown when Plan or Execute mode is active)
-    let mode_line = match app.permission_mode {
-        PermissionMode::Default => Line::from(""),
-        PermissionMode::Plan => Line::from(vec![Span::styled(
-            "  [PLAN]",
-            Style::default()
-                .fg(Color::Magenta)
-                .add_modifier(Modifier::BOLD),
-        )]),
-        PermissionMode::BypassPermissions => Line::from(vec![Span::styled(
-            "  [EXECUTE]",
-            Style::default()
-                .fg(Color::Rgb(255, 140, 0))
-                .add_modifier(Modifier::BOLD),
-        )]),
+    // 1. Mode indicator (only shown when Plan or Execute mode is active)
+    match app.permission_mode {
+        PermissionMode::Default => {}
+        PermissionMode::Plan => {
+            lines.push(Line::from(vec![Span::styled(
+                "  [PLAN]",
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            )]));
+        }
+        PermissionMode::BypassPermissions => {
+            lines.push(Line::from(vec![Span::styled(
+                "  [EXECUTE]",
+                Style::default()
+                    .fg(Color::Rgb(255, 140, 0))
+                    .add_modifier(Modifier::BOLD),
+            )]));
+        }
     };
-    lines.push(mode_line);
 
-    // 3. Input top border (full-width horizontal line)
-    let full_width = content_width + 6; // Account for removed indent and borders
+    // 2. Input top border (full-width horizontal line)
     lines.push(Line::from(Span::styled(
-        "─".repeat(full_width),
+        "─".repeat(border_width),
         Style::default().fg(COLOR_ACCENT),
     )));
 
-    // 4. Input content lines (raw text, no cursor indicators)
+    // 3. Input content lines (raw text only)
     for text_line in app.textarea.lines() {
         lines.push(Line::from(format!("  {}", text_line)));
     }
 
-    // 5. Input bottom border (full-width horizontal line)
+    // 4. Input bottom border (full-width horizontal line)
     lines.push(Line::from(Span::styled(
-        "─".repeat(full_width),
+        "─".repeat(border_width),
         Style::default().fg(COLOR_ACCENT),
     )));
 
-    // 6. Keybind hints
+    // 5. Keybind hints
     lines.push(Line::from(vec![
-        Span::styled("    Enter", Style::default().fg(COLOR_DIM)),
+        Span::styled("  Enter", Style::default().fg(COLOR_DIM)),
         Span::styled(" send ", Style::default().fg(COLOR_DIM)),
         Span::styled("|", Style::default().fg(COLOR_DIM)),
         Span::styled(" Shift+Enter", Style::default().fg(COLOR_DIM)),
@@ -723,9 +722,6 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
         Span::styled(" Esc", Style::default().fg(COLOR_DIM)),
         Span::styled(" menu", Style::default().fg(COLOR_DIM)),
     ]));
-
-    // 7. Bottom padding
-    lines.push(Line::from(""));
 
     lines
 }
@@ -1630,25 +1626,30 @@ mod tests {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Should have: blank, label, top border, content lines, bottom border, keybinds, blank
-        // Minimum is 7 lines (for empty input with 1 content line)
-        assert!(lines.len() >= 7);
+        // Default mode: top border, content (1 line), bottom border, keybinds = 4 lines
+        assert_eq!(lines.len(), 4);
 
-        // First line should be blank separator
-        assert_eq!(lines[0].spans.len(), 0);
+        // First line should be top border
+        let first_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(first_text.contains("─"), "First line should be top border");
 
-        // Last line should be blank padding
-        assert_eq!(lines[lines.len() - 1].spans.len(), 0);
+        // Last line should be keybinds
+        let last_text: String = lines[lines.len() - 1].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(last_text.contains("Enter"), "Last line should be keybinds");
     }
 
     #[test]
-    fn test_build_input_section_default_mode_empty_line() {
+    fn test_build_input_section_default_mode_no_indicator() {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Second line should be empty for Default mode (no mode indicator)
-        let mode_line = &lines[1];
-        assert_eq!(mode_line.spans.len(), 0, "Default mode should show empty line");
+        // Default mode should NOT have a mode indicator line
+        // Structure: top border, content, bottom border, keybinds = 4 lines
+        assert_eq!(lines.len(), 4);
+
+        // First line should be border, not mode indicator
+        let first_text: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(first_text.contains("─"), "First line should be border in Default mode");
     }
 
     #[test]
@@ -1658,8 +1659,11 @@ mod tests {
 
         let lines = build_input_section(&app, 80);
 
-        // Second line should show [PLAN] indicator
-        let mode_line = &lines[1];
+        // Plan mode: mode indicator, top border, content, bottom border, keybinds = 5 lines
+        assert_eq!(lines.len(), 5);
+
+        // First line should show [PLAN] indicator
+        let mode_line = &lines[0];
         assert!(mode_line.spans.len() > 0, "Plan mode should show mode indicator");
 
         let mode_text: String = mode_line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -1678,8 +1682,11 @@ mod tests {
 
         let lines = build_input_section(&app, 80);
 
-        // Second line should show [EXECUTE] indicator
-        let mode_line = &lines[1];
+        // Execute mode: mode indicator, top border, content, bottom border, keybinds = 5 lines
+        assert_eq!(lines.len(), 5);
+
+        // First line should show [EXECUTE] indicator
+        let mode_line = &lines[0];
         assert!(mode_line.spans.len() > 0, "BypassPermissions mode should show mode indicator");
 
         let mode_text: String = mode_line.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -1692,7 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_input_section_folder_does_not_affect_mode_line() {
+    fn test_build_input_section_folder_does_not_affect_structure() {
         use crate::models::Folder;
 
         let mut app = App::default();
@@ -1703,9 +1710,8 @@ mod tests {
 
         let lines = build_input_section(&app, 80);
 
-        // Mode line should still be empty for Default mode (folder chip is no longer shown in mode line)
-        let mode_line = &lines[1];
-        assert_eq!(mode_line.spans.len(), 0, "Default mode should show empty line even with folder selected");
+        // Default mode should still have 4 lines (folder doesn't add mode indicator)
+        assert_eq!(lines.len(), 4, "Default mode should have same structure with folder selected");
     }
 
     #[test]
@@ -1721,8 +1727,11 @@ mod tests {
 
         let lines = build_input_section(&app, 80);
 
-        // Mode line should show [PLAN] regardless of folder
-        let mode_line = &lines[1];
+        // Plan mode with folder: mode indicator, top border, content, bottom border, keybinds = 5 lines
+        assert_eq!(lines.len(), 5);
+
+        // First line should show [PLAN]
+        let mode_line = &lines[0];
         let mode_text: String = mode_line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(mode_text.contains("[PLAN]"), "Plan mode should display '[PLAN]' even with folder selected");
         // Folder chip should NOT appear in mode line
@@ -1736,9 +1745,8 @@ mod tests {
 
         let lines = build_input_section(&app, 80);
 
-        // Should have more content lines for multiline input
-        // Structure: blank, label, top border, 3 content lines, bottom border, keybinds, blank
-        assert_eq!(lines.len(), 9);
+        // Default mode with 3 content lines: top border, 3 content, bottom border, keybinds = 6 lines
+        assert_eq!(lines.len(), 6);
     }
 
     #[test]
@@ -1746,16 +1754,15 @@ mod tests {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Line 2 should be top border (full-width horizontal line, no corners)
-        let top_border = &lines[2];
+        // Line 0 should be top border (full-width horizontal line, no corners)
+        let top_border = &lines[0];
         let top_text: String = top_border.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(top_text.contains("─"), "Top border should contain horizontal line");
         assert!(!top_text.contains("┌"), "Top border should not have corner");
         assert!(!top_text.contains("┐"), "Top border should not have corner");
 
-        // Find bottom border (full-width horizontal line, no corners)
-        let bottom_border_idx = lines.len() - 3; // Before keybinds and blank
-        let bottom_border = &lines[bottom_border_idx];
+        // Line 2 should be bottom border (before keybinds)
+        let bottom_border = &lines[2];
         let bottom_text: String = bottom_border.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(bottom_text.contains("─"), "Bottom border should contain horizontal line");
         assert!(!bottom_text.contains("└"), "Bottom border should not have corner");
@@ -1767,8 +1774,8 @@ mod tests {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Second to last line should be keybind hints
-        let keybinds_line = &lines[lines.len() - 2];
+        // Last line should be keybind hints
+        let keybinds_line = &lines[lines.len() - 1];
         let keybinds_text: String = keybinds_line.spans.iter().map(|s| s.content.as_ref()).collect();
 
         // Should contain key keybind hints
@@ -1792,8 +1799,8 @@ mod tests {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Second to last line should be keybind hints
-        let keybinds_line = &lines[lines.len() - 2];
+        // Last line should be keybind hints
+        let keybinds_line = &lines[lines.len() - 1];
 
         // All spans in keybind hints should use COLOR_DIM
         for span in &keybinds_line.spans {
@@ -1814,6 +1821,7 @@ mod tests {
         let lines = build_input_section(&app, 40);
 
         // Should still render without panicking on narrow width
-        assert!(lines.len() >= 7);
+        // Default mode: 4 lines
+        assert_eq!(lines.len(), 4);
     }
 }
