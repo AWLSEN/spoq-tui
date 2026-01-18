@@ -106,8 +106,45 @@ impl ThreadCache {
             .push(message);
     }
 
-    /// Set messages for a thread (replaces existing)
+    /// Set messages for a thread.
+    ///
+    /// This method handles the race condition where the user sends a new message
+    /// before the backend returns historical messages. It merges the incoming
+    /// backend messages with any locally-added messages (streaming messages or
+    /// messages with temporary IDs).
+    ///
+    /// Messages are considered "local" if they have:
+    /// - `is_streaming = true` (streaming assistant placeholder)
+    /// - `id = 0` (temporary ID before backend assigns real ID)
+    /// - `id` higher than the max ID in the incoming messages (recently added)
     pub fn set_messages(&mut self, thread_id: String, messages: Vec<Message>) {
+        // Check if there are existing local messages that should be preserved
+        if let Some(existing) = self.messages.get(&thread_id) {
+            // Find the maximum message ID from the backend response
+            let max_backend_id = messages.iter().map(|m| m.id).max().unwrap_or(0);
+
+            // Collect local messages that should be preserved:
+            // - Streaming messages (assistant is actively generating)
+            // - Messages with temporary ID (0) that are locally added
+            // - Messages with ID higher than any backend message (user just sent)
+            let local_messages: Vec<Message> = existing
+                .iter()
+                .filter(|m| {
+                    m.is_streaming || m.id == 0 || m.id > max_backend_id
+                })
+                .cloned()
+                .collect();
+
+            if !local_messages.is_empty() {
+                // Merge: backend messages first, then local messages
+                let mut merged = messages;
+                merged.extend(local_messages);
+                self.messages.insert(thread_id, merged);
+                return;
+            }
+        }
+
+        // No local messages to preserve, just set the backend messages
         self.messages.insert(thread_id, messages);
     }
 
@@ -3171,5 +3208,246 @@ mod tests {
         if let MessageSegment::Text(text) = &segments[2] {
             assert_eq!(text, " and then analyze.");
         }
+    }
+
+    // ============= set_messages Merge Tests (Race Condition Fix) =============
+
+    #[test]
+    fn test_set_messages_merges_streaming_messages() {
+        // This tests the critical race condition fix:
+        // When a user sends a message before backend returns historical messages,
+        // set_messages should merge the incoming messages with local streaming ones.
+        let mut cache = ThreadCache::new();
+        let thread_id = "thread-123".to_string();
+
+        // Simulate user opening an existing thread and immediately sending a message
+        // This creates local messages with streaming assistant placeholder
+        let thread = Thread {
+            id: thread_id.clone(),
+            title: "Existing thread".to_string(),
+            description: None,
+            preview: "Preview".to_string(),
+            updated_at: Utc::now(),
+            thread_type: ThreadType::Conversation,
+            model: None,
+            permission_mode: None,
+            message_count: 2,
+            created_at: Utc::now(),
+        };
+        cache.upsert_thread(thread);
+
+        // User sends a message - creates local user message (id=3) and streaming assistant (id=0)
+        let now = Utc::now();
+        let local_user_msg = Message {
+            id: 3,
+            thread_id: thread_id.clone(),
+            role: MessageRole::User,
+            content: "New question from user".to_string(),
+            created_at: now,
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
+            segments: Vec::new(),
+            render_version: 0,
+        };
+        let streaming_assistant_msg = Message {
+            id: 0, // Placeholder ID
+            thread_id: thread_id.clone(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: now,
+            is_streaming: true,
+            partial_content: "Partial response...".to_string(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+            render_version: 0,
+        };
+        cache.set_messages(thread_id.clone(), vec![local_user_msg.clone(), streaming_assistant_msg.clone()]);
+
+        // Backend returns historical messages (older conversation)
+        let historical_msg1 = Message {
+            id: 1,
+            thread_id: thread_id.clone(),
+            role: MessageRole::User,
+            content: "Old question".to_string(),
+            created_at: now - Duration::hours(1),
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
+            segments: Vec::new(),
+            render_version: 0,
+        };
+        let historical_msg2 = Message {
+            id: 2,
+            thread_id: thread_id.clone(),
+            role: MessageRole::Assistant,
+            content: "Old answer".to_string(),
+            created_at: now - Duration::hours(1),
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
+            segments: Vec::new(),
+            render_version: 0,
+        };
+
+        // This is the critical call that would previously REPLACE all messages
+        // After fix, it should MERGE with local streaming messages
+        cache.set_messages(thread_id.clone(), vec![historical_msg1, historical_msg2]);
+
+        // Verify: should have 4 messages (2 historical + 2 local)
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages.len(), 4, "Should have merged 2 historical + 2 local messages");
+
+        // First two should be historical
+        assert_eq!(messages[0].id, 1);
+        assert_eq!(messages[0].content, "Old question");
+        assert_eq!(messages[1].id, 2);
+        assert_eq!(messages[1].content, "Old answer");
+
+        // Last two should be local (the new user message and streaming assistant)
+        assert_eq!(messages[2].id, 3);
+        assert_eq!(messages[2].content, "New question from user");
+        assert!(messages[3].is_streaming);
+        assert_eq!(messages[3].partial_content, "Partial response...");
+    }
+
+    #[test]
+    fn test_set_messages_preserves_streaming_message_with_id_zero() {
+        let mut cache = ThreadCache::new();
+        let thread_id = "thread-456".to_string();
+
+        let thread = Thread {
+            id: thread_id.clone(),
+            title: "Test".to_string(),
+            description: None,
+            preview: "Preview".to_string(),
+            updated_at: Utc::now(),
+            thread_type: ThreadType::Conversation,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
+        };
+        cache.upsert_thread(thread);
+
+        // Create a streaming message with id=0
+        let now = Utc::now();
+        let streaming_msg = Message {
+            id: 0,
+            thread_id: thread_id.clone(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: now,
+            is_streaming: true,
+            partial_content: "In progress...".to_string(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false,
+            segments: Vec::new(),
+            render_version: 0,
+        };
+        cache.set_messages(thread_id.clone(), vec![streaming_msg]);
+
+        // Backend returns empty (no historical messages)
+        cache.set_messages(thread_id.clone(), vec![]);
+
+        // Streaming message with id=0 should be preserved
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(messages[0].is_streaming);
+        assert_eq!(messages[0].id, 0);
+    }
+
+    #[test]
+    fn test_set_messages_replaces_when_no_local_messages() {
+        // When there are no local streaming messages, set_messages should replace as before
+        let mut cache = ThreadCache::with_stub_data();
+
+        let new_messages = vec![
+            Message {
+                id: 999,
+                thread_id: "thread-001".to_string(),
+                role: MessageRole::System,
+                content: "System message".to_string(),
+                created_at: Utc::now(),
+                is_streaming: false,
+                partial_content: String::new(),
+                reasoning_content: String::new(),
+                reasoning_collapsed: true,
+                segments: Vec::new(),
+                render_version: 0,
+            },
+        ];
+
+        cache.set_messages("thread-001".to_string(), new_messages);
+
+        // Should replace (no local messages to preserve)
+        let messages = cache.get_messages("thread-001").unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].id, 999);
+    }
+
+    #[test]
+    fn test_set_messages_preserves_messages_with_higher_ids() {
+        // Messages with IDs higher than the max backend ID should be preserved
+        let mut cache = ThreadCache::new();
+        let thread_id = "thread-789".to_string();
+
+        let thread = Thread {
+            id: thread_id.clone(),
+            title: "Test".to_string(),
+            description: None,
+            preview: "Preview".to_string(),
+            updated_at: Utc::now(),
+            thread_type: ThreadType::Conversation,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
+        };
+        cache.upsert_thread(thread);
+
+        let now = Utc::now();
+
+        // Local message with high ID (e.g., user just sent a message)
+        let local_msg = Message {
+            id: 100, // Higher than any backend message
+            thread_id: thread_id.clone(),
+            role: MessageRole::User,
+            content: "New message".to_string(),
+            created_at: now,
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
+            segments: Vec::new(),
+            render_version: 0,
+        };
+        cache.set_messages(thread_id.clone(), vec![local_msg]);
+
+        // Backend returns older messages with lower IDs
+        let backend_msg = Message {
+            id: 5,
+            thread_id: thread_id.clone(),
+            role: MessageRole::User,
+            content: "Old message".to_string(),
+            created_at: now - Duration::hours(1),
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
+            segments: Vec::new(),
+            render_version: 0,
+        };
+        cache.set_messages(thread_id.clone(), vec![backend_msg]);
+
+        // Should have both messages
+        let messages = cache.get_messages(&thread_id).unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].id, 5); // Backend message
+        assert_eq!(messages[1].id, 100); // Local message with higher ID
     }
 }
