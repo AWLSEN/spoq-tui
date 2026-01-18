@@ -46,7 +46,7 @@ pub use layout::{
 pub use helpers::{format_tool_args, is_terminal_too_small, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH};
 
 // Re-export rendering functions for external use
-pub use messages::{estimate_wrapped_line_count, render_tool_result_preview, truncate_preview};
+pub use messages::{estimate_wrapped_line_count, truncate_preview};
 
 use ratatui::{
     Frame,
@@ -110,61 +110,12 @@ mod tests {
     use conversation::create_mode_indicator_line;
     use helpers::{extract_short_model_name, format_tokens, get_tool_icon, truncate_string, is_terminal_too_small, MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT};
     use input::{build_contextual_keybinds, get_permission_preview};
-    use messages::{render_tool_event, render_tool_result_preview, truncate_preview};
+    use messages::{render_tool_event, truncate_preview};
     use ratatui::{backend::TestBackend, Terminal};
     use theme::COLOR_TOOL_ERROR;
 
     fn create_test_app() -> App {
-        let (message_tx, message_rx) = tokio::sync::mpsc::unbounded_channel();
-        App {
-            threads: vec![],
-            tasks: vec![],
-            todos: vec![],
-            should_quit: false,
-            screen: Screen::CommandDeck,
-            active_thread_id: None,
-            focus: crate::app::Focus::default(),
-            notifications_index: 0,
-            tasks_index: 0,
-            threads_index: 0,
-            textarea: crate::widgets::textarea_input::TextAreaInput::new(),
-            migration_progress: None,
-            cache: crate::cache::ThreadCache::new(),
-            message_rx: Some(message_rx),
-            message_tx,
-            connection_status: false,
-            stream_error: None,
-            client: std::sync::Arc::new(crate::conductor::ConductorClient::new()),
-            tick_count: 0,
-            conversation_scroll: 0,
-            max_scroll: 0,
-            permission_mode: PermissionMode::default(),
-            session_state: crate::state::SessionState::new(),
-            tool_tracker: crate::state::ToolTracker::new(),
-            subagent_tracker: crate::state::SubagentTracker::new(),
-            debug_tx: None,
-            stream_start_time: None,
-            last_event_time: None,
-            cumulative_token_count: 0,
-            thread_switcher: crate::app::ThreadSwitcher::default(),
-            last_tab_press: None,
-            ws_sender: None,
-            ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
-            question_state: crate::state::AskUserQuestionState::default(),
-            scroll_boundary_hit: None,
-            boundary_hit_tick: 0,
-            scroll_velocity: 0.0,
-            scroll_position: 0.0,
-            terminal_width: 80,
-            terminal_height: 24,
-            active_panel: crate::app::ActivePanel::default(),
-            rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
-            markdown_cache: crate::markdown::MarkdownCache::new(),
-            cached_message_heights: std::collections::HashMap::new(),
-            needs_redraw: false,
-            has_visible_links: false,
-            input_history: crate::input_history::InputHistory::new(),
-        }
+        App::default()
     }
 
     #[test]
@@ -242,6 +193,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("test-thread".to_string());
@@ -812,6 +764,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("conv-thread".to_string());
@@ -855,6 +808,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
@@ -897,6 +851,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
@@ -939,6 +894,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1074,6 +1030,7 @@ mod tests {
             model: Some("claude-sonnet-4-5".to_string()),
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -1115,6 +1072,7 @@ mod tests {
             model: Some("claude-opus-4-5".to_string()),
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -1156,6 +1114,7 @@ mod tests {
             model: Some("claude-sonnet-4-5-20250514".to_string()),
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -1201,6 +1160,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -1242,6 +1202,7 @@ mod tests {
             model: Some("claude-sonnet-4-5".to_string()),
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -1256,6 +1217,7 @@ mod tests {
             model: Some("claude-opus-4-5".to_string()),
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -1338,6 +1300,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1366,6 +1329,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 0,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("conv-thread".to_string());
@@ -1807,130 +1771,11 @@ mod tests {
     }
 
     #[test]
-    fn test_render_tool_result_preview_none_when_no_preview() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
-        tool.result_preview = None;
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_render_tool_result_preview_none_when_empty_preview() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
-        tool.result_preview = Some("   ".to_string());
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_render_tool_result_preview_success_result() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Read".to_string());
-        tool.set_result("File contents here", false);
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_some());
-
-        let line = result.unwrap();
-        assert_eq!(line.spans.len(), 2);
-        // First span is indentation
-        assert_eq!(line.spans[0].content, "    ");
-        // Second span contains the preview
-        assert_eq!(line.spans[1].content, "File contents here");
-        // Success results use dim gray color
-        assert_eq!(line.spans[1].style.fg, Some(ratatui::style::Color::Rgb(100, 100, 100)));
-    }
-
-    #[test]
-    fn test_render_tool_result_preview_error_result() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Read".to_string());
-        tool.set_result("File not found", true);
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_some());
-
-        let line = result.unwrap();
-        assert_eq!(line.spans.len(), 2);
-        // Second span contains the preview
-        assert_eq!(line.spans[1].content, "File not found");
-        // Error results use red color
-        assert_eq!(line.spans[1].style.fg, Some(COLOR_TOOL_ERROR));
-    }
-
-    #[test]
-    fn test_render_tool_result_preview_truncates_long_content() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
-        let long_content = "a".repeat(200);
-        tool.set_result(&long_content, false);
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_some());
-
-        let line = result.unwrap();
-        let preview = &line.spans[1].content;
-        assert!(preview.len() <= 153); // 150 chars + "..."
-        assert!(preview.ends_with("..."));
-    }
-
-    #[test]
-    fn test_render_tool_result_preview_multiline_truncation() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
-        let multiline = "line1\nline2\nline3\nline4\nline5";
-        tool.set_result(multiline, false);
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_some());
-
-        let line = result.unwrap();
-        let preview = &line.spans[1].content;
-        // Should truncate at 2 lines
-        assert!(preview.ends_with("..."));
-        // Newlines should be replaced with spaces
-        assert!(!preview.contains('\n'));
-        assert!(preview.contains("line1 line2"));
-    }
-
-    #[test]
     fn test_format_tool_args_empty_json() {
         // Empty JSON object should return just the tool name
         assert_eq!(helpers::format_tool_args("Read", "{}"), "Read");
         assert_eq!(helpers::format_tool_args("Bash", "{}"), "Bash");
         assert_eq!(helpers::format_tool_args("Write", "{}"), "Write");
-    }
-
-    #[test]
-    fn test_render_tool_result_preview_exactly_at_boundary() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
-        // Create text exactly at the 150 character boundary
-        let exactly_150 = "a".repeat(150);
-        tool.set_result(&exactly_150, false);
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_some());
-
-        let line = result.unwrap();
-        let preview = &line.spans[1].content;
-        // At exactly 150 chars, truncate_preview will still truncate (>= condition)
-        assert_eq!(preview.len(), 153); // 150 chars + "..."
-        assert!(preview.ends_with("..."));
-    }
-
-    #[test]
-    fn test_render_tool_result_preview_one_char_over_boundary() {
-        let mut tool = crate::models::ToolEvent::new("tool_123".to_string(), "Bash".to_string());
-        // Create text one character over the boundary
-        let one_over = "a".repeat(151);
-        tool.set_result(&one_over, false);
-
-        let result = render_tool_result_preview(&tool, 150);
-        assert!(result.is_some());
-
-        let line = result.unwrap();
-        let preview = &line.spans[1].content;
-        // Should truncate
-        assert_eq!(preview.len(), 153); // 150 chars + "..."
-        assert!(preview.ends_with("..."));
     }
 
     #[test]
@@ -2545,6 +2390,7 @@ mod tests {
             model: Some("claude-opus".to_string()),
             permission_mode: None,
             message_count: 5,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -2659,6 +2505,7 @@ mod tests {
             model: None,
             permission_mode: None,
             message_count: 4,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -2730,6 +2577,7 @@ mod tests {
             model: Some("claude-opus".to_string()),
             permission_mode: None,
             message_count: 2,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 
@@ -2804,6 +2652,7 @@ mod tests {
             model: Some("claude-opus-4-5".to_string()),
             permission_mode: None,
             message_count: 10,
+            working_directory: None,
             created_at: chrono::Utc::now(),
         });
 

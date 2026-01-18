@@ -415,45 +415,6 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64, ctx: &LayoutContext
     }
 }
 
-/// Render a result preview line for a tool event
-///
-/// Returns an indented, dim-colored line showing a truncated preview of the tool result.
-/// Success results are shown in dim gray, error results in red.
-///
-/// # Arguments
-/// * `tool` - The tool event to render a preview for
-/// * `max_preview_len` - Maximum length for the preview text (responsive to terminal width)
-///
-/// # Returns
-/// - `None` if the tool has no result preview or the preview is empty
-/// - `Some(Line)` with the formatted, truncated preview
-pub fn render_tool_result_preview(tool: &ToolEvent, max_preview_len: usize) -> Option<Line<'static>> {
-    // Return None if no result preview
-    let preview = tool.result_preview.as_ref()?;
-
-    // Return None if preview is empty
-    if preview.trim().is_empty() {
-        return None;
-    }
-
-    // Truncate the preview using responsive max length:
-    // - Find first 2 newlines or max_preview_len chars, whichever comes first
-    // - Append '...' if truncated
-    let truncated = truncate_preview(preview, max_preview_len, 2);
-
-    // Choose color based on error state
-    let color = if tool.result_is_error {
-        COLOR_TOOL_ERROR
-    } else {
-        Color::Rgb(100, 100, 100) // dim gray for success
-    };
-
-    Some(Line::from(vec![
-        Span::styled("    ", Style::default()), // 4 spaces indentation
-        Span::styled(truncated, Style::default().fg(color)),
-    ]))
-}
-
 /// Truncate a preview string to fit display constraints
 ///
 /// Limits output to `max_chars` characters or `max_lines` newlines, whichever is reached first.
