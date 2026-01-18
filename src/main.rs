@@ -7,9 +7,9 @@ use color_eyre::Result;
 use crossterm::{
     cursor::Show,
     event::{
-        DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyEventKind,
-        KeyModifiers, KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
-        PushKeyboardEnhancementFlags,
+        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+        MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -50,16 +50,11 @@ async fn main() -> Result<()> {
         )
     );
 
-    // Enter alternate screen and enable bracketed paste (for paste detection)
-    // Note: Mouse capture is intentionally NOT enabled to allow native terminal text selection
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
+    // Enter alternate screen, enable bracketed paste, and mouse capture for scroll events
+    // Note: Mouse capture is enabled but click events are ignored in the handler,
+    // allowing scroll wheel to work while terminal handles text selection natively
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)?;
 
-    // Enable alternate scroll mode: tells terminal to translate scroll wheel → arrow keys
-    // This allows scroll wheel to work without EnableMouseCapture (preserving native text selection)
-    // Escape sequence: CSI ? 1007 h (DEC private mode set)
-    use std::io::Write;
-    write!(stdout, "\x1b[?1007h")?;
-    stdout.flush()?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -127,12 +122,9 @@ fn setup_panic_hook() {
         // Try to restore terminal state
         // Pop keyboard enhancement flags BEFORE disabling raw mode
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
-        // Disable alternate scroll mode (CSI ? 1007 l)
-        let _ = write!(io::stdout(), "\x1b[?1007l");
-        let _ = io::stdout().flush();
 
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste, LeaveAlternateScreen);
         let _ = execute!(io::stdout(), Show);
 
         // CRITICAL: Hard reset Kitty keyboard protocol AFTER leaving alternate screen
@@ -154,14 +146,10 @@ where
     // Pop keyboard enhancement flags (crossterm's standard approach)
     let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
 
-    // Disable alternate scroll mode before leaving
-    // Escape sequence: CSI ? 1007 l (DEC private mode reset)
-    let _ = write!(terminal.backend_mut(), "\x1b[?1007l");
-    let _ = io::Write::flush(terminal.backend_mut());
-
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
+        DisableMouseCapture,
         DisableBracketedPaste,
         LeaveAlternateScreen
     )?;
