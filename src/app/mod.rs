@@ -2989,4 +2989,18 @@ mod tests {
         assert_eq!(app.terminal_width, 80);
         assert_eq!(app.terminal_height, 24);
     }
+
+    #[test]
+    fn test_should_summarize_paste_by_lines() {
+        let app = App::default();
+        assert!(!app.should_summarize_paste("1\n2\n3")); // 3 lines
+        assert!(app.should_summarize_paste("1\n2\n3\n4")); // 4 lines
+    }
+
+    #[test]
+    fn test_should_summarize_paste_by_chars() {
+        let app = App::default();
+        assert!(!app.should_summarize_paste(&"a".repeat(150))); // 150 chars
+        assert!(app.should_summarize_paste(&"a".repeat(151))); // 151 chars
+    }
 }
