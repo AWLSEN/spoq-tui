@@ -14,6 +14,7 @@ use ratatui::{
 use crate::app::{ActivePanel, App};
 use crate::state::TaskStatus;
 
+use super::conversation::{create_mode_indicator_line, render_mode_indicator};
 use super::helpers::{format_tokens, inner_rect};
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
@@ -58,18 +59,40 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
     let line_count = app.textarea.line_count();
     let input_height = calculate_input_area_height(line_count);
 
-    let main_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(header_height),  // Header with logo (responsive)
-            Constraint::Min(10),                // Main content area
-            Constraint::Length(input_height),   // Input area (responsive)
-        ])
-        .split(inner);
+    // Check if we need to show mode indicator
+    let mode_indicator_line = create_mode_indicator_line(app.permission_mode);
 
-    render_header(frame, main_chunks[0], app);
-    render_main_content(frame, main_chunks[1], app, &ctx);
-    render_input_area(frame, main_chunks[2], app);
+    if let Some(mode_line) = mode_indicator_line {
+        // Layout with mode indicator (4 sections)
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(header_height),  // Header with logo (responsive)
+                Constraint::Min(10),                // Main content area
+                Constraint::Length(1),              // Mode indicator
+                Constraint::Length(input_height),   // Input area (responsive)
+            ])
+            .split(inner);
+
+        render_header(frame, main_chunks[0], app);
+        render_main_content(frame, main_chunks[1], app, &ctx);
+        render_mode_indicator(frame, main_chunks[2], mode_line);
+        render_input_area(frame, main_chunks[3], app);
+    } else {
+        // Layout without mode indicator (3 sections)
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(header_height),  // Header with logo (responsive)
+                Constraint::Min(10),                // Main content area
+                Constraint::Length(input_height),   // Input area (responsive)
+            ])
+            .split(inner);
+
+        render_header(frame, main_chunks[0], app);
+        render_main_content(frame, main_chunks[1], app, &ctx);
+        render_input_area(frame, main_chunks[2], app);
+    }
 }
 
 // ============================================================================
@@ -433,5 +456,55 @@ mod tests {
                 line
             );
         }
+    }
+
+    // ========================================================================
+    // Mode Indicator Tests
+    // ========================================================================
+
+    #[test]
+    fn test_mode_indicator_not_shown_for_default_mode() {
+        use crate::models::PermissionMode;
+
+        let app = App::default();
+        assert_eq!(app.permission_mode, PermissionMode::Default);
+
+        // create_mode_indicator_line should return None for Default mode
+        let indicator = create_mode_indicator_line(app.permission_mode);
+        assert!(indicator.is_none());
+    }
+
+    #[test]
+    fn test_mode_indicator_shown_for_plan_mode() {
+        use crate::models::PermissionMode;
+
+        let mut app = App::default();
+        app.permission_mode = PermissionMode::Plan;
+
+        // create_mode_indicator_line should return Some for Plan mode
+        let indicator = create_mode_indicator_line(app.permission_mode);
+        assert!(indicator.is_some());
+
+        // Verify the indicator text contains PLAN
+        let line = indicator.unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("PLAN"));
+    }
+
+    #[test]
+    fn test_mode_indicator_shown_for_execute_mode() {
+        use crate::models::PermissionMode;
+
+        let mut app = App::default();
+        app.permission_mode = PermissionMode::BypassPermissions;
+
+        // create_mode_indicator_line should return Some for BypassPermissions mode
+        let indicator = create_mode_indicator_line(app.permission_mode);
+        assert!(indicator.is_some());
+
+        // Verify the indicator text contains EXECUTE
+        let line = indicator.unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("EXECUTE"));
     }
 }
