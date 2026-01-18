@@ -698,7 +698,7 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
     lines.push(Line::from(label_spans));
 
     // 3. Input top border
-    let border_width = content_width.min(70);
+    let border_width = content_width;
     lines.push(Line::from(vec![
         Span::styled("  ┌", Style::default().fg(COLOR_ACCENT)),
         Span::styled(
@@ -734,13 +734,14 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
 
     // 6. Keybind hints
     lines.push(Line::from(vec![
-        Span::styled("    ", Style::default()),
-        Span::styled("Enter", Style::default().fg(COLOR_DIM)),
-        Span::styled(" send  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Shift+Enter", Style::default().fg(COLOR_DIM)),
-        Span::styled(" newline  ", Style::default().fg(Color::DarkGray)),
-        Span::styled("Esc", Style::default().fg(COLOR_DIM)),
-        Span::styled(" menu", Style::default().fg(Color::DarkGray)),
+        Span::styled("    Enter", Style::default().fg(COLOR_DIM)),
+        Span::styled(" send ", Style::default().fg(COLOR_DIM)),
+        Span::styled("|", Style::default().fg(COLOR_DIM)),
+        Span::styled(" Shift+Enter", Style::default().fg(COLOR_DIM)),
+        Span::styled(" newline ", Style::default().fg(COLOR_DIM)),
+        Span::styled("|", Style::default().fg(COLOR_DIM)),
+        Span::styled(" Esc", Style::default().fg(COLOR_DIM)),
+        Span::styled(" menu", Style::default().fg(COLOR_DIM)),
     ]));
 
     // 7. Bottom padding
