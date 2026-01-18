@@ -17,7 +17,7 @@ pub use session::{
     AskUserQuestionData, AskUserQuestionState, PermissionRequest, Question, QuestionOption,
     SessionState,
 };
-pub use tools::{SubagentDisplayStatus, SubagentState, SubagentTracker, ToolCallState, ToolDisplayStatus, ToolTracker};
+pub use tools::{SubagentDisplayStatus, SubagentState, SubagentTracker, ToolCallState, ToolCallStatus, ToolDisplayStatus, ToolTracker};
 
 /// Represents a conversation thread
 #[derive(Debug, Clone, Serialize, Deserialize)]
