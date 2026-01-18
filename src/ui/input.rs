@@ -701,11 +701,9 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
         Style::default().fg(COLOR_ACCENT),
     )));
 
-    // 4. Input content lines (from tui-textarea)
-    for input_line in app.textarea.to_content_lines() {
-        let mut styled_spans = vec![Span::styled("  ", Style::default())];
-        styled_spans.extend(input_line.spans);
-        lines.push(Line::from(styled_spans));
+    // 4. Input content lines (raw text, no cursor indicators)
+    for text_line in app.textarea.lines() {
+        lines.push(Line::from(format!("  {}", text_line)));
     }
 
     // 5. Input bottom border (full-width horizontal line)
