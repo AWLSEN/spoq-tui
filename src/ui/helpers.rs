@@ -6,7 +6,12 @@
 //! See `LayoutContext` in `super::layout` for responsive sizing calculations.
 
 use ratatui::layout::Rect;
+use ratatui::widgets::{Block, Clear};
+use ratatui::style::Style;
+use ratatui::Frame;
 use serde_json::Value;
+
+use super::theme::COLOR_DIALOG_BG;
 
 /// Spinner frames for tool status animation
 pub const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -189,4 +194,14 @@ pub fn format_tool_args(function_name: &str, args_json: &str) -> String {
 /// Returns true if either dimension is below minimum thresholds
 pub fn is_terminal_too_small(width: u16, height: u16) -> bool {
     width < MIN_TERMINAL_WIDTH || height < MIN_TERMINAL_HEIGHT
+}
+
+/// Render a solid background for dialog boxes
+///
+/// Clears the area and fills it with the standard dialog background color.
+/// Use this before rendering dialog content to ensure a consistent appearance.
+pub fn render_dialog_background(frame: &mut Frame, area: Rect) {
+    frame.render_widget(Clear, area);
+    let bg_block = Block::default().style(Style::default().bg(COLOR_DIALOG_BG));
+    frame.render_widget(bg_block, area);
 }

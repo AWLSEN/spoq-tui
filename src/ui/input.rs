@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget},
+    widgets::{Block, BorderType, Borders, Paragraph, Widget},
     Frame,
 };
 
@@ -16,8 +16,9 @@ use crate::app::{App, Screen};
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
 use crate::widgets::textarea_input::TextAreaInputWidget;
 
+use super::helpers::render_dialog_background;
 use super::layout::LayoutContext;
-use super::theme::{COLOR_ACCENT, COLOR_DIALOG_BG, COLOR_DIM};
+use super::theme::{COLOR_ACCENT, COLOR_DIM};
 
 // ============================================================================
 // Folder Chip Constants
@@ -477,10 +478,8 @@ pub fn render_permission_box(
         " Permission Required "
     };
 
-    // Clear the area first, then render background
-    frame.render_widget(Clear, box_area);
-    let bg_block = Block::default().style(Style::default().bg(COLOR_DIALOG_BG));
-    frame.render_widget(bg_block, box_area);
+    // Render solid background
+    render_dialog_background(frame, box_area);
 
     // Create the permission box with border
     let block = Block::default()
@@ -839,6 +838,9 @@ fn render_ask_user_question_box(
         width: box_width,
         height: box_height,
     };
+
+    // Render solid background
+    render_dialog_background(frame, box_area);
 
     // Create the question box with border
     let block = Block::default()
