@@ -44,22 +44,8 @@ impl App {
         // Conversation = continue the thread that was opened via open_thread()
         let is_command_deck = self.screen == Screen::CommandDeck;
 
-        // Determine thread_type based on screen and active thread
-        let thread_type = if is_command_deck {
-            // New thread from CommandDeck - use the specified type
-            new_thread_type
-        } else if self.is_active_thread_programming() {
-            ThreadType::Programming
-        } else {
-            ThreadType::Conversation
-        };
-
-        // Determine plan_mode for programming threads
-        let plan_mode = if thread_type == ThreadType::Programming {
-            matches!(self.programming_mode, ProgrammingMode::PlanMode)
-        } else {
-            false
-        };
+        // Determine plan_mode based on current programming mode
+        let plan_mode = matches!(self.programming_mode, ProgrammingMode::PlanMode);
 
         // Determine thread_id based on screen
         let (thread_id, is_new_thread) = if is_command_deck {
