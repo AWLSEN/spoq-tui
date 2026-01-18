@@ -71,6 +71,7 @@ fn wrap_line_with_prefix(
     prefix: &'static str,
     prefix_style: Style,
     max_width: usize,
+    bg_color: Option<Color>,
 ) -> Vec<Line<'static>> {
     let prefix_width = prefix.width();
     let content_width = max_width.saturating_sub(prefix_width);
@@ -223,6 +224,13 @@ fn wrap_line_with_prefix(
     } else if result.is_empty() {
         // Ensure at least one line with prefix
         result.push(Line::from(vec![Span::styled(prefix, prefix_style)]));
+    }
+
+    // Apply background to all result lines if specified
+    if let Some(bg) = bg_color {
+        for line in &mut result {
+            apply_background_to_line(line, bg, max_width);
+        }
     }
 
     result
