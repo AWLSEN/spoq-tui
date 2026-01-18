@@ -405,6 +405,26 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
             Span::styled(type_indicator, Style::default().fg(COLOR_ACCENT)),
         ];
 
+        // Add working directory folder indicator if present
+        let mut type_info_len = type_indicator.len();
+
+        if let Some(wd) = &thread.working_directory {
+            let name = std::path::Path::new(wd)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("?");
+            let folder_display = if name.len() > 15 {
+                format!(" 📁 {}...", &name[..12])
+            } else {
+                format!(" 📁 {}", name)
+            };
+            type_info_len += folder_display.chars().count();
+            type_line_spans.push(Span::styled(
+                folder_display,
+                Style::default().fg(COLOR_DIM),
+            ));
+        }
+
         // Add model name if present - always show short model name (e.g., "sonnet", "opus")
         // Only abbreviate to single letter when content width is truly cramped (< 20 chars)
         if let Some(model) = &thread.model {
@@ -424,17 +444,13 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
                 format!(" {}", model_display),
                 Style::default().fg(COLOR_DIM),
             ));
-            let type_info_len = type_indicator.len() + 1 + model_display.len();
-            type_line_spans.push(Span::styled(
-                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + type_info_len)),
-                Style::default().fg(card_border_color),
-            ));
-        } else {
-            type_line_spans.push(Span::styled(
-                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + type_indicator.len())),
-                Style::default().fg(card_border_color),
-            ));
+            type_info_len += 1 + model_display.len();
         }
+
+        type_line_spans.push(Span::styled(
+            format!("{:>width$}│", "", width = content_width.saturating_sub(2 + type_info_len)),
+            Style::default().fg(card_border_color),
+        ));
 
         lines.push(Line::from(type_line_spans));
 
