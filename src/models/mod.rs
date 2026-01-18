@@ -4,6 +4,7 @@ mod thread;
 mod tools;
 
 pub use message::*;
+pub use request::PermissionMode;
 pub use request::*;
 pub use thread::*;
 pub use tools::*;
@@ -604,7 +605,7 @@ mod tests {
             thread_id: Some("thread-xyz".to_string()),
             reply_to: Some(100),
             thread_type: Some(ThreadType::Programming),
-            plan_mode: Some(true),
+            permission_mode: Some(PermissionMode::Plan),
         };
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
