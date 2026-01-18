@@ -139,6 +139,7 @@ pub fn build_contextual_keybinds(app: &App) -> Line<'static> {
 ///
 /// On narrow terminals (< 80 columns), keybind hints are abbreviated:
 /// - "[Shift+Tab]" becomes "[S+Tab]"
+/// - "[Shift+Enter]" becomes "[S+Ent]"
 /// - "[Tab Tab]" becomes "[Tab]"
 /// - "cycle mode" becomes "mode"
 /// - "switch thread" becomes "switch"
@@ -201,6 +202,17 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
             } else {
                 spans.push(Span::styled("[Tab Tab]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" switch thread | "));
+            }
+        }
+
+        // Newline hint (skip on extra small)
+        if !is_extra_small {
+            if is_narrow {
+                spans.push(Span::styled("[S+Ent]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::raw(" newline | "));
+            } else {
+                spans.push(Span::styled("[Shift+Enter]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::raw(" newline | "));
             }
         }
 
