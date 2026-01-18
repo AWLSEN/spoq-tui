@@ -694,40 +694,25 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
     };
     lines.push(mode_line);
 
-    // 3. Input top border
-    let border_width = content_width;
-    lines.push(Line::from(vec![
-        Span::styled("  ┌", Style::default().fg(COLOR_ACCENT)),
-        Span::styled(
-            "─".repeat(border_width),
-            Style::default().fg(COLOR_ACCENT),
-        ),
-        Span::styled("┐", Style::default().fg(COLOR_ACCENT)),
-    ]));
+    // 3. Input top border (full-width horizontal line)
+    let full_width = content_width + 6; // Account for removed indent and borders
+    lines.push(Line::from(Span::styled(
+        "─".repeat(full_width),
+        Style::default().fg(COLOR_ACCENT),
+    )));
 
     // 4. Input content lines (from tui-textarea)
     for input_line in app.textarea.to_content_lines() {
-        let mut styled_spans = vec![Span::styled("  │ ", Style::default().fg(COLOR_ACCENT))];
+        let mut styled_spans = vec![Span::styled("  ", Style::default())];
         styled_spans.extend(input_line.spans);
-        // Pad to border width
-        let line_width: usize = styled_spans.iter().skip(1).map(|s| s.width()).sum();
-        let padding = border_width.saturating_sub(line_width);
-        if padding > 0 {
-            styled_spans.push(Span::raw(" ".repeat(padding)));
-        }
-        styled_spans.push(Span::styled(" │", Style::default().fg(COLOR_ACCENT)));
         lines.push(Line::from(styled_spans));
     }
 
-    // 5. Input bottom border
-    lines.push(Line::from(vec![
-        Span::styled("  └", Style::default().fg(COLOR_ACCENT)),
-        Span::styled(
-            "─".repeat(border_width),
-            Style::default().fg(COLOR_ACCENT),
-        ),
-        Span::styled("┘", Style::default().fg(COLOR_ACCENT)),
-    ]));
+    // 5. Input bottom border (full-width horizontal line)
+    lines.push(Line::from(Span::styled(
+        "─".repeat(full_width),
+        Style::default().fg(COLOR_ACCENT),
+    )));
 
     // 6. Keybind hints
     lines.push(Line::from(vec![
@@ -1763,20 +1748,20 @@ mod tests {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Line 2 should be top border (contains ┌ and ─)
+        // Line 2 should be top border (full-width horizontal line, no corners)
         let top_border = &lines[2];
         let top_text: String = top_border.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(top_text.contains("┌"));
-        assert!(top_text.contains("─"));
-        assert!(top_text.contains("┐"));
+        assert!(top_text.contains("─"), "Top border should contain horizontal line");
+        assert!(!top_text.contains("┌"), "Top border should not have corner");
+        assert!(!top_text.contains("┐"), "Top border should not have corner");
 
-        // Find bottom border (should contain └ and ─)
+        // Find bottom border (full-width horizontal line, no corners)
         let bottom_border_idx = lines.len() - 3; // Before keybinds and blank
         let bottom_border = &lines[bottom_border_idx];
         let bottom_text: String = bottom_border.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(bottom_text.contains("└"));
-        assert!(bottom_text.contains("─"));
-        assert!(bottom_text.contains("┘"));
+        assert!(bottom_text.contains("─"), "Bottom border should contain horizontal line");
+        assert!(!bottom_text.contains("└"), "Bottom border should not have corner");
+        assert!(!bottom_text.contains("┘"), "Bottom border should not have corner");
     }
 
     #[test]
