@@ -203,6 +203,23 @@ const STYLE_LINK: Style = Style::new()
     .fg(Color::Blue)
     .add_modifier(Modifier::UNDERLINED);
 
+/// Create an OSC 8 hyperlink escape sequence that wraps text
+///
+/// OSC 8 format: `\x1B]8;;{url}\x07{text}\x1B]8;;\x07`
+/// This creates a clickable hyperlink in supported terminals (iTerm2, Konsole, etc.)
+///
+/// # Arguments
+/// * `url` - The destination URL
+/// * `text` - The display text for the link
+///
+/// # Returns
+/// A string with the text wrapped in OSC 8 escape sequences
+pub fn wrap_osc8_hyperlink(url: &str, text: &str) -> String {
+    // OSC 8 format: ESC ] 8 ; ; url BEL text ESC ] 8 ; ; BEL
+    // ESC = \x1B, BEL = \x07
+    format!("\x1b]8;;{}\x07{}\x1b]8;;\x07", url, text)
+}
+
 /// Render markdown text to a vector of styled Lines.
 ///
 /// Each newline in the input becomes a separate Line object, which is critical
@@ -380,15 +397,17 @@ pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
                             ));
                         }
                     }
-                } else if current_link_url.is_some() {
-                    // Inside a markdown link - just render styled text (URL already tracked)
+                } else if let Some(ref url) = current_link_url {
+                    // Inside a markdown link - wrap text with OSC 8 hyperlink escape sequence
                     for (i, part) in text_str.split('\n').enumerate() {
                         if i > 0 {
                             lines.push(Line::from(std::mem::take(&mut current_spans)));
                             lines.push(Line::from(""));
                         }
                         if !part.is_empty() {
-                            current_spans.push(Span::styled(part.to_string(), current_style));
+                            // Wrap the link text with OSC 8 escape sequences for clickable hyperlinks
+                            let osc8_text = wrap_osc8_hyperlink(url, part);
+                            current_spans.push(Span::styled(osc8_text, current_style));
                         }
                     }
                 } else {
@@ -459,9 +478,10 @@ fn render_text_with_urls(
             }
         }
 
-        // Add the URL with link style
+        // Add the URL with link style, wrapped in OSC 8 escape sequence for clickability
         let url = m.as_str().to_string();
-        spans.push(Span::styled(url.clone(), STYLE_LINK));
+        let osc8_text = wrap_osc8_hyperlink(&url, &url);
+        spans.push(Span::styled(osc8_text, STYLE_LINK));
 
         // Track the link
         links.push(LinkInfo::new(
@@ -1088,12 +1108,13 @@ fn main() {
     fn test_markdown_link_styled_blue_underlined() {
         let parsed = render_markdown_with_links("Click [here](https://example.com) for info");
 
-        // Find the link span
+        // Find the link span - content is now wrapped with OSC 8 escape sequences
+        let expected_osc8 = wrap_osc8_hyperlink("https://example.com", "here");
         let link_span = parsed.lines[0]
             .spans
             .iter()
-            .find(|s| s.content == "here")
-            .expect("Should have link text span");
+            .find(|s| s.content == expected_osc8)
+            .expect("Should have link text span with OSC 8 escape sequences");
 
         assert_eq!(link_span.style.fg, Some(Color::Blue));
         assert!(link_span.style.add_modifier.contains(Modifier::UNDERLINED));
@@ -1124,12 +1145,13 @@ fn main() {
     fn test_plain_url_styled_blue_underlined() {
         let parsed = render_markdown_with_links("Visit https://example.com for info");
 
-        // Find the URL span
+        // Find the URL span - content is now wrapped with OSC 8 escape sequences
+        let expected_osc8 = wrap_osc8_hyperlink("https://example.com", "https://example.com");
         let url_span = parsed.lines[0]
             .spans
             .iter()
-            .find(|s| s.content == "https://example.com")
-            .expect("Should have URL span");
+            .find(|s| s.content == expected_osc8)
+            .expect("Should have URL span with OSC 8 escape sequences");
 
         assert_eq!(url_span.style.fg, Some(Color::Blue));
         assert!(url_span.style.add_modifier.contains(Modifier::UNDERLINED));
@@ -1266,6 +1288,77 @@ fn main() {
 
         assert_eq!(urls.len(), 1);
         assert_eq!(urls[0].url, url);
+    }
+
+    // ========================================================================
+    // OSC 8 Hyperlink Tests
+    // ========================================================================
+
+    #[test]
+    fn test_wrap_osc8_hyperlink_format() {
+        let result = wrap_osc8_hyperlink("https://example.com", "Click here");
+        // OSC 8 format: ESC ] 8 ; ; url BEL text ESC ] 8 ; ; BEL
+        assert_eq!(result, "\x1b]8;;https://example.com\x07Click here\x1b]8;;\x07");
+    }
+
+    #[test]
+    fn test_wrap_osc8_hyperlink_empty_text() {
+        let result = wrap_osc8_hyperlink("https://example.com", "");
+        assert_eq!(result, "\x1b]8;;https://example.com\x07\x1b]8;;\x07");
+    }
+
+    #[test]
+    fn test_wrap_osc8_hyperlink_complex_url() {
+        let url = "https://github.com/user/repo/issues?q=is:open&label=bug";
+        let result = wrap_osc8_hyperlink(url, "issues");
+        assert!(result.starts_with("\x1b]8;;"));
+        assert!(result.contains(url));
+        assert!(result.contains("issues"));
+        assert!(result.ends_with("\x1b]8;;\x07"));
+    }
+
+    #[test]
+    fn test_wrap_osc8_hyperlink_url_as_text() {
+        // When URL is used as display text (plain URLs)
+        let url = "https://example.com";
+        let result = wrap_osc8_hyperlink(url, url);
+        assert_eq!(result, format!("\x1b]8;;{}\x07{}\x1b]8;;\x07", url, url));
+    }
+
+    #[test]
+    fn test_markdown_link_contains_osc8_sequence() {
+        let parsed = render_markdown_with_links("Check [docs](https://docs.rs)");
+
+        // The span content should contain OSC 8 escape sequences
+        let link_content: String = parsed.lines[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // Should contain the OSC 8 start sequence
+        assert!(link_content.contains("\x1b]8;;"), "Should contain OSC 8 start sequence");
+        // Should contain the URL
+        assert!(link_content.contains("https://docs.rs"), "Should contain the URL");
+        // Should contain the BEL terminator
+        assert!(link_content.contains("\x07"), "Should contain BEL terminator");
+    }
+
+    #[test]
+    fn test_plain_url_contains_osc8_sequence() {
+        let parsed = render_markdown_with_links("Visit https://github.com today");
+
+        // The span content should contain OSC 8 escape sequences
+        let all_content: String = parsed.lines[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        // Should contain the OSC 8 start sequence
+        assert!(all_content.contains("\x1b]8;;"), "Should contain OSC 8 start sequence");
+        // Should contain the URL
+        assert!(all_content.contains("https://github.com"), "Should contain the URL");
     }
 }
 
