@@ -236,6 +236,16 @@ where
                             // Any key press likely changes state (input, navigation, etc.)
                             app.mark_dirty();
 
+                            // DEBUG: Log ALL key events
+                            app.emit_debug_state_change(
+                                "KeyEvent",
+                                &format!(
+                                    "code={:?} mods={:?}",
+                                    key.code, key.modifiers
+                                ),
+                                "",
+                            );
+
                             // Global keybinds (always active)
                             match key.code {
                                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -429,7 +439,7 @@ where
 
                                 // Shift+Tab cycles permission mode (works while typing, all threads)
                                 if key.code == KeyCode::BackTab {
-                                    if app.screen == Screen::Conversation {
+                                    if app.screen == Screen::Conversation || app.screen == Screen::CommandDeck {
                                         app.cycle_permission_mode();
                                     }
                                     continue;
@@ -444,6 +454,7 @@ where
                                         continue;
                                     }
                                     // Super+Backspace (Cmd+Backspace): Delete to line start
+                                    // Note: Most terminals intercept this, so Ctrl+U is the reliable alternative
                                     KeyCode::Backspace if key.modifiers.contains(KeyModifiers::SUPER) => {
                                         app.textarea.delete_to_line_start();
                                         continue;
@@ -473,6 +484,12 @@ where
 
                                 // Plain key handlers (without modifiers)
                                 match key.code {
+                                    // Ctrl+U = Unix "kill line" - delete to line start
+                                    // Works in ALL terminals (unlike Cmd+Backspace which terminals intercept)
+                                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        app.textarea.delete_to_line_start();
+                                        continue;
+                                    }
                                     // Ctrl+J = ASCII LF (newline) - works in ALL terminals
                                     // MUST come before plain Char(c) handler
                                     KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -590,8 +607,8 @@ where
                                     app.handle_tab_press();
                                 }
                                 KeyCode::BackTab => {
-                                    // Shift+Tab in Conversation screen: cycle permission mode (all threads)
-                                    if app.screen == Screen::Conversation {
+                                    // Shift+Tab in Conversation/CommandDeck screens: cycle permission mode (all threads)
+                                    if app.screen == Screen::Conversation || app.screen == Screen::CommandDeck {
                                         app.cycle_permission_mode();
                                     }
                                 }
