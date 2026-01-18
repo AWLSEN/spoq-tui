@@ -1,14 +1,13 @@
 use spoq::app::{start_websocket, App, AppMessage, Focus, Screen, ScrollBoundary};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
-use spoq::selection::ScreenPosition;
 use spoq::ui;
 
 use color_eyre::Result;
 use crossterm::{
     cursor::Show,
     event::{
-        DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
+        DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyEventKind,
         KeyModifiers, KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
         PushKeyboardEnhancementFlags,
     },
@@ -51,7 +50,9 @@ async fn main() -> Result<()> {
         )
     );
 
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    // Enter alternate screen and enable bracketed paste (for paste detection)
+    // Note: Mouse capture is intentionally NOT enabled to allow native terminal text selection
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -115,7 +116,7 @@ fn setup_panic_hook() {
     std::panic::set_hook(Box::new(move |panic_info| {
         // Try to restore terminal state
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
         let _ = execute!(io::stdout(), Show);
 
         // Call the original panic hook
@@ -129,7 +130,7 @@ fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mu
     disable_raw_mode()?;
     execute!(
         terminal.backend_mut(),
-        DisableMouseCapture,
+        DisableBracketedPaste,
         LeaveAlternateScreen
     )?;
     terminal.show_cursor()?;
@@ -544,26 +545,14 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 KeyCode::Char('t') if app.focus != Focus::Input && app.screen == Screen::Conversation => {
                                     app.toggle_reasoning();
                                 }
-                                // Ctrl+Y to copy selected text to clipboard
-                                KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                    if let Some(range) = app.selection_state.get_range() {
-                                        if !range.is_empty() {
-                                            // TODO: Extract actual text from messages based on selection range
-                                            // For now, we have the infrastructure in place
-                                            // The actual text extraction will be implemented when
-                                            // position mapping is integrated during rendering
-                                            let _ = range; // Placeholder
-                                        }
-                                    }
-                                }
-                                // Escape to clear selection
-                                KeyCode::Esc if app.selection_state.has_selection() => {
-                                    app.selection_state.clear();
-                                }
+                                // Note: Custom mouse selection removed - native terminal selection now handles copy
                                 _ => {}
                             }
                         }
                         Event::Mouse(mouse_event) => {
+                            // Mouse capture is disabled, but scroll wheel events still come through.
+                            // Handle scroll for conversation navigation; all other mouse events ignored
+                            // to allow native terminal text selection.
                             match mouse_event.kind {
                                 // Simple line-based scrolling (like native terminal apps)
                                 // Each scroll event moves 1 line
@@ -591,31 +580,8 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                         }
                                     }
                                 }
-                                MouseEventKind::Down(_button) => {
-                                    // Register click for multi-click detection
-                                    let screen_pos = ScreenPosition::new(mouse_event.column, mouse_event.row);
-                                    let selection_mode = app.click_detector.register_click(screen_pos);
-
-                                    // Convert screen position to content position using the position mapping
-                                    if let Some(content_pos) = app.position_mapping.screen_to_content(screen_pos) {
-                                        // Start selection at the clicked position with appropriate mode
-                                        app.selection_state.start_selection(content_pos, selection_mode);
-                                    } else {
-                                        // Click outside content area - clear any existing selection
-                                        app.selection_state.clear();
-                                    }
-                                }
-                                MouseEventKind::Drag(_button) => {
-                                    // Extend selection during drag
-                                    let screen_pos = ScreenPosition::new(mouse_event.column, mouse_event.row);
-                                    if let Some(content_pos) = app.position_mapping.screen_to_content(screen_pos) {
-                                        app.selection_state.update_selection(content_pos);
-                                    }
-                                }
-                                MouseEventKind::Up(_button) => {
-                                    // Finish selection on mouse release
-                                    app.selection_state.finish_selection();
-                                }
+                                // Ignore all other mouse events (click, drag, etc.)
+                                // Mouse capture is disabled so native terminal selection works
                                 _ => {}
                             }
                             continue;
