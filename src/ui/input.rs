@@ -13,6 +13,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Screen};
+use crate::models::PermissionMode;
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
 
 use super::helpers::render_dialog_background;
@@ -675,27 +676,23 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
     // 1. Blank line separator
     lines.push(Line::from(""));
 
-    // 2. Input label with optional folder chip
-    let mut label_spans: Vec<Span<'static>> = vec![Span::styled(
-        "  Message",
-        Style::default().fg(COLOR_DIM),
-    )];
-    if let Some(folder) = &app.selected_folder {
-        let chip_name = if folder.name.len() > MAX_CHIP_FOLDER_NAME_LEN {
-            format!(
-                "{}...",
-                &folder.name[..MAX_CHIP_FOLDER_NAME_LEN.saturating_sub(3)]
-            )
-        } else {
-            folder.name.clone()
-        };
-        label_spans.push(Span::raw(" "));
-        label_spans.push(Span::styled(
-            format!("[📁 {}]", chip_name),
-            Style::default().fg(COLOR_CHIP_TEXT).bg(COLOR_CHIP_BG),
-        ));
-    }
-    lines.push(Line::from(label_spans));
+    // 2. Mode indicator (only shown when Plan or Execute mode is active)
+    let mode_line = match app.permission_mode {
+        PermissionMode::Default => Line::from(""),
+        PermissionMode::Plan => Line::from(vec![Span::styled(
+            "  [PLAN]",
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        PermissionMode::BypassPermissions => Line::from(vec![Span::styled(
+            "  [EXECUTE]",
+            Style::default()
+                .fg(Color::Rgb(255, 140, 0))
+                .add_modifier(Modifier::BOLD),
+        )]),
+    };
+    lines.push(mode_line);
 
     // 3. Input top border
     let border_width = content_width;
@@ -1666,11 +1663,9 @@ mod tests {
         let app = App::default();
         let lines = build_input_section(&app, 80);
 
-        // Second line should contain the "Message" label
-        let label_line = &lines[1];
-        assert!(!label_line.spans.is_empty());
-        let label_text = label_line.spans[0].content.to_string();
-        assert!(label_text.contains("Message"));
+        // Second line should be empty for Default mode
+        let mode_line = &lines[1];
+        assert_eq!(mode_line.spans.len(), 0, "Default mode should show empty line");
     }
 
     #[test]
@@ -1685,15 +1680,9 @@ mod tests {
 
         let lines = build_input_section(&app, 80);
 
-        // Label line should contain folder chip
-        let label_line = &lines[1];
-        assert!(label_line.spans.len() > 1);
-
-        // Find the chip span (contains folder emoji and name)
-        let has_folder_chip = label_line.spans.iter().any(|span| {
-            span.content.contains("📁") && span.content.contains("my-project")
-        });
-        assert!(has_folder_chip);
+        // Mode line should be empty for Default mode (folder chip is no longer shown)
+        let mode_line = &lines[1];
+        assert_eq!(mode_line.spans.len(), 0, "Default mode should show empty line");
     }
 
     #[test]
