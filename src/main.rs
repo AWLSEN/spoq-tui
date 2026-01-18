@@ -436,9 +436,9 @@ where
                                     continue;
                                 }
 
-                                // Shift+Tab cycles permission mode (works while typing)
+                                // Shift+Tab cycles permission mode (works while typing, all threads)
                                 if key.code == KeyCode::BackTab {
-                                    if app.screen == Screen::Conversation && app.is_active_thread_programming() {
+                                    if app.screen == Screen::Conversation {
                                         app.cycle_permission_mode();
                                     }
                                     continue;
@@ -583,8 +583,8 @@ where
                                     app.handle_tab_press();
                                 }
                                 KeyCode::BackTab => {
-                                    // Shift+Tab in Conversation screen with Programming thread: cycle permission mode
-                                    if app.screen == Screen::Conversation && app.is_active_thread_programming() {
+                                    // Shift+Tab in Conversation screen: cycle permission mode (all threads)
+                                    if app.screen == Screen::Conversation {
                                         app.cycle_permission_mode();
                                     }
                                 }

@@ -1608,10 +1608,10 @@ mod tests {
     }
 
     #[test]
-    fn test_shift_tab_should_not_cycle_mode_for_normal_thread() {
+    fn test_shift_tab_cycles_mode_for_all_threads() {
         let mut app = App::default();
 
-        // Create a normal thread
+        // Create a normal (conversation) thread
         let thread = crate::models::Thread {
             id: "conv-thread".to_string(),
             title: "Normal".to_string(),
@@ -1628,10 +1628,14 @@ mod tests {
         app.active_thread_id = Some("conv-thread".to_string());
         app.screen = Screen::Conversation;
 
-        // Shift+Tab should NOT cycle mode for conversation threads
-        // (it should cycle focus instead, but that logic is in main.rs)
+        // Shift+Tab should cycle mode for ALL threads now (not just Programming)
         assert_eq!(app.screen, Screen::Conversation);
-        assert!(!app.is_active_thread_programming());
+        assert!(!app.is_active_thread_programming()); // It's a conversation thread
+
+        // Mode cycling works on all thread types
+        assert_eq!(app.permission_mode, PermissionMode::Default);
+        app.cycle_permission_mode();
+        assert_eq!(app.permission_mode, PermissionMode::Plan);
     }
 
     #[test]
@@ -1658,7 +1662,7 @@ mod tests {
         // Even with programming thread, Shift+Tab should not cycle mode
         // because we're not on Conversation screen
         assert_eq!(app.screen, Screen::CommandDeck);
-        // The condition for mode cycling is both screen AND thread type
+        // The condition for mode cycling is being on Conversation screen
     }
 
     // ============= Permission Mode Persistence Tests =============
