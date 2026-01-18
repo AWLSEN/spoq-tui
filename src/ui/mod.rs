@@ -106,7 +106,7 @@ fn render_terminal_too_small(frame: &mut Frame, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::ProgrammingMode;
+    use crate::models::PermissionMode;
     use conversation::create_mode_indicator_line;
     use helpers::{extract_short_model_name, format_tokens, get_tool_icon, truncate_string, is_terminal_too_small, MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT};
     use input::{build_contextual_keybinds, get_permission_preview};
@@ -138,7 +138,7 @@ mod tests {
             tick_count: 0,
             conversation_scroll: 0,
             max_scroll: 0,
-            programming_mode: ProgrammingMode::default(),
+            permission_mode: PermissionMode::default(),
             session_state: crate::state::SessionState::new(),
             tool_tracker: crate::state::ToolTracker::new(),
             subagent_tracker: crate::state::SubagentTracker::new(),
@@ -769,32 +769,32 @@ mod tests {
 
     #[test]
     fn test_create_mode_indicator_line_plan_mode() {
-        let line = create_mode_indicator_line(ProgrammingMode::PlanMode);
+        let line = create_mode_indicator_line(PermissionMode::Plan);
         assert!(line.is_some());
         let line = line.unwrap();
-        // Check that the line contains "[PLAN MODE]"
+        // Check that the line contains "[PLAN]"
         let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(content.contains("[PLAN MODE]"));
+        assert!(content.contains("[PLAN]"));
     }
 
     #[test]
     fn test_create_mode_indicator_line_bypass() {
-        let line = create_mode_indicator_line(ProgrammingMode::BypassPermissions);
+        let line = create_mode_indicator_line(PermissionMode::BypassPermissions);
         assert!(line.is_some());
         let line = line.unwrap();
-        // Check that the line contains "[BYPASS]"
+        // Check that the line contains "[AUTONOMOUS]"
         let content: String = line.spans.iter().map(|s| s.content.to_string()).collect();
-        assert!(content.contains("[BYPASS]"));
+        assert!(content.contains("[AUTONOMOUS]"));
     }
 
     #[test]
     fn test_create_mode_indicator_line_none() {
-        let line = create_mode_indicator_line(ProgrammingMode::None);
+        let line = create_mode_indicator_line(PermissionMode::Default);
         assert!(line.is_none());
     }
 
     #[test]
-    fn test_mode_indicator_not_shown_for_conversation_thread() {
+    fn test_mode_indicator_shown_for_all_threads() {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
@@ -814,7 +814,7 @@ mod tests {
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("conv-thread".to_string());
-        app.programming_mode = ProgrammingMode::PlanMode; // Set mode, but shouldn't show
+        app.permission_mode = PermissionMode::Plan; // Set mode - should show on all threads now
 
         terminal
             .draw(|f| {
@@ -829,14 +829,10 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
 
-        // Mode indicator should NOT be shown for Conversation threads
+        // Mode indicator should now be shown for all threads
         assert!(
-            !buffer_str.contains("[PLAN MODE]"),
-            "Mode indicator should not be shown for Conversation threads"
-        );
-        assert!(
-            !buffer_str.contains("[BYPASS]"),
-            "Mode indicator should not be shown for Conversation threads"
+            buffer_str.contains("[PLAN]"),
+            "Mode indicator should be shown for all threads"
         );
     }
 
@@ -861,7 +857,7 @@ mod tests {
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
-        app.programming_mode = ProgrammingMode::PlanMode;
+        app.permission_mode = PermissionMode::Plan;
 
         terminal
             .draw(|f| {
@@ -877,8 +873,8 @@ mod tests {
             .collect();
 
         assert!(
-            buffer_str.contains("[PLAN MODE]"),
-            "Mode indicator should show '[PLAN MODE]' for Programming thread in PlanMode"
+            buffer_str.contains("[PLAN]"),
+            "Mode indicator should show '[PLAN]' in Plan mode"
         );
     }
 
@@ -903,7 +899,7 @@ mod tests {
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
-        app.programming_mode = ProgrammingMode::BypassPermissions;
+        app.permission_mode = PermissionMode::BypassPermissions;
 
         terminal
             .draw(|f| {
@@ -919,8 +915,8 @@ mod tests {
             .collect();
 
         assert!(
-            buffer_str.contains("[BYPASS]"),
-            "Mode indicator should show '[BYPASS]' for Programming thread in BypassPermissions"
+            buffer_str.contains("[AUTONOMOUS]"),
+            "Mode indicator should show '[AUTONOMOUS]' in BypassPermissions mode"
         );
     }
 
@@ -945,7 +941,7 @@ mod tests {
             created_at: chrono::Utc::now(),
         });
         app.active_thread_id = Some("prog-thread".to_string());
-        app.programming_mode = ProgrammingMode::None;
+        app.permission_mode = PermissionMode::Default;
 
         terminal
             .draw(|f| {
@@ -960,14 +956,14 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
 
-        // When mode is None, no indicator should be shown
+        // When mode is Default, no indicator should be shown
         assert!(
-            !buffer_str.contains("[PLAN MODE]"),
-            "Mode indicator should not show '[PLAN MODE]' when mode is None"
+            !buffer_str.contains("[PLAN]"),
+            "Mode indicator should not show '[PLAN]' when mode is Default"
         );
         assert!(
-            !buffer_str.contains("[BYPASS]"),
-            "Mode indicator should not show '[BYPASS]' when mode is None"
+            !buffer_str.contains("[AUTONOMOUS]"),
+            "Mode indicator should not show '[AUTONOMOUS]' when mode is Default"
         );
     }
 
@@ -977,7 +973,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
         app.screen = Screen::CommandDeck; // Not on Conversation screen
-        app.programming_mode = ProgrammingMode::PlanMode;
+        app.permission_mode = PermissionMode::Plan;
 
         terminal
             .draw(|f| {
@@ -1006,7 +1002,7 @@ mod tests {
         let mut app = create_test_app();
         app.screen = Screen::Conversation;
         app.active_thread_id = None; // No active thread
-        app.programming_mode = ProgrammingMode::PlanMode;
+        app.permission_mode = PermissionMode::Plan;
 
         terminal
             .draw(|f| {
