@@ -1172,7 +1172,8 @@ fn render_single_message(
     } else {
         // Display completed message - try cache first
         if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version) {
-            lines.extend(cached_lines.clone());
+            // Use iter().cloned() to avoid cloning the entire Vec; we only clone each Line as needed
+            lines.extend(cached_lines.iter().cloned());
             lines.push(Line::from(""));
             return lines;
         }
@@ -1222,38 +1223,22 @@ fn render_single_message(
     lines
 }
 
-/// Estimate the visual line count for a single message without full rendering.
+/// Fast height estimation for virtualization - takes only &Message, no mutable App access.
 ///
-/// This is used for virtualization to calculate which messages are visible
-/// without actually rendering all message content. For cached messages,
-/// this can use the cached line count. For non-cached messages, it provides
-/// an estimate based on content length and viewport width.
-fn estimate_message_height(
-    message: &Message,
-    app: &mut App,
-    viewport_width: usize,
-    ctx: &LayoutContext,
-) -> usize {
+/// This enables reference-based iteration over messages without cloning the entire Vec.
+/// The estimates are approximate but sufficient for virtualization to determine
+/// which messages are in the visible viewport.
+fn estimate_message_height_fast(message: &Message, viewport_width: usize) -> usize {
     // Base lines: 1 blank at start + 1 blank at end = 2
     let mut estimated_lines = 2;
 
     // Add thinking block lines if applicable
     if message.role == MessageRole::Assistant && !message.reasoning_content.is_empty() {
         if message.reasoning_collapsed {
-            // Collapsed: 1 header line + 1 spacing
             estimated_lines += 2;
         } else {
-            // Expanded: header + content lines + bottom border + spacing
             let reasoning_lines = message.reasoning_content.lines().count();
             estimated_lines += 1 + reasoning_lines + 1 + 1;
-        }
-    }
-
-    // For completed messages, try cache first
-    if !message.is_streaming {
-        if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version) {
-            // Use actual cached line count plus wrapping estimate
-            return estimate_wrapped_line_count(cached_lines, viewport_width);
         }
     }
 
@@ -1264,35 +1249,49 @@ fn estimate_message_height(
         &message.content
     };
 
-    // Rough estimate: each 80 chars = ~1 logical line, then wrap calculation
     let char_count = content.chars().count();
-    let logical_lines = if char_count == 0 {
-        1
-    } else {
-        // Assume average of 60 chars per logical line (accounting for markdown)
-        (char_count / 60).max(1)
-    };
-
-    // Apply wrapping: each logical line may wrap based on viewport width
-    let wrap_factor = if viewport_width > 0 {
-        60_usize.div_ceil(viewport_width) // Ceiling division
-    } else {
-        1
-    };
-
+    let logical_lines = if char_count == 0 { 1 } else { (char_count / 60).max(1) };
+    let wrap_factor = if viewport_width > 0 { 60_usize.div_ceil(viewport_width) } else { 1 };
     estimated_lines += logical_lines * wrap_factor;
 
-    // Add lines for tool events in segments (rough estimate: 2 lines per tool)
+    // Add lines for tool events in segments
     if message.role == MessageRole::Assistant {
-        let tool_count = message.segments.iter().filter(|s| {
-            matches!(s, MessageSegment::ToolEvent(_) | MessageSegment::SubagentEvent(_))
-        }).count();
+        let tool_count = message
+            .segments
+            .iter()
+            .filter(|s| matches!(s, MessageSegment::ToolEvent(_) | MessageSegment::SubagentEvent(_)))
+            .count();
         estimated_lines += tool_count * 2;
     }
 
+    estimated_lines
+}
+
+/// Estimate the visual line count for a single message without full rendering.
+///
+/// This is used for virtualization to calculate which messages are visible
+/// without actually rendering all message content. For cached messages,
+/// this can use the cached line count. For non-cached messages, it provides
+/// an estimate based on content length and viewport width.
+#[allow(dead_code)]
+fn estimate_message_height(
+    message: &Message,
+    app: &mut App,
+    viewport_width: usize,
+    ctx: &LayoutContext,
+) -> usize {
+    // For completed messages, try cache first
+    if !message.is_streaming {
+        if let Some(cached_lines) = app.rendered_lines_cache.get(message.id, message.render_version)
+        {
+            return estimate_wrapped_line_count(cached_lines, viewport_width);
+        }
+    }
+
+    let estimated_lines = estimate_message_height_fast(message, viewport_width);
+
     // For more accurate estimates on completed messages, render and cache
     if !message.is_streaming && estimated_lines > 10 {
-        // For larger messages, actually render to get accurate height
         let rendered = render_single_message(message, app, ctx);
         return estimate_wrapped_line_count(&rendered, viewport_width);
     }
@@ -1354,28 +1353,63 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
     let header_visual_lines = estimate_wrapped_line_count(&header_lines, viewport_width);
 
-    // Get messages from cache if we have an active thread
-    let cached_messages = app
-        .active_thread_id
-        .as_ref()
-        .and_then(|id| {
-            crate::app::log_thread_update(&format!(
-                "RENDER: Looking for messages for thread_id: {}",
-                id
-            ));
-            let msgs = app.cache.get_messages(id);
-            crate::app::log_thread_update(&format!(
-                "RENDER: Found {} messages",
-                msgs.map(|m| m.len()).unwrap_or(0)
-            ));
-            msgs
-        });
+    // Phase 1: Calculate heights using FAST estimation with reference-based iteration
+    // This avoids cloning the entire message Vec on every 16ms frame
+    let (message_heights, total_visual_lines, message_count) = {
+        let cached_messages = app
+            .active_thread_id
+            .as_ref()
+            .and_then(|id| {
+                crate::app::log_thread_update(&format!(
+                    "RENDER: Looking for messages for thread_id: {}",
+                    id
+                ));
+                let msgs = app.cache.get_messages(id);
+                crate::app::log_thread_update(&format!(
+                    "RENDER: Found {} messages",
+                    msgs.map(|m| m.len()).unwrap_or(0)
+                ));
+                msgs
+            });
 
-    // Clone messages to avoid borrow issues during height calculation
-    let messages: Vec<Message> = cached_messages.cloned()
-        .unwrap_or_default();
+        match cached_messages {
+            None => (Vec::new(), header_visual_lines, 0usize),
+            Some(messages) if messages.is_empty() => (Vec::new(), header_visual_lines, 0usize),
+            Some(messages) => {
+                // Log first message to debug
+                if let Some(first_msg) = messages.first() {
+                    crate::app::log_thread_update(&format!(
+                        "RENDER: First message role={:?}, content_len={}, is_streaming={}, segments_len={}, content_preview={:?}",
+                        first_msg.role,
+                        first_msg.content.len(),
+                        first_msg.is_streaming,
+                        first_msg.segments.len(),
+                        first_msg.content.chars().take(50).collect::<String>()
+                    ));
+                }
 
-    if messages.is_empty() {
+                // Calculate heights using fast estimation (no mutable App access needed)
+                let mut heights: Vec<MessageHeight> = Vec::with_capacity(messages.len());
+                let mut cumulative_offset = header_visual_lines;
+
+                for (i, message) in messages.iter().enumerate() {
+                    let visual_lines = estimate_message_height_fast(message, viewport_width);
+                    heights.push(MessageHeight {
+                        message_index: i,
+                        visual_lines,
+                        cumulative_offset,
+                    });
+                    cumulative_offset += visual_lines;
+                }
+
+                let count = messages.len();
+                (heights, cumulative_offset, count)
+            }
+        }
+    };
+    // Borrow of app.cache is now dropped
+
+    if message_count == 0 {
         // No messages yet - show placeholder with vertical bar
         let mut lines = header_lines;
         lines.push(Line::from(""));
@@ -1400,34 +1434,6 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         }
         return;
     }
-
-    // Log first message to debug
-    if let Some(first_msg) = messages.first() {
-        crate::app::log_thread_update(&format!(
-            "RENDER: First message role={:?}, content_len={}, is_streaming={}, segments_len={}, content_preview={:?}",
-            first_msg.role,
-            first_msg.content.len(),
-            first_msg.is_streaming,
-            first_msg.segments.len(),
-            first_msg.content.chars().take(50).collect::<String>()
-        ));
-    }
-
-    // Phase 1: Calculate heights for all messages (using estimates for non-cached)
-    let mut message_heights: Vec<MessageHeight> = Vec::with_capacity(messages.len());
-    let mut cumulative_offset = header_visual_lines;
-
-    for (i, message) in messages.iter().enumerate() {
-        let visual_lines = estimate_message_height(message, app, viewport_width, ctx);
-        message_heights.push(MessageHeight {
-            message_index: i,
-            visual_lines,
-            cumulative_offset,
-        });
-        cumulative_offset += visual_lines;
-    }
-
-    let total_visual_lines = cumulative_offset;
 
     // Calculate max scroll (how far up we can scroll from bottom)
     // scroll=0 means showing the bottom (latest content)
@@ -1462,11 +1468,25 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         "RENDER: Virtualization - rendering messages {}..{} of {} (buffer={})",
         start_index,
         end_index,
-        messages.len(),
+        message_count,
         VIRTUALIZATION_BUFFER
     ));
 
     // Phase 3: Render only visible messages
+    // Clone ONLY the visible range instead of all messages - major optimization
+    let visible_messages: Vec<Message> = app
+        .active_thread_id
+        .as_ref()
+        .and_then(|id| app.cache.get_messages(id))
+        .map(|msgs| {
+            msgs.iter()
+                .skip(start_index)
+                .take(end_index - start_index)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+
     let mut lines: Vec<Line> = header_lines;
 
     // Add placeholder lines for messages before the visible range
@@ -1475,8 +1495,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         lines.push(Line::from(""));
     }
 
-    // Render visible messages
-    for message in messages.iter().skip(start_index).take(end_index - start_index) {
+    // Render visible messages (using the cloned subset)
+    for message in visible_messages.iter() {
         let message_lines = render_single_message(message, app, ctx);
         lines.extend(message_lines);
     }
