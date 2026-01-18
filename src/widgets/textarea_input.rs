@@ -266,6 +266,33 @@ impl<'a> TextAreaInput<'a> {
         self.textarea.lines()
     }
 
+    /// Check if cursor is on the first line
+    pub fn is_cursor_on_first_line(&self) -> bool {
+        self.textarea.cursor().0 == 0
+    }
+
+    /// Check if cursor is on the last line
+    pub fn is_cursor_on_last_line(&self) -> bool {
+        let (row, _) = self.textarea.cursor();
+        let line_count = self.textarea.lines().len();
+        row == line_count.saturating_sub(1)
+    }
+
+    /// Set the content of the textarea
+    pub fn set_content(&mut self, text: &str) {
+        // Clear existing content
+        self.textarea.select_all();
+        self.textarea.delete_char();
+        // Insert new content
+        for c in text.chars() {
+            if c == '\n' {
+                self.textarea.insert_newline();
+            } else {
+                self.textarea.insert_char(c);
+            }
+        }
+    }
+
     /// Check if there are yank (paste) contents available
     pub fn yank_text(&self) -> String {
         self.textarea.yank_text()
@@ -634,5 +661,107 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0], "hello");
         assert_eq!(lines[1], "world");
+    }
+
+    #[test]
+    fn test_is_cursor_on_first_line() {
+        let mut input = TextAreaInput::new();
+        // Empty input - cursor is on first line
+        assert!(input.is_cursor_on_first_line());
+
+        // Add content on first line
+        for c in "line1".chars() {
+            input.insert_char(c);
+        }
+        assert!(input.is_cursor_on_first_line());
+
+        // Add second line
+        input.insert_newline();
+        assert!(!input.is_cursor_on_first_line());
+
+        // Add content to second line
+        for c in "line2".chars() {
+            input.insert_char(c);
+        }
+        assert!(!input.is_cursor_on_first_line());
+
+        // Move cursor up to first line
+        input.move_cursor_up();
+        assert!(input.is_cursor_on_first_line());
+    }
+
+    #[test]
+    fn test_is_cursor_on_last_line() {
+        let mut input = TextAreaInput::new();
+        // Empty input - cursor is on last line (first and last are same)
+        assert!(input.is_cursor_on_last_line());
+
+        // Add content on first line
+        for c in "line1".chars() {
+            input.insert_char(c);
+        }
+        assert!(input.is_cursor_on_last_line());
+
+        // Add second line
+        input.insert_newline();
+        for c in "line2".chars() {
+            input.insert_char(c);
+        }
+        assert!(input.is_cursor_on_last_line());
+
+        // Move cursor up to first line
+        input.move_cursor_up();
+        assert!(!input.is_cursor_on_last_line());
+
+        // Move cursor down to last line
+        input.move_cursor_down();
+        assert!(input.is_cursor_on_last_line());
+    }
+
+    #[test]
+    fn test_set_content_single_line() {
+        let mut input = TextAreaInput::new();
+        input.set_content("hello world");
+        assert_eq!(input.content(), "hello world");
+        assert_eq!(input.line_count(), 1);
+    }
+
+    #[test]
+    fn test_set_content_multiple_lines() {
+        let mut input = TextAreaInput::new();
+        input.set_content("line1\nline2\nline3");
+        assert_eq!(input.content(), "line1\nline2\nline3");
+        assert_eq!(input.line_count(), 3);
+
+        let lines = input.lines();
+        assert_eq!(lines[0], "line1");
+        assert_eq!(lines[1], "line2");
+        assert_eq!(lines[2], "line3");
+    }
+
+    #[test]
+    fn test_set_content_replaces_existing() {
+        let mut input = TextAreaInput::new();
+        // Add initial content
+        for c in "initial content".chars() {
+            input.insert_char(c);
+        }
+        assert_eq!(input.content(), "initial content");
+
+        // Replace with new content
+        input.set_content("new content");
+        assert_eq!(input.content(), "new content");
+        assert_eq!(input.line_count(), 1);
+    }
+
+    #[test]
+    fn test_set_content_empty_string() {
+        let mut input = TextAreaInput::new();
+        for c in "some content".chars() {
+            input.insert_char(c);
+        }
+
+        input.set_content("");
+        assert!(input.is_empty());
     }
 }
