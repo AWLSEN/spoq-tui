@@ -125,7 +125,10 @@ fn setup_panic_hook() {
 }
 
 /// Restore terminal to normal mode
-fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mut Terminal<B>) -> Result<()> {
+fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mut Terminal<B>) -> Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
     disable_raw_mode()?;
     execute!(
@@ -137,7 +140,10 @@ fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mu
     Ok(())
 }
 
-async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
+where
+    B::Error: Send + Sync + 'static,
+{
     // Mock data counts for navigation bounds
     const MOCK_NOTIFICATIONS_COUNT: usize = 4;
     const MOCK_THREADS_COUNT: usize = 3;

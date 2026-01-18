@@ -54,7 +54,7 @@ pub fn render_left_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &A
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(COLOR_BORDER));
-    frame.render_widget(left_block.clone(), area);
+    frame.render_widget(left_block, area);
 
     let inner = inner_rect(area, 1);
     let left_chunks = Layout::default()
@@ -165,7 +165,7 @@ pub fn render_tasks(
         .borders(Borders::ALL)
         .border_type(BorderType::Plain)
         .border_style(Style::default().fg(border_color));
-    frame.render_widget(task_block.clone(), area);
+    frame.render_widget(task_block, area);
 
     let inner = inner_rect(area, 1);
 
@@ -238,7 +238,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         .borders(Borders::ALL)
         .border_type(if focused { BorderType::Thick } else { BorderType::Plain })
         .border_style(Style::default().fg(border_color));
-    frame.render_widget(right_block.clone(), area);
+    frame.render_widget(right_block, area);
 
     let inner = inner_rect(area, 1);
 
