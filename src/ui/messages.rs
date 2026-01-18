@@ -744,15 +744,6 @@ pub fn render_message_segments(
                 let tool_line = render_tool_event(event, tick_count, ctx);
                 lines.push(prepend_bar(tool_line));
                 is_first_line = false;
-
-                // Add result preview if available (only for completed tools)
-                // Use responsive max preview length from context
-                if event.duration_secs.is_some() {
-                    let max_preview_len = ctx.max_preview_length();
-                    if let Some(preview_line) = render_tool_result_preview(event, max_preview_len) {
-                        lines.push(prepend_bar(preview_line));
-                    }
-                }
                 i += 1;
             }
             MessageSegment::SubagentEvent(_) => {
