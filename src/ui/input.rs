@@ -151,6 +151,7 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
 
     // Check for visible elements that need special keybinds
     let has_error = app.stream_error.is_some();
+    let has_links = app.has_visible_links;
     let is_narrow = ctx.is_narrow();
     let is_extra_small = ctx.is_extra_small();
 
@@ -193,6 +194,22 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
 
         spans.push(Span::styled("[Esc]", Style::default().fg(COLOR_ACCENT)));
         spans.push(Span::raw(" back"));
+
+        // Link hint (when links are visible) - dimmed to not distract
+        if has_links && !is_extra_small {
+            spans.push(Span::raw(" | "));
+            if is_narrow {
+                spans.push(Span::styled(
+                    "[Cmd] links",
+                    Style::default().fg(COLOR_DIM),
+                ));
+            } else {
+                spans.push(Span::styled(
+                    "[Cmd+click] open links",
+                    Style::default().fg(COLOR_DIM),
+                ));
+            }
+        }
     } else {
         // CommandDeck screen
         if !is_extra_small {
