@@ -122,18 +122,21 @@ fn setup_panic_hook() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         // Try to restore terminal state
-        // CRITICAL: Pop keyboard enhancement flags BEFORE disabling raw mode
-        // This exits Kitty keyboard protocol mode which causes key codes like [97;5u
+        // Pop keyboard enhancement flags BEFORE disabling raw mode
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
         // Disable alternate scroll mode (CSI ? 1007 l)
         let _ = write!(io::stdout(), "\x1b[?1007l");
-        // Explicit Kitty protocol reset fallback for terminals that need it
-        let _ = write!(io::stdout(), "\x1b[<u");
         let _ = io::stdout().flush();
 
         let _ = disable_raw_mode();
         let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
         let _ = execute!(io::stdout(), Show);
+
+        // CRITICAL: Hard reset Kitty keyboard protocol AFTER leaving alternate screen
+        // Ghostty (and potentially other terminals) need this sent after leaving alternate screen
+        // CSI = 0 u sets all keyboard enhancement flags to zero (non-stack based reset)
+        let _ = write!(io::stdout(), "\x1b[=0u");
+        let _ = io::stdout().flush();
 
         // Call the original panic hook
         original_hook(panic_info);
@@ -145,6 +148,7 @@ fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mu
 where
     B::Error: Send + Sync + 'static,
 {
+    // Pop keyboard enhancement flags (crossterm's standard approach)
     let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
 
     // Disable alternate scroll mode before leaving
@@ -158,6 +162,13 @@ where
         DisableBracketedPaste,
         LeaveAlternateScreen
     )?;
+
+    // CRITICAL: Hard reset Kitty keyboard protocol AFTER leaving alternate screen
+    // Some terminals (Ghostty) need this sent after leaving alternate screen
+    // CSI = 0 u sets all keyboard enhancement flags to zero (non-stack based reset)
+    let _ = write!(terminal.backend_mut(), "\x1b[=0u");
+    let _ = io::Write::flush(terminal.backend_mut());
+
     terminal.show_cursor()?;
     Ok(())
 }
