@@ -113,7 +113,6 @@ mod tests {
     use input::{build_contextual_keybinds, get_permission_preview};
     use messages::{render_tool_event, truncate_preview};
     use ratatui::{backend::TestBackend, Terminal};
-    use theme::COLOR_TOOL_ERROR;
 
     fn create_test_app() -> App {
         App::default()

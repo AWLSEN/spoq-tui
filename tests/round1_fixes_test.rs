@@ -6,7 +6,7 @@
 
 use spoq::app::{App, Screen, ScrollBoundary};
 use spoq::cache::ThreadCache;
-use spoq::models::{Message, MessageRole, ThreadType};
+use spoq::models::{Message, MessageRole};
 use spoq::widgets::textarea_input::TextAreaInput;
 use chrono::Utc;
 

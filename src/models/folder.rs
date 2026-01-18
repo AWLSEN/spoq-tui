@@ -4,5 +4,4 @@ use serde::{Deserialize, Serialize};
 pub struct Folder {
     pub name: String,
     pub path: String,
-    pub is_dir: bool,
 }

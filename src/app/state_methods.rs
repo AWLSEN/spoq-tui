@@ -465,7 +465,6 @@ mod tests {
         Folder {
             name: name.to_string(),
             path: path.to_string(),
-            is_dir: true,
         }
     }
 

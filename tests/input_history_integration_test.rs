@@ -8,7 +8,6 @@
 use spoq::input_history::InputHistory;
 use spoq::widgets::textarea_input::TextAreaInput;
 use std::fs;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 // =============================================================================
