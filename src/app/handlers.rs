@@ -8,7 +8,10 @@ use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
 
 impl App {
     /// Handle an incoming async message
+    /// All message handlers mark the app as dirty since they update visible state.
     pub fn handle_message(&mut self, msg: AppMessage) {
+        // All messages result in state changes that require a redraw
+        self.mark_dirty();
         match msg {
             AppMessage::StreamToken { thread_id, token } => {
                 // Initialize stream start time if this is the first token

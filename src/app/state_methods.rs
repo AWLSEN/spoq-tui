@@ -6,6 +6,12 @@ use tokio::sync::mpsc;
 use super::{App, AppMessage, ScrollBoundary};
 
 impl App {
+    /// Mark the UI as needing a redraw.
+    /// Call this method after any state mutation that affects the UI.
+    #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.needs_redraw = true;
+    }
     /// Get a clone of the message sender for passing to async tasks
     pub fn message_sender(&self) -> mpsc::UnboundedSender<AppMessage> {
         self.message_tx.clone()
@@ -28,6 +34,7 @@ impl App {
     /// Clear the current stream error
     pub fn clear_error(&mut self) {
         self.stream_error = None;
+        self.mark_dirty();
     }
 
     /// Reset scroll state to bottom (newest content)
@@ -35,6 +42,7 @@ impl App {
         self.conversation_scroll = 0;
         self.scroll_position = 0.0;
         self.scroll_velocity = 0.0;
+        self.mark_dirty();
     }
 
     /// Increment the tick counter for animations and update smooth scrolling
@@ -42,7 +50,25 @@ impl App {
         self.tick_count = self.tick_count.wrapping_add(1);
 
         // Update smooth scrolling with momentum
+        let had_velocity = self.scroll_velocity.abs() > 0.05;
         self.update_smooth_scroll();
+
+        // Mark dirty if there are active animations:
+        // - Scroll momentum (velocity > 0)
+        // - Streaming (spinner animation)
+        // - Boundary hit indicator (fades after a few ticks)
+        if had_velocity || self.is_streaming() || self.scroll_boundary_hit.is_some() {
+            self.mark_dirty();
+        }
+
+        // Clear boundary hit indicator after a few ticks (visual feedback duration)
+        if let Some(_boundary) = self.scroll_boundary_hit {
+            // Clear after 10 ticks (~160ms at 16ms/tick)
+            if self.tick_count.saturating_sub(self.boundary_hit_tick) > 10 {
+                self.scroll_boundary_hit = None;
+                self.mark_dirty();
+            }
+        }
     }
 
     /// Update smooth scroll position with velocity and friction
@@ -109,7 +135,11 @@ impl App {
     pub fn toggle_reasoning(&mut self) -> bool {
         if let Some(thread_id) = &self.active_thread_id {
             if let Some(idx) = self.cache.find_last_reasoning_message_index(thread_id) {
-                return self.cache.toggle_message_reasoning(thread_id, idx);
+                let toggled = self.cache.toggle_message_reasoning(thread_id, idx);
+                if toggled {
+                    self.mark_dirty();
+                }
+                return toggled;
             }
         }
         false
@@ -119,7 +149,11 @@ impl App {
     /// Returns true if an error was dismissed
     pub fn dismiss_focused_error(&mut self) -> bool {
         if let Some(thread_id) = &self.active_thread_id {
-            self.cache.dismiss_focused_error(thread_id)
+            let dismissed = self.cache.dismiss_focused_error(thread_id);
+            if dismissed {
+                self.mark_dirty();
+            }
+            dismissed
         } else {
             false
         }
@@ -138,6 +172,7 @@ impl App {
     pub fn add_error_to_active_thread(&mut self, error_code: String, message: String) {
         if let Some(thread_id) = &self.active_thread_id {
             self.cache.add_error_simple(thread_id, error_code, message);
+            self.mark_dirty();
         }
     }
 
@@ -146,8 +181,11 @@ impl App {
     /// Called when the terminal is resized or on initial setup.
     /// Updates both width and height in a single call.
     pub fn update_terminal_dimensions(&mut self, width: u16, height: u16) {
-        self.terminal_width = width;
-        self.terminal_height = height;
+        if self.terminal_width != width || self.terminal_height != height {
+            self.terminal_width = width;
+            self.terminal_height = height;
+            self.mark_dirty();
+        }
     }
 
     /// Get the current terminal width

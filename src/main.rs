@@ -165,17 +165,24 @@ where
             if elapsed_ms >= MIGRATION_DURATION_MS {
                 // Migration complete, hide progress bar
                 app.migration_progress = None;
+                app.mark_dirty();
             } else {
                 // Calculate progress percentage (0-100)
                 let progress = ((elapsed_ms * 100) / MIGRATION_DURATION_MS) as u8;
-                app.migration_progress = Some(progress);
+                if app.migration_progress != Some(progress) {
+                    app.migration_progress = Some(progress);
+                    app.mark_dirty();
+                }
             }
         }
 
-        // Draw the UI
-        terminal.draw(|f| {
-            ui::render(f, &mut *app);
-        })?;
+        // Draw the UI only when needed (dirty flag or streaming)
+        if app.needs_redraw || app.is_streaming() {
+            terminal.draw(|f| {
+                ui::render(f, &mut *app);
+            })?;
+            app.needs_redraw = false;
+        }
 
         // Poll both keyboard events and message channel using tokio::select!
         // 16ms tick for smooth 60fps-like scrolling animation
@@ -202,6 +209,9 @@ where
                             continue;
                         }
                         Event::Key(key) if key.kind == KeyEventKind::Press => {
+                            // Any key press likely changes state (input, navigation, etc.)
+                            app.mark_dirty();
+
                             // Global keybinds (always active)
                             match key.code {
                                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -568,9 +578,11 @@ where
                                         if app.conversation_scroll > 0 {
                                             app.conversation_scroll -= 1;
                                             app.scroll_position = app.conversation_scroll as f32;
+                                            app.mark_dirty();
                                         } else {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
                                             app.boundary_hit_tick = app.tick_count;
+                                            app.mark_dirty();
                                         }
                                     }
                                 }
@@ -580,9 +592,11 @@ where
                                         if app.conversation_scroll < app.max_scroll {
                                             app.conversation_scroll += 1;
                                             app.scroll_position = app.conversation_scroll as f32;
+                                            app.mark_dirty();
                                         } else if app.max_scroll > 0 {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Top);
                                             app.boundary_hit_tick = app.tick_count;
+                                            app.mark_dirty();
                                         }
                                     }
                                 }

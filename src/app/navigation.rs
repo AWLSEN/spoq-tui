@@ -13,6 +13,7 @@ impl App {
             Focus::Threads => Focus::Input,
             Focus::Input => Focus::Notifications,
         };
+        self.mark_dirty();
     }
 
     /// Cycle programming mode: PlanMode → BypassPermissions → None → PlanMode
@@ -23,49 +24,74 @@ impl App {
             ProgrammingMode::BypassPermissions => ProgrammingMode::None,
             ProgrammingMode::None => ProgrammingMode::PlanMode,
         };
+        self.mark_dirty();
     }
 
     /// Move selection up in the current focused panel
     pub fn move_up(&mut self) {
-        match self.focus {
+        let changed = match self.focus {
             Focus::Notifications => {
                 if self.notifications_index > 0 {
                     self.notifications_index -= 1;
+                    true
+                } else {
+                    false
                 }
             }
             Focus::Tasks => {
                 if self.tasks_index > 0 {
                     self.tasks_index -= 1;
+                    true
+                } else {
+                    false
                 }
             }
             Focus::Threads => {
                 if self.threads_index > 0 {
                     self.threads_index -= 1;
+                    true
+                } else {
+                    false
                 }
             }
-            Focus::Input => {}
+            Focus::Input => false,
+        };
+        if changed {
+            self.mark_dirty();
         }
     }
 
     /// Move selection down in the current focused panel
     pub fn move_down(&mut self, max_notifications: usize, max_tasks: usize, max_threads: usize) {
-        match self.focus {
+        let changed = match self.focus {
             Focus::Notifications => {
                 if max_notifications > 0 && self.notifications_index < max_notifications - 1 {
                     self.notifications_index += 1;
+                    true
+                } else {
+                    false
                 }
             }
             Focus::Tasks => {
                 if max_tasks > 0 && self.tasks_index < max_tasks - 1 {
                     self.tasks_index += 1;
+                    true
+                } else {
+                    false
                 }
             }
             Focus::Threads => {
                 if max_threads > 0 && self.threads_index < max_threads - 1 {
                     self.threads_index += 1;
+                    true
+                } else {
+                    false
                 }
             }
-            Focus::Input => {}
+            Focus::Input => false,
+        };
+        if changed {
+            self.mark_dirty();
         }
     }
 
@@ -83,11 +109,13 @@ impl App {
         self.threads.insert(0, new_thread);
         self.threads_index = 0;
         self.focus = Focus::Threads;
+        self.mark_dirty();
     }
 
     /// Mark the app to quit
     pub fn quit(&mut self) {
         self.should_quit = true;
+        self.mark_dirty();
     }
 
     /// Navigate back to the CommandDeck screen
@@ -95,6 +123,7 @@ impl App {
         self.screen = Screen::CommandDeck;
         self.active_thread_id = None; // Clear so next submit creates new thread
         self.textarea.clear(); // Clear any partial input
+        self.mark_dirty();
     }
 
     /// Open a specific thread by ID for conversation
@@ -111,6 +140,7 @@ impl App {
         self.screen = Screen::Conversation;
         self.textarea.clear();
         self.reset_scroll();
+        self.mark_dirty();
 
         // Check if messages need to be fetched
         let has_cached = self.cache.get_messages(&thread_id).is_some();
@@ -216,6 +246,7 @@ impl App {
         self.thread_switcher.selected_index = 1;
         self.thread_switcher.scroll_offset = 0;
         self.thread_switcher.last_nav_time = Some(std::time::Instant::now());
+        self.mark_dirty();
     }
 
     /// Close the thread switcher dialog without switching
@@ -224,6 +255,7 @@ impl App {
         self.thread_switcher.selected_index = 0;
         self.thread_switcher.scroll_offset = 0;
         self.thread_switcher.last_nav_time = None;
+        self.mark_dirty();
     }
 
     /// Cycle the thread switcher selection forward (toward older threads)
@@ -237,6 +269,7 @@ impl App {
             (self.thread_switcher.selected_index + 1) % thread_count;
         self.adjust_switcher_scroll(thread_count);
         self.thread_switcher.last_nav_time = Some(std::time::Instant::now());
+        self.mark_dirty();
     }
 
     /// Cycle the thread switcher selection backward (toward newer threads)
@@ -253,6 +286,7 @@ impl App {
         }
         self.adjust_switcher_scroll(thread_count);
         self.thread_switcher.last_nav_time = Some(std::time::Instant::now());
+        self.mark_dirty();
     }
 
     /// Adjust scroll offset to keep selected item visible
@@ -307,10 +341,10 @@ impl App {
             self.thread_switcher.selected_index = 0;
             self.thread_switcher.scroll_offset = 0;
             self.thread_switcher.last_nav_time = None;
-            // Open the selected thread
+            // Open the selected thread (mark_dirty is called in open_thread)
             self.open_thread(thread_id);
         } else {
-            // Invalid index, just close
+            // Invalid index, just close (mark_dirty is called in close_switcher)
             self.close_switcher();
         }
     }

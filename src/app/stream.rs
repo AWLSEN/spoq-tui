@@ -102,6 +102,7 @@ impl App {
         };
 
         self.textarea.clear();
+        self.mark_dirty();
 
         // Emit StreamLifecycle connecting event
         emit_debug(

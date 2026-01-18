@@ -175,6 +175,7 @@ impl App {
 
         // Clear the pending permission
         self.session_state.clear_pending_permission();
+        self.mark_dirty();
     }
 
     /// Deny the current pending permission (user pressed 'n')
@@ -199,6 +200,7 @@ impl App {
         // Clear the pending permission and reset question state
         self.session_state.clear_pending_permission();
         self.question_state.reset();
+        self.mark_dirty();
     }
 
     /// Allow the tool always for this session and approve (user pressed 'a')
@@ -266,6 +268,7 @@ impl App {
                 if let Some(ref tool_input) = perm.tool_input {
                     if let Some(data) = parse_ask_user_question(tool_input) {
                         self.question_state = AskUserQuestionState::from_data(&data);
+                        self.mark_dirty();
                         debug!("Initialized question state with {} questions", data.questions.len());
                     }
                 }
@@ -324,6 +327,7 @@ impl App {
         let count = self.get_question_count();
         if count > 1 {
             self.question_state.next_tab(count);
+            self.mark_dirty();
             debug!("Moved to question tab {}", self.question_state.tab_index);
         }
     }
@@ -345,6 +349,7 @@ impl App {
                 self.question_state.set_current_selection(Some(option_count - 1));
             }
         }
+        self.mark_dirty();
         debug!("Selection now: {:?}", self.question_state.current_selection());
     }
 
@@ -363,6 +368,7 @@ impl App {
             // Currently on "Other", wrap to first option
             self.question_state.set_current_selection(Some(0));
         }
+        self.mark_dirty();
         debug!("Selection now: {:?}", self.question_state.current_selection());
     }
 
@@ -371,6 +377,7 @@ impl App {
         if self.is_current_question_multi_select() {
             if let Some(idx) = self.question_state.current_selection() {
                 self.question_state.toggle_multi_selection(idx);
+                self.mark_dirty();
                 debug!("Toggled option {}", idx);
             }
         }
@@ -383,6 +390,7 @@ impl App {
         if self.question_state.current_selection().is_none() && !self.question_state.other_active {
             // Activate "Other" text input mode
             self.question_state.other_active = true;
+            self.mark_dirty();
             debug!("Activated 'Other' text input mode");
             return false;
         }
@@ -409,6 +417,7 @@ impl App {
             if let Some(text) = self.question_state.other_texts.get_mut(self.question_state.tab_index) {
                 text.clear();
             }
+            self.mark_dirty();
             debug!("Cancelled 'Other' text input mode");
         }
     }
@@ -417,6 +426,7 @@ impl App {
     pub fn question_type_char(&mut self, c: char) {
         if self.question_state.other_active {
             self.question_state.push_other_char(c);
+            self.mark_dirty();
         }
     }
 
@@ -424,6 +434,7 @@ impl App {
     pub fn question_backspace(&mut self) {
         if self.question_state.other_active {
             self.question_state.pop_other_char();
+            self.mark_dirty();
         }
     }
 

@@ -231,6 +231,9 @@ pub struct App {
     /// Click detector for multi-click detection (single/double/triple click)
     /// Cache for parsed markdown (avoids re-parsing unchanged content)
     pub markdown_cache: MarkdownCache,
+    /// Dirty flag: when true, the UI needs to be redrawn.
+    /// Set to true on state mutations, cleared after each draw.
+    pub needs_redraw: bool,
 }
 
 impl App {
@@ -305,6 +308,7 @@ impl App {
             active_panel: ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
             markdown_cache: MarkdownCache::new(),
+            needs_redraw: true, // Start with redraw needed
         })
     }
 
