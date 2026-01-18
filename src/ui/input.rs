@@ -14,7 +14,6 @@ use ratatui::{
 
 use crate::app::{App, Screen};
 use crate::state::session::{AskUserQuestionData, AskUserQuestionState, PermissionRequest};
-use crate::widgets::textarea_input::TextAreaInputWidget;
 
 use super::helpers::render_dialog_background;
 use super::layout::LayoutContext;
@@ -217,48 +216,6 @@ impl Widget for InputWithChipWidget<'_, '_> {
     }
 }
 
-/// Render the input area for conversation screen
-pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &mut App) {
-    // Input is always "focused" since we removed panel focus cycling
-    let input_focused = true;
-
-    // No border - use spacing at top instead for visual separation
-    let inner = Rect {
-        x: area.x + 1,
-        y: area.y + 1, // 1 row spacing at top
-        width: area.width.saturating_sub(2),
-        height: area.height.saturating_sub(2),
-    };
-
-    // Calculate content width (accounting for input box borders)
-    let content_width = inner.width.saturating_sub(2);
-
-    // Set hard wrap width so auto-newlines are inserted during typing
-    app.textarea.set_wrap_width(Some(content_width));
-
-    // Calculate dynamic input box height based on line count
-    let line_count = app.textarea.line_count();
-    let input_box_height = calculate_input_box_height(line_count);
-
-    let input_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(input_box_height), // Input box (dynamic height)
-            Constraint::Length(1),                // Keybinds
-        ])
-        .split(inner);
-
-    // Render the TextArea widget
-    let input_widget = TextAreaInputWidget::new(&mut app.textarea, "", input_focused);
-    frame.render_widget(input_widget, input_chunks[0]);
-
-    // Build responsive keybind hints based on terminal dimensions
-    let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
-    let keybinds = build_responsive_keybinds(app, &ctx);
-
-    let keybinds_widget = Paragraph::new(keybinds);
-    frame.render_widget(keybinds_widget, input_chunks[1]);
-}
 
 /// Build contextual keybind hints based on application state.
 ///

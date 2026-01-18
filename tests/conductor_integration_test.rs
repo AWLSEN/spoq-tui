@@ -357,3 +357,123 @@ fn test_thread_detail_response_with_messages() {
     assert_eq!(response.thread_type, spoq::models::ThreadType::Programming);
     assert_eq!(response.project_path, Some("/path/to/project".to_string()));
 }
+
+// ROUND 1 TESTS - Working Directory functionality
+
+#[tokio::test]
+async fn test_stream_request_with_working_directory() {
+    // Test that working_directory can be set and accessed
+    let request = StreamRequest {
+        prompt: "Test with working directory".to_string(),
+        session_id: Uuid::new_v4().to_string(),
+        thread_id: None,
+        reply_to: None,
+        thread_type: None,
+        permission_mode: None,
+        working_directory: Some("/Users/dev/my-project".to_string()),
+    };
+
+    assert_eq!(request.working_directory, Some("/Users/dev/my-project".to_string()));
+}
+
+#[tokio::test]
+async fn test_stream_request_without_working_directory() {
+    // Test that working_directory can be None
+    let request = StreamRequest {
+        prompt: "Test without working directory".to_string(),
+        session_id: Uuid::new_v4().to_string(),
+        thread_id: None,
+        reply_to: None,
+        thread_type: None,
+        permission_mode: None,
+        working_directory: None,
+    };
+
+    assert!(request.working_directory.is_none());
+}
+
+#[test]
+fn test_stream_request_working_directory_serialization() {
+    // Test that working_directory serializes correctly
+    let request = StreamRequest {
+        prompt: "Test serialization".to_string(),
+        session_id: "session-123".to_string(),
+        thread_id: Some("thread-456".to_string()),
+        reply_to: None,
+        thread_type: None,
+        permission_mode: None,
+        working_directory: Some("/home/user/workspace".to_string()),
+    };
+
+    let json = serde_json::to_string(&request).expect("Failed to serialize");
+    assert!(json.contains("working_directory"));
+    assert!(json.contains("/home/user/workspace"));
+
+    let deserialized: StreamRequest = serde_json::from_str(&json).expect("Failed to deserialize");
+    assert_eq!(deserialized.working_directory, Some("/home/user/workspace".to_string()));
+}
+
+#[test]
+fn test_stream_request_working_directory_omitted_when_none() {
+    // Test that working_directory is omitted from JSON when None
+    let request = StreamRequest {
+        prompt: "Test omission".to_string(),
+        session_id: "session-123".to_string(),
+        thread_id: None,
+        reply_to: None,
+        thread_type: None,
+        permission_mode: None,
+        working_directory: None,
+    };
+
+    let json = serde_json::to_string(&request).expect("Failed to serialize");
+    // working_directory should not appear in JSON when None
+    assert!(!json.contains("working_directory"));
+}
+
+#[test]
+fn test_stream_request_working_directory_with_various_paths() {
+    // Test various path formats
+    let paths = vec![
+        "/absolute/unix/path",
+        "/Users/username/Documents/projects",
+        "/home/dev/workspace/rust-project",
+    ];
+
+    for path in paths {
+        let request = StreamRequest {
+            prompt: "Test".to_string(),
+            session_id: Uuid::new_v4().to_string(),
+            thread_id: None,
+            reply_to: None,
+            thread_type: None,
+            permission_mode: None,
+            working_directory: Some(path.to_string()),
+        };
+
+        assert_eq!(request.working_directory, Some(path.to_string()));
+
+        // Verify serialization preserves the path
+        let json = serde_json::to_string(&request).expect("Failed to serialize");
+        assert!(json.contains(path));
+    }
+}
+
+#[test]
+fn test_stream_request_working_directory_builder_pattern() {
+    // Test using builder pattern methods
+    let request = StreamRequest::new("Builder test".to_string())
+        .with_working_directory(Some("/Users/test/project".to_string()));
+
+    assert_eq!(request.working_directory, Some("/Users/test/project".to_string()));
+}
+
+#[test]
+fn test_stream_request_working_directory_with_thread_builder() {
+    // Test working_directory with with_thread builder
+    let request = StreamRequest::with_thread("Follow-up".to_string(), "thread-123".to_string())
+        .with_working_directory(Some("/workspace/app".to_string()));
+
+    assert_eq!(request.thread_id, Some("thread-123".to_string()));
+    assert_eq!(request.working_directory, Some("/workspace/app".to_string()));
+}
