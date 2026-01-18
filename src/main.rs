@@ -436,6 +436,14 @@ where
                                     continue;
                                 }
 
+                                // Shift+Tab cycles permission mode (works while typing)
+                                if key.code == KeyCode::BackTab {
+                                    if app.screen == Screen::Conversation && app.is_active_thread_programming() {
+                                        app.cycle_permission_mode();
+                                    }
+                                    continue;
+                                }
+
                                 // macOS-style text navigation shortcuts (modifier + key)
                                 // Check these BEFORE plain key handlers
                                 match key.code {
