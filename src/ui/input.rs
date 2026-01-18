@@ -68,9 +68,15 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on visual line count (accounting for soft wrap)
-    let visual_lines = app.textarea.visual_line_count(inner.width);
-    let input_box_height = calculate_input_box_height(visual_lines);
+    // Calculate content width (accounting for input box borders)
+    let content_width = inner.width.saturating_sub(2);
+
+    // Set hard wrap width so auto-newlines are inserted during typing
+    app.textarea.set_wrap_width(Some(content_width));
+
+    // Calculate dynamic input box height based on line count
+    let line_count = app.textarea.line_count();
+    let input_box_height = calculate_input_box_height(line_count);
 
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -105,9 +111,15 @@ pub fn render_conversation_input(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(2),
     };
 
-    // Calculate dynamic input box height based on visual line count (accounting for soft wrap)
-    let visual_lines = app.textarea.visual_line_count(inner.width);
-    let input_box_height = calculate_input_box_height(visual_lines);
+    // Calculate content width (accounting for input box borders)
+    let content_width = inner.width.saturating_sub(2);
+
+    // Set hard wrap width so auto-newlines are inserted during typing
+    app.textarea.set_wrap_width(Some(content_width));
+
+    // Calculate dynamic input box height based on line count
+    let line_count = app.textarea.line_count();
+    let input_box_height = calculate_input_box_height(line_count);
 
     let input_chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -1096,6 +1108,7 @@ mod tests {
             cached_message_heights: std::collections::HashMap::new(),
             needs_redraw: false,
             has_visible_links: false,
+            input_history: crate::input_history::InputHistory::new(),
         }
     }
 

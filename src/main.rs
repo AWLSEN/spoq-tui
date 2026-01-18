@@ -502,11 +502,34 @@ where
                                         continue;
                                     }
                                     KeyCode::Up => {
-                                        app.textarea.move_cursor_up();
+                                        // If cursor is on first line, try to navigate history up
+                                        if app.textarea.is_cursor_on_first_line() {
+                                            let current_content = app.textarea.content();
+                                            if let Some(history_entry) = app.input_history.navigate_up(&current_content) {
+                                                let entry = history_entry.to_string();
+                                                app.textarea.set_content(&entry);
+                                            }
+                                        } else {
+                                            // Normal cursor movement
+                                            app.textarea.move_cursor_up();
+                                        }
                                         continue;
                                     }
                                     KeyCode::Down => {
-                                        app.textarea.move_cursor_down();
+                                        // If cursor is on last line, try to navigate history down
+                                        if app.textarea.is_cursor_on_last_line() {
+                                            if let Some(history_entry) = app.input_history.navigate_down() {
+                                                let entry = history_entry.to_string();
+                                                app.textarea.set_content(&entry);
+                                            } else {
+                                                // At bottom of history, restore original input
+                                                let original = app.input_history.get_current_input().to_string();
+                                                app.textarea.set_content(&original);
+                                            }
+                                        } else {
+                                            // Normal cursor movement
+                                            app.textarea.move_cursor_down();
+                                        }
                                         continue;
                                     }
                                     KeyCode::Home => {

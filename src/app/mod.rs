@@ -20,6 +20,7 @@ pub use websocket::{start_websocket, start_websocket_with_config};
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
+use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
 use crate::state::{
     AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
@@ -239,6 +240,8 @@ pub struct App {
     /// Tracks whether the current visible messages contain any hyperlinks.
     /// Used to conditionally show the link interaction hint.
     pub has_visible_links: bool,
+    /// Input history for Up/Down arrow navigation
+    pub input_history: InputHistory,
 }
 
 impl App {
@@ -316,6 +319,7 @@ impl App {
             cached_message_heights: std::collections::HashMap::new(),
             needs_redraw: true, // Start with redraw needed
             has_visible_links: false,
+            input_history: InputHistory::load(),
         })
     }
 
