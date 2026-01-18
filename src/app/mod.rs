@@ -18,7 +18,7 @@ pub use messages::AppMessage;
 pub use websocket::{start_websocket, start_websocket_with_config};
 
 use crate::cache::ThreadCache;
-use crate::models::PermissionMode;
+use crate::models::{Folder, PermissionMode};
 use crate::conductor::ConductorClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
 use crate::input_history::InputHistory;
@@ -231,6 +231,20 @@ pub struct App {
     pub has_visible_links: bool,
     /// Input history for Up/Down arrow navigation
     pub input_history: InputHistory,
+    /// Cached folder list from API for folder picker
+    pub folders: Vec<Folder>,
+    /// True while fetching folders from API
+    pub folders_loading: bool,
+    /// Error message if folder fetch failed
+    pub folders_error: Option<String>,
+    /// Currently selected folder (displayed as chip in input)
+    pub selected_folder: Option<Folder>,
+    /// Is the folder picker overlay showing
+    pub folder_picker_visible: bool,
+    /// Current filter text for folder picker (text after @)
+    pub folder_picker_filter: String,
+    /// Selected index in the filtered folder list
+    pub folder_picker_cursor: usize,
 }
 
 impl App {
@@ -309,6 +323,13 @@ impl App {
             needs_redraw: true, // Start with redraw needed
             has_visible_links: false,
             input_history: InputHistory::load(),
+            folders: Vec::new(),
+            folders_loading: false,
+            folders_error: None,
+            selected_folder: None,
+            folder_picker_visible: false,
+            folder_picker_filter: String::new(),
+            folder_picker_cursor: 0,
         })
     }
 
@@ -1480,7 +1501,7 @@ mod tests {
         // Create a programming pending thread via cache directly
         let pending_id = app
             .cache
-            .create_pending_thread("Code task".to_string(), ThreadType::Programming);
+            .create_pending_thread("Code task".to_string(), ThreadType::Programming, None);
 
         // Thread should have programming type
         let thread = app.cache.get_thread(&pending_id).unwrap();
@@ -1746,7 +1767,7 @@ mod tests {
         // Create a programming thread
         let pending_id = app
             .cache
-            .create_pending_thread("Code question".to_string(), ThreadType::Programming);
+            .create_pending_thread("Code question".to_string(), ThreadType::Programming, None);
 
         // Verify initial type
         let thread = app.cache.get_thread(&pending_id).unwrap();

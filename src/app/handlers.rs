@@ -681,6 +681,117 @@ impl App {
                     None,
                 );
             }
+            AppMessage::FoldersLoaded(folders) => {
+                let count = folders.len();
+                self.folders = folders;
+                self.folders_loading = false;
+                self.folders_error = None;
+                // Emit StateChange for folders loaded
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Folders loaded",
+                        format!("{} folders", count),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::FoldersLoadFailed(error) => {
+                self.folders_loading = false;
+                self.folders_error = Some(error.clone());
+                // Emit Error debug event
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
+                    None,
+                );
+            }
+            AppMessage::FolderPickerOpen => {
+                self.folder_picker_visible = true;
+                self.folder_picker_filter.clear();
+                self.folder_picker_cursor = 0;
+                // Emit StateChange for folder picker open
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Folder picker opened",
+                        "visible",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::FolderPickerClose => {
+                self.folder_picker_visible = false;
+                self.folder_picker_filter.clear();
+                self.folder_picker_cursor = 0;
+                // Emit StateChange for folder picker close
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Folder picker closed",
+                        "hidden",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::FolderPickerFilterChanged(filter) => {
+                self.folder_picker_filter = filter.clone();
+                // Reset cursor to 0 when filter changes
+                self.folder_picker_cursor = 0;
+                // Emit StateChange for filter change
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Folder picker filter changed",
+                        truncate_for_debug(&filter, 30),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::FolderPickerCursorUp => {
+                if self.folder_picker_cursor > 0 {
+                    self.folder_picker_cursor -= 1;
+                }
+            }
+            AppMessage::FolderPickerCursorDown => {
+                // Note: Actual bounds checking against filtered list happens at render time
+                // Here we just increment; the UI will clamp to valid range
+                self.folder_picker_cursor += 1;
+            }
+            AppMessage::FolderSelected(folder) => {
+                let folder_name = folder.name.clone();
+                self.selected_folder = Some(folder);
+                self.folder_picker_visible = false;
+                self.folder_picker_filter.clear();
+                self.folder_picker_cursor = 0;
+                // Emit StateChange for folder selection
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Folder selected",
+                        truncate_for_debug(&folder_name, 30),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::FolderCleared => {
+                self.selected_folder = None;
+                // Emit StateChange for folder cleared
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Folder cleared",
+                        "none",
+                    )),
+                    None,
+                );
+            }
         }
     }
 }

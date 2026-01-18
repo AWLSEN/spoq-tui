@@ -1,5 +1,6 @@
 //! AppMessage enum for async communication within the application.
 
+use crate::models::Folder;
 use crate::state::Todo;
 
 /// Messages received from async operations (streaming, connection status)
@@ -122,6 +123,24 @@ pub enum AppMessage {
     WsRawMessage { message: String },
     /// WebSocket message parse error (for debugging)
     WsParseError { error: String, raw: String },
+    /// Folders loaded from API
+    FoldersLoaded(Vec<Folder>),
+    /// Failed to load folders from API
+    FoldersLoadFailed(String),
+    /// Open the folder picker overlay
+    FolderPickerOpen,
+    /// Close the folder picker overlay
+    FolderPickerClose,
+    /// Filter text changed in folder picker
+    FolderPickerFilterChanged(String),
+    /// Move cursor up in folder picker
+    FolderPickerCursorUp,
+    /// Move cursor down in folder picker
+    FolderPickerCursorDown,
+    /// A folder was selected from the picker
+    FolderSelected(Folder),
+    /// Clear the currently selected folder
+    FolderCleared,
 }
 
 #[cfg(test)]
