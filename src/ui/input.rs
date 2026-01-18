@@ -226,6 +226,17 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
         }
     } else {
         // CommandDeck screen
+        // Show mode cycling hint (skip on extra small)
+        if !is_extra_small {
+            if is_narrow {
+                spans.push(Span::styled("[S+Tab]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::raw(" mode | "));
+            } else {
+                spans.push(Span::styled("[Shift+Tab]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::raw(" cycle mode | "));
+            }
+        }
+
         if !is_extra_small {
             if is_narrow {
                 spans.push(Span::styled("[Tab]", Style::default().fg(COLOR_ACCENT)));
