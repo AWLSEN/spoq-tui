@@ -160,6 +160,7 @@ mod tests {
             active_panel: crate::app::ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
             markdown_cache: crate::markdown::MarkdownCache::new(),
+            cached_message_heights: std::collections::HashMap::new(),
             needs_redraw: false,
         }
     }

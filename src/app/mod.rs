@@ -231,6 +231,8 @@ pub struct App {
     /// Click detector for multi-click detection (single/double/triple click)
     /// Cache for parsed markdown (avoids re-parsing unchanged content)
     pub markdown_cache: MarkdownCache,
+    /// Cache for message heights: maps message_id -> (render_version, cached_height)
+    pub cached_message_heights: std::collections::HashMap<i64, (u64, usize)>,
     /// Dirty flag: when true, the UI needs to be redrawn.
     /// Set to true on state mutations, cleared after each draw.
     pub needs_redraw: bool,
@@ -308,6 +310,7 @@ impl App {
             active_panel: ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
             markdown_cache: MarkdownCache::new(),
+            cached_message_heights: std::collections::HashMap::new(),
             needs_redraw: true, // Start with redraw needed
         })
     }

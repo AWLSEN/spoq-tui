@@ -1388,12 +1388,29 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     ));
                 }
 
-                // Calculate heights using fast estimation (no mutable App access needed)
+                // Calculate heights using cached values when possible
                 let mut heights: Vec<MessageHeight> = Vec::with_capacity(messages.len());
                 let mut cumulative_offset = header_visual_lines;
 
                 for (i, message) in messages.iter().enumerate() {
-                    let visual_lines = estimate_message_height_fast(message, viewport_width);
+                    // Check cache first
+                    let cached = app.cached_message_heights.get(&message.id);
+                    let visual_lines = if let Some((version, height)) = cached {
+                        if *version == message.render_version {
+                            *height  // Cache hit
+                        } else {
+                            // Stale cache, recalculate
+                            let height = estimate_message_height_fast(message, viewport_width);
+                            app.cached_message_heights.insert(message.id, (message.render_version, height));
+                            height
+                        }
+                    } else {
+                        // Cache miss, calculate and store
+                        let height = estimate_message_height_fast(message, viewport_width);
+                        app.cached_message_heights.insert(message.id, (message.render_version, height));
+                        height
+                    };
+
                     heights.push(MessageHeight {
                         message_index: i,
                         visual_lines,
