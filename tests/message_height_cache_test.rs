@@ -27,12 +27,12 @@ async fn test_message_height_cache_stores_heights() {
 
     // Simulate caching a height
     let height = 5;
-    app.cached_message_heights.insert(message.id, (message.render_version, height));
+    app.cached_message_heights.insert((thread_id.to_string(), message.id), (message.render_version, height));
 
     // Verify cache stores the height
     assert_eq!(app.cached_message_heights.len(), 1);
     assert_eq!(
-        app.cached_message_heights.get(&message.id),
+        app.cached_message_heights.get(&(thread_id.to_string(), message.id)),
         Some(&(message.render_version, height))
     );
 }
@@ -52,13 +52,13 @@ async fn test_message_height_cache_invalidates_on_version_change() {
     let original_version = message.render_version;
 
     // Cache the height with original version
-    app.cached_message_heights.insert(message.id, (original_version, 5));
+    app.cached_message_heights.insert((thread_id.to_string(), message.id), (original_version, 5));
 
     // Simulate a render version change (e.g., message edited or re-rendered)
     let new_version = original_version + 1;
 
     // Check cache with new version - should be considered stale
-    if let Some((cached_version, _height)) = app.cached_message_heights.get(&message.id) {
+    if let Some((cached_version, _height)) = app.cached_message_heights.get(&(thread_id.to_string(), message.id)) {
         assert_ne!(*cached_version, new_version);
         // In real code, this would trigger recalculation
     }
@@ -87,7 +87,7 @@ async fn test_message_height_cache_handles_multiple_messages() {
     // Cache heights for all messages
     for (i, message) in messages.iter().enumerate() {
         let height = (i + 1) * 3; // Simulate different heights
-        app.cached_message_heights.insert(message.id, (message.render_version, height));
+        app.cached_message_heights.insert((thread_id.to_string(), message.id), (message.render_version, height));
     }
 
     // Verify all heights are cached
@@ -97,7 +97,7 @@ async fn test_message_height_cache_handles_multiple_messages() {
     for (i, message) in messages.iter().enumerate() {
         let expected_height = (i + 1) * 3;
         assert_eq!(
-            app.cached_message_heights.get(&message.id),
+            app.cached_message_heights.get(&(thread_id.to_string(), message.id)),
             Some(&(message.render_version, expected_height))
         );
     }
@@ -117,7 +117,7 @@ async fn test_message_height_cache_persists_across_operations() {
     let message_id = messages[1].id;
     let render_version = messages[1].render_version;
 
-    app.cached_message_heights.insert(message_id, (render_version, 10));
+    app.cached_message_heights.insert((thread_id.to_string(), message_id), (render_version, 10));
 
     // Perform other operations
     cache.add_streaming_message(&thread_id, "Another message".to_string());
@@ -125,7 +125,7 @@ async fn test_message_height_cache_persists_across_operations() {
 
     // Original cached height should still exist
     assert_eq!(
-        app.cached_message_heights.get(&message_id),
+        app.cached_message_heights.get(&(thread_id.to_string(), message_id)),
         Some(&(render_version, 10))
     );
 }
@@ -149,13 +149,13 @@ async fn test_message_height_cache_hit_vs_miss() {
     let msg2_id = messages[3].id;
 
     // Cache only message 1
-    app.cached_message_heights.insert(msg1_id, (messages[1].render_version, 8));
+    app.cached_message_heights.insert((thread_id.to_string(), msg1_id), (messages[1].render_version, 8));
 
     // Message 1 should have cache hit
-    assert!(app.cached_message_heights.contains_key(&msg1_id));
+    assert!(app.cached_message_heights.contains_key(&(thread_id.to_string(), msg1_id)));
 
     // Message 2 should have cache miss
-    assert!(!app.cached_message_heights.contains_key(&msg2_id));
+    assert!(!app.cached_message_heights.contains_key(&(thread_id.to_string(), msg2_id)));
 }
 
 #[tokio::test]
@@ -163,9 +163,9 @@ async fn test_message_height_cache_can_be_cleared() {
     let mut app = App::new().expect("Failed to create app");
 
     // Add some cached heights
-    app.cached_message_heights.insert(1, (0, 5));
-    app.cached_message_heights.insert(2, (0, 10));
-    app.cached_message_heights.insert(3, (0, 15));
+    app.cached_message_heights.insert(("thread1".to_string(), 1), (0, 5));
+    app.cached_message_heights.insert(("thread1".to_string(), 2), (0, 10));
+    app.cached_message_heights.insert(("thread1".to_string(), 3), (0, 15));
 
     assert_eq!(app.cached_message_heights.len(), 3);
 
