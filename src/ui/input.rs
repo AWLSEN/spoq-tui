@@ -1323,4 +1323,122 @@ mod tests {
 
         assert_eq!(legacy_content, responsive_content);
     }
+
+    // ========================================================================
+    // Link Hint Tests
+    // ========================================================================
+
+    #[test]
+    fn test_link_hint_appears_when_links_visible() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.has_visible_links = true; // Links are visible
+
+        let ctx = LayoutContext::new(120, 40); // Normal width
+        let keybinds = build_responsive_keybinds(&app, &ctx);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Should show full link hint on normal width
+        assert!(content.contains("[Cmd+click]"), "Should show [Cmd+click]");
+        assert!(content.contains("open links"), "Should show 'open links'");
+    }
+
+    #[test]
+    fn test_link_hint_hidden_when_no_links() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.has_visible_links = false; // No links visible
+
+        let ctx = LayoutContext::new(120, 40);
+        let keybinds = build_responsive_keybinds(&app, &ctx);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Should NOT show link hint when no links present
+        assert!(!content.contains("[Cmd+click]"), "Should NOT show [Cmd+click]");
+        assert!(!content.contains("open links"), "Should NOT show 'open links'");
+        assert!(!content.contains("[Cmd]"), "Should NOT show [Cmd]");
+        assert!(!content.contains("links"), "Should NOT show 'links'");
+    }
+
+    #[test]
+    fn test_link_hint_abbreviated_on_narrow() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.has_visible_links = true;
+
+        let ctx = LayoutContext::new(70, 24); // Narrow (< 80)
+        let keybinds = build_responsive_keybinds(&app, &ctx);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Should show abbreviated link hint on narrow width
+        assert!(content.contains("[Cmd]"), "Should show abbreviated [Cmd]");
+        assert!(content.contains("links"), "Should show abbreviated 'links'");
+        assert!(!content.contains("[Cmd+click]"), "Should NOT show full [Cmd+click]");
+        assert!(!content.contains("open links"), "Should NOT show full 'open links'");
+    }
+
+    #[test]
+    fn test_link_hint_hidden_on_extra_small() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.has_visible_links = true;
+
+        let ctx = LayoutContext::new(50, 24); // Extra small (< 60)
+        let keybinds = build_responsive_keybinds(&app, &ctx);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Link hint should be hidden on extra small terminals
+        assert!(!content.contains("[Cmd+click]"), "Should NOT show [Cmd+click]");
+        assert!(!content.contains("[Cmd]"), "Should NOT show [Cmd]");
+        assert!(!content.contains("open links"), "Should NOT show 'open links'");
+    }
+
+    #[test]
+    fn test_link_hint_only_on_conversation_screen() {
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck; // Not on conversation screen
+        app.has_visible_links = true;
+
+        let ctx = LayoutContext::new(120, 40);
+        let keybinds = build_responsive_keybinds(&app, &ctx);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Link hint should only appear on conversation screen
+        assert!(!content.contains("[Cmd+click]"), "Should NOT show link hint on CommandDeck");
+        assert!(!content.contains("open links"), "Should NOT show link hint on CommandDeck");
+    }
+
+    #[test]
+    fn test_link_hint_with_other_hints() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.has_visible_links = true;
+        app.stream_error = Some("Test error".to_string());
+
+        let ctx = LayoutContext::new(120, 40);
+        let keybinds = build_responsive_keybinds(&app, &ctx);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // All hints should coexist
+        assert!(content.contains("dismiss error"), "Should show error dismiss hint");
+        assert!(content.contains("[Cmd+click]"), "Should show link hint");
+        assert!(content.contains("[Enter]"), "Should show send hint");
+        assert!(content.contains("[Esc]"), "Should show back hint");
+    }
+
+    #[test]
+    fn test_link_hint_position_at_end() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.has_visible_links = true;
+
+        let ctx = LayoutContext::new(120, 40);
+        let keybinds = build_responsive_keybinds(&app, &ctx);
+        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+
+        // Link hint should appear after the "back" hint
+        let back_pos = content.find("back").unwrap();
+        let link_pos = content.find("[Cmd+click]").unwrap();
+        assert!(link_pos > back_pos, "Link hint should appear after 'back' hint");
+    }
 }
