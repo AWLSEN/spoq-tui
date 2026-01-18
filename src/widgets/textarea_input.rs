@@ -398,9 +398,21 @@ impl<'a> TextAreaInput<'a> {
         self.textarea.delete_word();
     }
 
-    /// Delete from cursor position back to the start of the current line
+    /// Delete from cursor position back to the start of the current line.
+    /// Handles paste tokens atomically: removes tokens in deletion range and
+    /// shifts remaining token positions.
     /// Maps to: `delete_to_line_start()` -> `delete_line_by_head()`
     pub fn delete_to_line_start(&mut self) {
+        let (row, col) = self.textarea.cursor();
+        // Remove tokens entirely or partially before cursor on this line
+        self.paste_tokens.retain(|t| !(t.line == row && t.col_start < col));
+        // After deletion, cursor at col 0 - shift remaining tokens on this line
+        for token in &mut self.paste_tokens {
+            if token.line == row {
+                token.col_start = token.col_start.saturating_sub(col);
+                token.col_end = token.col_end.saturating_sub(col);
+            }
+        }
         self.textarea.delete_line_by_head();
     }
 
@@ -932,6 +944,53 @@ mod tests {
 
         input.delete_to_line_start();
         assert!(input.is_empty() || input.content().is_empty());
+    }
+
+    #[test]
+    fn test_delete_to_line_start_cleans_up_tokens() {
+        let mut input = TextAreaInput::new();
+        // Insert first token
+        input.insert_paste_token("BEFORE".to_string());
+        input.insert_char(' ');
+        // Insert second token
+        input.insert_paste_token("AFTER".to_string());
+        // Cursor is after second token - content looks like: "[Pasted #1 ~1 lines] [Pasted #2 ~1 lines]"
+
+        // Move cursor to middle (between tokens)
+        for _ in 0..20 {
+            input.move_cursor_left();
+        }
+
+        // delete_to_line_start should remove first token
+        input.delete_to_line_start();
+        let expanded = input.content_expanded();
+        // First token gone, second should still expand correctly
+        assert!(!expanded.contains("BEFORE"));
+        // Second token should still be there and expand
+        assert!(expanded.contains("AFTER"));
+    }
+
+    #[test]
+    fn test_delete_to_line_start_shifts_remaining_token_positions() {
+        let mut input = TextAreaInput::new();
+        // Add some text before the token
+        for c in "prefix ".chars() {
+            input.insert_char(c);
+        }
+        // Insert a token
+        input.insert_paste_token("TOKEN_CONTENT".to_string());
+
+        // Move to end of prefix (before token)
+        input.move_cursor_home();
+        for _ in 0..7 {
+            input.move_cursor_right();
+        }
+
+        // Delete to line start - removes "prefix ", token should shift to col 0
+        input.delete_to_line_start();
+        let expanded = input.content_expanded();
+        // Token should still expand correctly from new position
+        assert!(expanded.contains("TOKEN_CONTENT"));
     }
 
     #[test]
