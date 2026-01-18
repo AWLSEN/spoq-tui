@@ -30,13 +30,13 @@ pub fn create_mode_indicator_line(mode: PermissionMode) -> Option<Line<'static>>
         PermissionMode::Plan => Some(Line::from(vec![Span::styled(
             " [PLAN]",
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         )])),
         PermissionMode::BypassPermissions => Some(Line::from(vec![Span::styled(
-            " [AUTONOMOUS]",
+            " [EXECUTE]",
             Style::default()
-                .fg(Color::Red)
+                .fg(Color::Rgb(255, 140, 0))
                 .add_modifier(Modifier::BOLD),
         )])),
     }
