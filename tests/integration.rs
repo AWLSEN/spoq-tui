@@ -1629,13 +1629,13 @@ async fn test_clear_functionality() {
 async fn test_auto_grow_behavior() {
     use spoq::ui::input::calculate_input_area_height;
 
-    // Verify auto-grow behavior
-    assert_eq!(calculate_input_area_height(1), 4, "1 line: box(3) + keybinds(1) = 4");
-    assert_eq!(calculate_input_area_height(2), 5, "2 lines: box(4) + keybinds(1) = 5");
-    assert_eq!(calculate_input_area_height(3), 6, "3 lines: box(5) + keybinds(1) = 6");
-    assert_eq!(calculate_input_area_height(4), 7, "4 lines: box(6) + keybinds(1) = 7");
-    assert_eq!(calculate_input_area_height(5), 8, "5 lines: box(7) + keybinds(1) = 8 (max)");
-    assert_eq!(calculate_input_area_height(6), 8, "6 lines: clamped to box(7) + keybinds(1) = 8");
+    // Verify auto-grow behavior (box + keybinds + padding)
+    assert_eq!(calculate_input_area_height(1), 6, "1 line: box(3) + keybinds(1) + padding(2) = 6");
+    assert_eq!(calculate_input_area_height(2), 7, "2 lines: box(4) + keybinds(1) + padding(2) = 7");
+    assert_eq!(calculate_input_area_height(3), 8, "3 lines: box(5) + keybinds(1) + padding(2) = 8");
+    assert_eq!(calculate_input_area_height(4), 9, "4 lines: box(6) + keybinds(1) + padding(2) = 9");
+    assert_eq!(calculate_input_area_height(5), 10, "5 lines: box(7) + keybinds(1) + padding(2) = 10 (max)");
+    assert_eq!(calculate_input_area_height(6), 10, "6 lines: clamped to box(7) + keybinds(1) + padding(2) = 10");
 
     // Also verify with actual App
     let mut app = App::new().expect("Failed to create app");

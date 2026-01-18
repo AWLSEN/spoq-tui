@@ -47,9 +47,9 @@ pub fn calculate_input_box_height(line_count: usize) -> u16 {
     content_lines + 2 // +2 for top/bottom borders
 }
 
-/// Calculate the total input area height (input box + keybinds).
+/// Calculate the total input area height (input box + keybinds + padding).
 pub fn calculate_input_area_height(line_count: usize) -> u16 {
-    calculate_input_box_height(line_count) + 1 // +1 for keybinds row
+    calculate_input_box_height(line_count) + 1 + 2 // +1 keybinds, +2 for top/bottom padding
 }
 
 // ============================================================================
@@ -139,7 +139,7 @@ pub fn build_contextual_keybinds(app: &App) -> Line<'static> {
 ///
 /// On narrow terminals (< 80 columns), keybind hints are abbreviated:
 /// - "[Shift+Tab]" becomes "[S+Tab]"
-/// - "[Shift+Enter]" becomes "[S+Ent]"
+/// - "[Alt+Enter]" becomes "[A+Ent]"
 /// - "[Tab Tab]" becomes "[Tab]"
 /// - "cycle mode" becomes "mode"
 /// - "switch thread" becomes "switch"
@@ -180,10 +180,10 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
         // Newline hint (skip on extra small)
         if !is_extra_small {
             if is_narrow {
-                spans.push(Span::styled("[S+Ent]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::styled("[A+Ent]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" newline | "));
             } else {
-                spans.push(Span::styled("[Shift+Enter]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::styled("[Alt+Enter]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" newline | "));
             }
         }
@@ -208,10 +208,10 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
         // Newline hint (skip on extra small)
         if !is_extra_small {
             if is_narrow {
-                spans.push(Span::styled("[S+Ent]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::styled("[A+Ent]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" newline | "));
             } else {
-                spans.push(Span::styled("[Shift+Enter]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::styled("[Alt+Enter]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" newline | "));
             }
         }
@@ -1099,9 +1099,9 @@ mod tests {
     }
 
     #[test]
-    fn test_calculate_input_area_height_includes_keybinds() {
-        assert_eq!(calculate_input_area_height(1), 4, "Box (3) + keybinds (1) = 4");
-        assert_eq!(calculate_input_area_height(5), 8, "Box (7) + keybinds (1) = 8");
+    fn test_calculate_input_area_height_includes_keybinds_and_padding() {
+        assert_eq!(calculate_input_area_height(1), 6, "Box (3) + keybinds (1) + padding (2) = 6");
+        assert_eq!(calculate_input_area_height(5), 10, "Box (7) + keybinds (1) + padding (2) = 10");
     }
 
     // ========================================================================
