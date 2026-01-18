@@ -236,6 +236,9 @@ pub struct App {
     /// Dirty flag: when true, the UI needs to be redrawn.
     /// Set to true on state mutations, cleared after each draw.
     pub needs_redraw: bool,
+    /// Tracks whether the current visible messages contain any hyperlinks.
+    /// Used to conditionally show the link interaction hint.
+    pub has_visible_links: bool,
 }
 
 impl App {
@@ -312,6 +315,7 @@ impl App {
             markdown_cache: MarkdownCache::new(),
             cached_message_heights: std::collections::HashMap::new(),
             needs_redraw: true, // Start with redraw needed
+            has_visible_links: false,
         })
     }
 

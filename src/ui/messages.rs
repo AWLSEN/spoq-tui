@@ -1312,6 +1312,9 @@ fn estimate_message_height(
 /// visible viewport plus a small buffer, significantly improving performance
 /// for long conversation threads.
 pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &LayoutContext) {
+    // Reset link visibility flag at the start of each render pass
+    app.has_visible_links = false;
+
     let inner = inner_rect(area, 1);
     let viewport_height = inner.height as usize;
     let viewport_width = inner.width as usize;
@@ -1549,6 +1552,20 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         viewport_width,
         viewport_height
     ));
+
+    // Detect if any visible lines contain hyperlinks (OSC 8 escape sequences)
+    // OSC 8 format starts with: \x1b]8;;
+    for line in &lines {
+        for span in &line.spans {
+            if span.content.contains("\x1b]8;;") {
+                app.has_visible_links = true;
+                break;
+            }
+        }
+        if app.has_visible_links {
+            break;
+        }
+    }
 
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
