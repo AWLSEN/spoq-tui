@@ -29,6 +29,29 @@ use super::theme::{
 // Line Wrapping with Prefix
 // ============================================================================
 
+/// Apply full-width background color to a single line.
+/// Pads with spaces to reach max_width and applies bg to all spans.
+fn apply_background_to_line(line: &mut Line<'static>, bg_color: Color, max_width: usize) {
+    // Calculate current visual width using unicode width
+    let current_width: usize = line.spans.iter()
+        .map(|s| s.content.width())
+        .sum();
+
+    // Apply background to all existing spans
+    for span in line.spans.iter_mut() {
+        span.style = span.style.bg(bg_color);
+    }
+
+    // Pad with background-colored spaces to fill full width
+    let padding = max_width.saturating_sub(current_width);
+    if padding > 0 {
+        line.spans.push(Span::styled(
+            " ".repeat(padding),
+            Style::default().bg(bg_color),
+        ));
+    }
+}
+
 /// Wrap a line of styled spans to fit within max_width, prepending a prefix to each wrapped line.
 ///
 /// This handles the case where text content is longer than the viewport width.
