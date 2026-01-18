@@ -375,6 +375,16 @@ pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App, ctx:
         }
     }
 
+    // Add working directory line if present
+    if let Some(thread) = thread_info {
+        if let Some(wd) = thread.working_directory.as_ref() {
+            title_lines.push(Line::from(Span::styled(
+                format!("  📁 {}", wd),
+                Style::default().fg(COLOR_DIM),
+            )));
+        }
+    }
+
     let title_widget = Paragraph::new(title_lines).block(header_block);
     frame.render_widget(title_widget, header_chunks[0]);
 
