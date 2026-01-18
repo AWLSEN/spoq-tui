@@ -1372,9 +1372,9 @@ mod tests {
         let keybinds = build_contextual_keybinds(&app);
         let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
 
-        // Should NOT show mode cycling hint for normal thread
-        assert!(!content.contains("Shift+Tab"));
-        assert!(!content.contains("cycle mode"));
+        // Round 2: Mode cycling is now shown for ALL threads (Conversation and Programming)
+        assert!(content.contains("Shift+Tab") || content.contains("S+Tab"));
+        assert!(content.contains("cycle mode") || content.contains("mode"));
     }
 
     // ============= Phase 10: Input Border Tests =============
