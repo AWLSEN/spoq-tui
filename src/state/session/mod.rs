@@ -7,9 +7,9 @@
 
 mod question_data;
 mod question_state;
-mod session;
+mod session_state;
 
 // Re-export all public types at module level
 pub use question_data::{AskUserQuestionData, Question, QuestionOption};
 pub use question_state::AskUserQuestionState;
-pub use session::{PermissionRequest, SessionState};
+pub use session_state::{PermissionRequest, SessionState};

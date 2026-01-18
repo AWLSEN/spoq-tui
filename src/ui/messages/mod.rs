@@ -12,8 +12,11 @@ mod tool_events;
 mod virtualization;
 
 // Re-export public APIs at crate::ui::messages::*
+// Note: Some exports are only used in tests
+#[allow(unused_imports)]
 pub use subagent_events::{render_subagent_event, render_subagent_events_block, TreeConnector};
 pub use text_wrapping::estimate_wrapped_line_count;
+#[allow(unused_imports)]
 pub use tool_events::{render_tool_event, truncate_preview};
 
 // Used by this module's main functions
@@ -64,11 +67,7 @@ pub fn render_single_message(
     }
 
     // Use vertical bar prefix for all messages (user and assistant)
-    let (label, label_style) = if message.role == MessageRole::User {
-        ("\u{2502} ", Style::default().fg(COLOR_DIM))
-    } else {
-        ("\u{2502} ", Style::default().fg(COLOR_DIM))
-    };
+    let (label, label_style) = ("\u{2502} ", Style::default().fg(COLOR_DIM));
 
     // Calculate max width for wrapping
     let max_width = ctx.text_wrap_width(0) as usize;

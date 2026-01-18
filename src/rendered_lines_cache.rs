@@ -12,22 +12,12 @@ pub type RenderCacheKey = (String, i64, u64);
 ///
 /// The cache tracks viewport width and automatically invalidates
 /// when the terminal is resized, ensuring wrapped lines are correct.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct RenderedLinesCache {
     cache: HashMap<RenderCacheKey, Vec<Line<'static>>>,
     access_order: Vec<RenderCacheKey>,
     /// Last viewport width used for rendering. Cache is cleared on width change.
     last_viewport_width: Option<u16>,
-}
-
-impl Default for RenderedLinesCache {
-    fn default() -> Self {
-        Self {
-            cache: HashMap::new(),
-            access_order: Vec::new(),
-            last_viewport_width: None,
-        }
-    }
 }
 
 impl RenderedLinesCache {

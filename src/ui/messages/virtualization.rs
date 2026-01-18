@@ -231,7 +231,7 @@ mod tests {
         assert_eq!(start, 0); // Start at 0 (can't go negative with buffer)
         // Messages 0, 1, 2 are visible (lines 0-29 cover messages up to index 2)
         // Plus VIRTUALIZATION_BUFFER (5) = min(2 + 5, 10) = 7
-        assert!(end >= 3 && end <= 10);
+        assert!((3..=10).contains(&end));
     }
 
     #[test]

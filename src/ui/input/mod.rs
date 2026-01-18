@@ -239,10 +239,6 @@ mod tests {
     use super::*;
     use crate::models::Folder;
 
-    fn create_test_app() -> App {
-        App::default()
-    }
-
     #[test]
     fn test_build_input_section_basic_structure() {
         let app = App::default();
@@ -283,8 +279,10 @@ mod tests {
 
     #[test]
     fn test_build_input_section_plan_mode_indicator() {
-        let mut app = App::default();
-        app.permission_mode = PermissionMode::Plan;
+        let app = App {
+            permission_mode: PermissionMode::Plan,
+            ..Default::default()
+        };
 
         let lines = build_input_section(&app, 80);
 
@@ -316,8 +314,10 @@ mod tests {
 
     #[test]
     fn test_build_input_section_execute_mode_indicator() {
-        let mut app = App::default();
-        app.permission_mode = PermissionMode::BypassPermissions;
+        let app = App {
+            permission_mode: PermissionMode::BypassPermissions,
+            ..Default::default()
+        };
 
         let lines = build_input_section(&app, 80);
 
@@ -349,11 +349,13 @@ mod tests {
 
     #[test]
     fn test_build_input_section_folder_does_not_affect_structure() {
-        let mut app = App::default();
-        app.selected_folder = Some(Folder {
-            name: "my-project".to_string(),
-            path: "/path/to/project".to_string(),
-        });
+        let app = App {
+            selected_folder: Some(Folder {
+                name: "my-project".to_string(),
+                path: "/path/to/project".to_string(),
+            }),
+            ..Default::default()
+        };
 
         let lines = build_input_section(&app, 80);
 
@@ -367,12 +369,14 @@ mod tests {
 
     #[test]
     fn test_build_input_section_plan_mode_with_folder() {
-        let mut app = App::default();
-        app.permission_mode = PermissionMode::Plan;
-        app.selected_folder = Some(Folder {
-            name: "my-project".to_string(),
-            path: "/path/to/project".to_string(),
-        });
+        let app = App {
+            permission_mode: PermissionMode::Plan,
+            selected_folder: Some(Folder {
+                name: "my-project".to_string(),
+                path: "/path/to/project".to_string(),
+            }),
+            ..Default::default()
+        };
 
         let lines = build_input_section(&app, 80);
 

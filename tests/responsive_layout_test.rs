@@ -1184,7 +1184,7 @@ mod copy_clone {
     #[test]
     fn test_layout_context_clone() {
         let original = LayoutContext::new(100, 50);
-        let cloned = original.clone();
+        let cloned = original;
         assert_eq!(original.width, cloned.width);
         assert_eq!(original.height, cloned.height);
     }
@@ -1199,7 +1199,7 @@ mod copy_clone {
     #[test]
     fn test_size_category_clone() {
         let original = SizeCategory::Large;
-        let cloned = original.clone();
+        let cloned = original;
         assert_eq!(original, cloned);
     }
 }

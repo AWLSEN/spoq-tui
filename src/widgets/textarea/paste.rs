@@ -14,7 +14,7 @@ use super::TextAreaInput;
 /// full content on submit. Tokens behave atomically - backspace/delete removes
 /// the entire token, and the cursor cannot be positioned inside them.
 #[derive(Debug, Clone)]
-pub(super) struct PasteToken {
+pub(in crate::widgets) struct PasteToken {
     /// Line number where this token is located
     pub(super) line: usize,
     /// Starting column (inclusive)

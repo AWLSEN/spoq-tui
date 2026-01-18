@@ -171,7 +171,7 @@ pub fn render_folder_picker(frame: &mut Frame, app: &App, input_area: Rect) {
             let path = &folder.path;
 
             // Calculate how much space we have for the path
-            let marker_len = if is_selected { 2 } else { 2 };
+            let marker_len = 2;
             let name_len = name.chars().count();
             let separator_len = 2; // "  " between name and path
             let remaining = available_width.saturating_sub(marker_len + name_len + separator_len);

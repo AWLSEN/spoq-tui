@@ -17,7 +17,7 @@ fn test_complete_streaming_workflow_with_multiple_tokens() {
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].role, MessageRole::User);
     assert_eq!(messages[1].role, MessageRole::Assistant);
-    assert_eq!(messages[1].is_streaming, true);
+    assert!(messages[1].is_streaming);
     assert_eq!(messages[1].partial_content, "");
 
     // Append multiple tokens to simulate real streaming
@@ -40,7 +40,7 @@ fn test_complete_streaming_workflow_with_multiple_tokens() {
     let messages = cache.get_messages(&thread_id).unwrap();
     assert_eq!(messages[1].id, 42);
     assert_eq!(messages[1].content, "Rust is a systems programming language.");
-    assert_eq!(messages[1].is_streaming, false);
+    assert!(!messages[1].is_streaming);
     assert_eq!(messages[1].partial_content, "");
 }
 

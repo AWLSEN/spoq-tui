@@ -338,7 +338,7 @@ mod tests {
     fn test_max_visible_threads_normal() {
         let ctx = LayoutContext::new(120, 40);
         let result = calculate_max_visible_threads(&ctx);
-        assert!(result >= 3 && result <= 10);
+        assert!((3..=10).contains(&result));
     }
 
     #[test]

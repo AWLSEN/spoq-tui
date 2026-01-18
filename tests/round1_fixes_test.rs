@@ -329,7 +329,7 @@ fn test_set_messages_preserves_streaming_messages() {
     assert_eq!(messages.len(), 3, "Should have 2 backend + 1 streaming message");
     assert_eq!(messages[0].id, 1, "First message should be backend msg 1");
     assert_eq!(messages[1].id, 2, "Second message should be backend msg 2");
-    assert_eq!(messages[2].is_streaming, true, "Last message should be streaming");
+    assert!(messages[2].is_streaming, "Last message should be streaming");
     assert_eq!(messages[2].partial_content, "Streaming content");
 }
 
@@ -565,7 +565,7 @@ fn test_set_messages_merge_order_backend_then_local() {
     assert_eq!(messages.len(), 3);
     assert_eq!(messages[0].id, 1, "First should be backend");
     assert_eq!(messages[1].content, "Temp", "Then local temp message");
-    assert_eq!(messages[2].is_streaming, true, "Then streaming message");
+    assert!(messages[2].is_streaming, "Then streaming message");
 }
 
 #[test]
@@ -597,5 +597,5 @@ fn test_set_messages_empty_backend_preserves_local() {
     // Local streaming message should still be there
     let messages = cache.get_messages(&thread_id).unwrap();
     assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].is_streaming, true);
+    assert!(messages[0].is_streaming);
 }

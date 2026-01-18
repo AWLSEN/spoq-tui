@@ -748,7 +748,7 @@ mod tests {
                 assert_eq!(name, "bash");
                 assert_eq!(input, serde_json::json!({"command": "ls"}));
                 assert_eq!(result, None);
-                assert_eq!(is_error, false);
+                assert!(!is_error);
             }
             _ => panic!("Expected ToolUse variant"),
         }

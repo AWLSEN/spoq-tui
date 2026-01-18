@@ -153,7 +153,7 @@ impl<'a> TextAreaInput<'a> {
                 visual_lines += 1;
             } else {
                 // Calculate how many visual lines this logical line needs
-                visual_lines += (line_width + content_width - 1) / content_width;
+                visual_lines += line_width.div_ceil(content_width);
             }
         }
         visual_lines.max(1)

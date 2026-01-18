@@ -297,7 +297,7 @@ mod tests {
         let lines = render_markdown("This is **bold** text");
         assert_eq!(lines.len(), 1);
         // Should have: "This is ", "bold", " text"
-        assert!(lines[0].spans.len() >= 1);
+        assert!(!lines[0].spans.is_empty());
 
         // Find the bold span
         let bold_span = lines[0]

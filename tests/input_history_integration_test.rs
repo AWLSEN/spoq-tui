@@ -308,7 +308,7 @@ fn test_history_save_and_load() {
     history.add("command 3".to_string());
 
     // Manually write to temp file (simulating save)
-    let entries = vec!["command 1", "command 2", "command 3"];
+    let entries = ["command 1", "command 2", "command 3"];
     fs::write(&history_file, entries.join("\n")).expect("Failed to write history");
 
     // Read back and verify

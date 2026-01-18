@@ -336,9 +336,11 @@ mod tests {
 
     #[test]
     fn test_navigate_to_command_deck_from_conversation() {
-        let mut app = App::default();
-        app.screen = Screen::Conversation;
-        app.active_thread_id = Some("thread-123".to_string());
+        let mut app = App {
+            screen: Screen::Conversation,
+            active_thread_id: Some("thread-123".to_string()),
+            ..Default::default()
+        };
         app.textarea.insert_char('T');
         app.textarea.insert_char('e');
         app.textarea.insert_char('s');
@@ -498,12 +500,11 @@ mod tests {
         use crate::models::ThreadType;
         // This is the key bug fix test: even if active_thread_id is set,
         // submitting from CommandDeck should create a NEW thread, not continue.
-        let mut app = App::default();
-
-        // Simulate a stale active_thread_id (e.g., leftover from previous session)
-        app.active_thread_id = Some("stale-thread-id".to_string());
-        // But we're on CommandDeck, not Conversation
-        app.screen = Screen::CommandDeck;
+        let mut app = App {
+            active_thread_id: Some("stale-thread-id".to_string()),
+            screen: Screen::CommandDeck,
+            ..Default::default()
+        };
 
         app.textarea.insert_char('N');
         app.textarea.insert_char('e');
@@ -666,11 +667,11 @@ mod tests {
     #[tokio::test]
     async fn test_submit_input_handles_deleted_thread() {
         use crate::models::ThreadType;
-        let mut app = App::default();
-
-        // Set active thread to non-existent (simulates deleted thread)
-        app.active_thread_id = Some("deleted-thread".to_string());
-        app.screen = Screen::Conversation;
+        let mut app = App {
+            active_thread_id: Some("deleted-thread".to_string()),
+            screen: Screen::Conversation,
+            ..Default::default()
+        };
 
         app.textarea.insert_char('T');
         app.textarea.insert_char('e');
@@ -824,8 +825,10 @@ mod tests {
 
     #[test]
     fn test_handle_message_connection_status_connected() {
-        let mut app = App::default();
-        app.stream_error = Some("Previous error".to_string());
+        let mut app = App {
+            stream_error: Some("Previous error".to_string()),
+            ..Default::default()
+        };
         assert!(!app.connection_status);
 
         // Send connection status update
@@ -838,8 +841,10 @@ mod tests {
 
     #[test]
     fn test_handle_message_connection_status_disconnected() {
-        let mut app = App::default();
-        app.connection_status = true;
+        let mut app = App {
+            connection_status: true,
+            ..Default::default()
+        };
 
         // Send disconnection status
         app.handle_message(AppMessage::ConnectionStatus(false));
@@ -858,8 +863,10 @@ mod tests {
 
     #[test]
     fn test_clear_error() {
-        let mut app = App::default();
-        app.stream_error = Some("Test error".to_string());
+        let mut app = App {
+            stream_error: Some("Test error".to_string()),
+            ..Default::default()
+        };
 
         app.clear_error();
 
@@ -1144,8 +1151,10 @@ mod tests {
 
     #[test]
     fn test_cycle_permission_mode_from_plan_to_bypass() {
-        let mut app = App::default();
-        app.permission_mode = PermissionMode::Plan;
+        let mut app = App {
+            permission_mode: PermissionMode::Plan,
+            ..Default::default()
+        };
 
         app.cycle_permission_mode();
 
@@ -1154,8 +1163,10 @@ mod tests {
 
     #[test]
     fn test_cycle_permission_mode_from_bypass_to_default() {
-        let mut app = App::default();
-        app.permission_mode = PermissionMode::BypassPermissions;
+        let mut app = App {
+            permission_mode: PermissionMode::BypassPermissions,
+            ..Default::default()
+        };
 
         app.cycle_permission_mode();
 
@@ -1262,8 +1273,10 @@ mod tests {
 
     #[test]
     fn test_is_active_thread_programming_returns_false_for_nonexistent_thread() {
-        let mut app = App::default();
-        app.active_thread_id = Some("nonexistent-thread".to_string());
+        let app = App {
+            active_thread_id: Some("nonexistent-thread".to_string()),
+            ..Default::default()
+        };
 
         assert!(!app.is_active_thread_programming());
     }
@@ -1624,10 +1637,10 @@ mod tests {
     #[test]
     fn test_permission_mode_persists_across_thread_switches() {
         use crate::models::ThreadType;
-        let mut app = App::default();
-
-        // Set permission mode
-        app.permission_mode = PermissionMode::Plan;
+        let mut app = App {
+            permission_mode: PermissionMode::Plan,
+            ..Default::default()
+        };
 
         // Create and switch to a programming thread
         let thread1 = crate::models::Thread {
@@ -1676,10 +1689,10 @@ mod tests {
 
     #[test]
     fn test_permission_mode_persists_after_navigate_to_command_deck() {
-        let mut app = App::default();
-
-        // Set permission mode
-        app.permission_mode = PermissionMode::BypassPermissions;
+        let mut app = App {
+            permission_mode: PermissionMode::BypassPermissions,
+            ..Default::default()
+        };
 
         // Navigate to command deck
         app.navigate_to_command_deck();
@@ -1839,8 +1852,10 @@ mod tests {
 
     #[test]
     fn test_is_streaming_returns_false_for_nonexistent_thread() {
-        let mut app = App::default();
-        app.active_thread_id = Some("nonexistent-thread".to_string());
+        let app = App {
+            active_thread_id: Some("nonexistent-thread".to_string()),
+            ..Default::default()
+        };
 
         assert!(!app.is_streaming());
     }
@@ -2813,10 +2828,10 @@ mod tests {
     #[test]
     fn test_handle_message_ws_disconnected() {
         use crate::websocket::WsConnectionState;
-        let mut app = App::default();
-
-        // Start with Connected state
-        app.ws_connection_state = WsConnectionState::Connected;
+        let mut app = App {
+            ws_connection_state: WsConnectionState::Connected,
+            ..Default::default()
+        };
 
         // Handle WsDisconnected message
         app.handle_message(AppMessage::WsDisconnected);
@@ -2969,10 +2984,10 @@ mod tests {
     #[tokio::test]
     async fn test_submit_input_preserves_permission_mode_in_new_thread() {
         use crate::models::{ThreadType, PermissionMode};
-        let mut app = App::default();
-
-        // Set permission mode to Plan
-        app.permission_mode = PermissionMode::Plan;
+        let mut app = App {
+            permission_mode: PermissionMode::Plan,
+            ..Default::default()
+        };
 
         // Verify app is in initial state
         assert_eq!(app.screen, Screen::CommandDeck);
@@ -3001,10 +3016,10 @@ mod tests {
     #[tokio::test]
     async fn test_submit_input_preserves_permission_mode_in_continuing_thread() {
         use crate::models::{ThreadType, PermissionMode};
-        let mut app = App::default();
-
-        // Set permission mode to BypassPermissions
-        app.permission_mode = PermissionMode::BypassPermissions;
+        let mut app = App {
+            permission_mode: PermissionMode::BypassPermissions,
+            ..Default::default()
+        };
 
         // Create an existing thread
         let existing_id = "real-thread-456".to_string();
@@ -3047,10 +3062,10 @@ mod tests {
     #[tokio::test]
     async fn test_submit_input_uses_provided_thread_type() {
         use crate::models::{ThreadType, PermissionMode};
-        let mut app = App::default();
-
-        // Set permission mode
-        app.permission_mode = PermissionMode::Default;
+        let mut app = App {
+            permission_mode: PermissionMode::Default,
+            ..Default::default()
+        };
 
         // Test with Programming thread type
         app.textarea.insert_char('C');

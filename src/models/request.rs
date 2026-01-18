@@ -135,7 +135,7 @@ mod tests {
     #[test]
     fn test_permission_mode_clone() {
         let original = PermissionMode::BypassPermissions;
-        let cloned = original.clone();
+        let cloned = original;
         assert_eq!(original, cloned);
     }
 

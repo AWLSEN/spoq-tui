@@ -224,8 +224,7 @@ async fn test_fetch_thread_with_messages_method_exists() {
     // Result should be Err due to connection failure, or Ok with ThreadDetailResponse
     match result {
         Ok(_response) => {
-            // If it succeeds (unlikely in test env), verify structure exists
-            assert!(true);
+            // If it succeeds (unlikely in test env), verify structure exists - nothing more to check
         }
         Err(_) => {
             // Expected - connection failed

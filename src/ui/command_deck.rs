@@ -489,8 +489,10 @@ mod tests {
     fn test_mode_indicator_shown_for_plan_mode() {
         use crate::models::PermissionMode;
 
-        let mut app = App::default();
-        app.permission_mode = PermissionMode::Plan;
+        let app = App {
+            permission_mode: PermissionMode::Plan,
+            ..Default::default()
+        };
 
         // create_mode_indicator_line should return Some for Plan mode
         let indicator = create_mode_indicator_line(app.permission_mode);
@@ -506,8 +508,10 @@ mod tests {
     fn test_mode_indicator_shown_for_execute_mode() {
         use crate::models::PermissionMode;
 
-        let mut app = App::default();
-        app.permission_mode = PermissionMode::BypassPermissions;
+        let app = App {
+            permission_mode: PermissionMode::BypassPermissions,
+            ..Default::default()
+        };
 
         // create_mode_indicator_line should return Some for BypassPermissions mode
         let indicator = create_mode_indicator_line(app.permission_mode);

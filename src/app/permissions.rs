@@ -928,19 +928,6 @@ mod tests {
         assert!(json["result"]["data"]["message"].is_null());
     }
 
-    #[test]
-    fn test_permission_timeout_constant() {
-        // Verify the constant is reasonable (should be < 55s server timeout)
-        assert!(PERMISSION_TIMEOUT_SECS < 55);
-        assert!(PERMISSION_TIMEOUT_SECS >= 45);
-    }
-
-    #[test]
-    fn test_retry_delay_constant() {
-        // Verify retry delay is reasonable
-        assert!(WS_RETRY_DELAY_MS >= 100);
-        assert!(WS_RETRY_DELAY_MS <= 1000);
-    }
 
     #[tokio::test]
     async fn test_cancel_permission_sends_cancel_message() {

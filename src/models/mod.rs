@@ -317,7 +317,7 @@ mod tests {
     #[test]
     fn test_thread_type_clone() {
         let original = ThreadType::Programming;
-        let cloned = original.clone();
+        let cloned = original;
         assert_eq!(original, cloned);
     }
 

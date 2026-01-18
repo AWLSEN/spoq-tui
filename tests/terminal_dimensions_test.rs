@@ -365,7 +365,7 @@ fn test_layout_context_copy() {
 #[test]
 fn test_layout_context_clone() {
     let ctx = LayoutContext::new(100, 50);
-    let cloned = ctx.clone();
+    let cloned = ctx;
 
     assert_eq!(ctx.width, cloned.width);
     assert_eq!(ctx.height, cloned.height);
