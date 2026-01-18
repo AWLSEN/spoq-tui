@@ -1086,6 +1086,7 @@ pub fn calculate_skip_lines(message_heights: &[MessageHeight], start_index: usiz
 /// It handles both streaming and completed messages, using the cache
 /// for completed messages when available.
 fn render_single_message(
+    thread_id: &str,
     message: &Message,
     app: &mut App,
     ctx: &LayoutContext,
@@ -1275,6 +1276,7 @@ fn estimate_message_height_fast(message: &Message, viewport_width: usize) -> usi
 /// an estimate based on content length and viewport width.
 #[allow(dead_code)]
 fn estimate_message_height(
+    thread_id: &str,
     message: &Message,
     app: &mut App,
     viewport_width: usize,
@@ -1292,7 +1294,7 @@ fn estimate_message_height(
 
     // For more accurate estimates on completed messages, render and cache
     if !message.is_streaming && estimated_lines > 10 {
-        let rendered = render_single_message(message, app, ctx);
+        let rendered = render_single_message(thread_id, message, app, ctx);
         return estimate_wrapped_line_count(&rendered, viewport_width);
     }
 
@@ -1516,8 +1518,10 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     }
 
     // Render visible messages (using the cloned subset)
+    // Extract thread_id for passing to render_single_message
+    let thread_id = app.active_thread_id.clone().unwrap_or_default();
     for message in visible_messages.iter() {
-        let message_lines = render_single_message(message, app, ctx);
+        let message_lines = render_single_message(&thread_id, message, app, ctx);
         lines.extend(message_lines);
     }
 
