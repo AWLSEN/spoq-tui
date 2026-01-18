@@ -16,13 +16,6 @@ pub enum PermissionMode {
     BypassPermissions,
 }
 
-/// Metadata for stream requests
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
-pub struct StreamMetadata {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub working_directory: Option<String>,
-}
-
 /// Request structure for streaming API calls
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StreamRequest {
@@ -42,9 +35,9 @@ pub struct StreamRequest {
     /// Permission mode for tool execution
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<PermissionMode>,
-    /// Additional metadata for the request
+    /// Working directory for the request
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<StreamMetadata>,
+    pub working_directory: Option<String>,
 }
 
 impl StreamRequest {
@@ -57,7 +50,7 @@ impl StreamRequest {
             reply_to: None,
             thread_type: None,
             permission_mode: None,
-            metadata: None,
+            working_directory: None,
         }
     }
 
@@ -70,7 +63,7 @@ impl StreamRequest {
             reply_to: None,
             thread_type: None,
             permission_mode: None,
-            metadata: None,
+            working_directory: None,
         }
     }
 
@@ -84,7 +77,7 @@ impl StreamRequest {
             reply_to: Some(reply_to),
             thread_type: None,
             permission_mode: None,
-            metadata: None,
+            working_directory: None,
         }
     }
 
@@ -102,9 +95,7 @@ impl StreamRequest {
 
     /// Set working directory for this request (builder pattern)
     pub fn with_working_directory(mut self, path: Option<String>) -> Self {
-        if let Some(p) = path {
-            self.metadata = Some(StreamMetadata { working_directory: Some(p) });
-        }
+        self.working_directory = path;
         self
     }
 }
@@ -234,30 +225,14 @@ mod tests {
         assert_eq!(request.permission_mode, Some(PermissionMode::Plan));
     }
 
-    // ============= StreamMetadata Tests =============
-
-    #[test]
-    fn test_stream_metadata_default() {
-        let metadata = StreamMetadata::default();
-        assert_eq!(metadata.working_directory, None);
-    }
-
-    #[test]
-    fn test_stream_metadata_with_working_directory() {
-        let metadata = StreamMetadata {
-            working_directory: Some("/Users/test/project".to_string()),
-        };
-        assert_eq!(metadata.working_directory, Some("/Users/test/project".to_string()));
-    }
+    // ============= StreamRequest Working Directory Tests =============
 
     #[test]
     fn test_stream_request_with_working_directory() {
         let request = StreamRequest::new("Test prompt".to_string())
             .with_working_directory(Some("/Users/test/my-project".to_string()));
 
-        assert!(request.metadata.is_some());
-        let metadata = request.metadata.unwrap();
-        assert_eq!(metadata.working_directory, Some("/Users/test/my-project".to_string()));
+        assert_eq!(request.working_directory, Some("/Users/test/my-project".to_string()));
     }
 
     #[test]
@@ -265,8 +240,7 @@ mod tests {
         let request = StreamRequest::new("Test prompt".to_string())
             .with_working_directory(None);
 
-        // When working_directory is None, metadata should not be set
-        assert!(request.metadata.is_none());
+        assert!(request.working_directory.is_none());
     }
 
     #[test]
@@ -279,17 +253,16 @@ mod tests {
         assert!(json.contains("/home/user/project"));
 
         let deserialized: StreamRequest = serde_json::from_str(&json).expect("Failed to deserialize");
-        assert_eq!(request.metadata, deserialized.metadata);
+        assert_eq!(request.working_directory, deserialized.working_directory);
     }
 
     #[test]
-    fn test_stream_request_without_working_directory_omits_metadata() {
+    fn test_stream_request_without_working_directory_omits_field() {
         let request = StreamRequest::new("Test".to_string());
-        assert!(request.metadata.is_none());
+        assert!(request.working_directory.is_none());
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
-        // metadata should be omitted entirely due to skip_serializing_if
-        assert!(!json.contains("metadata"));
+        // working_directory should be omitted entirely due to skip_serializing_if
         assert!(!json.contains("working_directory"));
     }
 
@@ -303,10 +276,6 @@ mod tests {
         assert_eq!(request.prompt, "Code task");
         assert_eq!(request.thread_type, Some(ThreadType::Programming));
         assert_eq!(request.permission_mode, Some(PermissionMode::Default));
-        assert!(request.metadata.is_some());
-        assert_eq!(
-            request.metadata.unwrap().working_directory,
-            Some("/Users/dev/project".to_string())
-        );
+        assert_eq!(request.working_directory, Some("/Users/dev/project".to_string()));
     }
 }

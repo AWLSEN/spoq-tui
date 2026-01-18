@@ -612,7 +612,7 @@ mod tests {
             reply_to: Some(100),
             thread_type: Some(ThreadType::Programming),
             permission_mode: Some(PermissionMode::Plan),
-            metadata: None,
+            working_directory: None,
         };
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
