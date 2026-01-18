@@ -1629,24 +1629,26 @@ mod tests {
 
     #[test]
     fn test_get_tool_icon_known_tools() {
-        assert_eq!(get_tool_icon("Read"), "📄");
-        assert_eq!(get_tool_icon("Write"), "📝");
-        assert_eq!(get_tool_icon("Edit"), "✏️");
-        assert_eq!(get_tool_icon("Bash"), "$");
-        assert_eq!(get_tool_icon("Grep"), "🔍");
-        assert_eq!(get_tool_icon("Glob"), "🔍");
-        assert_eq!(get_tool_icon("Task"), "🤖");
-        assert_eq!(get_tool_icon("WebFetch"), "🌐");
-        assert_eq!(get_tool_icon("WebSearch"), "🌐");
-        assert_eq!(get_tool_icon("TodoWrite"), "📋");
-        assert_eq!(get_tool_icon("AskUserQuestion"), "❓");
-        assert_eq!(get_tool_icon("NotebookEdit"), "📓");
+        // Icons are disabled for cleaner display
+        assert_eq!(get_tool_icon("Read"), "");
+        assert_eq!(get_tool_icon("Write"), "");
+        assert_eq!(get_tool_icon("Edit"), "");
+        assert_eq!(get_tool_icon("Bash"), "");
+        assert_eq!(get_tool_icon("Grep"), "");
+        assert_eq!(get_tool_icon("Glob"), "");
+        assert_eq!(get_tool_icon("Task"), "");
+        assert_eq!(get_tool_icon("WebFetch"), "");
+        assert_eq!(get_tool_icon("WebSearch"), "");
+        assert_eq!(get_tool_icon("TodoWrite"), "");
+        assert_eq!(get_tool_icon("AskUserQuestion"), "");
+        assert_eq!(get_tool_icon("NotebookEdit"), "");
     }
 
     #[test]
     fn test_get_tool_icon_unknown_tool() {
-        assert_eq!(get_tool_icon("UnknownTool"), "⚙️");
-        assert_eq!(get_tool_icon("CustomFunction"), "⚙️");
+        // Icons are disabled for cleaner display
+        assert_eq!(get_tool_icon("UnknownTool"), "");
+        assert_eq!(get_tool_icon("CustomFunction"), "");
     }
 
     #[test]
@@ -1954,9 +1956,6 @@ mod tests {
         // Verify the line contains expected elements
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
-        // Should contain icon
-        assert!(line_text.contains("📄"));
-
         // Should contain formatted args
         assert!(line_text.contains("Reading /path/to/file.rs"));
 
@@ -1984,9 +1983,6 @@ mod tests {
         // Verify the line contains expected elements
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
-        // Should contain Bash icon ($ not ⚙️)
-        assert!(line_text.contains("$"));
-
         // Should contain command
         assert!(line_text.contains("invalid_command"));
 
@@ -2008,9 +2004,6 @@ mod tests {
 
         let line_text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
 
-        // Should contain icon
-        assert!(line_text.contains("🔍"));
-
         // Should contain search pattern
         assert!(line_text.contains("Searching 'test'"));
 
@@ -2028,7 +2021,6 @@ mod tests {
         let ctx = LayoutContext::new(120, 40);
         let line1 = render_tool_event(&tool, 0, &ctx);
         let text1: String = line1.spans.iter().map(|s| s.content.as_ref()).collect();
-        assert!(text1.contains("📝"));  // Write icon is 📝 not ✍
         assert!(text1.contains("Write")); // Default to tool name
 
         // Step 2: Args stream in
@@ -2053,12 +2045,13 @@ mod tests {
     fn test_get_subagent_icon() {
         use helpers::get_subagent_icon;
 
-        assert_eq!(get_subagent_icon("Explore"), "🔍");
-        assert_eq!(get_subagent_icon("Bash"), "$");
-        assert_eq!(get_subagent_icon("Plan"), "📋");
-        assert_eq!(get_subagent_icon("general-purpose"), "🤖");
-        assert_eq!(get_subagent_icon("unknown"), "●");
-        assert_eq!(get_subagent_icon("CustomAgent"), "●");
+        // Icons are disabled for cleaner display
+        assert_eq!(get_subagent_icon("Explore"), "");
+        assert_eq!(get_subagent_icon("Bash"), "");
+        assert_eq!(get_subagent_icon("Plan"), "");
+        assert_eq!(get_subagent_icon("general-purpose"), "");
+        assert_eq!(get_subagent_icon("unknown"), "");
+        assert_eq!(get_subagent_icon("CustomAgent"), "");
     }
 
     #[test]

@@ -139,9 +139,8 @@ where
 
     // Disable alternate scroll mode before leaving
     // Escape sequence: CSI ? 1007 l (DEC private mode reset)
-    use std::io::Write;
     let _ = write!(terminal.backend_mut(), "\x1b[?1007l");
-    let _ = std::io::Write::flush(terminal.backend_mut());
+    let _ = io::Write::flush(terminal.backend_mut());
 
     disable_raw_mode()?;
     execute!(
