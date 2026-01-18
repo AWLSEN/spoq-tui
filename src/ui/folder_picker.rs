@@ -13,13 +13,17 @@ use ratatui::{
 
 use crate::app::App;
 
-use super::layout::LayoutContext;
 use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIALOG_BG, COLOR_DIM, COLOR_HEADER};
+
+#[cfg(test)]
+use super::layout::LayoutContext;
 
 /// Maximum visible rows in the folder picker
 const MAX_VISIBLE_ROWS: usize = 6;
 
 /// Calculate dialog width based on terminal dimensions (~60% width)
+/// NOTE: This function is only used in tests after Round 1 refactoring
+#[cfg(test)]
 fn calculate_dialog_width(ctx: &LayoutContext, area_width: u16) -> u16 {
     if ctx.is_extra_small() {
         // Extra small: take most of the screen width, leave 4 cols margin
