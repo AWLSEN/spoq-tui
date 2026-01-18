@@ -157,8 +157,8 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
 
     // Always show basic navigation
     if app.screen == Screen::Conversation {
-        if app.is_active_thread_programming() && !is_extra_small {
-            // Programming thread: show mode cycling hint (skip on extra small)
+        // Show mode cycling hint on all threads (skip on extra small)
+        if !is_extra_small {
             if is_narrow {
                 spans.push(Span::styled("[S+Tab]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" mode | "));
