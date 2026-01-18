@@ -1,287 +1,14 @@
-//! SSE (Server-Sent Events) stream parser
+//! SSE stream parsing logic
 //!
-//! Parses SSE format from the Conductor backend streaming API.
-//! SSE format consists of:
-//! - `event: <type>` - event type line
-//! - `data: <json>` - data payload line
-//! - Empty line - signals end of event
-//! - Lines starting with `:` - comments (ignored)
+//! Contains the stateful SseParser for accumulating lines and emitting events,
+//! as well as the core parsing functions.
 
-use serde::{Deserialize, Serialize};
-
-/// Represents a parsed SSE line
-#[derive(Debug, Clone, PartialEq)]
-pub enum SseLine {
-    /// Event type declaration (e.g., "event: content")
-    Event(String),
-    /// Data payload (e.g., "data: {\"text\": \"hello\"}")
-    Data(String),
-    /// Empty line - signals end of event
-    Empty,
-    /// Comment line (starts with ':')
-    Comment(String),
-}
-
-/// Metadata included with SSE events from the backend.
-/// Backend sends these fields flattened at root level of each event.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct SseEventMeta {
-    /// Sequence number for ordering events (auto-increments per event)
-    pub seq: Option<u64>,
-    /// Unix timestamp in milliseconds
-    pub timestamp: Option<u64>,
-    /// Session ID for the current streaming session
-    pub session_id: Option<String>,
-    /// Thread ID this event belongs to
-    pub thread_id: Option<String>,
-}
-
-/// Typed SSE events from the Conductor API
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum SseEvent {
-    /// Content chunk for streaming text
-    Content {
-        text: String,
-        #[serde(skip)]
-        meta: SseEventMeta,
-    },
-    /// Thread metadata when a new thread is created or identified
-    ThreadInfo {
-        thread_id: String,
-        #[serde(default)]
-        title: Option<String>,
-    },
-    /// Message metadata
-    MessageInfo {
-        message_id: i64,
-    },
-    /// Stream completed successfully
-    Done,
-    /// Error from the backend
-    Error {
-        message: String,
-        #[serde(default)]
-        code: Option<String>,
-    },
-    /// Heartbeat/keepalive
-    Ping,
-    /// Skills injected event
-    SkillsInjected {
-        skills: Vec<String>,
-    },
-    /// OAuth consent required
-    OAuthConsentRequired {
-        provider: String,
-        url: Option<String>,
-        skill_name: Option<String>,
-    },
-    /// Context compacted
-    ContextCompacted {
-        messages_removed: u32,
-        tokens_freed: u32,
-        tokens_used: Option<u32>,
-        token_limit: Option<u32>,
-    },
-    /// Tool call started
-    ToolCallStart {
-        tool_name: String,
-        tool_call_id: String,
-    },
-    /// Tool call argument chunk
-    ToolCallArgument {
-        tool_call_id: String,
-        chunk: String,
-    },
-    /// Tool executing with display info
-    ToolExecuting {
-        tool_call_id: String,
-        display_name: Option<String>,
-        url: Option<String>,
-    },
-    /// Tool result
-    ToolResult {
-        tool_call_id: String,
-        result: String,
-    },
-    /// Reasoning/thinking content
-    Reasoning {
-        text: String,
-    },
-    /// Permission request
-    PermissionRequest {
-        permission_id: String,
-        tool_name: String,
-        description: String,
-        tool_call_id: Option<String>,
-        tool_input: Option<serde_json::Value>,
-    },
-    /// Todos updated
-    TodosUpdated {
-        todos: serde_json::Value,
-    },
-    /// Subagent started
-    SubagentStarted {
-        task_id: String,
-        description: String,
-        subagent_type: String,
-    },
-    /// Subagent progress update
-    SubagentProgress {
-        task_id: String,
-        message: String,
-    },
-    /// Subagent completed
-    SubagentCompleted {
-        task_id: String,
-        summary: String,
-        tool_call_count: Option<u32>,
-    },
-    /// Thread updated - when thread metadata is changed
-    ThreadUpdated {
-        thread_id: String,
-        #[serde(default)]
-        title: Option<String>,
-        #[serde(default)]
-        description: Option<String>,
-    },
-    /// Usage information - context window usage
-    Usage {
-        context_window_used: u32,
-        context_window_limit: u32,
-    },
-}
-
-impl SseEvent {
-    /// Returns the event type name as a string for debugging purposes.
-    pub fn event_type_name(&self) -> &'static str {
-        match self {
-            SseEvent::Content { .. } => "content",
-            SseEvent::ThreadInfo { .. } => "thread_info",
-            SseEvent::MessageInfo { .. } => "message_info",
-            SseEvent::Done => "done",
-            SseEvent::Error { .. } => "error",
-            SseEvent::Ping => "ping",
-            SseEvent::SkillsInjected { .. } => "skills_injected",
-            SseEvent::OAuthConsentRequired { .. } => "oauth_consent_required",
-            SseEvent::ContextCompacted { .. } => "context_compacted",
-            SseEvent::ToolCallStart { .. } => "tool_call_start",
-            SseEvent::ToolCallArgument { .. } => "tool_call_argument",
-            SseEvent::ToolExecuting { .. } => "tool_executing",
-            SseEvent::ToolResult { .. } => "tool_result",
-            SseEvent::Reasoning { .. } => "reasoning",
-            SseEvent::PermissionRequest { .. } => "permission_request",
-            SseEvent::TodosUpdated { .. } => "todos_updated",
-            SseEvent::SubagentStarted { .. } => "subagent_started",
-            SseEvent::SubagentProgress { .. } => "subagent_progress",
-            SseEvent::SubagentCompleted { .. } => "subagent_completed",
-            SseEvent::ThreadUpdated { .. } => "thread_updated",
-            SseEvent::Usage { .. } => "usage",
-        }
-    }
-}
-
-/// Raw data payload from SSE data lines
-/// Supports multiple field names that backends might use for content
-/// Also captures flattened metadata fields from the backend
-#[derive(Debug, Clone, Deserialize)]
-struct ContentPayload {
-    /// The text content - accepts "text", "content", "data", "chunk", or "token" fields
-    /// Conductor uses "data" for content chunks
-    #[serde(alias = "content", alias = "data", alias = "chunk", alias = "token")]
-    text: Option<String>,
-    /// Some backends nest content in a delta object (OpenAI style)
-    #[serde(default)]
-    delta: Option<DeltaPayload>,
-    /// Sequence number for ordering events
-    #[serde(default)]
-    seq: Option<u64>,
-    /// Unix timestamp in milliseconds
-    #[serde(default)]
-    timestamp: Option<u64>,
-    /// Session ID for the current streaming session
-    #[serde(default)]
-    session_id: Option<String>,
-    /// Thread ID this event belongs to
-    #[serde(default)]
-    thread_id: Option<String>,
-}
-
-/// Nested delta payload for OpenAI-style responses
-#[derive(Debug, Clone, Deserialize, Default)]
-struct DeltaPayload {
-    #[serde(default)]
-    content: Option<String>,
-    #[serde(default)]
-    text: Option<String>,
-    #[serde(default)]
-    data: Option<String>,
-}
-
-/// Legacy thread_info payload
-#[derive(Debug, Clone, Deserialize)]
-struct ThreadInfoPayload {
-    thread_id: String,
-    #[serde(default)]
-    title: Option<String>,
-}
-
-/// Conductor's done payload
-#[derive(Debug, Clone, Deserialize)]
-struct DonePayload {
-    message_id: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct MessageInfoPayload {
-    message_id: i64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ErrorPayload {
-    message: String,
-    #[serde(default)]
-    code: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct SkillsInjectedPayload {
-    skills: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct OAuthConsentRequiredPayload {
-    provider: String,
-    #[serde(default)]
-    url: Option<String>,
-    #[serde(default)]
-    skill_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ContextCompactedPayload {
-    messages_removed: u32,
-    tokens_freed: u32,
-    #[serde(default)]
-    tokens_used: Option<u32>,
-    #[serde(default)]
-    token_limit: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ThreadUpdatedPayload {
-    thread_id: String,
-    #[serde(default)]
-    title: Option<String>,
-    #[serde(default)]
-    description: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct UsagePayload {
-    context_window_used: u32,
-    context_window_limit: u32,
-}
+use crate::sse::events::{SseEvent, SseEventMeta, SseLine, SseParseError};
+use crate::sse::payloads::{
+    ContentPayload, ContextCompactedPayload, DonePayload, ErrorPayload, MessageInfoPayload,
+    OAuthConsentRequiredPayload, SkillsInjectedPayload, ThreadInfoPayload, ThreadUpdatedPayload,
+    UsagePayload,
+};
 
 /// Parse a single SSE line into its component type
 pub fn parse_sse_line(line: &str) -> SseLine {
@@ -310,311 +37,412 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
     match event_type {
         // Support various event type names for content
         "content" | "text" | "message" | "chunk" | "delta" | "content_block_delta" => {
-            let payload: ContentPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-
-            // Extract text from various possible locations in the payload
-            let text = payload.text
-                .or_else(|| payload.delta.as_ref().and_then(|d| d.content.clone()))
-                .or_else(|| payload.delta.as_ref().and_then(|d| d.text.clone()))
-                .or_else(|| payload.delta.as_ref().and_then(|d| d.data.clone()))
-                .unwrap_or_default();
-
-            // Extract metadata from flattened fields
-            let meta = SseEventMeta {
-                seq: payload.seq,
-                timestamp: payload.timestamp,
-                session_id: payload.session_id,
-                thread_id: payload.thread_id,
-            };
-
-            Ok(SseEvent::Content { text, meta })
+            parse_content_event(event_type, data)
         }
         // thread_info - legacy format with thread_id field
-        "thread_info" => {
-            let payload: ThreadInfoPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::ThreadInfo {
-                thread_id: payload.thread_id,
-                title: payload.title,
-            })
-        }
+        "thread_info" => parse_thread_info_event(event_type, data),
         // Conductor sends user_message_saved with message_id and optional thread_id
-        // Parse to Value first to handle potential duplicate fields (serde rejects duplicates)
-        "user_message_saved" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-
-            let message_id = v.get("message_id")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0);
-
-            let thread_id = v.get("thread_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| message_id.to_string());
-
-            Ok(SseEvent::ThreadInfo {
-                thread_id,
-                title: None,
-            })
-        }
-        "message_info" => {
-            let payload: MessageInfoPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::MessageInfo {
-                message_id: payload.message_id,
-            })
-        }
+        "user_message_saved" => parse_user_message_saved_event(event_type, data),
+        "message_info" => parse_message_info_event(event_type, data),
         // Conductor sends done with message_id in JSON
-        "done" => {
-            // Try to parse message_id from JSON, fall back to Done without data
-            if let Ok(payload) = serde_json::from_str::<DonePayload>(data) {
-                Ok(SseEvent::MessageInfo {
-                    message_id: payload.message_id.parse().unwrap_or(0),
-                })
-            } else {
-                Ok(SseEvent::Done)
-            }
-        }
+        "done" => parse_done_event(data),
         "ping" => Ok(SseEvent::Ping),
-        "skills_injected" => {
-            let payload: SkillsInjectedPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::SkillsInjected {
-                skills: payload.skills,
-            })
-        }
-        "oauth_consent_required" => {
-            let payload: OAuthConsentRequiredPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::OAuthConsentRequired {
-                provider: payload.provider,
-                url: payload.url,
-                skill_name: payload.skill_name,
-            })
-        }
-        "context_compacted" => {
-            let payload: ContextCompactedPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::ContextCompacted {
-                messages_removed: payload.messages_removed,
-                tokens_freed: payload.tokens_freed,
-                tokens_used: payload.tokens_used,
-                token_limit: payload.token_limit,
-            })
-        }
-        "error" => {
-            let payload: ErrorPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::Error {
-                message: payload.message,
-                code: payload.code,
-            })
-        }
-        "tool_call_start" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::ToolCallStart {
-                tool_name: v.get("function").or(v.get("tool_name")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            })
-        }
-        "tool_call_argument" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::ToolCallArgument {
-                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                chunk: v.get("chunk").or(v.get("argument_chunk")).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            })
-        }
-        "tool_executing" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::ToolExecuting {
-                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                display_name: v.get("display_name").or(v.get("function")).and_then(|v| v.as_str()).map(String::from),
-                url: v.get("url").and_then(|v| v.as_str()).map(String::from),
-            })
-        }
-        "tool_result" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            let result = v.get("result")
-                .map(|r| if r.is_string() { r.as_str().unwrap().to_string() } else { r.to_string() })
-                .unwrap_or_default();
-            Ok(SseEvent::ToolResult {
-                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                result,
-            })
-        }
-        "reasoning" | "thinking" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            let text = v.get("text")
-                .or(v.get("content"))
-                .or(v.get("data"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(SseEvent::Reasoning { text })
-        }
-        "permission_request" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::PermissionRequest {
-                permission_id: v.get("permission_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                tool_name: v.get("tool_name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                description: v.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                tool_call_id: v.get("tool_call_id").and_then(|v| v.as_str()).map(String::from),
-                tool_input: v.get("tool_input").cloned(),
-            })
-        }
-        "todos_updated" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            let todos = v.get("todos").cloned().unwrap_or(serde_json::Value::Array(vec![]));
-            Ok(SseEvent::TodosUpdated { todos })
-        }
-        "subagent_started" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::SubagentStarted {
-                task_id: v.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                description: v.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                subagent_type: v.get("subagent_type").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            })
-        }
-        "subagent_progress" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::SubagentProgress {
-                task_id: v.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                message: v.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            })
-        }
-        "subagent_completed" => {
-            let v: serde_json::Value = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::SubagentCompleted {
-                task_id: v.get("task_id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                summary: v.get("summary").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                tool_call_count: v.get("tool_call_count").and_then(|v| v.as_u64()).map(|n| n as u32),
-            })
-        }
-        "thread_updated" => {
-            let payload: ThreadUpdatedPayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::ThreadUpdated {
-                thread_id: payload.thread_id,
-                title: payload.title,
-                description: payload.description,
-            })
-        }
-        "usage" => {
-            let payload: UsagePayload = serde_json::from_str(data)
-                .map_err(|e| SseParseError::InvalidJson {
-                    event_type: event_type.to_string(),
-                    source: e.to_string(),
-                })?;
-            Ok(SseEvent::Usage {
-                context_window_used: payload.context_window_used,
-                context_window_limit: payload.context_window_limit,
-            })
-        }
+        "skills_injected" => parse_skills_injected_event(event_type, data),
+        "oauth_consent_required" => parse_oauth_consent_event(event_type, data),
+        "context_compacted" => parse_context_compacted_event(event_type, data),
+        "error" => parse_error_event(event_type, data),
+        "tool_call_start" => parse_tool_call_start_event(event_type, data),
+        "tool_call_argument" => parse_tool_call_argument_event(event_type, data),
+        "tool_executing" => parse_tool_executing_event(event_type, data),
+        "tool_result" => parse_tool_result_event(event_type, data),
+        "reasoning" | "thinking" => parse_reasoning_event(event_type, data),
+        "permission_request" => parse_permission_request_event(event_type, data),
+        "todos_updated" => parse_todos_updated_event(event_type, data),
+        "subagent_started" => parse_subagent_started_event(event_type, data),
+        "subagent_progress" => parse_subagent_progress_event(event_type, data),
+        "subagent_completed" => parse_subagent_completed_event(event_type, data),
+        "thread_updated" => parse_thread_updated_event(event_type, data),
+        "usage" => parse_usage_event(event_type, data),
         // Ignore unknown events instead of erroring (more resilient)
-        _ => Ok(SseEvent::Ping)
+        _ => Ok(SseEvent::Ping),
     }
 }
 
-/// Errors that can occur during SSE parsing
-#[derive(Debug, Clone, PartialEq)]
-pub enum SseParseError {
-    /// Unknown event type received
-    UnknownEventType(String),
-    /// Invalid JSON in data payload
-    InvalidJson {
-        event_type: String,
-        source: String,
-    },
-    /// Missing data for event
-    MissingData {
-        event_type: String,
-    },
+// --- Individual event parsers ---
+
+fn parse_content_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: ContentPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+
+    // Extract text from various possible locations in the payload
+    let text = payload
+        .text
+        .or_else(|| payload.delta.as_ref().and_then(|d| d.content.clone()))
+        .or_else(|| payload.delta.as_ref().and_then(|d| d.text.clone()))
+        .or_else(|| payload.delta.as_ref().and_then(|d| d.data.clone()))
+        .unwrap_or_default();
+
+    // Extract metadata from flattened fields
+    let meta = SseEventMeta {
+        seq: payload.seq,
+        timestamp: payload.timestamp,
+        session_id: payload.session_id,
+        thread_id: payload.thread_id,
+    };
+
+    Ok(SseEvent::Content { text, meta })
 }
 
-impl std::fmt::Display for SseParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SseParseError::UnknownEventType(t) => write!(f, "Unknown SSE event type: {}", t),
-            SseParseError::InvalidJson { event_type, source } => {
-                write!(f, "Invalid JSON for event '{}': {}", event_type, source)
-            }
-            SseParseError::MissingData { event_type } => {
-                write!(f, "Missing data for event type: {}", event_type)
-            }
-        }
+fn parse_thread_info_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: ThreadInfoPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::ThreadInfo {
+        thread_id: payload.thread_id,
+        title: payload.title,
+    })
+}
+
+fn parse_user_message_saved_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    // Parse to Value first to handle potential duplicate fields (serde rejects duplicates)
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+
+    let message_id = v.get("message_id").and_then(|v| v.as_i64()).unwrap_or(0);
+
+    let thread_id = v
+        .get("thread_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| message_id.to_string());
+
+    Ok(SseEvent::ThreadInfo {
+        thread_id,
+        title: None,
+    })
+}
+
+fn parse_message_info_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: MessageInfoPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::MessageInfo {
+        message_id: payload.message_id,
+    })
+}
+
+fn parse_done_event(data: &str) -> Result<SseEvent, SseParseError> {
+    // Try to parse message_id from JSON, fall back to Done without data
+    if let Ok(payload) = serde_json::from_str::<DonePayload>(data) {
+        Ok(SseEvent::MessageInfo {
+            message_id: payload.message_id.parse().unwrap_or(0),
+        })
+    } else {
+        Ok(SseEvent::Done)
     }
 }
 
-impl std::error::Error for SseParseError {}
+fn parse_skills_injected_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: SkillsInjectedPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::SkillsInjected {
+        skills: payload.skills,
+    })
+}
+
+fn parse_oauth_consent_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: OAuthConsentRequiredPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::OAuthConsentRequired {
+        provider: payload.provider,
+        url: payload.url,
+        skill_name: payload.skill_name,
+    })
+}
+
+fn parse_context_compacted_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: ContextCompactedPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::ContextCompacted {
+        messages_removed: payload.messages_removed,
+        tokens_freed: payload.tokens_freed,
+        tokens_used: payload.tokens_used,
+        token_limit: payload.token_limit,
+    })
+}
+
+fn parse_error_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: ErrorPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::Error {
+        message: payload.message,
+        code: payload.code,
+    })
+}
+
+fn parse_tool_call_start_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::ToolCallStart {
+        tool_name: v
+            .get("function")
+            .or(v.get("tool_name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        tool_call_id: v
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+    })
+}
+
+fn parse_tool_call_argument_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::ToolCallArgument {
+        tool_call_id: v
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        chunk: v
+            .get("chunk")
+            .or(v.get("argument_chunk"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+    })
+}
+
+fn parse_tool_executing_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::ToolExecuting {
+        tool_call_id: v
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        display_name: v
+            .get("display_name")
+            .or(v.get("function"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        url: v.get("url").and_then(|v| v.as_str()).map(String::from),
+    })
+}
+
+fn parse_tool_result_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    let result = v
+        .get("result")
+        .map(|r| {
+            if r.is_string() {
+                r.as_str().unwrap().to_string()
+            } else {
+                r.to_string()
+            }
+        })
+        .unwrap_or_default();
+    Ok(SseEvent::ToolResult {
+        tool_call_id: v
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        result,
+    })
+}
+
+fn parse_reasoning_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    let text = v
+        .get("text")
+        .or(v.get("content"))
+        .or(v.get("data"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    Ok(SseEvent::Reasoning { text })
+}
+
+fn parse_permission_request_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::PermissionRequest {
+        permission_id: v
+            .get("permission_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        tool_name: v
+            .get("tool_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        description: v
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        tool_call_id: v
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        tool_input: v.get("tool_input").cloned(),
+    })
+}
+
+fn parse_todos_updated_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    let todos = v
+        .get("todos")
+        .cloned()
+        .unwrap_or(serde_json::Value::Array(vec![]));
+    Ok(SseEvent::TodosUpdated { todos })
+}
+
+fn parse_subagent_started_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::SubagentStarted {
+        task_id: v
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        description: v
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        subagent_type: v
+            .get("subagent_type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+    })
+}
+
+fn parse_subagent_progress_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::SubagentProgress {
+        task_id: v
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        message: v
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+    })
+}
+
+fn parse_subagent_completed_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let v: serde_json::Value =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::SubagentCompleted {
+        task_id: v
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        summary: v
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        tool_call_count: v
+            .get("tool_call_count")
+            .and_then(|v| v.as_u64())
+            .map(|n| n as u32),
+    })
+}
+
+fn parse_thread_updated_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: ThreadUpdatedPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::ThreadUpdated {
+        thread_id: payload.thread_id,
+        title: payload.title,
+        description: payload.description,
+    })
+}
+
+fn parse_usage_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+    let payload: UsagePayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::Usage {
+        context_window_used: payload.context_window_used,
+        context_window_limit: payload.context_window_limit,
+    })
+}
 
 /// Stateful SSE parser that accumulates lines and emits complete events
 #[derive(Debug, Default)]
@@ -1096,7 +924,8 @@ mod tests {
         // Backend may send JSON with duplicate field names
         // serde_json::from_str to struct would reject this, but parsing to Value handles it
         // Note: serde_json::Value uses the last occurrence of duplicate keys
-        let data_with_duplicate = r#"{"message_id": 42, "thread_id": "thread-123", "thread_id": "thread-456"}"#;
+        let data_with_duplicate =
+            r#"{"message_id": 42, "thread_id": "thread-123", "thread_id": "thread-456"}"#;
 
         let result = parse_sse_event("user_message_saved", data_with_duplicate);
 
@@ -1148,23 +977,6 @@ mod tests {
             }
             _ => panic!("Expected ThreadInfo event"),
         }
-    }
-
-    #[test]
-    fn test_sse_parse_error_display() {
-        let err = SseParseError::UnknownEventType("foo".to_string());
-        assert_eq!(format!("{}", err), "Unknown SSE event type: foo");
-
-        let err = SseParseError::InvalidJson {
-            event_type: "content".to_string(),
-            source: "expected value".to_string(),
-        };
-        assert!(format!("{}", err).contains("Invalid JSON"));
-
-        let err = SseParseError::MissingData {
-            event_type: "content".to_string(),
-        };
-        assert!(format!("{}", err).contains("Missing data"));
     }
 
     // Integration test simulating real SSE stream
@@ -1270,7 +1082,9 @@ mod tests {
         assert!(parser.feed_line(":").unwrap().is_none());
 
         // But content should still parse
-        parser.feed_line(r#"data: {"type":"content","data":"test"}"#).unwrap();
+        parser
+            .feed_line(r#"data: {"type":"content","data":"test"}"#)
+            .unwrap();
         let event = parser.feed_line("").unwrap();
         assert!(matches!(event, Some(SseEvent::Content { .. })));
     }
@@ -1366,7 +1180,9 @@ mod tests {
 
         parser.feed_line("event: thread_updated").unwrap();
         parser
-            .feed_line(r#"data: {"thread_id": "t-999", "title": "Test Thread", "description": "Test Desc"}"#)
+            .feed_line(
+                r#"data: {"thread_id": "t-999", "title": "Test Thread", "description": "Test Desc"}"#,
+            )
             .unwrap();
 
         let event = parser.feed_line("").unwrap();
@@ -1471,7 +1287,9 @@ mod tests {
 
         parser.feed_line("event: subagent_started").unwrap();
         parser
-            .feed_line(r#"data: {"task_id": "t-123", "description": "Plan implementation", "subagent_type": "Plan"}"#)
+            .feed_line(
+                r#"data: {"task_id": "t-123", "description": "Plan implementation", "subagent_type": "Plan"}"#,
+            )
             .unwrap();
 
         let event = parser.feed_line("").unwrap();
@@ -1510,7 +1328,9 @@ mod tests {
 
         parser.feed_line("event: subagent_completed").unwrap();
         parser
-            .feed_line(r#"data: {"task_id": "t-789", "summary": "Successfully completed analysis", "tool_call_count": 25}"#)
+            .feed_line(
+                r#"data: {"task_id": "t-789", "summary": "Successfully completed analysis", "tool_call_count": 25}"#,
+            )
             .unwrap();
 
         let event = parser.feed_line("").unwrap();
