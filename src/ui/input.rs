@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -16,7 +16,7 @@ use crate::state::session::{AskUserQuestionData, AskUserQuestionState, Permissio
 use crate::widgets::textarea_input::TextAreaInputWidget;
 
 use super::layout::LayoutContext;
-use super::theme::{COLOR_ACCENT, COLOR_DIM};
+use super::theme::{COLOR_ACCENT, COLOR_DIALOG_BG, COLOR_DIM};
 
 // ============================================================================
 // AskUserQuestion Parsing
@@ -334,19 +334,24 @@ pub fn render_permission_box(
         " Permission Required "
     };
 
+    // Clear the area first, then render background
+    frame.render_widget(Clear, box_area);
+    let bg_block = Block::default().style(Style::default().bg(COLOR_DIALOG_BG));
+    frame.render_widget(bg_block, box_area);
+
     // Create the permission box with border
     let block = Block::default()
         .title(Span::styled(
             title,
             Style::default()
-                .fg(Color::Yellow)
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Yellow));
+        .border_style(Style::default().fg(COLOR_DIM));
 
-    // Render the block first
+    // Render the block
     frame.render_widget(block, box_area);
 
     // Inner area for content
@@ -372,7 +377,7 @@ pub fn render_permission_box(
         Span::styled(
             format!("{}: ", perm.tool_name),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(description, Style::default().fg(Color::White)),
@@ -404,7 +409,7 @@ pub fn render_permission_box(
                 };
                 lines.push(Line::from(vec![
                     Span::styled("| ", Style::default().fg(COLOR_DIM)),
-                    Span::styled(truncated, Style::default().fg(Color::Gray)),
+                    Span::styled(truncated, Style::default().fg(COLOR_DIM)),
                     Span::raw(" "),
                 ]));
             }
@@ -428,13 +433,11 @@ pub fn render_permission_box(
     let elapsed_secs = perm.received_at.elapsed().as_secs();
     let remaining_secs = 55u64.saturating_sub(elapsed_secs);
 
-    // Style countdown: yellow when <15s, red when <5s
+    // Style countdown: white when urgent (<5s), dim otherwise
     let countdown_color = if remaining_secs <= 5 {
-        Color::Red
-    } else if remaining_secs <= 15 {
-        Color::Yellow
+        Color::White
     } else {
-        Color::Gray
+        COLOR_DIM
     };
 
     let countdown_text = if remaining_secs == 0 {
@@ -450,20 +453,22 @@ pub fn render_permission_box(
             Span::styled(
                 "[y]",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("/"),
             Span::styled(
                 "[a]",
                 Style::default()
-                    .fg(Color::Blue)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw("/"),
             Span::styled(
                 "[n]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(countdown_text, Style::default().fg(countdown_color)),
         ]));
@@ -473,20 +478,22 @@ pub fn render_permission_box(
             Span::styled(
                 "[y]",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" Y "),
             Span::styled(
                 "[a]",
                 Style::default()
-                    .fg(Color::Blue)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" A "),
             Span::styled(
                 "[n]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" N"),
             Span::styled(countdown_text, Style::default().fg(countdown_color)),
@@ -497,20 +504,22 @@ pub fn render_permission_box(
             Span::styled(
                 "[y]",
                 Style::default()
-                    .fg(Color::Green)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" Yes  "),
             Span::styled(
                 "[a]",
                 Style::default()
-                    .fg(Color::Blue)
+                    .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" Always  "),
             Span::styled(
                 "[n]",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" No"),
             Span::styled(countdown_text, Style::default().fg(countdown_color)),
