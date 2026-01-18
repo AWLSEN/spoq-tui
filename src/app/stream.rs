@@ -87,7 +87,14 @@ impl App {
             (pending_id, true)
         };
 
+        // Add to input history before clearing
+        self.input_history.add(content.clone());
+
         self.textarea.clear();
+
+        // Reset history navigation after submit
+        self.input_history.reset_navigation();
+
         self.mark_dirty();
 
         // Emit StreamLifecycle connecting event
