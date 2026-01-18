@@ -88,10 +88,9 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     let inner = inner_rect(size, 0);
 
     // Calculate responsive layout heights
-    // Input height is dynamic based on visual line count (accounting for soft wrap)
-    let input_width = inner.width.saturating_sub(4); // Account for margins/borders
-    let visual_lines = app.textarea.visual_line_count(input_width);
-    let input_height = calculate_input_area_height(visual_lines);
+    // Input height is dynamic based on line count (hard wrap inserts actual newlines)
+    let line_count = app.textarea.line_count();
+    let input_height = calculate_input_area_height(line_count);
     let header_height = if ctx.is_short() { 2 } else { 3 };
 
     match (mode_indicator_line, show_streaming_indicator) {

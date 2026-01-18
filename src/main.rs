@@ -83,6 +83,9 @@ async fn main() -> Result<()> {
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;
 
+    // Before exiting, save input history
+    app.input_history.save();
+
     // Restore terminal
     restore_terminal(&mut terminal)?;
 
