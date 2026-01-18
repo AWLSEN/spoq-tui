@@ -47,11 +47,25 @@
 //! }
 //! ```
 
+pub mod copy;
+pub mod copy_pill;
+pub mod highlight;
 pub mod multi_click;
 pub mod position;
 pub mod state;
 
 // Re-export commonly used types at the module level
+pub use copy::{
+    copy_selection_to_clipboard, copy_to_clipboard, extract_selected_text, ClipboardError,
+};
+pub use copy_pill::{
+    render_copy_pill, CopyPill, CopyPillState, PILL_BG_COLOR, PILL_HEIGHT, PILL_HOVER_BG_COLOR,
+    PILL_SUCCESS_BG_COLOR, PILL_WIDTH,
+};
+pub use highlight::{
+    default_highlight_style, highlight_line_selection, highlight_lines_selection,
+    SELECTION_BG_COLOR,
+};
 pub use multi_click::ClickDetector;
 pub use position::{
     ContentPosition, PositionMappingIndex, ScreenPosition, ScreenToContentMapping,

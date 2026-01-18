@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::markdown::render_markdown;
+use crate::markdown::MarkdownCache;
 use crate::models::{Message, MessageRole, MessageSegment, SubagentEvent, SubagentEventStatus, ToolEvent, ToolEventStatus};
 use crate::state::ToolDisplayStatus;
 
@@ -706,12 +706,14 @@ pub fn render_subagent_events_block(
 /// * `label` - Label prefix (e.g., "│ " for user messages)
 /// * `label_style` - Style for the label
 /// * `ctx` - Layout context for responsive sizing
+/// * `markdown_cache` - Cache for markdown rendering
 pub fn render_message_segments(
     segments: &[MessageSegment],
     tick_count: u64,
     label: &'static str,
     label_style: Style,
     ctx: &LayoutContext,
+    markdown_cache: &mut MarkdownCache,
 ) -> (Vec<Line<'static>>, bool) {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut is_first_line = true;
@@ -727,7 +729,7 @@ pub fn render_message_segments(
     while i < segments.len() {
         match &segments[i] {
             MessageSegment::Text(text) => {
-                let segment_lines = render_markdown(text);
+                let segment_lines = markdown_cache.render(text);
                 // Prepend vertical bar to ALL text lines
                 for line in segment_lines {
                     lines.push(prepend_bar(line));
@@ -986,6 +988,7 @@ const VIRTUALIZATION_BUFFER: usize = 5;
 #[derive(Debug, Clone)]
 pub struct MessageHeight {
     /// Index of the message in the messages array
+    #[allow(dead_code)]
     pub message_index: usize,
     /// Number of visual lines this message occupies (after wrapping)
     pub visual_lines: usize,
@@ -1123,6 +1126,7 @@ fn render_single_message(
                 label,
                 label_style,
                 ctx,
+                &mut app.markdown_cache,
             );
             lines.extend(segment_lines);
 
@@ -1142,7 +1146,7 @@ fn render_single_message(
             // Fall back to partial_content for backward compatibility
             // (non-assistant messages or when segments is empty)
 
-            let content_lines = render_markdown(&message.partial_content);
+            let content_lines = app.markdown_cache.render(&message.partial_content);
 
             // Prepend vertical bar to ALL lines, append cursor to last line
             if content_lines.is_empty() {
@@ -1184,6 +1188,7 @@ fn render_single_message(
                 label,
                 label_style,
                 ctx,
+                &mut app.markdown_cache,
             );
             message_lines.extend(segment_lines);
 
@@ -1193,7 +1198,7 @@ fn render_single_message(
             }
         } else {
             // Fall back to content field for non-assistant messages or empty segments
-            let content_lines = render_markdown(&message.content);
+            let content_lines = app.markdown_cache.render(&message.content);
 
             if content_lines.is_empty() {
                 // Empty content, just show vertical bar

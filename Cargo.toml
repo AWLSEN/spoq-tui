@@ -26,3 +26,10 @@ tower-http = { version = "0.5", features = ["cors"] }
 arboard = "3"
 tui-textarea = "0.7"
 unicode-width = "0.2"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "render_benchmark"
+harness = false

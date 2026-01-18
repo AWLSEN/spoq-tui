@@ -20,6 +20,8 @@ pub use websocket::{start_websocket, start_websocket_with_config};
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender};
+use crate::markdown::MarkdownCache;
+use crate::selection::{CopyPillState, PositionMappingIndex, SelectionState};
 use crate::state::{
     AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
 };
@@ -238,6 +240,15 @@ pub struct App {
     pub rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache,
     /// Click detector for multi-click detection (single/double/triple click)
     pub click_detector: crate::selection::ClickDetector,
+    /// Cache for parsed markdown (avoids re-parsing unchanged content)
+    pub markdown_cache: MarkdownCache,
+    /// Selection state for text selection and clipboard operations
+    pub selection_state: SelectionState,
+    /// Position mapping index for screen-to-content coordinate conversion
+    /// Updated during rendering, used during mouse event handling
+    pub position_mapping: PositionMappingIndex,
+    /// State for the copy pill widget
+    pub copy_pill: CopyPillState,
 }
 
 impl App {
@@ -312,6 +323,10 @@ impl App {
             active_panel: ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
             click_detector: crate::selection::ClickDetector::new(),
+            markdown_cache: MarkdownCache::new(),
+            selection_state: SelectionState::new(),
+            position_mapping: PositionMappingIndex::new(),
+            copy_pill: CopyPillState::new(),
         })
     }
 

@@ -160,6 +160,10 @@ mod tests {
             active_panel: crate::app::ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
             click_detector: crate::selection::ClickDetector::new(),
+            markdown_cache: crate::markdown::MarkdownCache::new(),
+            selection_state: crate::selection::SelectionState::new(),
+            position_mapping: crate::selection::PositionMappingIndex::new(),
+            copy_pill: crate::selection::CopyPillState::new(),
         }
     }
 
@@ -2865,27 +2869,31 @@ mod tests {
 
     #[test]
     fn test_responsive_extreme_narrow_30x24() {
-        // Terminal at minimum width should show "too small" message
+        // Terminal at minimum width (30) - should render normally
         let backend = TestBackend::new(30, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
+        // Set app dimensions to match test backend
+        app.terminal_width = 30;
+        app.terminal_height = 24;
 
         terminal.draw(|f| render(f, &mut app)).unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
-        // At exactly minimum width, it should work
+        // At exactly minimum width, it should work (MIN_TERMINAL_WIDTH = 30)
         let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
         assert!(has_content, "Should render at minimum width");
     }
 
     #[test]
     fn test_responsive_extreme_short_80x9() {
-        // Very short terminal - BELOW minimum height threshold
+        // Very short terminal - BELOW minimum height threshold (MIN_TERMINAL_HEIGHT = 10)
         let backend = TestBackend::new(80, 9);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
+        app.terminal_width = 80;
+        app.terminal_height = 9;
 
         terminal.draw(|f| render(f, &mut app)).unwrap();
 
@@ -2893,8 +2901,8 @@ mod tests {
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show "too small" message for height below MIN_TERMINAL_HEIGHT (10)
-        assert!(buffer_str.contains("Terminal Too Small") || buffer_str.contains("resize"),
-            "Terminal below minimum height should show resize message");
+        assert!(buffer_str.contains("Terminal Too Small"),
+            "Terminal below minimum height should show 'Terminal Too Small' message");
     }
 
     #[test]
@@ -2903,6 +2911,8 @@ mod tests {
         let backend = TestBackend::new(80, 10);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
+        app.terminal_width = 80;
+        app.terminal_height = 10;
 
         terminal.draw(|f| render(f, &mut app)).unwrap();
 
@@ -2916,6 +2926,7 @@ mod tests {
     #[test]
     fn test_responsive_various_sizes_no_panic() {
         // Test a variety of sizes to ensure no panics
+        // Note: All sizes must be >= minimum (30x10)
         let sizes = [
             (40, 20),
             (50, 20),
@@ -2933,6 +2944,9 @@ mod tests {
             let backend = TestBackend::new(*width, *height);
             let mut terminal = Terminal::new(backend).unwrap();
             let mut app = create_test_app();
+            // Set app dimensions to match test backend
+            app.terminal_width = *width;
+            app.terminal_height = *height;
 
             // Test both screens
             for screen in [Screen::CommandDeck, Screen::Conversation] {

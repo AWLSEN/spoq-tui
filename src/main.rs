@@ -541,6 +541,22 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                 KeyCode::Char('t') if app.focus != Focus::Input && app.screen == Screen::Conversation => {
                                     app.toggle_reasoning();
                                 }
+                                // Ctrl+Y to copy selected text to clipboard
+                                KeyCode::Char('y') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                    if let Some(range) = app.selection_state.get_range() {
+                                        if !range.is_empty() {
+                                            // TODO: Extract actual text from messages based on selection range
+                                            // For now, we have the infrastructure in place
+                                            // The actual text extraction will be implemented when
+                                            // position mapping is integrated during rendering
+                                            let _ = range; // Placeholder
+                                        }
+                                    }
+                                }
+                                // Escape to clear selection
+                                KeyCode::Esc if app.selection_state.has_selection() => {
+                                    app.selection_state.clear();
+                                }
                                 _ => {}
                             }
                         }
@@ -577,15 +593,25 @@ async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: 
                                     let screen_pos = ScreenPosition::new(mouse_event.column, mouse_event.row);
                                     let selection_mode = app.click_detector.register_click(screen_pos);
 
-                                    // Log for debugging (will be used in later phases for selection)
-                                    // Click count: 1 = single (Character), 2 = double (Word), 3 = triple (Line)
-                                    let _click_count = app.click_detector.click_count();
-
-                                    // The selection_mode will be used in later phases:
-                                    // - Phase 4: Mouse drag selection
-                                    // - Phase 5: Text extraction
-                                    // For now, just detect the click pattern
-                                    let _ = selection_mode;
+                                    // Convert screen position to content position using the position mapping
+                                    if let Some(content_pos) = app.position_mapping.screen_to_content(screen_pos) {
+                                        // Start selection at the clicked position with appropriate mode
+                                        app.selection_state.start_selection(content_pos, selection_mode);
+                                    } else {
+                                        // Click outside content area - clear any existing selection
+                                        app.selection_state.clear();
+                                    }
+                                }
+                                MouseEventKind::Drag(_button) => {
+                                    // Extend selection during drag
+                                    let screen_pos = ScreenPosition::new(mouse_event.column, mouse_event.row);
+                                    if let Some(content_pos) = app.position_mapping.screen_to_content(screen_pos) {
+                                        app.selection_state.update_selection(content_pos);
+                                    }
+                                }
+                                MouseEventKind::Up(_button) => {
+                                    // Finish selection on mouse release
+                                    app.selection_state.finish_selection();
                                 }
                                 _ => {}
                             }
