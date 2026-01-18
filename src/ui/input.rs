@@ -34,13 +34,16 @@ pub fn parse_ask_user_question(tool_input: &serde_json::Value) -> Option<AskUser
 // Input Height Calculation
 // ============================================================================
 
+/// Maximum number of visible lines in the input area
+const MAX_INPUT_LINES: u16 = 5;
+
 /// Calculate the dynamic input box height based on line count.
 ///
 /// Returns height in rows (including borders):
 /// - Min: 3 rows (border + 1 line + border)
 /// - Max: 7 rows (border + 5 lines + border)
 pub fn calculate_input_box_height(line_count: usize) -> u16 {
-    let content_lines = (line_count as u16).clamp(1, 5);
+    let content_lines = (line_count as u16).clamp(1, MAX_INPUT_LINES);
     content_lines + 2 // +2 for top/bottom borders
 }
 
@@ -170,6 +173,17 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
                 spans.push(Span::raw(": dismiss | "));
             } else {
                 spans.push(Span::raw(": dismiss error | "));
+            }
+        }
+
+        // Newline hint (skip on extra small)
+        if !is_extra_small {
+            if is_narrow {
+                spans.push(Span::styled("[S+Ent]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::raw(" newline | "));
+            } else {
+                spans.push(Span::styled("[Shift+Enter]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::raw(" newline | "));
             }
         }
 

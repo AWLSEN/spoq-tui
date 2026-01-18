@@ -970,7 +970,7 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
             1 // Empty line still takes 1 row
         } else {
             // Ceiling division: (char_count + viewport_width - 1) / viewport_width
-            (char_count + viewport_width - 1) / viewport_width
+            char_count.div_ceil(viewport_width)
         }
     }).sum()
 }
@@ -1275,7 +1275,7 @@ fn estimate_message_height(
 
     // Apply wrapping: each logical line may wrap based on viewport width
     let wrap_factor = if viewport_width > 0 {
-        (60 + viewport_width - 1) / viewport_width // Ceiling division
+        60_usize.div_ceil(viewport_width) // Ceiling division
     } else {
         1
     };
@@ -1372,8 +1372,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         });
 
     // Clone messages to avoid borrow issues during height calculation
-    let messages: Vec<Message> = cached_messages
-        .map(|m| m.clone())
+    let messages: Vec<Message> = cached_messages.cloned()
         .unwrap_or_default();
 
     if messages.is_empty() {

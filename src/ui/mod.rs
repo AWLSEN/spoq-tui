@@ -85,13 +85,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
 /// Render a message when the terminal is too small
 fn render_terminal_too_small(frame: &mut Frame, area: Rect) {
-    let message = vec![
-        format!("Terminal Too Small"),
-        format!(""),
+    let message = [
+        "Terminal Too Small".to_string(),
+        String::new(),
         format!("Current size: {}x{}", area.width, area.height),
         format!("Minimum required: {}x{}", helpers::MIN_TERMINAL_WIDTH, helpers::MIN_TERMINAL_HEIGHT),
-        format!(""),
-        format!("Please resize your terminal"),
+        String::new(),
+        "Please resize your terminal".to_string(),
     ];
 
     let text = message.join("\n");

@@ -15,7 +15,7 @@ use crate::app::{ActivePanel, App};
 use crate::state::TaskStatus;
 
 use super::helpers::{format_tokens, inner_rect};
-use super::input::render_input_area;
+use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
 use super::panels::{render_left_panel, render_right_panel};
 use super::theme::{COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_QUEUED};
@@ -54,7 +54,8 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
     // Create main layout sections with responsive heights
     let inner = inner_rect(size, 0);
     let header_height = ctx.header_height();
-    let input_height = ctx.input_area_height();
+    // Input height is dynamic based on textarea content (lines typed)
+    let input_height = calculate_input_area_height(app.textarea.line_count());
 
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)

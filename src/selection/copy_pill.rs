@@ -8,7 +8,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Widget},
+    widgets::{Clear, Paragraph, Widget},
 };
 
 /// State for the copy pill widget

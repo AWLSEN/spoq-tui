@@ -45,7 +45,10 @@ async fn main() -> Result<()> {
     // Silently fails on unsupported terminals (Terminal.app, Warp, etc.)
     let _ = execute!(
         stdout,
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+        PushKeyboardEnhancementFlags(
+            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+        )
     );
 
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;

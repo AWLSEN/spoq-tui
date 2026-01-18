@@ -15,7 +15,7 @@ use crate::app::{App, ProgrammingMode};
 use crate::models::{MessageSegment, ToolEventStatus};
 
 use super::helpers::{inner_rect, truncate_string, SPINNER_FRAMES};
-use super::input::render_conversation_input;
+use super::input::{calculate_input_area_height, render_conversation_input};
 use super::layout::LayoutContext;
 use super::messages::render_messages_area;
 use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
@@ -87,8 +87,9 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     // Create main layout sections - conditionally include mode and streaming indicators
     let inner = inner_rect(size, 0);
 
-    // Calculate responsive layout heights using LayoutContext
-    let input_height = ctx.input_area_height();
+    // Calculate responsive layout heights
+    // Input height is dynamic based on textarea content (lines typed)
+    let input_height = calculate_input_area_height(app.textarea.line_count());
     let header_height = if ctx.is_short() { 2 } else { 3 };
 
     match (mode_indicator_line, show_streaming_indicator) {
