@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod cache;
+pub mod input_history;
 pub mod conductor;
 pub mod debug;
 pub mod events;

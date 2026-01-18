@@ -83,6 +83,9 @@ async fn main() -> Result<()> {
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;
 
+    // Before exiting, save input history
+    app.input_history.save();
+
     // Restore terminal
     restore_terminal(&mut terminal)?;
 
@@ -510,23 +513,39 @@ where
                                         continue;
                                     }
                                     KeyCode::Up => {
-                                        // In Conversation screen, Up/Down scroll instead of textarea navigation
-                                        // This allows scroll wheel (via alternate scroll mode) to work while typing
-                                        if app.screen == Screen::Conversation {
-                                            // Fall through to scroll handlers below
+                                        // If cursor is on first line, try to navigate history up
+                                        if app.textarea.is_cursor_on_first_line() {
+                                            let current_content = app.textarea.content();
+                                            if let Some(history_entry) = app.input_history.navigate_up(&current_content) {
+                                                let entry = history_entry.to_string();
+                                                app.textarea.set_content(&entry);
+                                            }
                                         } else {
+                                            // Normal cursor movement
                                             app.textarea.move_cursor_up();
-                                            continue;
                                         }
+                                        continue;
                                     }
                                     KeyCode::Down => {
-                                        // In Conversation screen, Up/Down scroll instead of textarea navigation
-                                        if app.screen == Screen::Conversation {
-                                            // Fall through to scroll handlers below
+                                        // If cursor is on last line and navigating history, go forward
+                                        if app.textarea.is_cursor_on_last_line() {
+                                            // Only handle history navigation if we're currently navigating
+                                            if app.input_history.is_navigating() {
+                                                if let Some(history_entry) = app.input_history.navigate_down() {
+                                                    let entry = history_entry.to_string();
+                                                    app.textarea.set_content(&entry);
+                                                } else {
+                                                    // At bottom of history, restore original input
+                                                    let original = app.input_history.get_current_input().to_string();
+                                                    app.textarea.set_content(&original);
+                                                }
+                                            }
+                                            // If not navigating, Down on last line does nothing
                                         } else {
+                                            // Normal cursor movement in multi-line input
                                             app.textarea.move_cursor_down();
-                                            continue;
                                         }
+                                        continue;
                                     }
                                     KeyCode::Home => {
                                         app.textarea.move_cursor_home();

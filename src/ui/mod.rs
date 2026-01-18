@@ -163,6 +163,7 @@ mod tests {
             cached_message_heights: std::collections::HashMap::new(),
             needs_redraw: false,
             has_visible_links: false,
+            input_history: crate::input_history::InputHistory::new(),
         }
     }
 
@@ -1625,7 +1626,7 @@ mod tests {
 
     #[test]
     fn test_get_tool_icon_known_tools() {
-        // Icons are disabled for cleaner display
+        // Icons are disabled for cleaner display, all tools return empty string
         assert_eq!(get_tool_icon("Read"), "");
         assert_eq!(get_tool_icon("Write"), "");
         assert_eq!(get_tool_icon("Edit"), "");
@@ -2041,7 +2042,7 @@ mod tests {
     fn test_get_subagent_icon() {
         use helpers::get_subagent_icon;
 
-        // Icons are disabled for cleaner display
+        // Icons are disabled for cleaner display, all subagents return empty string
         assert_eq!(get_subagent_icon("Explore"), "");
         assert_eq!(get_subagent_icon("Bash"), "");
         assert_eq!(get_subagent_icon("Plan"), "");

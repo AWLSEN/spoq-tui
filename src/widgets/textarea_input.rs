@@ -11,6 +11,7 @@ use ratatui::{
     widgets::{Block, Borders, Widget},
 };
 use tui_textarea::{CursorMove, TextArea};
+use unicode_width::UnicodeWidthStr;
 
 /// A paste token that behaves as an atomic unit.
 ///
@@ -43,6 +44,9 @@ pub struct TextAreaInput<'a> {
     paste_tokens: Vec<PasteToken>,
     /// Counter for generating unique paste token IDs
     paste_counter: u32,
+    /// Width for hard wrap (auto-newline). When set, lines are automatically
+    /// wrapped by inserting newlines when they exceed this width.
+    wrap_width: Option<u16>,
 }
 
 impl Default for TextAreaInput<'_> {
@@ -61,12 +65,14 @@ impl<'a> TextAreaInput<'a> {
 
         // Configure textarea behavior
         textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)
+        textarea.set_line_wrap(true); // Enable soft line wrapping for visual display
         // Line numbers are OFF by default in tui-textarea (no need to explicitly remove)
 
         Self {
             textarea,
             paste_tokens: Vec::new(),
             paste_counter: 0,
+            wrap_width: None,
         }
     }
 
@@ -84,6 +90,7 @@ impl<'a> TextAreaInput<'a> {
 
         // Configure textarea behavior
         textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)
+        textarea.set_line_wrap(true); // Enable soft line wrapping for visual display
         // Line numbers are OFF by default in tui-textarea (no need to explicitly remove)
 
         // Move cursor to end
@@ -93,6 +100,7 @@ impl<'a> TextAreaInput<'a> {
             textarea,
             paste_tokens: Vec::new(),
             paste_counter: 0,
+            wrap_width: None,
         }
     }
 
@@ -175,8 +183,21 @@ impl<'a> TextAreaInput<'a> {
     // InputBox-compatible API methods
     // =========================================================================
 
-    /// Insert a character at the current cursor position
-    /// Maps to: `insert_char(c)` -> `insert_char(c)`
+    /// Set the wrap width for hard wrapping. When set, inserting characters
+    /// will automatically insert newlines when the line exceeds this width.
+    /// Pass None to disable hard wrapping.
+    pub fn set_wrap_width(&mut self, width: Option<u16>) {
+        self.wrap_width = width;
+    }
+
+    /// Get the current wrap width
+    pub fn wrap_width(&self) -> Option<u16> {
+        self.wrap_width
+    }
+
+    /// Insert a character at the current cursor position.
+    /// If hard wrap is enabled and the line exceeds the wrap width,
+    /// automatically insert a newline at an appropriate position.
     pub fn insert_char(&mut self, c: char) {
         let (line, col) = self.textarea.cursor();
 
@@ -187,6 +208,115 @@ impl<'a> TextAreaInput<'a> {
 
         self.textarea.insert_char(c);
         self.update_token_positions(line, col, 1);
+
+        // Check if we need to hard wrap
+        if let Some(wrap_width) = self.wrap_width {
+            self.maybe_hard_wrap(wrap_width as usize);
+        }
+    }
+
+    /// Check if the current line exceeds the wrap width and insert a newline if needed.
+    /// Wraps at word boundaries when possible for cleaner text.
+    fn maybe_hard_wrap(&mut self, wrap_width: usize) {
+        if wrap_width == 0 {
+            return;
+        }
+
+        let (row, col) = self.textarea.cursor();
+
+        // Clone the current line to avoid borrow checker issues
+        let current_line = {
+            let lines = self.textarea.lines();
+            if row >= lines.len() {
+                return;
+            }
+            lines[row].clone()
+        };
+
+        let line_width = current_line.width();
+
+        // Only wrap if line exceeds the wrap width
+        if line_width <= wrap_width {
+            return;
+        }
+
+        // Find the best position to wrap (at a word boundary if possible)
+        let wrap_pos = self.find_wrap_position(&current_line, wrap_width);
+
+        if wrap_pos > 0 && wrap_pos < current_line.len() {
+            // Save current cursor column
+            let cursor_col = col;
+
+            // Skip any spaces at the wrap position (calculate before mutating)
+            let chars: Vec<char> = current_line.chars().collect();
+            let mut skip_spaces = 0;
+            let mut pos = wrap_pos;
+            while pos < chars.len() && chars[pos] == ' ' {
+                skip_spaces += 1;
+                pos += 1;
+            }
+
+            // Move cursor to the wrap position
+            self.textarea.move_cursor(CursorMove::Head);
+            for _ in 0..wrap_pos {
+                self.textarea.move_cursor(CursorMove::Forward);
+            }
+
+            // Delete the spaces and insert newline
+            for _ in 0..skip_spaces {
+                self.textarea.delete_next_char();
+            }
+            self.textarea.insert_newline();
+
+            // Restore cursor position on the new line
+            if cursor_col > wrap_pos {
+                // Cursor was after the wrap point, move to new line
+                let new_col = cursor_col - wrap_pos - skip_spaces;
+                self.textarea.move_cursor(CursorMove::Head);
+                for _ in 0..new_col {
+                    self.textarea.move_cursor(CursorMove::Forward);
+                }
+            } else {
+                // Cursor was before wrap point, stay on current line
+                self.textarea.move_cursor(CursorMove::Up);
+                self.textarea.move_cursor(CursorMove::Head);
+                for _ in 0..cursor_col {
+                    self.textarea.move_cursor(CursorMove::Forward);
+                }
+            }
+        }
+    }
+
+    /// Find the best position to wrap a line, preferring word boundaries.
+    fn find_wrap_position(&self, line: &str, wrap_width: usize) -> usize {
+        let chars: Vec<char> = line.chars().collect();
+        let mut current_width = 0;
+        let mut last_space_idx = None;
+
+        for (idx, ch) in chars.iter().enumerate() {
+            let ch_width = ch.to_string().width();
+            current_width += ch_width;
+
+            if *ch == ' ' {
+                last_space_idx = Some(idx);
+            }
+
+            if current_width > wrap_width {
+                // We've exceeded the wrap width
+                // Prefer to wrap at the last space if it's not too far back
+                if let Some(space_idx) = last_space_idx {
+                    // Only use space if it's within reasonable distance (at least half the width)
+                    if space_idx > wrap_width / 3 {
+                        return space_idx;
+                    }
+                }
+                // No good space found, wrap at current position
+                return idx;
+            }
+        }
+
+        // Line doesn't need wrapping
+        line.len()
     }
 
     /// Delete the character before the cursor (like Backspace key)
@@ -307,6 +437,30 @@ impl<'a> TextAreaInput<'a> {
         self.textarea.lines().len().max(1)
     }
 
+    /// Get the number of visual lines considering soft wrapping.
+    /// This calculates how many lines the content will occupy when rendered
+    /// at the given width (accounting for borders).
+    pub fn visual_line_count(&self, available_width: u16) -> usize {
+        // Callers already account for borders, use the width directly
+        let content_width = available_width as usize;
+        if content_width == 0 {
+            return self.line_count();
+        }
+
+        let mut visual_lines = 0;
+        for line in self.textarea.lines() {
+            let line_width = line.width();
+            if line_width == 0 {
+                // Empty line still takes 1 visual line
+                visual_lines += 1;
+            } else {
+                // Calculate how many visual lines this logical line needs
+                visual_lines += (line_width + content_width - 1) / content_width;
+            }
+        }
+        visual_lines.max(1)
+    }
+
     // =========================================================================
     // New capabilities from tui-textarea (not in original InputBox)
     // =========================================================================
@@ -367,6 +521,33 @@ impl<'a> TextAreaInput<'a> {
     /// Get the lines as a slice
     pub fn lines(&self) -> &[String] {
         self.textarea.lines()
+    }
+
+    /// Check if cursor is on the first line
+    pub fn is_cursor_on_first_line(&self) -> bool {
+        self.textarea.cursor().0 == 0
+    }
+
+    /// Check if cursor is on the last line
+    pub fn is_cursor_on_last_line(&self) -> bool {
+        let (row, _) = self.textarea.cursor();
+        let line_count = self.textarea.lines().len();
+        row == line_count.saturating_sub(1)
+    }
+
+    /// Set the content of the textarea
+    pub fn set_content(&mut self, text: &str) {
+        // Clear existing content
+        self.textarea.select_all();
+        self.textarea.delete_char();
+        // Insert new content
+        for c in text.chars() {
+            if c == '\n' {
+                self.textarea.insert_newline();
+            } else {
+                self.textarea.insert_char(c);
+            }
+        }
     }
 
     /// Check if there are yank (paste) contents available
@@ -913,5 +1094,212 @@ mod tests {
 
         let expanded = input.content_expanded();
         assert_eq!(expanded, "FIRST SECOND");
+    }
+
+    // =========================================================================
+    // Cursor line position tests
+    // =========================================================================
+
+    #[test]
+    fn test_is_cursor_on_first_line() {
+        let mut input = TextAreaInput::new();
+        // Empty input - cursor is on first line
+        assert!(input.is_cursor_on_first_line());
+
+        // Add content on first line
+        for c in "line1".chars() {
+            input.insert_char(c);
+        }
+        assert!(input.is_cursor_on_first_line());
+
+        // Add second line
+        input.insert_newline();
+        assert!(!input.is_cursor_on_first_line());
+
+        // Add content to second line
+        for c in "line2".chars() {
+            input.insert_char(c);
+        }
+        assert!(!input.is_cursor_on_first_line());
+
+        // Move cursor up to first line
+        input.move_cursor_up();
+        assert!(input.is_cursor_on_first_line());
+    }
+
+    #[test]
+    fn test_is_cursor_on_last_line() {
+        let mut input = TextAreaInput::new();
+        // Empty input - cursor is on last line (first and last are same)
+        assert!(input.is_cursor_on_last_line());
+
+        // Add content on first line
+        for c in "line1".chars() {
+            input.insert_char(c);
+        }
+        assert!(input.is_cursor_on_last_line());
+
+        // Add second line
+        input.insert_newline();
+        for c in "line2".chars() {
+            input.insert_char(c);
+        }
+        assert!(input.is_cursor_on_last_line());
+
+        // Move cursor up to first line
+        input.move_cursor_up();
+        assert!(!input.is_cursor_on_last_line());
+
+        // Move cursor down to last line
+        input.move_cursor_down();
+        assert!(input.is_cursor_on_last_line());
+    }
+
+    #[test]
+    fn test_set_content_single_line() {
+        let mut input = TextAreaInput::new();
+        input.set_content("hello world");
+        assert_eq!(input.content(), "hello world");
+        assert_eq!(input.line_count(), 1);
+    }
+
+    #[test]
+    fn test_set_content_multiple_lines() {
+        let mut input = TextAreaInput::new();
+        input.set_content("line1\nline2\nline3");
+        assert_eq!(input.content(), "line1\nline2\nline3");
+        assert_eq!(input.line_count(), 3);
+
+        let lines = input.lines();
+        assert_eq!(lines[0], "line1");
+        assert_eq!(lines[1], "line2");
+        assert_eq!(lines[2], "line3");
+    }
+
+    #[test]
+    fn test_set_content_replaces_existing() {
+        let mut input = TextAreaInput::new();
+        // Add initial content
+        for c in "initial content".chars() {
+            input.insert_char(c);
+        }
+        assert_eq!(input.content(), "initial content");
+
+        // Replace with new content
+        input.set_content("new content");
+        assert_eq!(input.content(), "new content");
+        assert_eq!(input.line_count(), 1);
+    }
+
+    #[test]
+    fn test_set_content_empty_string() {
+        let mut input = TextAreaInput::new();
+        for c in "some content".chars() {
+            input.insert_char(c);
+        }
+
+        input.set_content("");
+        assert!(input.is_empty());
+    }
+
+    // =========================================================================
+    // Hard Wrap Tests
+    // =========================================================================
+
+    #[test]
+    fn test_hard_wrap_disabled_by_default() {
+        let input = TextAreaInput::new();
+        assert!(input.wrap_width().is_none());
+    }
+
+    #[test]
+    fn test_set_wrap_width() {
+        let mut input = TextAreaInput::new();
+        input.set_wrap_width(Some(20));
+        assert_eq!(input.wrap_width(), Some(20));
+
+        input.set_wrap_width(None);
+        assert!(input.wrap_width().is_none());
+    }
+
+    #[test]
+    fn test_hard_wrap_inserts_newline_at_width() {
+        let mut input = TextAreaInput::new();
+        input.set_wrap_width(Some(10)); // Wrap at 10 characters
+
+        // Type "hello world" - should wrap after "hello" at width 10
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+
+        // Should have 2 lines now
+        assert_eq!(input.line_count(), 2);
+    }
+
+    #[test]
+    fn test_hard_wrap_at_word_boundary() {
+        let mut input = TextAreaInput::new();
+        input.set_wrap_width(Some(15)); // Wrap at 15 characters
+
+        // Type "hello beautiful world"
+        for c in "hello beautiful world".chars() {
+            input.insert_char(c);
+        }
+
+        // Should wrap at word boundaries
+        assert!(input.line_count() >= 2);
+    }
+
+    #[test]
+    fn test_hard_wrap_cursor_position_after_wrap() {
+        let mut input = TextAreaInput::new();
+        input.set_wrap_width(Some(10));
+
+        // Type text that will wrap
+        for c in "hello world".chars() {
+            input.insert_char(c);
+        }
+
+        // Cursor should be at end of new line
+        let (row, _col) = input.cursor();
+        assert_eq!(row, 1); // Should be on second line
+    }
+
+    #[test]
+    fn test_hard_wrap_no_wrap_when_disabled() {
+        let mut input = TextAreaInput::new();
+        // Don't set wrap_width
+
+        // Type long text
+        for c in "this is a very long line that should not wrap automatically".chars() {
+            input.insert_char(c);
+        }
+
+        // Should still be on one line
+        assert_eq!(input.line_count(), 1);
+    }
+
+    #[test]
+    fn test_hard_wrap_allows_navigation_with_arrows() {
+        let mut input = TextAreaInput::new();
+        input.set_wrap_width(Some(10));
+
+        // Type text that wraps
+        for c in "hello world here".chars() {
+            input.insert_char(c);
+        }
+
+        // Multiple lines should exist
+        assert!(input.line_count() >= 2);
+
+        // Should be able to navigate up
+        let initial_row = input.cursor().0;
+        input.move_cursor_up();
+        let new_row = input.cursor().0;
+
+        // If we were on line > 0, we should have moved up
+        if initial_row > 0 {
+            assert!(new_row < initial_row);
+        }
     }
 }

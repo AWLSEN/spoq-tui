@@ -1,0 +1,247 @@
+use crate::ratatui::buffer::Buffer;
+use crate::ratatui::layout::Rect;
+use crate::ratatui::text::{Span, Text};
+use crate::ratatui::widgets::{Paragraph, Widget, Wrap};
+use crate::textarea::TextArea;
+use crate::util::num_digits;
+#[cfg(feature = "ratatui")]
+use ratatui_core::text::Line;
+use std::cmp;
+use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(feature = "tuirs")]
+use tui::text::Spans as Line;
+use unicode_width::UnicodeWidthStr;
+
+// &mut 'a (u16, u16, u16, u16) is not available since `render` method takes immutable reference of TextArea
+// instance. In the case, the TextArea instance cannot be accessed from any other objects since it is mutablly
+// borrowed.
+//
+// `ratatui::Frame::render_stateful_widget` would be an assumed way to render a stateful widget. But at this
+// point we stick with using `ratatui::Frame::render_widget` because it is simpler API. Users don't need to
+// manage states of textarea instances separately.
+// https://docs.rs/ratatui/latest/ratatui/terminal/struct.Frame.html#method.render_stateful_widget
+#[derive(Default, Debug)]
+pub struct Viewport(AtomicU64);
+
+impl Clone for Viewport {
+    fn clone(&self) -> Self {
+        let u = self.0.load(Ordering::Relaxed);
+        Viewport(AtomicU64::new(u))
+    }
+}
+
+impl Viewport {
+    pub fn scroll_top(&self) -> (u16, u16) {
+        let u = self.0.load(Ordering::Relaxed);
+        ((u >> 16) as u16, u as u16)
+    }
+
+    pub fn rect(&self) -> (u16, u16, u16, u16) {
+        let u = self.0.load(Ordering::Relaxed);
+        let width = (u >> 48) as u16;
+        let height = (u >> 32) as u16;
+        let row = (u >> 16) as u16;
+        let col = u as u16;
+        (row, col, width, height)
+    }
+
+    pub fn position(&self) -> (u16, u16, u16, u16) {
+        let (row_top, col_top, width, height) = self.rect();
+        let row_bottom = row_top.saturating_add(height).saturating_sub(1);
+        let col_bottom = col_top.saturating_add(width).saturating_sub(1);
+
+        (
+            row_top,
+            col_top,
+            cmp::max(row_top, row_bottom),
+            cmp::max(col_top, col_bottom),
+        )
+    }
+
+    fn store(&self, row: u16, col: u16, width: u16, height: u16) {
+        // Pack four u16 values into one u64 value
+        let u =
+            ((width as u64) << 48) | ((height as u64) << 32) | ((row as u64) << 16) | col as u64;
+        self.0.store(u, Ordering::Relaxed);
+    }
+
+    pub fn scroll(&mut self, rows: i16, cols: i16) {
+        fn apply_scroll(pos: u16, delta: i16) -> u16 {
+            if delta >= 0 {
+                pos.saturating_add(delta as u16)
+            } else {
+                pos.saturating_sub(-delta as u16)
+            }
+        }
+
+        let u = self.0.get_mut();
+        let row = apply_scroll((*u >> 16) as u16, rows);
+        let col = apply_scroll(*u as u16, cols);
+        *u = (*u & 0xffff_ffff_0000_0000) | ((row as u64) << 16) | (col as u64);
+    }
+}
+
+#[inline]
+fn next_scroll_top(prev_top: u16, cursor: u16, len: u16) -> u16 {
+    if cursor < prev_top {
+        cursor
+    } else if prev_top + len <= cursor {
+        cursor + 1 - len
+    } else {
+        prev_top
+    }
+}
+
+impl<'a> TextArea<'a> {
+    fn text_widget(&'a self, top_row: usize, height: usize) -> Text<'a> {
+        let lines_len = self.lines().len();
+        let lnum_len = num_digits(lines_len);
+        let bottom_row = cmp::min(top_row + height, lines_len);
+        let mut lines = Vec::with_capacity(bottom_row - top_row);
+        for (i, line) in self.lines()[top_row..bottom_row].iter().enumerate() {
+            lines.push(self.line_spans(line.as_str(), top_row + i, lnum_len));
+        }
+        Text::from(lines)
+    }
+
+    fn placeholder_widget(&'a self) -> Text<'a> {
+        let cursor = Span::styled(" ", self.cursor_style);
+        let text = Span::raw(self.placeholder.as_str());
+        Text::from(Line::from(vec![cursor, text]))
+    }
+
+    fn scroll_top_row(&self, prev_top: u16, height: u16) -> u16 {
+        next_scroll_top(prev_top, self.cursor().0 as u16, height)
+    }
+
+    fn scroll_top_col(&self, prev_top: u16, width: u16) -> u16 {
+        let mut cursor = self.cursor().1 as u16;
+        // Adjust the cursor position due to the width of line number.
+        if self.line_number_style().is_some() {
+            let lnum = num_digits(self.lines().len()) as u16 + 2; // `+ 2` for margins
+            if cursor <= lnum {
+                cursor *= 2; // Smoothly slide the line number into the screen on scrolling left
+            } else {
+                cursor += lnum; // The cursor position is shifted by the line number part
+            };
+        }
+        next_scroll_top(prev_top, cursor, width)
+    }
+
+    /// Calculate the visual row of the cursor when soft wrapping is enabled.
+    /// This accounts for how many visual lines precede the cursor position.
+    fn visual_cursor_row(&self, width: u16) -> u16 {
+        if width == 0 {
+            return self.cursor().0 as u16;
+        }
+
+        let (cursor_row, cursor_col) = self.cursor();
+        let width = width as usize;
+        let mut visual_row: usize = 0;
+
+        // Count visual rows for all lines before the cursor's line
+        for line in self.lines().iter().take(cursor_row) {
+            let line_width = line.width();
+            if line_width == 0 {
+                visual_row += 1;
+            } else {
+                visual_row += (line_width + width - 1) / width;
+            }
+        }
+
+        // Add the visual row offset within the cursor's line
+        if cursor_row < self.lines().len() {
+            let cursor_line = &self.lines()[cursor_row];
+            // Calculate width of text before cursor
+            let text_before_cursor: String = cursor_line.chars().take(cursor_col).collect();
+            let width_before = text_before_cursor.width();
+            // Add how many visual rows the cursor is down within this line
+            visual_row += width_before / width;
+        }
+
+        visual_row as u16
+    }
+}
+
+impl Widget for &TextArea<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let Rect { width, height, .. } = if let Some(b) = self.block() {
+            b.inner(area)
+        } else {
+            area
+        };
+
+        let (prev_top_row, top_col) = self.viewport.scroll_top();
+
+        // When line wrap is enabled, we need different scroll logic
+        let (text, style, scroll_row) = if self.line_wrap() {
+            // With wrapping: render ALL lines and use visual scroll
+            let text = if !self.placeholder.is_empty() && self.is_empty() {
+                self.placeholder_widget()
+            } else {
+                // Render all lines, not just visible ones
+                let lines_len = self.lines().len();
+                let lnum_len = num_digits(lines_len);
+                let mut lines = Vec::with_capacity(lines_len);
+                for (i, line) in self.lines().iter().enumerate() {
+                    lines.push(self.line_spans(line.as_str(), i, lnum_len));
+                }
+                Text::from(lines)
+            };
+
+            // Calculate visual cursor row for scrolling
+            let visual_cursor = self.visual_cursor_row(width);
+            let scroll_row = next_scroll_top(prev_top_row, visual_cursor, height);
+
+            (text, self.style(), scroll_row)
+        } else {
+            // Without wrapping: use original logic (slice visible lines)
+            let top_row = self.scroll_top_row(prev_top_row, height);
+            let (text, style) = if !self.placeholder.is_empty() && self.is_empty() {
+                (self.placeholder_widget(), self.placeholder_style)
+            } else {
+                (self.text_widget(top_row as _, height as _), self.style())
+            };
+            (text, style, top_row)
+        };
+
+        // To get fine control over the text color and the surrrounding block they have to be rendered separately
+        // see https://github.com/ratatui/ratatui/issues/144
+        let mut text_area = area;
+        let mut inner = Paragraph::new(text)
+            .style(style)
+            .alignment(self.alignment());
+
+        // Apply soft line wrapping if enabled
+        if self.line_wrap() {
+            inner = inner.wrap(Wrap { trim: false });
+            // Apply vertical scroll to show cursor's visual position
+            if scroll_row > 0 {
+                inner = inner.scroll((scroll_row, 0));
+            }
+        }
+
+        if let Some(b) = self.block() {
+            text_area = b.inner(area);
+            #[cfg(feature = "tuirs")]
+            let b = b.clone();
+            b.render(area, buf)
+        }
+
+        // Apply horizontal scroll only when NOT wrapping
+        let top_col = if self.line_wrap() {
+            0 // No horizontal scroll with wrapping
+        } else {
+            let top_col = self.scroll_top_col(top_col, width);
+            if top_col != 0 {
+                inner = inner.scroll((0, top_col));
+            }
+            top_col
+        };
+
+        // Store scroll top position for rendering on the next tick
+        self.viewport.store(scroll_row, top_col, width, height);
+
+        inner.render(text_area, buf);
+    }
+}
