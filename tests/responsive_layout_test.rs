@@ -1780,6 +1780,7 @@ mod ui_rendering_integration {
             permission_mode: None,
             message_count: 5,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         });
 
         terminal
@@ -1821,6 +1822,7 @@ mod ui_rendering_integration {
             permission_mode: None,
             message_count: 5,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         });
 
         terminal
@@ -1862,6 +1864,7 @@ mod ui_rendering_integration {
             permission_mode: None,
             message_count: 5,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         });
 
         terminal

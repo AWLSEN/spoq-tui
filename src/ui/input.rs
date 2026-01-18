@@ -1071,56 +1071,7 @@ mod tests {
     // ========================================================================
 
     fn create_test_app() -> App {
-        let (message_tx, message_rx) = tokio::sync::mpsc::unbounded_channel();
-        App {
-            threads: vec![],
-            tasks: vec![],
-            todos: vec![],
-            should_quit: false,
-            screen: Screen::CommandDeck,
-            active_thread_id: None,
-            focus: crate::app::Focus::default(),
-            notifications_index: 0,
-            tasks_index: 0,
-            threads_index: 0,
-            textarea: crate::widgets::textarea_input::TextAreaInput::new(),
-            migration_progress: None,
-            cache: crate::cache::ThreadCache::new(),
-            message_rx: Some(message_rx),
-            message_tx,
-            connection_status: false,
-            stream_error: None,
-            client: std::sync::Arc::new(crate::conductor::ConductorClient::new()),
-            tick_count: 0,
-            conversation_scroll: 0,
-            max_scroll: 0,
-            permission_mode: crate::models::PermissionMode::default(),
-            session_state: crate::state::SessionState::new(),
-            tool_tracker: crate::state::ToolTracker::new(),
-            subagent_tracker: crate::state::SubagentTracker::new(),
-            debug_tx: None,
-            stream_start_time: None,
-            last_event_time: None,
-            cumulative_token_count: 0,
-            thread_switcher: crate::app::ThreadSwitcher::default(),
-            last_tab_press: None,
-            scroll_boundary_hit: None,
-            boundary_hit_tick: 0,
-            scroll_velocity: 0.0,
-            scroll_position: 0.0,
-            terminal_width: 80,
-            terminal_height: 24,
-            active_panel: crate::app::ActivePanel::default(),
-            question_state: crate::state::session::AskUserQuestionState::default(),
-            ws_sender: None,
-            ws_connection_state: crate::websocket::WsConnectionState::Disconnected,
-            rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
-            markdown_cache: crate::markdown::MarkdownCache::new(),
-            cached_message_heights: std::collections::HashMap::new(),
-            needs_redraw: false,
-            has_visible_links: false,
-            input_history: crate::input_history::InputHistory::new(),
-        }
+        App::default()
     }
 
     // ========================================================================
@@ -1223,6 +1174,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         });
         app.active_thread_id = Some("prog-thread".to_string());
 

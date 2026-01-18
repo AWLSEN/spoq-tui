@@ -29,6 +29,7 @@ async fn test_stream_request_construction() {
         reply_to: None,
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
     assert_eq!(request.prompt, "Hello, world!");
     assert!(!request.session_id.is_empty());
@@ -43,6 +44,7 @@ async fn test_stream_request_construction() {
         reply_to: None,
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
     assert_eq!(request_with_thread.thread_id, Some("thread-123".to_string()));
 
@@ -54,6 +56,7 @@ async fn test_stream_request_construction() {
         reply_to: Some(456),
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
     assert_eq!(request_with_reply.reply_to, Some(456));
 }
@@ -70,6 +73,7 @@ async fn test_conductor_error_handling() {
         reply_to: None,
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
     let result = client.stream(&request).await;
 
@@ -99,6 +103,7 @@ async fn test_conductor_client_methods_exist() {
         reply_to: None,
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
 
     // Verify stream method exists (will fail to connect but that's expected)
@@ -132,6 +137,7 @@ async fn test_stream_request_with_different_configurations() {
         reply_to: None,
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
     // Validate request structure
     assert_eq!(request1.prompt, "Hello");
@@ -145,6 +151,7 @@ async fn test_stream_request_with_different_configurations() {
         reply_to: None,
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
     assert_eq!(request2.thread_id, Some("thread-123".to_string()));
 
@@ -156,6 +163,7 @@ async fn test_stream_request_with_different_configurations() {
         reply_to: Some(456),
         thread_type: None,
         permission_mode: None,
+        metadata: None,
     };
     assert_eq!(request3.session_id, "session-789");
     assert_eq!(request3.reply_to, Some(456));

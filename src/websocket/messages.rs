@@ -9,12 +9,22 @@ pub enum WsIncomingMessage {
     /// Agent status update (thinking, idle, tool_use, etc.)
     #[serde(rename = "agent_status")]
     AgentStatus(WsAgentStatus),
+    /// Connection confirmation from server
+    #[serde(rename = "connected")]
+    Connected(WsConnected),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
     /// Parse error occurred (for debugging - not deserialized from JSON)
     #[serde(skip)]
     ParseError { error: String, raw: String },
+}
+
+/// Connection confirmation from WebSocket server
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsConnected {
+    pub session_id: String,
+    pub timestamp: u64,
 }
 
 /// Agent status update

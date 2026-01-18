@@ -127,6 +127,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: Utc::now(),
+            working_directory: None,
         };
 
         assert_eq!(thread.id, "thread-123");
@@ -148,6 +149,7 @@ mod tests {
             permission_mode: Some("auto".to_string()),
             message_count: 5,
             created_at: Utc::now(),
+            working_directory: None,
         };
 
         assert_eq!(thread.id, "thread-456");
@@ -167,6 +169,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: Utc::now(),
+            working_directory: None,
         };
 
         let json = serde_json::to_string(&thread).expect("Failed to serialize");
@@ -188,6 +191,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: Utc::now(),
+            working_directory: None,
         };
 
         let json = serde_json::to_string(&thread).expect("Failed to serialize");
@@ -608,6 +612,7 @@ mod tests {
             reply_to: Some(100),
             thread_type: Some(ThreadType::Programming),
             permission_mode: Some(PermissionMode::Plan),
+            metadata: None,
         };
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");

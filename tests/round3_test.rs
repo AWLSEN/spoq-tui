@@ -367,7 +367,7 @@ fn test_message_reasoning_fields_initialization() {
 #[test]
 fn test_reasoning_persistence_through_reconciliation() {
     let mut cache = ThreadCache::new();
-    let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation);
+    let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation, None);
 
     // Add reasoning to pending thread
     cache.append_reasoning_to_message(&pending_id, "Initial reasoning");

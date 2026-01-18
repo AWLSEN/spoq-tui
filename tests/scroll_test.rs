@@ -11,6 +11,7 @@ fn create_test_app_in_conversation() -> App {
     let thread_id = app.cache.create_pending_thread(
         "Test Thread".to_string(),
         ThreadType::Conversation,
+        None,
     );
     app.active_thread_id = Some(thread_id);
     app.screen = Screen::Conversation;

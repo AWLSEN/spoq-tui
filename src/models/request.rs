@@ -17,7 +17,7 @@ pub enum PermissionMode {
 }
 
 /// Metadata for stream requests
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct StreamMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_directory: Option<String>,

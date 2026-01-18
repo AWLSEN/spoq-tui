@@ -627,6 +627,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         });
         app.cache
             .add_message_simple(&existing_id, MessageRole::User, "Previous question".to_string());
@@ -1310,6 +1311,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("thread-conv".to_string());
@@ -1333,6 +1335,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("thread-prog".to_string());
@@ -1364,6 +1367,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("thread-1".to_string());
@@ -1382,6 +1386,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
 
@@ -1407,6 +1412,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.cache
@@ -1450,6 +1456,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.cache
@@ -1552,6 +1559,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1578,6 +1586,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("conv-thread".to_string());
@@ -1615,6 +1624,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1648,6 +1658,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("conv-thread".to_string());
@@ -1679,6 +1690,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread);
         app.active_thread_id = Some("prog-thread".to_string());
@@ -1712,6 +1724,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread1);
         // Pre-populate messages to avoid lazy fetch triggering tokio::spawn
@@ -1733,6 +1746,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         };
         app.cache.upsert_thread(thread2);
         // Pre-populate messages to avoid lazy fetch triggering tokio::spawn
@@ -3088,6 +3102,7 @@ mod tests {
             permission_mode: None,
             message_count: 0,
             created_at: chrono::Utc::now(),
+            working_directory: None,
         });
 
         // Set as active thread

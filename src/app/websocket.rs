@@ -137,6 +137,10 @@ fn route_ws_message(
             // Could be used in future to show agent state in UI
             Ok(())
         }
+        WsIncomingMessage::Connected(_connected) => {
+            // Connection confirmation is informational - ignore for now
+            Ok(())
+        }
         WsIncomingMessage::RawMessage(raw) => {
             message_tx
                 .send(AppMessage::WsRawMessage { message: raw })
