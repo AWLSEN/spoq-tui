@@ -44,22 +44,8 @@ impl App {
         // Conversation = continue the thread that was opened via open_thread()
         let is_command_deck = self.screen == Screen::CommandDeck;
 
-        // Determine thread_type based on screen and active thread
-        let thread_type = if is_command_deck {
-            // New thread from CommandDeck - use the specified type
-            new_thread_type
-        } else if self.is_active_thread_programming() {
-            ThreadType::Programming
-        } else {
-            ThreadType::Conversation
-        };
-
-        // Determine plan_mode for programming threads
-        let plan_mode = if thread_type == ThreadType::Programming {
-            matches!(self.programming_mode, ProgrammingMode::PlanMode)
-        } else {
-            false
-        };
+        // Determine plan_mode based on current programming mode
+        let plan_mode = matches!(self.programming_mode, ProgrammingMode::PlanMode);
 
         // Determine thread_id based on screen
         let (thread_id, is_new_thread) = if is_command_deck {
@@ -123,7 +109,7 @@ impl App {
         // Build unified StreamRequest with thread_type
         // Always send thread_id - for new threads, we generate a UUID upfront
         // The backend will use our client-generated UUID as the canonical thread_id
-        let request = StreamRequest::with_thread(content, thread_id).with_type(thread_type);
+        let request = StreamRequest::with_thread(content, thread_id).with_type(ThreadType::Programming);
 
         // Apply plan_mode if needed
         let request = if plan_mode {
@@ -317,6 +303,7 @@ impl App {
                                 Some(thread_id),
                             );
                             let _ = message_tx.send(AppMessage::ToolStarted {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id: tool_event.tool_call_id,
                                 tool_name: tool_event.tool_name,
                             });
@@ -324,6 +311,7 @@ impl App {
                         SseEvent::ToolCallArgument(arg_event) => {
                             // Send argument chunk to be accumulated in the ToolEvent
                             let _ = message_tx.send(AppMessage::ToolArgumentChunk {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id: arg_event.tool_call_id,
                                 chunk: arg_event.chunk,
                             });
@@ -344,6 +332,7 @@ impl App {
                                 Some(thread_id),
                             );
                             let _ = message_tx.send(AppMessage::ToolExecuting {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id,
                                 display_name,
                             });
@@ -403,6 +392,7 @@ impl App {
                                 Some(thread_id),
                             );
                             let _ = message_tx.send(AppMessage::ToolCompleted {
+                                thread_id: thread_id.to_string(),
                                 tool_call_id: tool_event.tool_call_id,
                                 success,
                                 summary,

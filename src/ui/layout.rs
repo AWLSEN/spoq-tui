@@ -21,6 +21,7 @@ pub mod breakpoints {
     /// Medium terminal (< 120 columns)
     pub const MD_WIDTH: u16 = 120;
     /// Large terminal (< 160 columns)
+    #[allow(dead_code)]
     pub const LG_WIDTH: u16 = 160;
 
     /// Extra small terminal height (< 16 rows)

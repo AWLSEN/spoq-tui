@@ -1,0 +1,13 @@
+{
+  "name": "@oaftobark/spoq-darwin-x64",
+  "version": "0.1.2",
+  "description": "spoq binary for macOS x64 (Intel)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oaftobark/spoq.git"
+  },
+  "license": "MIT",
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "preferUnplugged": true
+}

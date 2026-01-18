@@ -7,7 +7,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
 
-use super::messages::{WsCommandResponse, WsIncomingMessage};
+use super::messages::{WsIncomingMessage, WsOutgoingMessage};
 
 /// WebSocket connection errors
 #[derive(Debug, Clone)]
@@ -49,8 +49,11 @@ pub struct WsClientConfig {
 
 impl Default for WsClientConfig {
     fn default() -> Self {
+        // Allow WebSocket host to be configured via environment variable
+        let host = std::env::var("SPOQ_WS_HOST")
+            .unwrap_or_else(|_| "100.80.115.93:8000".to_string());
         Self {
-            host: "100.80.115.93:8000".to_string(),
+            host,
             max_retries: 5,
             max_backoff_secs: 30,
         }
@@ -59,8 +62,8 @@ impl Default for WsClientConfig {
 
 /// WebSocket client for communicating with the Claude Code server
 pub struct WsClient {
-    /// Channel to send responses back to the server
-    response_tx: mpsc::Sender<WsCommandResponse>,
+    /// Channel to send outgoing messages to the server
+    outgoing_tx: mpsc::Sender<WsOutgoingMessage>,
     /// Receiver for incoming messages from the server
     incoming_rx: mpsc::Receiver<WsIncomingMessage>,
     /// Watch receiver for connection state changes
@@ -76,9 +79,13 @@ impl WsClient {
     pub async fn connect(config: WsClientConfig) -> Result<Self, WsError> {
         let url = format!("ws://{}/ws", config.host);
 
-        // Try initial connection
-        let ws_stream = connect_async(&url)
+        // Try initial connection with 5 second timeout
+        let ws_stream = tokio::time::timeout(
+            Duration::from_secs(5),
+            connect_async(&url)
+        )
             .await
+            .map_err(|_| WsError::ConnectionFailed(format!("Connection timeout to {}", url)))?
             .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
 
         info!("Connected to WebSocket server at {}", url);
@@ -87,7 +94,7 @@ impl WsClient {
 
         // Create channels
         let (incoming_tx, incoming_rx) = mpsc::channel::<WsIncomingMessage>(100);
-        let (response_tx, response_rx) = mpsc::channel::<WsCommandResponse>(100);
+        let (outgoing_tx, outgoing_rx) = mpsc::channel::<WsOutgoingMessage>(100);
         let (state_tx, state_rx) = watch::channel(WsConnectionState::Connected);
 
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -101,7 +108,7 @@ impl WsClient {
                 ws_sink,
                 ws_stream,
                 incoming_tx,
-                response_rx,
+                outgoing_rx,
                 state_tx,
                 shutdown: shutdown_clone,
             })
@@ -109,21 +116,11 @@ impl WsClient {
         });
 
         Ok(Self {
-            response_tx,
+            outgoing_tx,
             incoming_rx,
             state_rx,
             shutdown,
         })
-    }
-
-    /// Check if currently connected
-    pub fn is_connected(&self) -> bool {
-        matches!(*self.state_rx.borrow(), WsConnectionState::Connected)
-    }
-
-    /// Get the current connection state
-    pub fn connection_state(&self) -> WsConnectionState {
-        self.state_rx.borrow().clone()
     }
 
     /// Subscribe to connection state changes
@@ -131,10 +128,10 @@ impl WsClient {
         self.state_rx.clone()
     }
 
-    /// Send a command response to the server
-    pub async fn send_response(&self, response: WsCommandResponse) -> Result<(), WsError> {
-        self.response_tx
-            .send(response)
+    /// Send a message to the server
+    pub async fn send(&self, message: WsOutgoingMessage) -> Result<(), WsError> {
+        self.outgoing_tx
+            .send(message)
             .await
             .map_err(|e| WsError::SendFailed(e.to_string()))
     }
@@ -142,11 +139,6 @@ impl WsClient {
     /// Receive the next incoming message
     pub async fn recv(&mut self) -> Option<WsIncomingMessage> {
         self.incoming_rx.recv().await
-    }
-
-    /// Get a reference to the incoming message receiver for use with select!
-    pub fn incoming_receiver(&mut self) -> &mut mpsc::Receiver<WsIncomingMessage> {
-        &mut self.incoming_rx
     }
 
     /// Gracefully shutdown the WebSocket connection
@@ -178,7 +170,7 @@ struct ConnectionLoopParams {
         >,
     >,
     incoming_tx: mpsc::Sender<WsIncomingMessage>,
-    response_rx: mpsc::Receiver<WsCommandResponse>,
+    outgoing_rx: mpsc::Receiver<WsOutgoingMessage>,
     state_tx: watch::Sender<WsConnectionState>,
     shutdown: Arc<AtomicBool>,
 }
@@ -191,7 +183,7 @@ async fn run_connection_loop(params: ConnectionLoopParams) {
         mut ws_sink,
         mut ws_stream,
         incoming_tx,
-        mut response_rx,
+        mut outgoing_rx,
         state_tx,
         shutdown,
     } = params;
@@ -207,6 +199,14 @@ async fn run_connection_loop(params: ConnectionLoopParams) {
             msg = ws_stream.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
+                        // Send raw message for debugging (truncated to 200 chars)
+                        let raw_preview = if text.len() > 200 {
+                            format!("{}...", &text[..200])
+                        } else {
+                            text.clone()
+                        };
+                        let _ = incoming_tx.send(WsIncomingMessage::RawMessage(raw_preview)).await;
+
                         match serde_json::from_str::<WsIncomingMessage>(&text) {
                             Ok(parsed) => {
                                 debug!("Received message: {:?}", parsed);
@@ -217,7 +217,11 @@ async fn run_connection_loop(params: ConnectionLoopParams) {
                             }
                             Err(e) => {
                                 warn!("Failed to parse message: {} - {}", e, text);
-                                // Continue without crashing - skip malformed messages
+                                // Send parse error for debugging
+                                let _ = incoming_tx.send(WsIncomingMessage::ParseError {
+                                    error: e.to_string(),
+                                    raw: if text.len() > 500 { format!("{}...", &text[..500]) } else { text },
+                                }).await;
                             }
                         }
                     }
@@ -281,25 +285,25 @@ async fn run_connection_loop(params: ConnectionLoopParams) {
                     }
                 }
             }
-            // Handle outgoing responses
-            response = response_rx.recv() => {
-                match response {
-                    Some(resp) => {
-                        match serde_json::to_string(&resp) {
+            // Handle outgoing messages
+            outgoing = outgoing_rx.recv() => {
+                match outgoing {
+                    Some(msg) => {
+                        match serde_json::to_string(&msg) {
                             Ok(json) => {
-                                debug!("Sending response: {}", json);
+                                debug!("Sending outgoing message: {}", json);
                                 if let Err(e) = ws_sink.send(Message::Text(json)).await {
-                                    error!("Failed to send response: {}", e);
+                                    error!("Failed to send outgoing message: {}", e);
                                     // Don't break - the connection might recover
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to serialize response: {}", e);
+                                error!("Failed to serialize outgoing message: {}", e);
                             }
                         }
                     }
                     None => {
-                        debug!("Response channel closed, shutting down");
+                        debug!("Outgoing channel closed, shutting down");
                         break;
                     }
                 }
@@ -413,8 +417,12 @@ mod tests {
 
     #[test]
     fn test_ws_client_config_default() {
+        // Note: This test may fail if SPOQ_WS_HOST env var is set
         let config = WsClientConfig::default();
-        assert_eq!(config.host, "100.80.115.93:8000");
+        // Default host when env var is not set
+        if std::env::var("SPOQ_WS_HOST").is_err() {
+            assert_eq!(config.host, "100.80.115.93:8000");
+        }
         assert_eq!(config.max_retries, 5);
         assert_eq!(config.max_backoff_secs, 30);
     }
@@ -597,9 +605,13 @@ mod tests {
 
     #[test]
     fn test_ws_client_config_debug() {
-        let config = WsClientConfig::default();
+        let config = WsClientConfig {
+            host: "test.example.com:8000".to_string(),
+            max_retries: 5,
+            max_backoff_secs: 30,
+        };
         let debug_str = format!("{:?}", config);
-        assert!(debug_str.contains("100.80.115.93:8000"));
+        assert!(debug_str.contains("test.example.com:8000"));
         assert!(debug_str.contains("5"));
         assert!(debug_str.contains("30"));
     }

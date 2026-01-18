@@ -148,6 +148,8 @@ pub enum StateType {
     SubagentTracker,
     /// Todos update
     Todos,
+    /// WebSocket message
+    WebSocket,
 }
 
 /// Stream lifecycle event data.
@@ -242,6 +244,8 @@ pub enum ErrorSource {
     AppState,
     /// Error from cache operations
     Cache,
+    /// Error from WebSocket
+    WebSocket,
 }
 
 /// Snapshot of the current application state for the debug dashboard.

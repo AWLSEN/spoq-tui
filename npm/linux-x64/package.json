@@ -1,0 +1,13 @@
+{
+  "name": "@oaftobark/spoq-linux-x64",
+  "version": "0.1.2",
+  "description": "spoq binary for Linux x64",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oaftobark/spoq.git"
+  },
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["x64"],
+  "preferUnplugged": true
+}

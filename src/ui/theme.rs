@@ -41,9 +41,6 @@ pub const COLOR_PROGRESS_BG: Color = Color::DarkGray;
 // Claude Code Tool Colors
 // ============================================================================
 
-/// Tool icon color - Claude Code blue
-pub const COLOR_TOOL_ICON: Color = Color::Rgb(0, 122, 204); // blue #007ACC
-
 /// Tool running state - gray
 pub const COLOR_TOOL_RUNNING: Color = Color::Rgb(128, 128, 128); // gray for running state
 
@@ -62,3 +59,10 @@ pub const COLOR_SUBAGENT_RUNNING: Color = Color::Cyan;
 
 /// Subagent complete state - green (same as tool success for consistency)
 pub const COLOR_SUBAGENT_COMPLETE: Color = Color::Rgb(4, 181, 117); // green #04B575
+
+// ============================================================================
+// Dialog Colors
+// ============================================================================
+
+/// Background color for dialog boxes (permission, skill, AskUserQuestion)
+pub const COLOR_DIALOG_BG: Color = Color::Rgb(10, 15, 35);

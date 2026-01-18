@@ -6,6 +6,26 @@ use serde::{Deserialize, Serialize};
 pub enum WsIncomingMessage {
     #[serde(rename = "permission_request")]
     PermissionRequest(WsPermissionRequest),
+    /// Agent status update (thinking, idle, tool_use, etc.)
+    #[serde(rename = "agent_status")]
+    AgentStatus(WsAgentStatus),
+    /// Raw message received (for debugging - not deserialized from JSON)
+    #[serde(skip)]
+    RawMessage(String),
+    /// Parse error occurred (for debugging - not deserialized from JSON)
+    #[serde(skip)]
+    ParseError { error: String, raw: String },
+}
+
+/// Agent status update
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsAgentStatus {
+    pub thread_id: String,
+    pub state: String,
+    pub model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    pub timestamp: u64,
 }
 
 /// Permission request from client
@@ -42,6 +62,31 @@ pub struct WsPermissionData {
     pub message: Option<String>,
 }
 
+/// Cancel permission request (user pressed Shift+Escape)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsCancelPermission {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub request_id: String,
+}
+
+impl WsCancelPermission {
+    pub fn new(request_id: String) -> Self {
+        Self {
+            type_: "cancel_permission".to_string(),
+            request_id,
+        }
+    }
+}
+
+/// Outgoing WebSocket messages (sent to server)
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum WsOutgoingMessage {
+    CommandResponse(WsCommandResponse),
+    CancelPermission(WsCancelPermission),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -65,6 +110,7 @@ mod tests {
                 assert_eq!(req.description, "List directory contents");
                 assert_eq!(req.timestamp, 1234567890);
             }
+            _ => panic!("Unexpected message type"),
         }
     }
 
@@ -136,6 +182,7 @@ mod tests {
                 assert_eq!(req.description, "Read hosts file");
                 assert_eq!(req.timestamp, 9876543210);
             }
+            _ => panic!("Unexpected message type"),
         }
     }
 
@@ -227,6 +274,7 @@ mod tests {
                 assert_eq!(req.tool_input["boolean"], true);
                 assert!(req.tool_input["null"].is_null());
             }
+            _ => panic!("Unexpected message type"),
         }
     }
 
@@ -248,6 +296,7 @@ mod tests {
                 assert!(req.tool_input.is_object());
                 assert_eq!(req.tool_input.as_object().unwrap().len(), 0);
             }
+            _ => panic!("Unexpected message type"),
         }
     }
 
@@ -382,6 +431,7 @@ mod tests {
             WsIncomingMessage::PermissionRequest(req) => {
                 assert_eq!(req.timestamp, 9999999999999);
             }
+            _ => panic!("Unexpected message type"),
         }
     }
 
@@ -404,6 +454,7 @@ mod tests {
                 assert!(req.description.contains('\n'));
                 assert!(req.description.contains('\t'));
             }
+            _ => panic!("Unexpected message type"),
         }
     }
 
@@ -425,6 +476,7 @@ mod tests {
                 assert!(req.tool_name.contains('🔧'));
                 assert!(req.description.contains('é'));
             }
+            _ => panic!("Unexpected message type"),
         }
     }
 }

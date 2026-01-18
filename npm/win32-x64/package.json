@@ -1,0 +1,13 @@
+{
+  "name": "@oaftobark/spoq-win32-x64",
+  "version": "0.1.2",
+  "description": "spoq binary for Windows x64",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oaftobark/spoq.git"
+  },
+  "license": "MIT",
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "preferUnplugged": true
+}

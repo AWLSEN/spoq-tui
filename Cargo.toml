@@ -1,7 +1,14 @@
 [package]
 name = "spoq"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
+description = "A TUI client for spoq"
+license = "MIT"
+repository = "https://github.com/AWLSEN/spoq-tui"
+homepage = "https://github.com/AWLSEN/spoq-tui"
+keywords = ["tui", "terminal", "cli"]
+categories = ["command-line-interface"]
+readme = "README.md"
 
 [dependencies]
 ratatui = "0.30"
@@ -13,7 +20,7 @@ serde_json = "1"
 color-eyre = "0.6"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
-reqwest = { version = "0.11", features = ["json", "stream"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls"] }
 eventsource-client = "0.12"
 futures-util = "0.3"
 pulldown-cmark = "0.12"
@@ -35,3 +42,9 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "render_benchmark"
 harness = false
+
+[profile.release]
+lto = "thin"
+strip = true
+opt-level = 3
+codegen-units = 1

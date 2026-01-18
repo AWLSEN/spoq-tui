@@ -56,42 +56,6 @@ pub fn extract_short_model_name(full_name: &str) -> &str {
     }
 }
 
-/// Returns the appropriate Unicode icon for a given tool function name
-pub fn get_tool_icon(function_name: &str) -> &'static str {
-    match function_name {
-        "Read" => "📄",
-        "Write" => "📝",
-        "Edit" => "✏️",
-        "Bash" => "$",
-        "Grep" => "🔍",
-        "Glob" => "🔍",
-        "Task" => "🤖",
-        "WebFetch" => "🌐",
-        "WebSearch" => "🌐",
-        "TodoWrite" => "📋",
-        "AskUserQuestion" => "❓",
-        "NotebookEdit" => "📓",
-        _ => "⚙️"
-    }
-}
-
-/// Returns the appropriate icon for a subagent based on its type
-///
-/// # Arguments
-/// * `subagent_type` - The type of subagent (e.g., "Explore", "Bash", "general-purpose")
-///
-/// # Returns
-/// A static string with the icon character
-pub fn get_subagent_icon(subagent_type: &str) -> &'static str {
-    match subagent_type {
-        "Explore" => "🔍",
-        "Bash" => "$",
-        "Plan" => "📋",
-        "general-purpose" => "🤖",
-        _ => "●"
-    }
-}
-
 /// Truncate a string to approximately max_len bytes, adding "..." if truncated.
 /// Safely handles UTF-8 by finding the nearest char boundary.
 pub fn truncate_string(s: &str, max_len: usize) -> String {

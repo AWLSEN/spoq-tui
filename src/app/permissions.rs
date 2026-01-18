@@ -5,7 +5,10 @@ use std::time::Duration;
 
 use crate::state::session::AskUserQuestionState;
 use crate::ui::input::parse_ask_user_question;
-use crate::websocket::{WsCommandResponse, WsCommandResult, WsConnectionState, WsPermissionData};
+use crate::websocket::{
+    WsCancelPermission, WsCommandResponse, WsCommandResult, WsConnectionState, WsOutgoingMessage,
+    WsPermissionData,
+};
 use tracing::{debug, error, info, warn};
 
 use super::App;
@@ -74,7 +77,7 @@ impl App {
         };
 
         // Try to send - this is a non-blocking channel send
-        match sender.try_send(response) {
+        match sender.try_send(WsOutgoingMessage::CommandResponse(response)) {
             Ok(()) => {
                 debug!("Sent permission response via WebSocket: {} -> {}", request_id, allowed);
                 Ok(())
@@ -131,7 +134,11 @@ impl App {
                             },
                         };
 
-                        if sender.send(response).await.is_ok() {
+                        if sender
+                            .send(WsOutgoingMessage::CommandResponse(response))
+                            .await
+                            .is_ok()
+                        {
                             debug!("Permission response sent via WebSocket on retry");
                             return;
                         }
@@ -201,6 +208,22 @@ impl App {
         self.session_state.clear_pending_permission();
         self.question_state.reset();
         self.mark_dirty();
+    }
+
+    /// Cancel the current pending permission (user pressed Shift+Escape)
+    pub fn cancel_permission(&mut self, permission_id: &str) {
+        // Send cancel message via WebSocket
+        if let Some(ref sender) = self.ws_sender {
+            let cancel_msg = WsCancelPermission::new(permission_id.to_string());
+            debug!("Cancelling permission {} via WebSocket", permission_id);
+            let _ = sender.try_send(WsOutgoingMessage::CancelPermission(cancel_msg));
+        } else {
+            warn!("No WebSocket sender available for cancel");
+        }
+
+        // Clear the pending permission and reset question state
+        self.session_state.clear_pending_permission();
+        self.question_state.reset();
     }
 
     /// Allow the tool always for this session and approve (user pressed 'a')
@@ -384,8 +407,15 @@ impl App {
     }
 
     /// Handle Enter key in question UI
+    ///
+    /// For single questions: submits immediately
+    /// For multiple questions: marks current as answered and advances to next tab
+    ///                         Only submits when all questions are answered
+    ///
     /// Returns true if a response was sent
     pub fn question_confirm(&mut self) -> bool {
+        let num_questions = self.get_question_count();
+
         // Check if "Other" is selected and not in text input mode
         if self.question_state.current_selection().is_none() && !self.question_state.other_active {
             // Activate "Other" text input mode
@@ -395,18 +425,38 @@ impl App {
             return false;
         }
 
-        // If in "Other" text input mode, submit the custom answer
+        // If in "Other" text input mode, validate and mark answered
         if self.question_state.other_active {
             let other_text = self.question_state.current_other_text().to_string();
             if other_text.is_empty() {
-                // Don't submit empty "Other" text
+                // Don't submit/advance with empty "Other" text
                 return false;
             }
+            // Deactivate "Other" mode as we're confirming this answer
+            self.question_state.other_active = false;
+        }
+
+        // For single question, submit immediately
+        if num_questions == 1 {
             return self.submit_question_answer();
         }
 
-        // Submit the selected option
-        self.submit_question_answer()
+        // Multiple questions: mark current as answered and advance
+        self.question_state.mark_current_answered();
+        debug!("Marked question {} as answered", self.question_state.tab_index);
+
+        // Check if all questions are now answered
+        if self.question_state.all_answered() {
+            debug!("All questions answered, submitting");
+            return self.submit_question_answer();
+        }
+
+        // Advance to next unanswered question
+        if self.question_state.advance_to_next_unanswered(num_questions) {
+            debug!("Advanced to question {}", self.question_state.tab_index);
+        }
+
+        false
     }
 
     /// Cancel "Other" text input mode
@@ -554,7 +604,7 @@ impl App {
             },
         };
 
-        if let Err(e) = sender.try_send(response) {
+        if let Err(e) = sender.try_send(WsOutgoingMessage::CommandResponse(response)) {
             error!("Failed to send question response: {}", e);
         } else {
             debug!("Sent question response for {}", request_id);
@@ -570,7 +620,7 @@ mod tests {
     use tokio::sync::mpsc;
 
     /// Helper to create a test App with WebSocket sender
-    fn create_test_app_with_ws() -> (App, mpsc::Receiver<WsCommandResponse>) {
+    fn create_test_app_with_ws() -> (App, mpsc::Receiver<WsOutgoingMessage>) {
         let mut app = App::default();
         let (tx, rx) = mpsc::channel(10);
         app.ws_sender = Some(tx);
@@ -587,6 +637,14 @@ mod tests {
             context: Some("ls -la".to_string()),
             tool_input: Some(serde_json::json!({"command": "ls -la"})),
             received_at: Instant::now(),
+        }
+    }
+
+    /// Helper to extract WsCommandResponse from WsOutgoingMessage
+    fn extract_command_response(msg: WsOutgoingMessage) -> WsCommandResponse {
+        match msg {
+            WsOutgoingMessage::CommandResponse(resp) => resp,
+            WsOutgoingMessage::CancelPermission(_) => panic!("Expected CommandResponse"),
         }
     }
 
@@ -668,7 +726,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify the message was sent
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert_eq!(msg.type_, "command_response");
         assert_eq!(msg.request_id, "perm-123");
         assert_eq!(msg.result.status, "success");
@@ -684,7 +742,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify the message was sent
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert_eq!(msg.request_id, "perm-456");
         assert!(!msg.result.data.allowed);
     }
@@ -716,7 +774,7 @@ mod tests {
 
         app.approve_permission("perm-789");
 
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert_eq!(msg.request_id, "perm-789");
         assert!(msg.result.data.allowed);
     }
@@ -728,7 +786,7 @@ mod tests {
 
         app.deny_permission("perm-abc");
 
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert_eq!(msg.request_id, "perm-abc");
         assert!(!msg.result.data.allowed);
     }
@@ -747,7 +805,7 @@ mod tests {
         assert!(app.session_state.pending_permission.is_none());
 
         // WebSocket message should be sent
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert_eq!(msg.request_id, "perm-xyz");
         assert!(msg.result.data.allowed);
     }
@@ -760,7 +818,7 @@ mod tests {
         let handled = app.handle_permission_key('y');
         assert!(handled);
 
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert!(msg.result.data.allowed);
     }
 
@@ -772,7 +830,7 @@ mod tests {
         let handled = app.handle_permission_key('n');
         assert!(handled);
 
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert!(!msg.result.data.allowed);
     }
 
@@ -787,7 +845,7 @@ mod tests {
         assert!(handled);
         assert!(app.session_state.allowed_tools.contains("Read"));
 
-        let msg = rx.recv().await.unwrap();
+        let msg = extract_command_response(rx.recv().await.unwrap());
         assert!(msg.result.data.allowed);
     }
 
@@ -882,6 +940,27 @@ mod tests {
         // Verify retry delay is reasonable
         assert!(WS_RETRY_DELAY_MS >= 100);
         assert!(WS_RETRY_DELAY_MS <= 1000);
+    }
+
+    #[tokio::test]
+    async fn test_cancel_permission_sends_cancel_message() {
+        let (mut app, mut rx) = create_test_app_with_ws();
+        app.session_state.pending_permission = Some(create_test_permission("perm-cancel"));
+
+        app.cancel_permission("perm-cancel");
+
+        // Permission should be cleared
+        assert!(app.session_state.pending_permission.is_none());
+
+        // Verify cancel message was sent
+        let msg = rx.recv().await.unwrap();
+        match msg {
+            WsOutgoingMessage::CancelPermission(cancel) => {
+                assert_eq!(cancel.request_id, "perm-cancel");
+                assert_eq!(cancel.type_, "cancel_permission");
+            }
+            _ => panic!("Expected CancelPermission message"),
+        }
     }
 
     // ============================================================================
@@ -1221,5 +1300,101 @@ mod tests {
         // Typing should have no effect
         app.question_type_char('x');
         assert_eq!(app.question_state.current_other_text(), "");
+    }
+
+    // ============= Multi-Question Tab Progression Tests =============
+
+    #[test]
+    fn test_question_confirm_multi_question_advances_tab() {
+        let (mut app, _rx) = create_test_app_with_ws();
+        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-advance"));
+        app.init_question_state();
+
+        // Start at tab 0, select option 0
+        assert_eq!(app.question_state.tab_index, 0);
+        assert_eq!(app.question_state.current_selection(), Some(0));
+
+        // Confirm should mark as answered and advance to tab 1, NOT submit
+        let result = app.question_confirm();
+        assert!(!result); // Should NOT submit yet
+        assert!(app.question_state.answered[0]); // Tab 0 marked answered
+        assert_eq!(app.question_state.tab_index, 1); // Moved to tab 1
+        assert!(app.session_state.pending_permission.is_some()); // Permission still pending
+    }
+
+    #[test]
+    fn test_question_confirm_multi_question_submits_on_last() {
+        let (mut app, _rx) = create_test_app_with_ws();
+        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-submit"));
+        app.init_question_state();
+
+        // Answer first question
+        let result1 = app.question_confirm();
+        assert!(!result1); // Not submitted yet
+        assert_eq!(app.question_state.tab_index, 1);
+
+        // For multi-select question, toggle an option first
+        app.question_toggle_option();
+
+        // Answer second (last) question - should submit
+        let result2 = app.question_confirm();
+        assert!(result2); // Should submit now
+        assert!(app.session_state.pending_permission.is_none()); // Permission cleared
+    }
+
+    #[test]
+    fn test_question_confirm_multi_question_answered_tracking() {
+        let (mut app, _rx) = create_test_app_with_ws();
+        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-track"));
+        app.init_question_state();
+
+        // Both questions start unanswered
+        assert!(!app.question_state.answered[0]);
+        assert!(!app.question_state.answered[1]);
+
+        // Confirm first question
+        app.question_confirm();
+        assert!(app.question_state.answered[0]);
+        assert!(!app.question_state.answered[1]);
+
+        // Can use tab to go back to first question
+        app.question_next_tab();
+        assert_eq!(app.question_state.tab_index, 0);
+        assert!(app.question_state.is_current_answered()); // Still marked as answered
+    }
+
+    #[test]
+    fn test_question_confirm_single_question_submits_immediately() {
+        let (mut app, _rx) = create_test_app_with_ws();
+        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-single-submit"));
+        app.init_question_state();
+
+        // Single question - confirm should submit immediately
+        let result = app.question_confirm();
+        assert!(result); // Should submit
+        assert!(app.session_state.pending_permission.is_none()); // Permission cleared
+    }
+
+    #[test]
+    fn test_question_confirm_multi_question_update_answered() {
+        let (mut app, _rx) = create_test_app_with_ws();
+        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-update"));
+        app.init_question_state();
+
+        // Answer first question and advance
+        app.question_confirm();
+        assert_eq!(app.question_state.tab_index, 1);
+
+        // Go back to first question
+        app.question_next_tab();
+        assert_eq!(app.question_state.tab_index, 0);
+
+        // Change selection and confirm again (update)
+        app.question_next_option();
+        let result = app.question_confirm();
+
+        // Since second question is not answered, should advance to it
+        assert!(!result); // Not submitted yet
+        assert_eq!(app.question_state.tab_index, 1); // Back to unanswered question
     }
 }
