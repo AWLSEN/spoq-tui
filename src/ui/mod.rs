@@ -837,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mode_indicator_shown_for_programming_thread_plan_mode() {
+    fn test_mode_indicator_shown_for_plan_mode() {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
