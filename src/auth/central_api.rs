@@ -3,6 +3,7 @@
 //! This module provides the HTTP client for interacting with the Spoq Central API,
 //! handling device authorization flow, token management, and VPS operations.
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
@@ -80,12 +81,34 @@ pub struct DeviceCodeResponse {
 pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: String,
-    pub expires_in: u32,
     pub token_type: String,
+    #[serde(default)]
+    pub expires_in: Option<u32>, // API may not return this; decode from JWT
     #[serde(default)]
     pub user_id: Option<String>,
     #[serde(default)]
     pub username: Option<String>,
+}
+
+/// JWT claims for extracting expiration time.
+#[derive(Deserialize)]
+struct JwtClaims {
+    exp: i64,
+}
+
+/// Extract the expiration time from a JWT access token.
+///
+/// Returns the number of seconds until the token expires, or None if the token
+/// cannot be parsed or the expiration has already passed.
+pub fn get_jwt_expires_in(access_token: &str) -> Option<u32> {
+    let parts: Vec<&str> = access_token.split('.').collect();
+    let payload = URL_SAFE_NO_PAD.decode(parts.get(1)?).ok()?;
+    let claims: JwtClaims = serde_json::from_slice(&payload).ok()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((claims.exp - now).max(0) as u32)
 }
 
 /// VPS plan information (GET /api/vps/plans).
@@ -478,10 +501,25 @@ mod tests {
         let response: TokenResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.access_token, "access-123");
         assert_eq!(response.refresh_token, "refresh-456");
-        assert_eq!(response.expires_in, 3600);
+        assert_eq!(response.expires_in, Some(3600));
         assert_eq!(response.token_type, "Bearer");
         assert!(response.user_id.is_none());
         assert!(response.username.is_none());
+    }
+
+    #[test]
+    fn test_token_response_deserialize_without_expires_in() {
+        let json = r#"{
+            "access_token": "access-123",
+            "refresh_token": "refresh-456",
+            "token_type": "Bearer"
+        }"#;
+
+        let response: TokenResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.access_token, "access-123");
+        assert_eq!(response.refresh_token, "refresh-456");
+        assert!(response.expires_in.is_none());
+        assert_eq!(response.token_type, "Bearer");
     }
 
     #[test]
@@ -624,5 +662,78 @@ mod tests {
             .with_auth("test-token");
         let result = client.fetch_vps_status().await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_jwt_expires_in_valid_token() {
+        // Create a valid JWT with exp claim set to 1 hour in the future
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let exp = now + 3600; // 1 hour from now
+
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(format!(r#"{{"exp":{}}}"#, exp));
+        let signature = URL_SAFE_NO_PAD.encode("fake-signature");
+        let token = format!("{}.{}.{}", header, payload, signature);
+
+        let result = get_jwt_expires_in(&token);
+        assert!(result.is_some());
+        // Should be close to 3600, allow some tolerance for test execution time
+        let expires_in = result.unwrap();
+        assert!(expires_in >= 3590 && expires_in <= 3600);
+    }
+
+    #[test]
+    fn test_get_jwt_expires_in_expired_token() {
+        // Create a JWT with exp claim in the past
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let exp = now - 3600; // 1 hour ago
+
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(format!(r#"{{"exp":{}}}"#, exp));
+        let signature = URL_SAFE_NO_PAD.encode("fake-signature");
+        let token = format!("{}.{}.{}", header, payload, signature);
+
+        let result = get_jwt_expires_in(&token);
+        assert!(result.is_some());
+        // Should return 0 for expired token
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn test_get_jwt_expires_in_invalid_token() {
+        // Test with invalid token format
+        assert!(get_jwt_expires_in("not-a-jwt").is_none());
+        assert!(get_jwt_expires_in("only.two").is_none());
+        assert!(get_jwt_expires_in("").is_none());
+    }
+
+    #[test]
+    fn test_get_jwt_expires_in_invalid_payload() {
+        // Token with invalid base64 payload
+        assert!(get_jwt_expires_in("header.!!!invalid-base64!!!.signature").is_none());
+    }
+
+    #[test]
+    fn test_get_jwt_expires_in_missing_exp_claim() {
+        // Create a JWT without exp claim
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(r#"{"sub":"user123"}"#);
+        let signature = URL_SAFE_NO_PAD.encode("fake-signature");
+        let token = format!("{}.{}.{}", header, payload, signature);
+
+        let result = get_jwt_expires_in(&token);
+        assert!(result.is_none());
     }
 }

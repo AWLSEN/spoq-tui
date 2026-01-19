@@ -20,7 +20,7 @@ pub use messages::AppMessage;
 pub use types::{ActivePanel, Focus, ProvisioningPhase, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 
-use crate::auth::{central_api::VpsPlan, CentralApiClient, Credentials, CredentialsManager, DeviceFlowManager};
+use crate::auth::{central_api::{get_jwt_expires_in, VpsPlan}, CentralApiClient, Credentials, CredentialsManager, DeviceFlowManager};
 use chrono::Utc;
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
@@ -453,8 +453,12 @@ impl App {
             Ok(response) => {
                 // Update credentials
                 self.credentials.access_token = Some(response.access_token.clone());
+                let expires_in = response
+                    .expires_in
+                    .or_else(|| get_jwt_expires_in(&response.access_token))
+                    .unwrap_or(900);
                 self.credentials.expires_at =
-                    Some(Utc::now().timestamp() + i64::from(response.expires_in));
+                    Some(Utc::now().timestamp() + i64::from(expires_in));
 
                 // Save to disk
                 if let Some(ref manager) = self.credentials_manager {

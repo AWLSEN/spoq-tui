@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::central_api::{CentralApiClient, CentralApiError};
+use super::central_api::{get_jwt_expires_in, CentralApiClient, CentralApiError};
 
 /// State of the device authorization flow.
 #[derive(Debug)]
@@ -148,10 +148,15 @@ impl DeviceFlowManager {
         // Poll for the token
         match self.client.poll_device_token(&device_code).await {
             Ok(response) => {
+                let expires_in = response
+                    .expires_in
+                    .map(|e| e as i64)
+                    .or_else(|| get_jwt_expires_in(&response.access_token).map(|e| e as i64))
+                    .unwrap_or(900);
                 self.state = DeviceFlowState::Authorized {
                     access_token: response.access_token,
                     refresh_token: response.refresh_token,
-                    expires_in: response.expires_in as i64,
+                    expires_in,
                 };
                 Ok(true)
             }
