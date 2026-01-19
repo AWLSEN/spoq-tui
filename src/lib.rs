@@ -3,6 +3,7 @@
 //! This library exposes modules for use in integration tests.
 
 pub mod app;
+pub mod auth;
 pub mod cache;
 pub mod input_history;
 pub mod conductor;
