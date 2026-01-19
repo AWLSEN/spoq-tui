@@ -65,6 +65,9 @@ async fn main() -> Result<()> {
     // Initialize application state with debug sender
     let mut app = App::with_debug(debug_tx)?;
 
+    // Log initial auth state for debugging
+    app.log_initial_auth_state();
+
     // Capture initial terminal dimensions
     let size = terminal.size()?;
     app.update_terminal_dimensions(size.width, size.height);
@@ -89,12 +92,28 @@ async fn main() -> Result<()> {
         }
         Screen::Login => {
             // Initialize device flow for login - start the OAuth flow immediately
+            app.emit_debug_state_change("auth", "Device flow", "Starting...");
             if let Some(ref central_api) = app.central_api {
                 let mut device_flow = DeviceFlowManager::new(central_api.clone());
                 // Start the device flow (requests device code from server)
-                // Start the device flow - if it fails, the UI will show error state
-                let _ = device_flow.start().await;
+                match device_flow.start().await {
+                    Ok(()) => {
+                        // Log the state for debugging
+                        let state_desc = match device_flow.state() {
+                            DeviceFlowState::WaitingForUser { verification_uri, .. } => {
+                                format!("WaitingForUser: {}", verification_uri)
+                            }
+                            other => format!("{:?}", other),
+                        };
+                        app.emit_debug_state_change("auth", "Device flow started", &state_desc);
+                    }
+                    Err(e) => {
+                        app.emit_debug_state_change("auth", "Device flow error", &e.to_string());
+                    }
+                }
                 app.device_flow = Some(device_flow);
+            } else {
+                app.emit_debug_state_change("auth", "Device flow", "No central API configured");
             }
         }
     }

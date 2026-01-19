@@ -150,6 +150,8 @@ pub enum StateType {
     Todos,
     /// WebSocket message
     WebSocket,
+    /// Authentication state
+    Auth,
 }
 
 /// Stream lifecycle event data.
@@ -246,6 +248,8 @@ pub enum ErrorSource {
     Cache,
     /// Error from WebSocket
     WebSocket,
+    /// Error from authentication
+    Auth,
 }
 
 /// Snapshot of the current application state for the debug dashboard.

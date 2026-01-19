@@ -578,14 +578,62 @@ impl App {
     }
 
     /// Emit a debug state change event (helper for external callers like main.rs)
-    pub fn emit_debug_state_change(&self, _state_type: &str, description: &str, current: &str) {
+    pub fn emit_debug_state_change(&self, state_type: &str, description: &str, current: &str) {
         use crate::debug::{DebugEventKind, StateChangeData, StateType};
+        let st = match state_type {
+            "auth" => StateType::Auth,
+            "session" => StateType::SessionState,
+            _ => StateType::ToolTracker,
+        };
         emit_debug(
             &self.debug_tx,
             DebugEventKind::StateChange(StateChangeData::new(
-                StateType::ToolTracker, // Use ToolTracker as a generic state type
+                st,
                 description,
                 current,
+            )),
+            None,
+        );
+    }
+
+    /// Log initial auth state for debugging
+    pub fn log_initial_auth_state(&self) {
+        use crate::debug::{DebugEventKind, StateChangeData, StateType};
+
+        // Log credentials state
+        let creds_state = if self.credentials.access_token.is_some() {
+            format!(
+                "Token: present, VPS URL: {:?}, VPS Status: {:?}",
+                self.credentials.vps_url.as_deref().unwrap_or("none"),
+                self.credentials.vps_status.as_deref().unwrap_or("none")
+            )
+        } else {
+            "No credentials".to_string()
+        };
+
+        emit_debug(
+            &self.debug_tx,
+            DebugEventKind::StateChange(StateChangeData::new(
+                StateType::Auth,
+                "Initial auth state",
+                &creds_state,
+            )),
+            None,
+        );
+
+        // Log initial screen
+        let screen_name = match self.screen {
+            Screen::Login => "Login",
+            Screen::Provisioning => "Provisioning",
+            Screen::CommandDeck => "CommandDeck",
+            Screen::Conversation => "Conversation",
+        };
+        emit_debug(
+            &self.debug_tx,
+            DebugEventKind::StateChange(StateChangeData::new(
+                StateType::Auth,
+                "Initial screen",
+                screen_name,
             )),
             None,
         );
