@@ -142,8 +142,22 @@ pub enum AppMessage {
     FolderSelected(Folder),
     /// Clear the currently selected folder
     FolderCleared,
-    /// Device flow state updated
+    /// Device flow state updated (generic)
     DeviceFlowUpdated,
+    /// Device flow poll completed - user authorized
+    DeviceFlowAuthorized {
+        access_token: String,
+        refresh_token: String,
+        expires_in: i64,
+    },
+    /// Device flow poll - still pending
+    DeviceFlowPending,
+    /// Device flow poll - user denied
+    DeviceFlowDenied,
+    /// Device flow poll - expired
+    DeviceFlowExpired,
+    /// Device flow poll - error occurred
+    DeviceFlowError(String),
     /// VPS plans loaded successfully
     VpsPlansLoaded(Vec<VpsPlan>),
     /// Error loading VPS plans

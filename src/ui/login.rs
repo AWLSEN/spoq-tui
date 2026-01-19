@@ -15,6 +15,7 @@ use crate::app::App;
 use crate::auth::device_flow::DeviceFlowState;
 
 use super::command_deck::SPOQ_LOGO;
+use super::helpers::SPINNER_FRAMES;
 use super::layout::LayoutContext;
 use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 
@@ -201,9 +202,12 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
                     ]));
                 }
                 lines.push(Line::from(""));
+                // Animated spinner using tick_count
+                let spinner_idx = (app.tick_count as usize / 6) % SPINNER_FRAMES.len();
+                let spinner = SPINNER_FRAMES[spinner_idx];
                 lines.push(Line::from(vec![
                     Span::styled(
-                        "⣾ ".to_string(),
+                        format!("{} ", spinner),
                         Style::default().fg(Color::Cyan),
                     ),
                     Span::styled(

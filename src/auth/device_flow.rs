@@ -60,6 +60,37 @@ impl DeviceFlowManager {
         &self.state
     }
 
+    /// Update the last_poll timestamp (called when poll returns pending).
+    pub fn update_last_poll(&mut self) {
+        if let DeviceFlowState::WaitingForUser { last_poll, .. } = &mut self.state {
+            *last_poll = Some(Instant::now());
+        }
+    }
+
+    /// Set state to Authorized (called from message handler).
+    pub fn set_authorized(&mut self, access_token: String, refresh_token: String, expires_in: i64) {
+        self.state = DeviceFlowState::Authorized {
+            access_token,
+            refresh_token,
+            expires_in,
+        };
+    }
+
+    /// Set state to Denied (called from message handler).
+    pub fn set_denied(&mut self) {
+        self.state = DeviceFlowState::Denied;
+    }
+
+    /// Set state to Expired (called from message handler).
+    pub fn set_expired(&mut self) {
+        self.state = DeviceFlowState::Expired;
+    }
+
+    /// Set state to Error (called from message handler).
+    pub fn set_error(&mut self, error: String) {
+        self.state = DeviceFlowState::Error(error);
+    }
+
     /// Start the device authorization flow.
     ///
     /// Calls the device authorization endpoint and transitions to WaitingForUser state.
@@ -150,7 +181,7 @@ impl DeviceFlowManager {
             Ok(response) => {
                 self.state = DeviceFlowState::Authorized {
                     access_token: response.access_token,
-                    refresh_token: response.refresh_token,
+                    refresh_token: response.refresh_token.unwrap_or_default(),
                     expires_in: response.expires_in as i64,
                 };
                 Ok(true)
