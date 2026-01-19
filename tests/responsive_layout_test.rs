@@ -1219,7 +1219,9 @@ mod ui_rendering_integration {
 
     // Helper function to create an App for testing
     fn create_test_app() -> App {
-        App::new().expect("Failed to create app")
+        let mut app = App::new().expect("Failed to create app");
+        app.screen = spoq::app::Screen::CommandDeck; // Default to CommandDeck for tests
+        app
     }
 
     // Helper function to render at a specific size and return buffer content

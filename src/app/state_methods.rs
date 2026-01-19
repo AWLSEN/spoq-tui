@@ -481,7 +481,9 @@ mod tests {
     use crate::models::Folder;
 
     fn create_test_app() -> App {
-        App::default()
+        let mut app = App::default();
+        app.screen = super::super::Screen::CommandDeck; // Default to CommandDeck for tests
+        app
     }
 
     fn create_test_folder(name: &str, path: &str) -> Folder {

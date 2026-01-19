@@ -122,7 +122,9 @@ mod tests {
     use ratatui::{backend::TestBackend, Terminal};
 
     fn create_test_app() -> App {
-        App::default()
+        let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Default to CommandDeck for tests
+        app
     }
 
     #[test]

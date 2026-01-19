@@ -278,7 +278,7 @@ impl App {
 
     /// Create a new App instance with a custom ConductorClient and optional debug sender
     pub fn with_client_and_debug(
-        client: Arc<ConductorClient>,
+        _client: Arc<ConductorClient>,
         debug_tx: Option<DebugEventSender>,
     ) -> Result<Self> {
         // Initialize empty cache - will be populated by initialize()
@@ -294,16 +294,39 @@ impl App {
             .map(|cm| cm.load())
             .unwrap_or_default();
 
-        // Create central API client
+        // Create central API client with production URL
         let central_api = Arc::new(CentralApiClient::new());
 
-        // Determine initial screen based on auth state
-        let screen = if credentials.access_token.is_none() {
-            Screen::Login
-        } else if credentials.vps_url.is_none() || credentials.vps_status.as_deref() != Some("ready") {
-            Screen::Provisioning
+        // Determine initial screen and provisioning phase based on auth state:
+        // - No access_token: Login screen
+        // - Has access_token but no vps_url or vps_status != 'ready': Provisioning screen
+        // - Has vps_url and vps_status == 'ready': CommandDeck screen
+        let (screen, provisioning_phase, client) = if credentials.access_token.is_none() {
+            // No credentials - go to login
+            (
+                Screen::Login,
+                ProvisioningPhase::default(),
+                Arc::new(ConductorClient::new()),
+            )
+        } else if credentials.vps_url.is_none()
+            || credentials.vps_status.as_deref() != Some("ready")
+        {
+            // Has credentials but no ready VPS - go to provisioning
+            (
+                Screen::Provisioning,
+                ProvisioningPhase::LoadingPlans,
+                Arc::new(ConductorClient::new()),
+            )
         } else {
-            Screen::CommandDeck
+            // Has credentials and ready VPS - go to CommandDeck
+            // Create ConductorClient with VPS URL
+            let vps_url = credentials.vps_url.as_ref().unwrap();
+            let conductor_client = ConductorClient::with_url(vps_url);
+            (
+                Screen::CommandDeck,
+                ProvisioningPhase::default(),
+                Arc::new(conductor_client),
+            )
         };
 
         Ok(Self {
@@ -370,7 +393,7 @@ impl App {
             credentials_manager,
             credentials,
             device_flow: None,
-            provisioning_phase: ProvisioningPhase::default(),
+            provisioning_phase,
             vps_plans: Vec::new(),
             selected_plan_idx: 0,
             ssh_password_input: String::new(),
@@ -484,6 +507,7 @@ mod tests {
     #[test]
     fn test_navigate_to_command_deck_when_already_on_command_deck() {
         let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Explicitly set since default may vary based on credentials
         assert_eq!(app.screen, Screen::CommandDeck);
         app.active_thread_id = Some("thread-456".to_string());
         app.textarea.insert_char('H');
@@ -503,15 +527,17 @@ mod tests {
     }
 
     #[test]
-    fn test_app_initializes_on_command_deck() {
+    fn test_app_initializes_on_login_without_credentials() {
+        // With no credentials, app should start on Login screen
         let app = App::default();
-        assert_eq!(app.screen, Screen::CommandDeck);
+        assert_eq!(app.screen, Screen::Login);
     }
 
     #[test]
     fn test_submit_input_with_empty_input_does_nothing() {
         use crate::models::ThreadType;
         let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Set to CommandDeck for this test
         let initial_cache_count = app.cache.thread_count();
 
         app.submit_input(ThreadType::Conversation);
@@ -526,6 +552,7 @@ mod tests {
     fn test_submit_input_with_whitespace_only_does_nothing() {
         use crate::models::ThreadType;
         let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Set to CommandDeck for this test
         app.textarea.insert_char(' ');
         app.textarea.insert_char(' ');
         let initial_cache_count = app.cache.thread_count();
@@ -542,6 +569,7 @@ mod tests {
     async fn test_submit_input_creates_thread_and_navigates() {
         use crate::models::ThreadType;
         let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Set to CommandDeck for this test
         app.textarea.insert_char('H');
         app.textarea.insert_char('i');
         let initial_cache_count = app.cache.thread_count();
@@ -610,6 +638,7 @@ mod tests {
     async fn test_submit_input_new_thread_when_no_active_thread() {
         use crate::models::ThreadType;
         let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Set to CommandDeck for this test
         assert!(app.active_thread_id.is_none());
         app.textarea.insert_char('H');
         app.textarea.insert_char('i');
@@ -823,6 +852,7 @@ mod tests {
     async fn test_submit_input_full_conversation_workflow() {
         use crate::models::ThreadType;
         let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Set to CommandDeck for this test
 
         // === Turn 1: New thread ===
         app.textarea.insert_char('H');
@@ -3118,6 +3148,7 @@ mod tests {
         use crate::models::{ThreadType, PermissionMode};
         let mut app = App {
             permission_mode: PermissionMode::Plan,
+            screen: Screen::CommandDeck, // Explicitly set since default may vary based on credentials
             ..Default::default()
         };
 
@@ -3196,6 +3227,7 @@ mod tests {
         use crate::models::{ThreadType, PermissionMode};
         let mut app = App {
             permission_mode: PermissionMode::Default,
+            screen: Screen::CommandDeck, // Explicitly set since default may vary based on credentials
             ..Default::default()
         };
 
@@ -3221,6 +3253,7 @@ mod tests {
     async fn test_submit_input_thread_type_conversation() {
         use crate::models::ThreadType;
         let mut app = App::default();
+        app.screen = Screen::CommandDeck; // Explicitly set since default may vary based on credentials
 
         // Test with Conversation thread type
         app.textarea.insert_char('H');

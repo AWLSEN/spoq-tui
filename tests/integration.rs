@@ -6,10 +6,17 @@
 use spoq::app::{App, Screen};
 use spoq::models::{MessageRole, ThreadType};
 
+/// Create a test app starting at CommandDeck screen
+fn create_test_app() -> App {
+    let mut app = App::new().expect("Failed to create app");
+    app.screen = Screen::CommandDeck; // Default to CommandDeck for tests
+    app
+}
+
 #[tokio::test]
 async fn test_full_thread_creation_flow() {
     // 1. Create App instance
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
     let initial_thread_count = app.cache.thread_count();
 
     // 2. Simulate typing in input_box (use insert_char)
@@ -63,7 +70,7 @@ async fn test_full_thread_creation_flow() {
 #[tokio::test]
 async fn test_screen_navigation() {
     // 1. Start at CommandDeck
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
     assert_eq!(
         app.screen,
         Screen::CommandDeck,
@@ -104,7 +111,7 @@ async fn test_screen_navigation() {
 #[tokio::test]
 async fn test_thread_appears_in_right_panel() {
     // 1. Create thread via submit_input
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type a message
     let message = "Test message for right panel";
@@ -143,7 +150,7 @@ async fn test_thread_appears_in_right_panel() {
 
 #[tokio::test]
 async fn test_multiple_threads_ordering() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
     let initial_count = app.cache.thread_count();
 
     // Create first thread
@@ -186,7 +193,7 @@ async fn test_multiple_threads_ordering() {
 
 #[tokio::test]
 async fn test_empty_input_does_not_create_thread() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
     let initial_count = app.cache.thread_count();
 
     // Submit with empty input
@@ -211,7 +218,7 @@ async fn test_empty_input_does_not_create_thread() {
 
 #[tokio::test]
 async fn test_whitespace_only_input_does_not_create_thread() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
     let initial_count = app.cache.thread_count();
 
     // Type whitespace only
@@ -230,7 +237,7 @@ async fn test_whitespace_only_input_does_not_create_thread() {
 
 #[tokio::test]
 async fn test_input_cleared_after_submit() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     for c in "Test message".chars() {
         app.textarea.insert_char(c);
@@ -247,7 +254,7 @@ async fn test_input_cleared_after_submit() {
 
 #[tokio::test]
 async fn test_thread_messages_have_correct_roles() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     for c in "Hello AI".chars() {
         app.textarea.insert_char(c);
@@ -278,7 +285,7 @@ async fn test_thread_messages_have_correct_roles() {
 /// - Verify: active_thread_id is set to the UUID
 #[tokio::test]
 async fn test_new_thread_flow_complete() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // 1. Start at command deck with no active thread
     assert_eq!(app.screen, Screen::CommandDeck, "Should start at CommandDeck");
@@ -341,7 +348,7 @@ async fn test_new_thread_flow_complete() {
 async fn test_continue_thread_flow() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Setup: Create first message in new thread
     for c in "First question".chars() {
@@ -414,7 +421,7 @@ async fn test_continue_thread_flow() {
 /// - Verify: active_thread_id is cleared (None)
 #[tokio::test]
 async fn test_back_to_deck_flow() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Setup: Create a thread and be in conversation
     for c in "Test message".chars() {
@@ -463,7 +470,7 @@ async fn test_back_to_deck_flow() {
 /// - Verify: New pending ID is different from previous
 #[tokio::test]
 async fn test_new_thread_after_returning_to_deck() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create first thread
     for c in "First thread message".chars() {
@@ -529,7 +536,7 @@ async fn test_new_thread_after_returning_to_deck() {
 async fn test_thread_reconciliation_complete() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create pending thread
     for c in "What is Rust?".chars() {
@@ -618,7 +625,7 @@ async fn test_thread_reconciliation_complete() {
 /// - Verify: screen = Conversation
 #[tokio::test]
 async fn test_open_thread_flow() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create first thread
     for c in "First thread".chars() {
@@ -683,7 +690,7 @@ async fn test_open_thread_flow() {
 /// Test open_thread method directly
 #[tokio::test]
 async fn test_open_thread_direct() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread
     for c in "Test thread".chars() {
@@ -710,7 +717,7 @@ async fn test_open_thread_direct() {
 async fn test_open_selected_thread_invalid_index() {
     use spoq::app::Focus;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create one thread
     for c in "Single thread".chars() {
@@ -743,7 +750,7 @@ async fn test_open_selected_thread_invalid_index() {
 async fn test_complete_end_to_end_workflow() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // === Phase 1: Create new thread ===
     for c in "What is Rust?".chars() {
@@ -851,7 +858,7 @@ async fn test_complete_end_to_end_workflow() {
 async fn test_thread_updated_full_flow() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread
     for c in "What is Rust?".chars() {
@@ -910,7 +917,7 @@ async fn test_thread_updated_full_flow() {
 async fn test_thread_updated_with_pending_id() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread (pending)
     for c in "Test message".chars() {
@@ -978,7 +985,7 @@ async fn test_thread_updated_with_pending_id() {
 async fn test_thread_updated_title_only() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread
     let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
@@ -1004,7 +1011,7 @@ async fn test_thread_updated_title_only() {
 async fn test_thread_updated_description_only() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread
     let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
@@ -1030,7 +1037,7 @@ async fn test_thread_updated_description_only() {
 async fn test_thread_updated_empty_strings() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread
     let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
@@ -1063,7 +1070,7 @@ async fn test_thread_updated_empty_strings() {
 async fn test_thread_updated_multiple_updates() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread
     let thread_id = app.cache.create_streaming_thread("Version 1".to_string());
@@ -1109,7 +1116,7 @@ async fn test_thread_updated_multiple_updates() {
 async fn test_thread_updated_nonexistent_thread() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Send thread_updated for non-existent thread
     app.handle_message(AppMessage::ThreadMetadataUpdated {
@@ -1130,7 +1137,7 @@ async fn test_thread_updated_nonexistent_thread() {
 async fn test_thread_updated_during_active_conversation() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread and enter conversation
     for c in "Test message".chars() {
@@ -1184,7 +1191,7 @@ async fn test_thread_updated_during_active_conversation() {
 async fn test_thread_description_in_thread_list() {
     use spoq::app::AppMessage;
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create thread 1 with description
     let thread1_id = app.cache.create_streaming_thread("Thread 1".to_string());
@@ -1229,7 +1236,7 @@ async fn test_thread_updated_sse_to_cache_integration() {
     use spoq::app::AppMessage;
     use spoq::sse::{SseParser, SseEvent};
 
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create a thread
     let thread_id = app.cache.create_streaming_thread("Original".to_string());
@@ -1271,7 +1278,7 @@ async fn test_thread_updated_sse_to_cache_integration() {
 /// Test that rapid submission on pending thread is blocked
 #[tokio::test]
 async fn test_rapid_submit_blocked_on_pending_thread() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // First submit creates pending thread
     for c in "First message".chars() {
@@ -1316,7 +1323,7 @@ async fn test_rapid_submit_blocked_on_pending_thread() {
 /// - Verify the content is correctly captured
 #[tokio::test]
 async fn test_single_line_input_submit() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type a single-line message
     for c in "Hello, this is a single line message".chars() {
@@ -1346,7 +1353,7 @@ async fn test_single_line_input_submit() {
 /// - Verify correct number of lines
 #[tokio::test]
 async fn test_multiline_input_newline_insertion() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type first line
     for c in "Line 1: Hello".chars() {
@@ -1392,7 +1399,7 @@ async fn test_multiline_input_max_lines_height_calculation() {
     assert_eq!(calculate_input_box_height(10), 7, "10 lines clamped to 5 + 2 = 7");
 
     // But textarea should still accept all lines
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create 7 lines
     for i in 1..=7 {
@@ -1421,7 +1428,7 @@ async fn test_multiline_input_max_lines_height_calculation() {
 /// - Verify cursor position changes correctly
 #[tokio::test]
 async fn test_up_down_cursor_navigation() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create 3 lines
     for c in "First".chars() {
@@ -1478,7 +1485,7 @@ async fn test_up_down_cursor_navigation() {
 /// - Verify cursor position at word boundaries
 #[tokio::test]
 async fn test_word_navigation() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type a sentence with multiple words
     for c in "hello world test".chars() {
@@ -1512,7 +1519,7 @@ async fn test_word_navigation() {
 /// - Verify correct word is deleted
 #[tokio::test]
 async fn test_delete_word_backward() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type a sentence
     for c in "hello world test".chars() {
@@ -1541,7 +1548,7 @@ async fn test_delete_word_backward() {
 /// - Verify change is restored
 #[tokio::test]
 async fn test_undo_redo() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type some text
     for c in "Hello".chars() {
@@ -1568,7 +1575,7 @@ async fn test_undo_redo() {
 /// - Verify lines are joined correctly
 #[tokio::test]
 async fn test_content_extraction() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create multiline content
     for c in "Line A".chars() {
@@ -1601,7 +1608,7 @@ async fn test_content_extraction() {
 /// - Verify textarea is empty
 #[tokio::test]
 async fn test_clear_functionality() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type multiline content
     for c in "Line 1".chars() {
@@ -1638,7 +1645,7 @@ async fn test_auto_grow_behavior() {
     assert_eq!(calculate_input_area_height(6), 10, "6 lines: clamped to box(7) + keybinds(1) + padding(2) = 10");
 
     // Also verify with actual App
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Start with empty - should be 1 line
     assert_eq!(app.textarea.line_count(), 1);
@@ -1671,7 +1678,7 @@ async fn test_auto_grow_behavior() {
 /// - Verify message content has newlines preserved
 #[tokio::test]
 async fn test_multiline_submit_preserves_newlines() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create multiline content
     for c in "First paragraph".chars() {
@@ -1702,7 +1709,7 @@ async fn test_multiline_submit_preserves_newlines() {
 /// - Verify cursor tracking is accurate
 #[tokio::test]
 async fn test_cursor_position_tracking() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type "ABC" on first line
     for c in "ABC".chars() {
@@ -1740,7 +1747,7 @@ async fn test_cursor_position_tracking() {
 /// - Verify they work within current line only
 #[tokio::test]
 async fn test_home_end_per_line() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create content: "ABCDE" on line 1, "12345" on line 2
     for c in "ABCDE".chars() {
@@ -1780,7 +1787,7 @@ async fn test_home_end_per_line() {
 /// - Backspace at start of line 2 should join lines
 #[tokio::test]
 async fn test_backspace_joins_lines() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create "ABC\nXYZ"
     for c in "ABC".chars() {
@@ -1811,7 +1818,7 @@ async fn test_backspace_joins_lines() {
 /// - Delete at end of line 1 should join with line 2
 #[tokio::test]
 async fn test_delete_at_line_end_joins_lines() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create "ABC\nXYZ"
     for c in "ABC".chars() {
@@ -1843,7 +1850,7 @@ async fn test_delete_at_line_end_joins_lines() {
 /// - Remove them
 #[tokio::test]
 async fn test_empty_line_handling() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Type text, insert empty lines, type more
     for c in "Header".chars() {
@@ -1889,7 +1896,7 @@ async fn test_with_content_initialization() {
 /// - Verify line content
 #[tokio::test]
 async fn test_delete_to_line_start() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create "Hello World" on one line
     for c in "Hello World".chars() {
@@ -1914,7 +1921,7 @@ async fn test_delete_to_line_start() {
 /// - Move to top and bottom
 #[tokio::test]
 async fn test_move_to_top_bottom() {
-    let mut app = App::new().expect("Failed to create app");
+    let mut app = create_test_app();
 
     // Create 5 lines
     for i in 1..=5 {
