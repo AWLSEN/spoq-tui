@@ -851,8 +851,12 @@ impl App {
                 self.credentials.vps_status = Some("ready".to_string());
                 self.credentials.vps_hostname = hostname.clone().into();
                 self.credentials.vps_ip = ip.clone().into();
-                if let Some(url) = response.url.clone() {
-                    self.credentials.vps_url = Some(url);
+                // Construct URL if not provided by API
+                let url = response.url.clone().or_else(|| {
+                    response.hostname.as_ref().map(|h| format!("http://{}:8000", h))
+                });
+                if let Some(u) = url {
+                    self.credentials.vps_url = Some(u);
                 }
 
                 // Save credentials to disk
