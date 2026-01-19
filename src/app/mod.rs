@@ -17,9 +17,10 @@ mod utils;
 mod websocket;
 
 pub use messages::AppMessage;
-pub use types::{ActivePanel, Focus, Screen, ScrollBoundary, ThreadSwitcher};
+pub use types::{ActivePanel, Focus, ProvisioningPhase, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 
+use crate::auth::{central_api::VpsPlan, CentralApiClient, Credentials, CredentialsManager, DeviceFlowManager};
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::DebugEventSender;
@@ -239,6 +240,24 @@ pub struct App {
     pub folder_picker_cursor: usize,
     /// Provisioning screen state
     pub provisioning: crate::ui::ProvisioningState,
+    /// Central API client for authenticated requests
+    pub central_api: Option<Arc<CentralApiClient>>,
+    /// Credentials manager for secure storage
+    pub credentials_manager: Option<CredentialsManager>,
+    /// Current authentication credentials
+    pub credentials: Credentials,
+    /// Device flow manager for OAuth authentication
+    pub device_flow: Option<DeviceFlowManager>,
+    /// Current provisioning phase
+    pub provisioning_phase: ProvisioningPhase,
+    /// Available VPS plans from API
+    pub vps_plans: Vec<VpsPlan>,
+    /// Selected plan index in the plan list
+    pub selected_plan_idx: usize,
+    /// SSH password input buffer
+    pub ssh_password_input: String,
+    /// Whether user is entering SSH password
+    pub entering_ssh_password: bool,
 }
 
 impl App {
@@ -328,6 +347,15 @@ impl App {
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
             provisioning: crate::ui::ProvisioningState::default(),
+            central_api: None,
+            credentials_manager: None,
+            credentials: Credentials::default(),
+            device_flow: None,
+            provisioning_phase: ProvisioningPhase::default(),
+            vps_plans: Vec::new(),
+            selected_plan_idx: 0,
+            ssh_password_input: String::new(),
+            entering_ssh_password: false,
         })
     }
 

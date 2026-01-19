@@ -81,6 +81,8 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     match app.screen {
         Screen::CommandDeck => render_command_deck(frame, app),
         Screen::Conversation => render_conversation_screen(frame, app),
+        Screen::Login => {} // TODO: render login screen
+        Screen::Provisioning => {} // TODO: render provisioning screen
     }
 
     // Render thread switcher overlay (if visible)

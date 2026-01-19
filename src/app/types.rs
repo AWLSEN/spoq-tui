@@ -13,6 +13,21 @@ pub enum Screen {
     #[default]
     CommandDeck,
     Conversation,
+    Login,
+    Provisioning,
+}
+
+/// Represents the current phase of VPS provisioning
+#[derive(Debug, Clone, Default)]
+pub enum ProvisioningPhase {
+    #[default]
+    LoadingPlans,
+    SelectPlan,
+    PlansError(String),
+    Provisioning,
+    WaitingReady { status: String },
+    ProvisionError(String),
+    Ready { hostname: String, ip: String },
 }
 
 /// Represents which UI component has focus
