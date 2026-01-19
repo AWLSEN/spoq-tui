@@ -792,6 +792,71 @@ impl App {
                     None,
                 );
             }
+            AppMessage::DeviceFlowUpdated => {
+                // TODO: Handle device flow state updates
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Device flow updated",
+                        "placeholder",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::VpsPlansLoaded(plans) => {
+                let count = plans.len();
+                // TODO: Store VPS plans in app state
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "VPS plans loaded",
+                        format!("{} plans", count),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::VpsPlansLoadError(error) => {
+                // TODO: Handle VPS plans load error
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
+                    None,
+                );
+            }
+            AppMessage::ProvisioningStatusUpdate(status) => {
+                // TODO: Handle provisioning status updates
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Provisioning status update",
+                        truncate_for_debug(&status, 40),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::ProvisioningComplete(_response) => {
+                // TODO: Handle provisioning completion
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Provisioning complete",
+                        "success",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::ProvisioningError(error) => {
+                // TODO: Handle provisioning errors
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
+                    None,
+                );
+            }
         }
     }
 }

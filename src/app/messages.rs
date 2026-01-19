@@ -1,5 +1,6 @@
 //! AppMessage enum for async communication within the application.
 
+use crate::auth::central_api::{VpsPlan, VpsStatusResponse};
 use crate::models::Folder;
 use crate::state::Todo;
 
@@ -141,6 +142,18 @@ pub enum AppMessage {
     FolderSelected(Folder),
     /// Clear the currently selected folder
     FolderCleared,
+    /// Device flow state updated
+    DeviceFlowUpdated,
+    /// VPS plans loaded successfully
+    VpsPlansLoaded(Vec<VpsPlan>),
+    /// Error loading VPS plans
+    VpsPlansLoadError(String),
+    /// Provisioning status update received
+    ProvisioningStatusUpdate(String),
+    /// Provisioning completed successfully
+    ProvisioningComplete(VpsStatusResponse),
+    /// Error during provisioning
+    ProvisioningError(String),
 }
 
 #[cfg(test)]
