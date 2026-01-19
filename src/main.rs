@@ -1,4 +1,5 @@
-use spoq::app::{start_websocket, App, AppMessage, Focus, Screen, ScrollBoundary};
+use spoq::app::{start_websocket, App, AppMessage, Focus, ProvisioningPhase, Screen, ScrollBoundary};
+use spoq::auth::{DeviceFlowManager, DeviceFlowState};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
@@ -223,6 +224,52 @@ where
 
                 // Check for thread switcher auto-confirm (Tab release simulation)
                 app.check_switcher_timeout();
+
+                // Poll device flow when on Login screen in WaitingForUser state
+                // Uses tick_count to rate-limit polling attempts (~1 second intervals)
+                // Device flow internally respects server-specified interval
+                if app.screen == Screen::Login && app.tick_count % 60 == 0 {
+                    if let Some(ref mut device_flow) = app.device_flow {
+                        if matches!(device_flow.state(), DeviceFlowState::WaitingForUser { .. }) {
+                            // Poll synchronously-ish by spawning and awaiting inline
+                            // This is safe because poll() returns quickly if interval hasn't elapsed
+                            let poll_result = device_flow.poll().await;
+                            if let Ok(state_changed) = poll_result {
+                                if state_changed {
+                                    app.mark_dirty();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Poll VPS status when on Provisioning screen in WaitingReady phase
+                // Rate-limited to ~1 second intervals
+                if app.screen == Screen::Provisioning && app.tick_count % 60 == 0 {
+                    if let ProvisioningPhase::WaitingReady { .. } = &app.provisioning_phase {
+                        if let Some(ref central_api) = app.central_api {
+                            let message_tx = app.message_tx.clone();
+                            let api_client = central_api.clone();
+                            tokio::spawn(async move {
+                                match api_client.fetch_vps_status().await {
+                                    Ok(status) => {
+                                        // VPS is ready when hostname and ip are populated
+                                        if status.hostname.is_some() && status.ip.is_some() {
+                                            let _ = message_tx.send(AppMessage::ProvisioningComplete(status));
+                                        } else {
+                                            let _ = message_tx.send(AppMessage::ProvisioningStatusUpdate(
+                                                status.status.clone()
+                                            ));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let _ = message_tx.send(AppMessage::ProvisioningError(e.to_string()));
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
             }
 
             // Handle keyboard events
@@ -453,6 +500,35 @@ where
                                         continue;
                                     }
                                 }
+                            }
+
+                            // =========================================================
+                            // Login Screen Key Handling
+                            // =========================================================
+                            if app.screen == Screen::Login {
+                                match key.code {
+                                    KeyCode::Char('q') | KeyCode::Esc => {
+                                        // Exit app - strict auth, no bypass
+                                        return Ok(());
+                                    }
+                                    KeyCode::Enter => {
+                                        // If in Error/Denied/Expired state, restart device flow
+                                        if let Some(ref device_flow) = app.device_flow {
+                                            match device_flow.state() {
+                                                DeviceFlowState::Error(_) | DeviceFlowState::Denied | DeviceFlowState::Expired => {
+                                                    // Restart the flow
+                                                    if let Some(ref central_api) = app.central_api {
+                                                        app.device_flow = Some(DeviceFlowManager::new(central_api.clone()));
+                                                        // Start will be called on next tick
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                continue;
                             }
 
                             // Handle OAuth consent 'o' key to open URL in browser
