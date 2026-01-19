@@ -4,6 +4,7 @@
 //! Uses `LayoutContext` for responsive layout calculations.
 
 mod errors;
+mod permission_inline;
 mod segments;
 mod subagent_events;
 mod text_wrapping;
@@ -13,6 +14,7 @@ mod virtualization;
 
 // Re-export public APIs at crate::ui::messages::*
 // Note: Some exports are only used in tests
+pub use permission_inline::build_permission_lines;
 #[allow(unused_imports)]
 pub use subagent_events::{render_subagent_event, render_subagent_events_block, TreeConnector};
 pub use text_wrapping::estimate_wrapped_line_count;
