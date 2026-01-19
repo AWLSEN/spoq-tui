@@ -125,21 +125,39 @@ pub struct VpsPlan {
 /// Response from VPS provision endpoint (POST /api/vps/provision).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProvisionResponse {
-    pub vps_id: String,
-    pub status: String,
-}
-
-/// Response from VPS status endpoint (GET /api/vps/status).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VpsStatusResponse {
+    #[serde(alias = "id")]
     pub vps_id: String,
     pub status: String,
     #[serde(default)]
     pub hostname: Option<String>,
     #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// Response from VPS status endpoint (GET /api/vps/status).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VpsStatusResponse {
+    #[serde(alias = "id")]
+    pub vps_id: String,
+    pub status: String,
+    #[serde(default)]
+    pub hostname: Option<String>,
+    #[serde(default, alias = "ip_address")]
     pub ip: Option<String>,
     #[serde(default)]
     pub url: Option<String>,
+    #[serde(default)]
+    pub ssh_username: Option<String>,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub plan_id: Option<String>,
+    #[serde(default)]
+    pub data_center_id: Option<u32>,
+    #[serde(default)]
+    pub created_at: Option<String>,
+    #[serde(default)]
+    pub ready_at: Option<String>,
 }
 
 /// Client for interacting with the Spoq Central API.
