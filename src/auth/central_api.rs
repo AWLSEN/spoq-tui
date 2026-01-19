@@ -227,6 +227,7 @@ impl CentralApiClient {
 
         let body = serde_json::json!({
             "device_code": device_code,
+            "grant_type": "device_code",
         });
 
         let response = self
@@ -239,22 +240,30 @@ impl CentralApiClient {
 
         let status = response.status().as_u16();
 
-        if response.status().is_success() {
-            let data: TokenResponse = response.json().await?;
-            return Ok(data);
-        }
-
-        // Handle OAuth2 device flow specific errors
+        // Get response text for parsing
         let text = response.text().await.unwrap_or_default();
-        if text.contains("authorization_pending") {
-            return Err(CentralApiError::AuthorizationPending);
-        } else if text.contains("expired") {
-            return Err(CentralApiError::AuthorizationExpired);
-        } else if text.contains("access_denied") {
-            return Err(CentralApiError::AccessDenied);
+
+        // Check for OAuth2 error response format: {"error": "..."}
+        if let Ok(error_response) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let Some(error) = error_response.get("error").and_then(|e| e.as_str()) {
+                return match error {
+                    "authorization_pending" => Err(CentralApiError::AuthorizationPending),
+                    "expired_token" | "expired" => Err(CentralApiError::AuthorizationExpired),
+                    "access_denied" => Err(CentralApiError::AccessDenied),
+                    "invalid_grant" => Err(CentralApiError::AuthorizationPending), // Treat as pending
+                    _ => Err(CentralApiError::ServerError { status, message: text }),
+                };
+            }
         }
 
-        Err(CentralApiError::ServerError { status, message: text })
+        // Try to parse as successful token response
+        match serde_json::from_str::<TokenResponse>(&text) {
+            Ok(data) => Ok(data),
+            Err(e) => Err(CentralApiError::ServerError {
+                status,
+                message: format!("Failed to parse response: {}. Raw: {}", e, &text[..text.len().min(200)]),
+            }),
+        }
     }
 
     /// Refresh an access token using a refresh token.
