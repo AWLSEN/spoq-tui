@@ -1,176 +1,177 @@
-//! Integration tests for message height caching (Round 3)
-//! Tests the cached_message_heights HashMap in App struct
+//! Integration tests for message height caching
+//! Tests the CachedHeights struct and height_cache in App struct
 
-use spoq::app::App;
+use spoq::app::{App, CachedHeights};
 use spoq::cache::ThreadCache;
+use std::sync::Arc;
 
 #[tokio::test]
-async fn test_message_height_cache_initialization() {
+async fn test_height_cache_initialization() {
     let app = App::new().expect("Failed to create app");
 
-    // Cache should be empty on initialization
-    assert_eq!(app.cached_message_heights.len(), 0);
+    // Cache should be None on initialization
+    assert!(app.height_cache.is_none());
 }
 
 #[tokio::test]
-async fn test_message_height_cache_stores_heights() {
+async fn test_cached_heights_stores_heights() {
+    let thread_id = Arc::new("test-thread".to_string());
+    let viewport_width = 80;
+    let mut cache = CachedHeights::new(Arc::clone(&thread_id), viewport_width);
+
+    // Append some heights
+    cache.append(1, 0, 5);
+    cache.append(2, 0, 10);
+    cache.append(3, 0, 8);
+
+    // Verify heights are stored
+    assert_eq!(cache.heights.len(), 3);
+    assert_eq!(cache.heights[0].visual_lines, 5);
+    assert_eq!(cache.heights[1].visual_lines, 10);
+    assert_eq!(cache.heights[2].visual_lines, 8);
+
+    // Verify cumulative offsets
+    assert_eq!(cache.heights[0].cumulative_offset, 0);
+    assert_eq!(cache.heights[1].cumulative_offset, 5);
+    assert_eq!(cache.heights[2].cumulative_offset, 15);
+
+    // Verify total lines
+    assert_eq!(cache.total_lines, 23);
+}
+
+#[tokio::test]
+async fn test_cached_heights_is_valid_for() {
+    let thread_id = Arc::new("test-thread".to_string());
+    let viewport_width = 80;
+    let cache = CachedHeights::new(Arc::clone(&thread_id), viewport_width);
+
+    // Same thread and width should be valid
+    assert!(cache.is_valid_for("test-thread", 80));
+
+    // Different thread should be invalid
+    assert!(!cache.is_valid_for("other-thread", 80));
+
+    // Different width should be invalid
+    assert!(!cache.is_valid_for("test-thread", 100));
+}
+
+#[tokio::test]
+async fn test_cached_heights_update_height() {
+    let thread_id = Arc::new("test-thread".to_string());
+    let mut cache = CachedHeights::new(thread_id, 80);
+
+    // Add initial heights
+    cache.append(1, 0, 5);
+    cache.append(2, 0, 10);
+    cache.append(3, 0, 8);
+
+    assert_eq!(cache.total_lines, 23);
+
+    // Update middle height
+    cache.update_height(1, 15, 1);
+
+    // Verify updated height
+    assert_eq!(cache.heights[1].visual_lines, 15);
+    assert_eq!(cache.heights[1].render_version, 1);
+
+    // Verify cumulative offsets were recalculated
+    assert_eq!(cache.heights[0].cumulative_offset, 0);
+    assert_eq!(cache.heights[1].cumulative_offset, 5);
+    assert_eq!(cache.heights[2].cumulative_offset, 20);
+
+    // Verify total lines updated
+    assert_eq!(cache.total_lines, 28);
+}
+
+#[tokio::test]
+async fn test_cached_heights_truncate() {
+    let thread_id = Arc::new("test-thread".to_string());
+    let mut cache = CachedHeights::new(thread_id, 80);
+
+    // Add heights
+    cache.append(1, 0, 5);
+    cache.append(2, 0, 10);
+    cache.append(3, 0, 8);
+    cache.append(4, 0, 12);
+
+    assert_eq!(cache.heights.len(), 4);
+    assert_eq!(cache.total_lines, 35);
+
+    // Truncate to 2 messages
+    cache.truncate(2);
+
+    assert_eq!(cache.heights.len(), 2);
+    assert_eq!(cache.total_lines, 15);
+}
+
+#[tokio::test]
+async fn test_cached_heights_recalculate_offsets() {
+    let thread_id = Arc::new("test-thread".to_string());
+    let mut cache = CachedHeights::new(thread_id, 80);
+
+    // Add heights
+    cache.append(1, 0, 5);
+    cache.append(2, 0, 10);
+    cache.append(3, 0, 8);
+
+    // Manually modify height (simulating stale cache)
+    cache.heights[0].visual_lines = 20;
+
+    // Recalculate from index 0
+    cache.recalculate_offsets_from(0);
+
+    // Verify offsets
+    assert_eq!(cache.heights[0].cumulative_offset, 0);
+    assert_eq!(cache.heights[1].cumulative_offset, 20);
+    assert_eq!(cache.heights[2].cumulative_offset, 30);
+    assert_eq!(cache.total_lines, 38);
+}
+
+#[tokio::test]
+async fn test_height_cache_integration_with_app() {
     let mut app = App::new().expect("Failed to create app");
-    let mut cache = ThreadCache::new();
+    let mut thread_cache = ThreadCache::new();
 
     // Create a message
-    let thread_id = cache.create_streaming_thread("Test message".to_string());
-    cache.append_to_message(&thread_id, "This is a test message for height caching.");
-    cache.finalize_message(&thread_id, 100);
+    let thread_id = thread_cache.create_streaming_thread("Test message".to_string());
+    thread_cache.append_to_message(&thread_id, "This is a test message for height caching.");
+    thread_cache.finalize_message(&thread_id, 100);
 
-    let messages = cache.get_messages(&thread_id).unwrap();
-    let message = &messages[1]; // Assistant message
+    let messages = thread_cache.get_messages(&thread_id).unwrap();
+    assert!(!messages.is_empty());
 
-    // Simulate caching a height
-    let height = 5;
-    app.cached_message_heights.insert((thread_id.to_string(), message.id), (message.render_version, height));
+    // Create height cache
+    let thread_id_arc = Arc::new(thread_id.clone());
+    let mut cache = CachedHeights::new(thread_id_arc, 80);
 
-    // Verify cache stores the height
-    assert_eq!(app.cached_message_heights.len(), 1);
-    assert_eq!(
-        app.cached_message_heights.get(&(thread_id.to_string(), message.id)),
-        Some(&(message.render_version, height))
-    );
-}
-
-#[tokio::test]
-async fn test_message_height_cache_invalidates_on_version_change() {
-    let mut app = App::new().expect("Failed to create app");
-    let mut cache = ThreadCache::new();
-
-    // Create a message
-    let thread_id = cache.create_streaming_thread("Test".to_string());
-    cache.append_to_message(&thread_id, "Original content");
-    cache.finalize_message(&thread_id, 100);
-
-    let messages = cache.get_messages(&thread_id).unwrap();
-    let message = &messages[1];
-    let original_version = message.render_version;
-
-    // Cache the height with original version
-    app.cached_message_heights.insert((thread_id.to_string(), message.id), (original_version, 5));
-
-    // Simulate a render version change (e.g., message edited or re-rendered)
-    let new_version = original_version + 1;
-
-    // Check cache with new version - should be considered stale
-    if let Some((cached_version, _height)) = app.cached_message_heights.get(&(thread_id.to_string(), message.id)) {
-        assert_ne!(*cached_version, new_version);
-        // In real code, this would trigger recalculation
-    }
-}
-
-#[tokio::test]
-async fn test_message_height_cache_handles_multiple_messages() {
-    let mut app = App::new().expect("Failed to create app");
-    let mut cache = ThreadCache::new();
-
-    // Create multiple messages
-    let thread_id = cache.create_streaming_thread("Message 1".to_string());
-    cache.append_to_message(&thread_id, "Content 1");
-    cache.finalize_message(&thread_id, 100);
-
-    cache.add_streaming_message(&thread_id, "Message 2".to_string());
-    cache.append_to_message(&thread_id, "Content 2");
-    cache.finalize_message(&thread_id, 101);
-
-    cache.add_streaming_message(&thread_id, "Message 3".to_string());
-    cache.append_to_message(&thread_id, "Content 3");
-    cache.finalize_message(&thread_id, 102);
-
-    let messages = cache.get_messages(&thread_id).unwrap();
-
-    // Cache heights for all messages
-    for (i, message) in messages.iter().enumerate() {
-        let height = (i + 1) * 3; // Simulate different heights
-        app.cached_message_heights.insert((thread_id.to_string(), message.id), (message.render_version, height));
+    // Add heights for messages
+    for message in messages.iter() {
+        cache.append(message.id, message.render_version, 5);
     }
 
-    // Verify all heights are cached
-    assert_eq!(app.cached_message_heights.len(), messages.len());
+    // Store in app
+    app.height_cache = Some(cache);
 
-    // Verify each cached height is correct
-    for (i, message) in messages.iter().enumerate() {
-        let expected_height = (i + 1) * 3;
-        assert_eq!(
-            app.cached_message_heights.get(&(thread_id.to_string(), message.id)),
-            Some(&(message.render_version, expected_height))
-        );
-    }
+    // Verify cache is stored
+    assert!(app.height_cache.is_some());
+    let stored_cache = app.height_cache.as_ref().unwrap();
+    assert!(stored_cache.is_valid_for(&thread_id, 80));
+    assert_eq!(stored_cache.heights.len(), messages.len());
 }
 
 #[tokio::test]
-async fn test_message_height_cache_persists_across_operations() {
-    let mut app = App::new().expect("Failed to create app");
-    let mut cache = ThreadCache::new();
-
-    // Create a message and cache its height
-    let thread_id = cache.create_streaming_thread("Test".to_string());
-    cache.append_to_message(&thread_id, "Content");
-    cache.finalize_message(&thread_id, 100);
-
-    let messages = cache.get_messages(&thread_id).unwrap();
-    let message_id = messages[1].id;
-    let render_version = messages[1].render_version;
-
-    app.cached_message_heights.insert((thread_id.to_string(), message_id), (render_version, 10));
-
-    // Perform other operations
-    cache.add_streaming_message(&thread_id, "Another message".to_string());
-    cache.finalize_message(&thread_id, 101);
-
-    // Original cached height should still exist
-    assert_eq!(
-        app.cached_message_heights.get(&(thread_id.to_string(), message_id)),
-        Some(&(render_version, 10))
-    );
-}
-
-#[tokio::test]
-async fn test_message_height_cache_hit_vs_miss() {
-    let mut app = App::new().expect("Failed to create app");
-    let mut cache = ThreadCache::new();
-
-    // Create messages
-    let thread_id = cache.create_streaming_thread("Test".to_string());
-    cache.append_to_message(&thread_id, "Message 1");
-    cache.finalize_message(&thread_id, 100);
-
-    cache.add_streaming_message(&thread_id, "Test 2".to_string());
-    cache.append_to_message(&thread_id, "Message 2");
-    cache.finalize_message(&thread_id, 101);
-
-    let messages = cache.get_messages(&thread_id).unwrap();
-    let msg1_id = messages[1].id;
-    let msg2_id = messages[3].id;
-
-    // Cache only message 1
-    app.cached_message_heights.insert((thread_id.to_string(), msg1_id), (messages[1].render_version, 8));
-
-    // Message 1 should have cache hit
-    assert!(app.cached_message_heights.contains_key(&(thread_id.to_string(), msg1_id)));
-
-    // Message 2 should have cache miss
-    assert!(!app.cached_message_heights.contains_key(&(thread_id.to_string(), msg2_id)));
-}
-
-#[tokio::test]
-async fn test_message_height_cache_can_be_cleared() {
+async fn test_height_cache_invalidation_on_width_change() {
     let mut app = App::new().expect("Failed to create app");
 
-    // Add some cached heights
-    app.cached_message_heights.insert(("thread1".to_string(), 1), (0, 5));
-    app.cached_message_heights.insert(("thread1".to_string(), 2), (0, 10));
-    app.cached_message_heights.insert(("thread1".to_string(), 3), (0, 15));
+    // Create cache with initial width
+    let thread_id = Arc::new("test-thread".to_string());
+    let mut cache = CachedHeights::new(thread_id, 80);
+    cache.append(1, 0, 5);
+    app.height_cache = Some(cache);
 
-    assert_eq!(app.cached_message_heights.len(), 3);
+    // Verify cache exists
+    assert!(app.height_cache.as_ref().unwrap().is_valid_for("test-thread", 80));
 
-    // Clear the cache
-    app.cached_message_heights.clear();
-
-    assert_eq!(app.cached_message_heights.len(), 0);
+    // Width change should invalidate
+    assert!(!app.height_cache.as_ref().unwrap().is_valid_for("test-thread", 100));
 }

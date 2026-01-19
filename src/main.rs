@@ -701,31 +701,41 @@ where
                                 // Page scroll keys for conversation (unified scroll)
                                 KeyCode::PageUp if app.screen == Screen::Conversation => {
                                     // Page up = scroll up to see older content
+                                    app.scroll_velocity = 0.0; // Reset momentum on user scroll
                                     app.user_has_scrolled = true;
                                     let new_scroll = (app.unified_scroll + 10).min(app.max_scroll);
-                                    if new_scroll != app.unified_scroll {
+                                    let needs_redraw = if new_scroll != app.unified_scroll {
                                         app.unified_scroll = new_scroll;
                                         app.scroll_position = app.unified_scroll as f32;
-                                        app.mark_dirty();
+                                        true
                                     } else if app.max_scroll > 0 {
                                         app.scroll_boundary_hit = Some(ScrollBoundary::Top);
                                         app.boundary_hit_tick = app.tick_count;
+                                        true
+                                    } else {
+                                        false
+                                    };
+                                    if needs_redraw {
                                         app.mark_dirty();
                                     }
                                 }
                                 KeyCode::PageDown if app.screen == Screen::Conversation => {
                                     // Page down = scroll down to see newer content / input
+                                    app.scroll_velocity = 0.0; // Reset momentum on user scroll
                                     let new_scroll = app.unified_scroll.saturating_sub(10);
-                                    if new_scroll != app.unified_scroll {
+                                    let needs_redraw = if new_scroll != app.unified_scroll {
                                         app.unified_scroll = new_scroll;
                                         app.scroll_position = app.unified_scroll as f32;
                                         if app.unified_scroll == 0 {
                                             app.user_has_scrolled = false; // Back at bottom
                                         }
-                                        app.mark_dirty();
+                                        true
                                     } else {
                                         app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
                                         app.boundary_hit_tick = app.tick_count;
+                                        true
+                                    };
+                                    if needs_redraw {
                                         app.mark_dirty();
                                     }
                                 }
@@ -763,18 +773,22 @@ where
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll down = see newer content / input
-                                        if app.unified_scroll >= 3 {
+                                        app.scroll_velocity = 0.0; // Reset momentum on user scroll
+                                        let needs_redraw = if app.unified_scroll >= 3 {
                                             app.unified_scroll -= 3;
                                             app.scroll_position = app.unified_scroll as f32;
-                                            app.mark_dirty();
+                                            true
                                         } else if app.unified_scroll > 0 {
                                             app.unified_scroll = 0;
                                             app.user_has_scrolled = false; // Back at bottom
                                             app.scroll_position = 0.0;
-                                            app.mark_dirty();
+                                            true
                                         } else {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
                                             app.boundary_hit_tick = app.tick_count;
+                                            true
+                                        };
+                                        if needs_redraw {
                                             app.mark_dirty();
                                         }
                                     }
@@ -782,15 +796,21 @@ where
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll up = see older content
+                                        app.scroll_velocity = 0.0; // Reset momentum on user scroll
                                         app.user_has_scrolled = true;
                                         let new_scroll = (app.unified_scroll + 3).min(app.max_scroll);
-                                        if new_scroll != app.unified_scroll {
+                                        let needs_redraw = if new_scroll != app.unified_scroll {
                                             app.unified_scroll = new_scroll;
                                             app.scroll_position = app.unified_scroll as f32;
-                                            app.mark_dirty();
+                                            true
                                         } else if app.max_scroll > 0 {
                                             app.scroll_boundary_hit = Some(ScrollBoundary::Top);
                                             app.boundary_hit_tick = app.tick_count;
+                                            true
+                                        } else {
+                                            false
+                                        };
+                                        if needs_redraw {
                                             app.mark_dirty();
                                         }
                                     }

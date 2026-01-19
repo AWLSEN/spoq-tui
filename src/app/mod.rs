@@ -35,6 +35,96 @@ use color_eyre::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+/// Cached message height data for incremental updates.
+/// Stores precomputed heights with cumulative offsets to avoid recalculating
+/// all heights on every render frame.
+#[derive(Debug, Clone)]
+pub struct CachedHeights {
+    /// Thread ID this cache belongs to (Arc to avoid cloning on lookups)
+    pub thread_id: Arc<String>,
+    /// Per-message heights with cumulative offsets
+    pub heights: Vec<CachedMessageHeight>,
+    /// Total visual lines across all messages
+    pub total_lines: usize,
+    /// Viewport width used for these calculations (invalidate on resize)
+    pub viewport_width: usize,
+}
+
+/// Height data for a single cached message
+#[derive(Debug, Clone)]
+pub struct CachedMessageHeight {
+    /// Message ID
+    pub message_id: i64,
+    /// Render version when height was calculated
+    pub render_version: u64,
+    /// Number of visual lines this message occupies
+    pub visual_lines: usize,
+    /// Cumulative visual line offset from the start
+    pub cumulative_offset: usize,
+}
+
+impl CachedHeights {
+    /// Create empty cache for a thread
+    pub fn new(thread_id: Arc<String>, viewport_width: usize) -> Self {
+        Self {
+            thread_id,
+            heights: Vec::new(),
+            total_lines: 0,
+            viewport_width,
+        }
+    }
+
+    /// Check if cache is valid for the given thread and viewport width
+    pub fn is_valid_for(&self, thread_id: &str, viewport_width: usize) -> bool {
+        self.thread_id.as_str() == thread_id && self.viewport_width == viewport_width
+    }
+
+    /// Recalculate cumulative offsets from a given index onwards
+    pub fn recalculate_offsets_from(&mut self, start_idx: usize) {
+        let mut cumulative = if start_idx > 0 {
+            self.heights[start_idx - 1].cumulative_offset + self.heights[start_idx - 1].visual_lines
+        } else {
+            0
+        };
+        for height in self.heights.iter_mut().skip(start_idx) {
+            height.cumulative_offset = cumulative;
+            cumulative += height.visual_lines;
+        }
+        self.total_lines = cumulative;
+    }
+
+    /// Update a single message's height and recalculate offsets
+    pub fn update_height(&mut self, idx: usize, new_height: usize, render_version: u64) {
+        if idx < self.heights.len() {
+            self.heights[idx].visual_lines = new_height;
+            self.heights[idx].render_version = render_version;
+            self.recalculate_offsets_from(idx);
+        }
+    }
+
+    /// Append a new message height entry
+    pub fn append(&mut self, message_id: i64, render_version: u64, visual_lines: usize) {
+        let cumulative_offset = self.total_lines;
+        self.heights.push(CachedMessageHeight {
+            message_id,
+            render_version,
+            visual_lines,
+            cumulative_offset,
+        });
+        self.total_lines += visual_lines;
+    }
+
+    /// Truncate heights to given length (for when messages are removed)
+    pub fn truncate(&mut self, new_len: usize) {
+        if new_len < self.heights.len() {
+            self.heights.truncate(new_len);
+            self.total_lines = self.heights.last()
+                .map(|h| h.cumulative_offset + h.visual_lines)
+                .unwrap_or(0);
+        }
+    }
+}
+
 pub(crate) use utils::{emit_debug, log_thread_update, truncate_for_debug};
 
 /// Main application state
@@ -132,8 +222,8 @@ pub struct App {
     /// Click detector for multi-click detection (single/double/triple click)
     /// Cache for parsed markdown (avoids re-parsing unchanged content)
     pub markdown_cache: MarkdownCache,
-    /// Cache for message heights: maps (thread_id, message_id) -> (render_version, cached_height)
-    pub cached_message_heights: std::collections::HashMap<(String, i64), (u64, usize)>,
+    /// Incremental height cache for virtualization (avoids recalculating all heights every frame)
+    pub height_cache: Option<CachedHeights>,
     /// Dirty flag: when true, the UI needs to be redrawn.
     /// Set to true on state mutations, cleared after each draw.
     pub needs_redraw: bool,
@@ -233,7 +323,7 @@ impl App {
             active_panel: ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
             markdown_cache: MarkdownCache::new(),
-            cached_message_heights: std::collections::HashMap::new(),
+            height_cache: None,
             needs_redraw: true, // Start with redraw needed
             has_visible_links: false,
             input_history: InputHistory::load(),

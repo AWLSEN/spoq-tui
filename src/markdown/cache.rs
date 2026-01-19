@@ -6,14 +6,15 @@
 use ratatui::text::Line;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
 
 use crate::markdown::{render_markdown, MARKDOWN_CACHE_MAX_ENTRIES};
 
 /// Cached result from markdown rendering
 #[derive(Clone)]
 pub(crate) struct CachedLines {
-    /// The rendered lines
-    pub lines: Vec<Line<'static>>,
+    /// The rendered lines wrapped in Arc for zero-copy cache hits
+    pub lines: Arc<Vec<Line<'static>>>,
 }
 
 /// Memoization cache for markdown rendering.
@@ -65,18 +66,22 @@ impl MarkdownCache {
     ///
     /// If the content has been rendered before, returns the cached result.
     /// Otherwise, parses the markdown, caches the result, and returns it.
-    pub fn render(&mut self, content: &str) -> Vec<Line<'static>> {
+    ///
+    /// Returns `Arc<Vec<Line>>` for zero-copy cache hits - callers can clone
+    /// the Arc cheaply for shared access, or dereference and clone the Vec
+    /// when they need to modify the lines.
+    pub fn render(&mut self, content: &str) -> Arc<Vec<Line<'static>>> {
         let hash = Self::hash_content(content);
 
-        // Check cache
+        // Check cache - return Arc clone for zero-copy access
         if let Some(cached) = self.entries.get(&hash) {
             self.hits += 1;
-            return cached.lines.clone();
+            return Arc::clone(&cached.lines);
         }
 
         // Cache miss - render and store
         self.misses += 1;
-        let lines = render_markdown(content);
+        let lines = Arc::new(render_markdown(content));
 
         // Evict oldest entries if at capacity
         while self.entries.len() >= MARKDOWN_CACHE_MAX_ENTRIES && !self.insertion_order.is_empty() {
@@ -88,7 +93,7 @@ impl MarkdownCache {
         self.entries.insert(
             hash,
             CachedLines {
-                lines: lines.clone(),
+                lines: Arc::clone(&lines),
             },
         );
         self.insertion_order.push(hash);

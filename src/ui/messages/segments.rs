@@ -52,7 +52,7 @@ pub fn render_message_segments(
                 let segment_lines = markdown_cache.render(text);
                 // Wrap and prepend vertical bar to ALL text lines
                 // This ensures wrapped continuations also get the prefix
-                lines.extend(wrap_lines_with_prefix(segment_lines, label, label_style, max_width, None));
+                lines.extend(wrap_lines_with_prefix((*segment_lines).clone(), label, label_style, max_width, None));
                 if !lines.is_empty() {
                     is_first_line = false;
                 }
