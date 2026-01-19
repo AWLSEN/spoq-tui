@@ -1,6 +1,6 @@
 use spoq::app::{start_websocket, App, AppMessage, Focus, ProvisioningPhase, Screen, ScrollBoundary};
-use spoq::auth::{CentralApiError, DeviceFlowManager, DeviceFlowState};
-use spoq::debug::{create_debug_channel, start_debug_server, DebugEventKind, StateChangeData, StateType};
+use spoq::auth::{DeviceFlowManager, DeviceFlowState};
+use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
 
@@ -18,7 +18,6 @@ use crossterm::{
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
-use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -63,30 +62,8 @@ async fn main() -> Result<()> {
     // Clear the terminal
     terminal.clear()?;
 
-    // Helper to emit debug events before app is created
-    let emit_startup_debug = |debug_tx: &Option<spoq::debug::DebugEventSender>, desc: &str, current: &str| {
-        if let Some(ref tx) = debug_tx {
-            let event = spoq::debug::DebugEvent::with_context(
-                DebugEventKind::StateChange(StateChangeData::new(StateType::Auth, desc, current)),
-                None,
-                None,
-            );
-            let _ = tx.send(event);
-        }
-    };
-
     // Initialize application state with debug sender
-    let app_create_start = Instant::now();
-    emit_startup_debug(&debug_tx, "[MAIN] App::with_debug BEGIN", "Creating app state...");
-
     let mut app = App::with_debug(debug_tx)?;
-
-    let app_create_elapsed = app_create_start.elapsed();
-    app.emit_debug_state_change(
-        "auth",
-        "[MAIN] App::with_debug END",
-        &format!("elapsed: {:?}", app_create_elapsed),
-    );
 
     // Log initial auth state for debugging
     app.log_initial_auth_state();
@@ -97,13 +74,6 @@ async fn main() -> Result<()> {
 
     // Only initialize server connection if already authenticated with ready VPS
     // Login and Provisioning screens don't need server data
-    let screen_init_start = Instant::now();
-    app.emit_debug_state_change(
-        "auth",
-        "[MAIN] Screen initialization BEGIN",
-        &format!("screen: {:?}", app.screen),
-    );
-
     match app.screen {
         Screen::CommandDeck | Screen::Conversation => {
             // Load threads from backend (async initialization)
@@ -122,72 +92,31 @@ async fn main() -> Result<()> {
         }
         Screen::Login => {
             // Initialize device flow for login - start the OAuth flow immediately
-            app.emit_debug_state_change("auth", "[MAIN] Device flow initialization BEGIN", "Creating DeviceFlowManager...");
+            app.emit_debug_state_change("auth", "Device flow", "Starting...");
             if let Some(ref central_api) = app.central_api {
-                let device_flow_create_start = Instant::now();
                 let mut device_flow = DeviceFlowManager::new(central_api.clone());
-                let device_flow_create_elapsed = device_flow_create_start.elapsed();
-
-                app.emit_debug_state_change(
-                    "auth",
-                    "[MAIN] DeviceFlowManager created",
-                    &format!("elapsed: {:?}", device_flow_create_elapsed),
-                );
-
                 // Start the device flow (requests device code from server)
-                // NOTE: This is a blocking await - if server is slow, first frame won't render
-                app.emit_debug_state_change(
-                    "auth",
-                    "[MAIN] device_flow.start() BEGIN",
-                    "Calling POST /auth/device (BLOCKING - first frame waits for this)",
-                );
-
-                let device_start_time = Instant::now();
                 match device_flow.start().await {
                     Ok(()) => {
-                        let device_elapsed = device_start_time.elapsed();
                         // Log the state for debugging
                         let state_desc = match device_flow.state() {
-                            DeviceFlowState::WaitingForUser { verification_uri, user_code, expires_at, interval, .. } => {
-                                format!(
-                                    "WaitingForUser: uri={}, user_code={:?}, expires_in={:?}, interval={:?}",
-                                    verification_uri,
-                                    user_code,
-                                    expires_at.saturating_duration_since(Instant::now()),
-                                    interval
-                                )
+                            DeviceFlowState::WaitingForUser { verification_uri, .. } => {
+                                format!("WaitingForUser: {}", verification_uri)
                             }
                             other => format!("{:?}", other),
                         };
-                        app.emit_debug_state_change(
-                            "auth",
-                            "[MAIN] device_flow.start() SUCCESS",
-                            &format!("elapsed: {:?}, state: {}", device_elapsed, state_desc),
-                        );
+                        app.emit_debug_state_change("auth", "Device flow started", &state_desc);
                     }
                     Err(e) => {
-                        let device_elapsed = device_start_time.elapsed();
-                        app.emit_debug_state_change(
-                            "auth",
-                            "[MAIN] device_flow.start() ERROR",
-                            &format!("elapsed: {:?}, error: {}", device_elapsed, e),
-                        );
+                        app.emit_debug_state_change("auth", "Device flow error", &e.to_string());
                     }
                 }
                 app.device_flow = Some(device_flow);
             } else {
-                app.emit_debug_state_change("auth", "[MAIN] Device flow SKIP", "No central API configured");
+                app.emit_debug_state_change("auth", "Device flow", "No central API configured");
             }
-            app.emit_debug_state_change("auth", "[MAIN] Device flow initialization END", "Ready for first render");
         }
     }
-
-    let screen_init_elapsed = screen_init_start.elapsed();
-    app.emit_debug_state_change(
-        "auth",
-        "[MAIN] Screen initialization END",
-        &format!("elapsed: {:?}, entering event loop", screen_init_elapsed),
-    );
 
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;
@@ -332,70 +261,21 @@ where
                 // Increment tick counter for animations (spinner, cursor blink)
                 app.tick();
 
-                // Mark dirty for Login/Provisioning screens to animate spinner
-                // Only every 6 ticks (~100ms) to avoid excessive redraws
-                if (app.screen == Screen::Login || app.screen == Screen::Provisioning) && app.tick_count % 6 == 0 {
-                    app.mark_dirty();
-                }
-
                 // Check for thread switcher auto-confirm (Tab release simulation)
                 app.check_switcher_timeout();
 
                 // Poll device flow when on Login screen in WaitingForUser state
                 // Uses tick_count to rate-limit polling attempts (~1 second intervals)
-                // Spawns background task to avoid blocking the UI
+                // Device flow internally respects server-specified interval
                 if app.screen == Screen::Login && app.tick_count % 60 == 0 {
-                    if let Some(ref device_flow) = app.device_flow {
-                        if let DeviceFlowState::WaitingForUser {
-                            device_code,
-                            interval,
-                            last_poll,
-                            expires_at,
-                            ..
-                        } = device_flow.state() {
-                            let now = Instant::now();
-
-                            // Check if device code has expired
-                            if now >= *expires_at {
-                                let _ = app.message_tx.send(AppMessage::DeviceFlowExpired);
-                            } else {
-                                // Respect polling interval
-                                let should_poll = match last_poll {
-                                    Some(last) => now.duration_since(*last) >= *interval,
-                                    None => true,
-                                };
-
-                                if should_poll {
-                                    // Spawn background task for HTTP poll - don't block UI!
-                                    if let Some(ref central_api) = app.central_api {
-                                        let api_client = central_api.clone();
-                                        let device_code = device_code.clone();
-                                        let message_tx = app.message_tx.clone();
-
-                                        tokio::spawn(async move {
-                                            match api_client.poll_device_token(&device_code).await {
-                                                Ok(response) => {
-                                                    let _ = message_tx.send(AppMessage::DeviceFlowAuthorized {
-                                                        access_token: response.access_token,
-                                                        refresh_token: response.refresh_token.unwrap_or_default(),
-                                                        expires_in: response.expires_in as i64,
-                                                    });
-                                                }
-                                                Err(CentralApiError::AuthorizationPending) => {
-                                                    let _ = message_tx.send(AppMessage::DeviceFlowPending);
-                                                }
-                                                Err(CentralApiError::AccessDenied) => {
-                                                    let _ = message_tx.send(AppMessage::DeviceFlowDenied);
-                                                }
-                                                Err(CentralApiError::AuthorizationExpired) => {
-                                                    let _ = message_tx.send(AppMessage::DeviceFlowExpired);
-                                                }
-                                                Err(e) => {
-                                                    let _ = message_tx.send(AppMessage::DeviceFlowError(e.to_string()));
-                                                }
-                                            }
-                                        });
-                                    }
+                    if let Some(ref mut device_flow) = app.device_flow {
+                        if matches!(device_flow.state(), DeviceFlowState::WaitingForUser { .. }) {
+                            // Poll synchronously-ish by spawning and awaiting inline
+                            // This is safe because poll() returns quickly if interval hasn't elapsed
+                            let poll_result = device_flow.poll().await;
+                            if let Ok(state_changed) = poll_result {
+                                if state_changed {
+                                    app.mark_dirty();
                                 }
                             }
                         }

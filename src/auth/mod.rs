@@ -9,6 +9,6 @@ pub mod central_api;
 pub mod credentials;
 pub mod device_flow;
 
-pub use central_api::{CentralApiClient, CentralApiError};
+pub use central_api::CentralApiClient;
 pub use credentials::{Credentials, CredentialsManager};
 pub use device_flow::{DeviceFlowManager, DeviceFlowState};

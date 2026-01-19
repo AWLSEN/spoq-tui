@@ -793,117 +793,22 @@ impl App {
                 );
             }
             AppMessage::DeviceFlowUpdated => {
-                // Generic device flow update - just mark dirty for redraw
+                // TODO: Handle device flow state updates
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::Auth,
+                        StateType::SessionState,
                         "Device flow updated",
-                        "generic update",
+                        "placeholder",
                     )),
                     None,
                 );
-            }
-            AppMessage::DeviceFlowPending => {
-                // Update last_poll time in device flow state
-                if let Some(ref mut device_flow) = self.device_flow {
-                    device_flow.update_last_poll();
-                }
-                // No need to mark_dirty - spinner animation handles redraws
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::Auth,
-                        "Device flow poll",
-                        "authorization_pending - user hasn't authorized yet",
-                    )),
-                    None,
-                );
-            }
-            AppMessage::DeviceFlowAuthorized { access_token, refresh_token, expires_in } => {
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::Auth,
-                        "Device flow AUTHORIZED",
-                        format!("expires_in: {}s", expires_in),
-                    )),
-                    None,
-                );
-
-                // Update device flow state
-                if let Some(ref mut device_flow) = self.device_flow {
-                    device_flow.set_authorized(access_token.clone(), refresh_token.clone(), expires_in);
-                }
-
-                // Save credentials
-                self.credentials.access_token = Some(access_token);
-                self.credentials.refresh_token = Some(refresh_token);
-                self.credentials.expires_at = Some(chrono::Utc::now().timestamp() + expires_in);
-
-                if let Some(ref manager) = self.credentials_manager {
-                    manager.save(&self.credentials);
-                }
-
-                // Transition to provisioning screen (VPS not ready yet)
-                self.screen = Screen::Provisioning;
-                self.provisioning_phase = ProvisioningPhase::LoadingPlans;
-                self.mark_dirty(); // Ensure screen transition is rendered
-                self.load_vps_plans();
-            }
-            AppMessage::DeviceFlowDenied => {
-                self.mark_dirty();
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::Auth,
-                        "Device flow DENIED",
-                        "user denied authorization",
-                    )),
-                    None,
-                );
-
-                if let Some(ref mut device_flow) = self.device_flow {
-                    device_flow.set_denied();
-                }
-            }
-            AppMessage::DeviceFlowExpired => {
-                self.mark_dirty();
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::Auth,
-                        "Device flow EXPIRED",
-                        "device code expired",
-                    )),
-                    None,
-                );
-
-                if let Some(ref mut device_flow) = self.device_flow {
-                    device_flow.set_expired();
-                }
-            }
-            AppMessage::DeviceFlowError(error) => {
-                self.mark_dirty();
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::Error(ErrorData::new(
-                        ErrorSource::Auth,
-                        &error,
-                    )),
-                    None,
-                );
-
-                if let Some(ref mut device_flow) = self.device_flow {
-                    device_flow.set_error(error);
-                }
             }
             AppMessage::VpsPlansLoaded(plans) => {
                 let count = plans.len();
                 // Store VPS plans in app state
                 self.vps_plans = plans;
                 self.provisioning_phase = ProvisioningPhase::SelectPlan;
-                self.mark_dirty(); // Ensure plans are rendered
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
@@ -917,7 +822,6 @@ impl App {
             AppMessage::VpsPlansLoadError(error) => {
                 // Handle VPS plans load error
                 self.provisioning_phase = ProvisioningPhase::PlansError(error.clone());
-                self.mark_dirty();
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),

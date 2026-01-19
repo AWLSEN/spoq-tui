@@ -295,22 +295,6 @@ impl App {
         _client: Arc<ConductorClient>,
         debug_tx: Option<DebugEventSender>,
     ) -> Result<Self> {
-        use crate::debug::{DebugEventKind, StateChangeData, StateType};
-        use std::time::Instant;
-
-        let startup_start = Instant::now();
-
-        // Log startup begin
-        emit_debug(
-            &debug_tx,
-            DebugEventKind::StateChange(StateChangeData::new(
-                StateType::Auth,
-                "[STARTUP] App::with_client_and_debug BEGIN",
-                "Initializing app state",
-            )),
-            None,
-        );
-
         // Initialize empty cache - will be populated by initialize()
         let cache = ThreadCache::new();
 
@@ -318,76 +302,34 @@ impl App {
         let (message_tx, message_rx) = mpsc::unbounded_channel();
 
         // Create credentials manager and load credentials
-        let creds_start = Instant::now();
         let credentials_manager = CredentialsManager::new();
-        let creds_manager_elapsed = creds_start.elapsed();
-
-        emit_debug(
-            &debug_tx,
-            DebugEventKind::StateChange(StateChangeData::new(
-                StateType::Auth,
-                "[STARTUP] CredentialsManager created",
-                format!("elapsed: {:?}, path_exists: {}",
-                    creds_manager_elapsed,
-                    credentials_manager.is_some()
-                ),
-            )),
-            None,
-        );
-
-        let load_start = Instant::now();
         let credentials = credentials_manager
             .as_ref()
             .map(|cm| cm.load())
             .unwrap_or_default();
-        let load_elapsed = load_start.elapsed();
 
-        emit_debug(
-            &debug_tx,
-            DebugEventKind::StateChange(StateChangeData::new(
-                StateType::Auth,
-                "[STARTUP] Credentials loaded from disk",
-                format!(
-                    "elapsed: {:?}, has_token: {}, vps_url: {:?}, vps_status: {:?}",
-                    load_elapsed,
-                    credentials.access_token.is_some(),
-                    credentials.vps_url.as_deref().unwrap_or("none"),
-                    credentials.vps_status.as_deref().unwrap_or("none")
-                ),
-            )),
-            None,
-        );
-
-        // Create central API client with production URL and debug sender
-        let central_api = Arc::new(CentralApiClient::with_debug(debug_tx.clone()));
+        // Create central API client with production URL
+        let central_api = Arc::new(CentralApiClient::new());
 
         // Determine initial screen and provisioning phase based on auth state:
         // - No access_token: Login screen
         // - Has access_token but no vps_url or vps_status != 'ready': Provisioning screen
         // - Has vps_url and vps_status == 'ready': CommandDeck screen
-        let decision_start = Instant::now();
-        let (screen, provisioning_phase, client, decision_reason) = if credentials.access_token.is_none() {
+        let (screen, provisioning_phase, client) = if credentials.access_token.is_none() {
             // No credentials - go to login
             (
                 Screen::Login,
                 ProvisioningPhase::default(),
                 Arc::new(ConductorClient::new()),
-                "access_token is None → Login",
             )
         } else if credentials.vps_url.is_none()
             || credentials.vps_status.as_deref() != Some("ready")
         {
             // Has credentials but no ready VPS - go to provisioning
-            let reason = if credentials.vps_url.is_none() {
-                "has token, vps_url is None → Provisioning"
-            } else {
-                "has token, vps_status != 'ready' → Provisioning"
-            };
             (
                 Screen::Provisioning,
                 ProvisioningPhase::LoadingPlans,
                 Arc::new(ConductorClient::new()),
-                reason,
             )
         } else {
             // Has credentials and ready VPS - go to CommandDeck
@@ -398,41 +340,8 @@ impl App {
                 Screen::CommandDeck,
                 ProvisioningPhase::default(),
                 Arc::new(conductor_client),
-                "has token + vps_url + vps_status='ready' → CommandDeck",
             )
         };
-        let decision_elapsed = decision_start.elapsed();
-
-        let screen_name = match screen {
-            Screen::Login => "Login",
-            Screen::Provisioning => "Provisioning",
-            Screen::CommandDeck => "CommandDeck",
-            Screen::Conversation => "Conversation",
-        };
-
-        emit_debug(
-            &debug_tx,
-            DebugEventKind::StateChange(StateChangeData::new(
-                StateType::Auth,
-                "[STARTUP] Screen decision made",
-                format!(
-                    "screen: {}, reason: {}, elapsed: {:?}",
-                    screen_name, decision_reason, decision_elapsed
-                ),
-            )),
-            None,
-        );
-
-        let startup_elapsed = startup_start.elapsed();
-        emit_debug(
-            &debug_tx,
-            DebugEventKind::StateChange(StateChangeData::new(
-                StateType::Auth,
-                "[STARTUP] App::with_client_and_debug END",
-                format!("total_elapsed: {:?}, screen: {}", startup_elapsed, screen_name),
-            )),
-            None,
-        );
 
         Ok(Self {
             // Start with empty vectors - will be populated from server in initialize()
@@ -803,15 +712,9 @@ mod tests {
     }
 
     #[test]
-    fn test_app_with_empty_credentials_should_show_login() {
-        // When credentials have no access_token, screen should be Login
-        // Note: App::default() loads from disk which may have real credentials
-        // So we explicitly clear credentials to test this scenario
-        let mut app = App::default();
-        app.credentials = Credentials::default();
-        app.screen = Screen::Login;
-        // Verify the invariant: no token → Login screen
-        assert!(app.credentials.access_token.is_none());
+    fn test_app_initializes_on_login_without_credentials() {
+        // With no credentials, app should start on Login screen
+        let app = App::default();
         assert_eq!(app.screen, Screen::Login);
     }
 
@@ -3554,9 +3457,7 @@ mod tests {
     #[tokio::test]
     async fn test_ensure_valid_token_with_no_credentials() {
         let mut app = App::default();
-        // Clear credentials to test the no-credentials scenario
-        // (App::default() may load real credentials from disk)
-        app.credentials = Credentials::default();
+        // App starts with empty credentials
         assert!(app.credentials.access_token.is_none());
 
         let result = app.ensure_valid_token().await;

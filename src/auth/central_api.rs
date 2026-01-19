@@ -5,9 +5,6 @@
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
-
-use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, StateChangeData, StateType};
 
 /// Default URL for the Central API
 pub const CENTRAL_API_URL: &str = "https://spoq-api-production.up.railway.app";
@@ -82,21 +79,13 @@ pub struct DeviceCodeResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenResponse {
     pub access_token: String,
-    #[serde(default)]
-    pub refresh_token: Option<String>,
-    /// Defaults to 3600 (1 hour) if not provided by server
-    #[serde(default = "default_expires_in")]
+    pub refresh_token: String,
     pub expires_in: u32,
-    #[serde(default)]
-    pub token_type: Option<String>,
+    pub token_type: String,
     #[serde(default)]
     pub user_id: Option<String>,
     #[serde(default)]
     pub username: Option<String>,
-}
-
-fn default_expires_in() -> u32 {
-    3600 // 1 hour default
 }
 
 /// VPS plan information (GET /api/vps/plans).
@@ -108,13 +97,6 @@ pub struct VpsPlan {
     pub ram_mb: u32,
     pub disk_gb: u32,
     pub price_cents: u32,
-}
-
-/// Response wrapper for VPS plans endpoint (GET /api/vps/plans).
-/// Server returns {"plans": [...]} not a bare array.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VpsPlansResponse {
-    pub plans: Vec<VpsPlan>,
 }
 
 /// Response from VPS provision endpoint (POST /api/vps/provision).
@@ -145,8 +127,6 @@ pub struct CentralApiClient {
     client: Client,
     /// Optional authentication token for Bearer auth
     auth_token: Option<String>,
-    /// Optional debug event sender for timing logs
-    debug_tx: Option<DebugEventSender>,
 }
 
 impl CentralApiClient {
@@ -156,7 +136,6 @@ impl CentralApiClient {
             base_url: CENTRAL_API_URL.to_string(),
             client: Client::new(),
             auth_token: None,
-            debug_tx: None,
         }
     }
 
@@ -166,17 +145,6 @@ impl CentralApiClient {
             base_url,
             client: Client::new(),
             auth_token: None,
-            debug_tx: None,
-        }
-    }
-
-    /// Create a new CentralApiClient with a debug sender.
-    pub fn with_debug(debug_tx: Option<DebugEventSender>) -> Self {
-        Self {
-            base_url: CENTRAL_API_URL.to_string(),
-            client: Client::new(),
-            auth_token: None,
-            debug_tx,
         }
     }
 
@@ -196,22 +164,6 @@ impl CentralApiClient {
         self.auth_token.as_deref()
     }
 
-    /// Emit a debug event if debug_tx is set.
-    fn emit_debug(&self, description: &str, current: &str) {
-        if let Some(ref tx) = self.debug_tx {
-            let event = DebugEvent::with_context(
-                DebugEventKind::StateChange(StateChangeData::new(
-                    StateType::Auth,
-                    description,
-                    current,
-                )),
-                None,
-                None,
-            );
-            let _ = tx.send(event);
-        }
-    }
-
     /// Helper to add auth header to a request builder if token is set.
     fn add_auth_header(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if let Some(ref token) = self.auth_token {
@@ -227,131 +179,42 @@ impl CentralApiClient {
     ///
     /// Returns the device code response containing the user code and verification URL.
     pub async fn request_device_code(&self) -> Result<DeviceCodeResponse, CentralApiError> {
-        let total_start = Instant::now();
         let url = format!("{}/auth/device", self.base_url);
 
-        self.emit_debug(
-            "[API] request_device_code BEGIN",
-            &format!("url: {}", url),
-        );
-
         // Get system hostname for device identification
-        let hostname_start = Instant::now();
         let hostname = hostname::get()
             .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_else(|_| "unknown".to_string());
-        let hostname_elapsed = hostname_start.elapsed();
 
-        self.emit_debug(
-            "[API] hostname resolved",
-            &format!("hostname: {}, elapsed: {:?}", hostname, hostname_elapsed),
-        );
-
-        // Build and send request
-        self.emit_debug(
-            "[API] HTTP POST BEGIN",
-            &format!("Sending request to {} (BLOCKING)", url),
-        );
-
-        let http_start = Instant::now();
         let response = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&serde_json::json!({ "hostname": hostname }))
             .send()
-            .await;
-        let http_elapsed = http_start.elapsed();
-
-        let response = match response {
-            Ok(r) => {
-                self.emit_debug(
-                    "[API] HTTP POST COMPLETE",
-                    &format!("status: {}, elapsed: {:?}", r.status(), http_elapsed),
-                );
-                r
-            }
-            Err(e) => {
-                self.emit_debug(
-                    "[API] HTTP POST ERROR",
-                    &format!("error: {}, elapsed: {:?}", e, http_elapsed),
-                );
-                return Err(CentralApiError::Http(e));
-            }
-        };
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body_start = Instant::now();
             let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            let body_elapsed = body_start.elapsed();
-            self.emit_debug(
-                "[API] request_device_code ERROR",
-                &format!("status: {}, message: {}, body_read: {:?}, total: {:?}",
-                    status, &message[..message.len().min(100)], body_elapsed, total_start.elapsed()),
-            );
             return Err(CentralApiError::ServerError { status, message });
         }
 
         // Get the response text first for better error messages
-        let body_start = Instant::now();
         let text = response.text().await.map_err(|e| {
-            let body_elapsed = body_start.elapsed();
-            self.emit_debug(
-                "[API] response body read ERROR",
-                &format!("error: {}, elapsed: {:?}", e, body_elapsed),
-            );
             CentralApiError::ServerError {
                 status: 0,
                 message: format!("Failed to read response: {}", e),
             }
         })?;
-        let body_elapsed = body_start.elapsed();
-
-        self.emit_debug(
-            "[API] response body read",
-            &format!("size: {} bytes, elapsed: {:?}", text.len(), body_elapsed),
-        );
 
         // Try to parse the JSON
-        let parse_start = Instant::now();
-        let result = serde_json::from_str::<DeviceCodeResponse>(&text).map_err(|e| {
-            self.emit_debug(
-                "[API] JSON parse ERROR",
-                &format!("error: {}, response: {}", e, &text[..text.len().min(200)]),
-            );
+        serde_json::from_str::<DeviceCodeResponse>(&text).map_err(|e| {
             CentralApiError::ServerError {
                 status: 0,
                 message: format!("Invalid response format: {}. Response: {}", e, &text[..text.len().min(200)]),
             }
-        });
-        let parse_elapsed = parse_start.elapsed();
-
-        let total_elapsed = total_start.elapsed();
-        match &result {
-            Ok(resp) => {
-                self.emit_debug(
-                    "[API] request_device_code SUCCESS",
-                    &format!(
-                        "verification_uri: {}, user_code: {:?}, expires_in: {}s, interval: {}s, parse: {:?}, total: {:?}",
-                        resp.verification_uri,
-                        resp.user_code,
-                        resp.expires_in,
-                        resp.interval,
-                        parse_elapsed,
-                        total_elapsed
-                    ),
-                );
-            }
-            Err(_) => {
-                self.emit_debug(
-                    "[API] request_device_code FAILED",
-                    &format!("total: {:?}", total_elapsed),
-                );
-            }
-        }
-
-        result
+        })
     }
 
     /// Poll for the device token after user authorization.
@@ -441,49 +304,16 @@ impl CentralApiClient {
     pub async fn fetch_vps_plans(&self) -> Result<Vec<VpsPlan>, CentralApiError> {
         let url = format!("{}/api/vps/plans", self.base_url);
 
-        self.emit_debug("[API] fetch_vps_plans BEGIN", &url);
-
         let builder = self.client.get(&url);
-        let http_start = Instant::now();
         let response = self.add_auth_header(builder).send().await?;
-        let http_elapsed = http_start.elapsed();
-
-        self.emit_debug(
-            "[API] fetch_vps_plans HTTP complete",
-            &format!("status: {}, elapsed: {:?}", response.status(), http_elapsed),
-        );
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            self.emit_debug("[API] fetch_vps_plans ERROR", &format!("status: {}, message: {}", status, message));
             return Err(CentralApiError::ServerError { status, message });
         }
 
-        // Get raw text first for debugging
-        let text = response.text().await.map_err(CentralApiError::Http)?;
-        self.emit_debug(
-            "[API] fetch_vps_plans response",
-            &format!("size: {} bytes, preview: {}", text.len(), &text[..text.len().min(200)]),
-        );
-
-        // Server returns {"plans": [...]} wrapper, not a bare array
-        // Try wrapper format first, fall back to bare array for compatibility
-        let plans = if let Ok(wrapper) = serde_json::from_str::<VpsPlansResponse>(&text) {
-            self.emit_debug("[API] fetch_vps_plans parsed as wrapper", &format!("{} plans", wrapper.plans.len()));
-            wrapper.plans
-        } else if let Ok(plans) = serde_json::from_str::<Vec<VpsPlan>>(&text) {
-            self.emit_debug("[API] fetch_vps_plans parsed as array", &format!("{} plans", plans.len()));
-            plans
-        } else {
-            self.emit_debug("[API] fetch_vps_plans PARSE ERROR", &text[..text.len().min(500)]);
-            return Err(CentralApiError::ServerError {
-                status: 0,
-                message: format!("Failed to parse VPS plans response: {}", &text[..text.len().min(200)]),
-            });
-        };
-
-        self.emit_debug("[API] fetch_vps_plans SUCCESS", &format!("{} plans loaded", plans.len()));
+        let plans: Vec<VpsPlan> = response.json().await?;
         Ok(plans)
     }
 
@@ -647,9 +477,9 @@ mod tests {
 
         let response: TokenResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.access_token, "access-123");
-        assert_eq!(response.refresh_token, Some("refresh-456".to_string()));
+        assert_eq!(response.refresh_token, "refresh-456");
         assert_eq!(response.expires_in, 3600);
-        assert_eq!(response.token_type, Some("Bearer".to_string()));
+        assert_eq!(response.token_type, "Bearer");
         assert!(response.user_id.is_none());
         assert!(response.username.is_none());
     }
