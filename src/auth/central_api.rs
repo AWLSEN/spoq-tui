@@ -111,15 +111,44 @@ pub fn get_jwt_expires_in(access_token: &str) -> Option<u32> {
     Some((claims.exp - now).max(0) as u32)
 }
 
+/// Wrapper for VPS plans API response (GET /api/vps/plans).
+/// The API returns {"plans": [...]} not a bare array.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VpsPlansResponse {
+    pub plans: Vec<VpsPlan>,
+}
+
+/// Deserialize ram_gb (from API) to ram_mb (internal representation).
+/// API sends GB, we store MB. Values > 100 are assumed to already be in MB (backwards compat).
+fn deserialize_ram_to_mb<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value: u32 = serde::Deserialize::deserialize(deserializer)?;
+    // API sends GB, we store MB. Values > 100 are already MB (backwards compat)
+    if value <= 100 {
+        Ok(value * 1024)
+    } else {
+        Ok(value)
+    }
+}
+
 /// VPS plan information (GET /api/vps/plans).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VpsPlan {
     pub id: String,
     pub name: String,
+    #[serde(alias = "vcpu")]
     pub vcpus: u32,
+    #[serde(alias = "ram_gb", deserialize_with = "deserialize_ram_to_mb")]
     pub ram_mb: u32,
     pub disk_gb: u32,
+    #[serde(alias = "monthly_price_cents")]
     pub price_cents: u32,
+    #[serde(default)]
+    pub bandwidth_tb: Option<u32>,
+    #[serde(default)]
+    pub first_month_price_cents: Option<u32>,
 }
 
 /// Response from VPS provision endpoint (POST /api/vps/provision).
@@ -354,8 +383,8 @@ impl CentralApiClient {
             return Err(CentralApiError::ServerError { status, message });
         }
 
-        let plans: Vec<VpsPlan> = response.json().await?;
-        Ok(plans)
+        let wrapper: VpsPlansResponse = response.json().await?;
+        Ok(wrapper.plans)
     }
 
     /// Provision a new VPS.
