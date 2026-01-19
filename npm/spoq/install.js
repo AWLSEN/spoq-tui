@@ -16,7 +16,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const PACKAGE_VERSION = require("./package.json").version;
-const GITHUB_REPO = "oaftobark/spoq";
+const GITHUB_REPO = "AWLSEN/spoq-tui";
 
 const PLATFORMS = {
   "darwin-arm64": "spoq-darwin-arm64.tar.gz",

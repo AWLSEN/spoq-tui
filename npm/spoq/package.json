@@ -4,7 +4,7 @@
   "description": "A terminal-based Spotify client",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oaftobark/spoq.git"
+    "url": "git+https://github.com/AWLSEN/spoq-tui.git"
   },
   "license": "MIT",
   "bin": {
@@ -14,11 +14,11 @@
     "postinstall": "node install.js"
   },
   "optionalDependencies": {
-    "@oaftobark/spoq-darwin-arm64": "0.1.0",
-    "@oaftobark/spoq-darwin-x64": "0.1.0",
-    "@oaftobark/spoq-linux-arm64": "0.1.0",
-    "@oaftobark/spoq-linux-x64": "0.1.0",
-    "@oaftobark/spoq-win32-x64": "0.1.0"
+    "@oaftobark/spoq-darwin-arm64": "0.1.2",
+    "@oaftobark/spoq-darwin-x64": "0.1.2",
+    "@oaftobark/spoq-linux-arm64": "0.1.2",
+    "@oaftobark/spoq-linux-x64": "0.1.2",
+    "@oaftobark/spoq-win32-x64": "0.1.2"
   },
   "engines": {
     "node": ">=14"

@@ -4,7 +4,7 @@
   "description": "spoq binary for macOS ARM64 (Apple Silicon)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oaftobark/spoq.git"
+    "url": "git+https://github.com/AWLSEN/spoq-tui.git"
   },
   "license": "MIT",
   "os": ["darwin"],
