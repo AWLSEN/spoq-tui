@@ -25,12 +25,14 @@ mod folder_picker;
 mod helpers;
 pub mod input;
 mod layout;
+pub mod login;
 mod messages;
 mod panels;
 pub mod provisioning;
 mod theme;
 mod thread_switcher;
 
+pub use login::*;
 pub use provisioning::*;
 
 // Re-export theme colors for external use
