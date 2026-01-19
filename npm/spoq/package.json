@@ -1,6 +1,6 @@
 {
   "name": "@oaftobark/spoq",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A terminal-based Spotify client",
   "repository": {
     "type": "git",
@@ -14,11 +14,11 @@
     "postinstall": "node install.js"
   },
   "optionalDependencies": {
-    "@oaftobark/spoq-darwin-arm64": "0.1.2",
-    "@oaftobark/spoq-darwin-x64": "0.1.2",
-    "@oaftobark/spoq-linux-arm64": "0.1.2",
-    "@oaftobark/spoq-linux-x64": "0.1.2",
-    "@oaftobark/spoq-win32-x64": "0.1.2"
+    "@oaftobark/spoq-darwin-arm64": "0.1.3",
+    "@oaftobark/spoq-darwin-x64": "0.1.3",
+    "@oaftobark/spoq-linux-arm64": "0.1.3",
+    "@oaftobark/spoq-linux-x64": "0.1.3",
+    "@oaftobark/spoq-win32-x64": "0.1.3"
   },
   "engines": {
     "node": ">=14"
