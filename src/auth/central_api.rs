@@ -67,7 +67,9 @@ impl From<serde_json::Error> for CentralApiError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceCodeResponse {
     pub device_code: String,
-    pub user_code: String,
+    /// User code for display - may be None if embedded in verification_uri
+    #[serde(default)]
+    pub user_code: Option<String>,
     pub verification_uri: String,
     pub expires_in: u32,
     pub interval: u32,
@@ -179,11 +181,16 @@ impl CentralApiClient {
     pub async fn request_device_code(&self) -> Result<DeviceCodeResponse, CentralApiError> {
         let url = format!("{}/auth/device", self.base_url);
 
+        // Get system hostname for device identification
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+
         let response = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
-            .json(&serde_json::json!({}))
+            .json(&serde_json::json!({ "hostname": hostname }))
             .send()
             .await?;
 
@@ -444,7 +451,7 @@ mod tests {
 
         let response: DeviceCodeResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.device_code, "dev-code-123");
-        assert_eq!(response.user_code, "ABCD-1234");
+        assert_eq!(response.user_code, Some("ABCD-1234".to_string()));
         assert_eq!(response.verification_uri, "https://example.com/verify");
         assert_eq!(response.expires_in, 900);
         assert_eq!(response.interval, 5);

@@ -36,6 +36,7 @@ arboard = "3"
 tui-textarea = { path = "vendor/tui-textarea", features = ["crossterm_0_28"] }
 unicode-width = "0.2"
 dirs = "5"
+hostname = "0.4.2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -16,7 +16,8 @@ pub enum DeviceFlowState {
     /// Waiting for user to authorize at verification URI.
     WaitingForUser {
         verification_uri: String,
-        user_code: String,
+        /// User code to display - may be None if embedded in verification_uri
+        user_code: Option<String>,
         device_code: String,
         expires_at: Instant,
         interval: Duration,
@@ -215,7 +216,7 @@ mod tests {
     fn test_device_flow_state_waiting_for_user() {
         let state = DeviceFlowState::WaitingForUser {
             verification_uri: "https://example.com/verify".to_string(),
-            user_code: "ABCD-1234".to_string(),
+            user_code: Some("ABCD-1234".to_string()),
             device_code: "device-code-123".to_string(),
             expires_at: Instant::now() + Duration::from_secs(900),
             interval: Duration::from_secs(5),
@@ -312,7 +313,7 @@ mod tests {
         // Manually set state to WaitingForUser with a recent poll
         manager.state = DeviceFlowState::WaitingForUser {
             verification_uri: "https://example.com/verify".to_string(),
-            user_code: "ABCD-1234".to_string(),
+            user_code: Some("ABCD-1234".to_string()),
             device_code: "device-code-123".to_string(),
             expires_at: Instant::now() + Duration::from_secs(900),
             interval: Duration::from_secs(60), // Long interval
@@ -333,7 +334,7 @@ mod tests {
         // Set state to WaitingForUser but already expired
         manager.state = DeviceFlowState::WaitingForUser {
             verification_uri: "https://example.com/verify".to_string(),
-            user_code: "ABCD-1234".to_string(),
+            user_code: Some("ABCD-1234".to_string()),
             device_code: "device-code-123".to_string(),
             expires_at: Instant::now() - Duration::from_secs(1), // Already expired
             interval: Duration::from_secs(5),

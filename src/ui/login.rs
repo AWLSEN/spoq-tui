@@ -184,19 +184,22 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]));
-                lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "Enter code: ".to_string(),
-                        Style::default().fg(COLOR_HEADER),
-                    ),
-                    Span::styled(
-                        user_code.clone(),
-                        Style::default()
-                            .fg(Color::LightGreen)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
+                // Only show user code line if provided separately
+                if let Some(code) = user_code {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            "Enter code: ".to_string(),
+                            Style::default().fg(COLOR_HEADER),
+                        ),
+                        Span::styled(
+                            code.clone(),
+                            Style::default()
+                                .fg(Color::LightGreen)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
+                }
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
                     Span::styled(
