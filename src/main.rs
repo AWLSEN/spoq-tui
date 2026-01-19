@@ -261,6 +261,12 @@ where
                 // Increment tick counter for animations (spinner, cursor blink)
                 app.tick();
 
+                // Increment provisioning tick for loading animation
+                if app.screen == Screen::Provisioning {
+                    app.provisioning.tick();
+                    app.mark_dirty();
+                }
+
                 // Check for thread switcher auto-confirm (Tab release simulation)
                 app.check_switcher_timeout();
 
