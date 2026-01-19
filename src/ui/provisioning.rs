@@ -486,6 +486,8 @@ mod tests {
                 ram_mb: 1024,
                 disk_gb: 25,
                 price_cents: 500,
+                bandwidth_tb: None,
+                first_month_price_cents: None,
             },
             VpsPlan {
                 id: "2".to_string(),
@@ -494,6 +496,8 @@ mod tests {
                 ram_mb: 2048,
                 disk_gb: 50,
                 price_cents: 1000,
+                bandwidth_tb: None,
+                first_month_price_cents: None,
             },
             VpsPlan {
                 id: "3".to_string(),
@@ -502,6 +506,8 @@ mod tests {
                 ram_mb: 4096,
                 disk_gb: 100,
                 price_cents: 2000,
+                bandwidth_tb: None,
+                first_month_price_cents: None,
             },
         ];
 

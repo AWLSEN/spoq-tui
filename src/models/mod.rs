@@ -4,7 +4,7 @@ mod request;
 mod thread;
 mod tools;
 
-pub use folder::Folder;
+pub use folder::{Folder, FolderListResponse};
 pub use message::*;
 pub use request::PermissionMode;
 pub use request::*;

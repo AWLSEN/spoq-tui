@@ -614,6 +614,8 @@ mod tests {
             ram_mb: 2048,
             disk_gb: 50,
             price_cents: 1000,
+            bandwidth_tb: None,
+            first_month_price_cents: None,
         };
 
         let json = serde_json::to_string(&plan).unwrap();
@@ -782,5 +784,107 @@ mod tests {
 
         let result = get_jwt_expires_in(&token);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_token_response_without_expires_in() {
+        // API returns TokenResponse without expires_in field
+        let json = r#"{"access_token": "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MzY4NzI0MDB9.sig", "refresh_token": "spoq_refresh_token", "token_type": "Bearer"}"#;
+        let response: TokenResponse = serde_json::from_str(json).unwrap();
+        assert!(response.expires_in.is_none());
+        assert_eq!(response.access_token, "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MzY4NzI0MDB9.sig");
+        assert_eq!(response.refresh_token, "spoq_refresh_token");
+        assert_eq!(response.token_type, "Bearer");
+    }
+
+    #[test]
+    fn test_token_response_with_expires_in() {
+        // Backwards compatibility: if expires_in is provided, use it
+        let json = r#"{"access_token": "token", "refresh_token": "refresh", "token_type": "Bearer", "expires_in": 900}"#;
+        let response: TokenResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.expires_in, Some(900));
+    }
+
+    #[test]
+    fn test_vps_plans_response_wrapper() {
+        // API returns {"plans": [...]} not a bare array
+        let json = r#"{"plans": [{"id": "plan-small", "name": "Small", "vcpu": 1, "ram_gb": 2, "disk_gb": 50, "monthly_price_cents": 999}]}"#;
+        let response: VpsPlansResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.plans.len(), 1);
+        let plan = &response.plans[0];
+        assert_eq!(plan.id, "plan-small");
+        assert_eq!(plan.vcpus, 1); // vcpu → vcpus alias
+        assert_eq!(plan.ram_mb, 2048); // 2 GB → 2048 MB conversion
+        assert_eq!(plan.price_cents, 999); // monthly_price_cents → price_cents alias
+    }
+
+    #[test]
+    fn test_vps_plan_ram_conversion() {
+        // Values <= 100 are treated as GB and converted to MB
+        let json = r#"{"id": "x", "name": "X", "vcpus": 1, "ram_gb": 4, "disk_gb": 50, "price_cents": 100}"#;
+        let plan: VpsPlan = serde_json::from_str(json).unwrap();
+        assert_eq!(plan.ram_mb, 4096); // 4 GB → 4096 MB
+
+        // Values > 100 are treated as already MB (backwards compat)
+        let json = r#"{"id": "x", "name": "X", "vcpus": 1, "ram_mb": 2048, "disk_gb": 50, "price_cents": 100}"#;
+        let plan: VpsPlan = serde_json::from_str(json).unwrap();
+        assert_eq!(plan.ram_mb, 2048); // Already MB, no conversion
+    }
+
+    #[test]
+    fn test_vps_status_response_api_format() {
+        // API returns id, ip_address instead of vps_id, ip
+        let json = r#"{"id": "uuid-123", "status": "ready", "hostname": "user.spoq.dev", "ip_address": "1.2.3.4"}"#;
+        let response: VpsStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.vps_id, "uuid-123"); // id → vps_id alias
+        assert_eq!(response.ip, Some("1.2.3.4".to_string())); // ip_address → ip alias
+        assert_eq!(response.hostname, Some("user.spoq.dev".to_string()));
+        assert_eq!(response.status, "ready");
+    }
+
+    #[test]
+    fn test_vps_status_response_all_fields() {
+        // Test all optional fields
+        let json = r#"{
+            "id": "uuid-123",
+            "status": "ready",
+            "hostname": "user.spoq.dev",
+            "ip_address": "1.2.3.4",
+            "ssh_username": "spoq",
+            "provider": "vultr",
+            "plan_id": "plan-small",
+            "data_center_id": 1,
+            "created_at": "2026-01-01T00:00:00Z",
+            "ready_at": "2026-01-01T00:05:00Z"
+        }"#;
+        let response: VpsStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.ssh_username, Some("spoq".to_string()));
+        assert_eq!(response.provider, Some("vultr".to_string()));
+        assert_eq!(response.plan_id, Some("plan-small".to_string()));
+        assert_eq!(response.data_center_id, Some(1));
+        assert_eq!(response.created_at, Some("2026-01-01T00:00:00Z".to_string()));
+        assert_eq!(response.ready_at, Some("2026-01-01T00:05:00Z".to_string()));
+    }
+
+    #[test]
+    fn test_provision_response_api_format() {
+        // API returns id instead of vps_id
+        let json = r#"{"id": "uuid-456", "status": "provisioning", "hostname": "user.spoq.dev", "message": "Started provisioning"}"#;
+        let response: ProvisionResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.vps_id, "uuid-456"); // id → vps_id alias
+        assert_eq!(response.status, "provisioning");
+        assert_eq!(response.hostname, Some("user.spoq.dev".to_string()));
+        assert_eq!(response.message, Some("Started provisioning".to_string()));
+    }
+
+    #[test]
+    fn test_provision_response_minimal() {
+        // Test with only required fields
+        let json = r#"{"id": "uuid-456", "status": "provisioning"}"#;
+        let response: ProvisionResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.vps_id, "uuid-456");
+        assert_eq!(response.status, "provisioning");
+        assert!(response.hostname.is_none());
+        assert!(response.message.is_none());
     }
 }
