@@ -75,6 +75,11 @@ async fn main() -> Result<()> {
     // Load folders for the folder picker (async, non-blocking)
     app.load_folders();
 
+    // Load VPS plans if starting on Provisioning screen
+    if app.screen == Screen::Provisioning {
+        app.load_vps_plans();
+    }
+
     // Connect WebSocket for real-time communication
     // If connection fails, app continues in SSE-only mode
     app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
@@ -568,8 +573,23 @@ where
                                         KeyCode::Enter => {
                                             // Validate password >= 12 chars, then start provisioning
                                             if app.ssh_password_input.len() >= 12 && !app.vps_plans.is_empty() {
-                                                app.provisioning_phase = ProvisioningPhase::Provisioning;
-                                                app.mark_dirty();
+                                                app.start_vps_provisioning();
+                                            }
+                                        }
+                                        KeyCode::Char('r') | KeyCode::Char('R') => {
+                                            // Retry loading plans or provisioning on error
+                                            match &app.provisioning_phase {
+                                                ProvisioningPhase::PlansError(_) => {
+                                                    app.provisioning_phase = ProvisioningPhase::LoadingPlans;
+                                                    app.load_vps_plans();
+                                                }
+                                                ProvisioningPhase::ProvisionError(_) => {
+                                                    // Retry provisioning with same settings
+                                                    if app.ssh_password_input.len() >= 12 && !app.vps_plans.is_empty() {
+                                                        app.start_vps_provisioning();
+                                                    }
+                                                }
+                                                _ => {}
                                             }
                                         }
                                         _ => {}

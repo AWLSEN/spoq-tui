@@ -510,6 +510,73 @@ impl App {
         }
     }
 
+    /// Start VPS provisioning with the selected plan.
+    ///
+    /// This method initiates the VPS provisioning process by:
+    /// 1. Getting the selected plan ID
+    /// 2. Calling the central API to provision the VPS
+    /// 3. Transitioning to WaitingReady state on success
+    /// 4. Transitioning to ProvisionError state on failure
+    pub fn start_vps_provisioning(&mut self) {
+        // Get selected plan
+        let plan_id = match self.vps_plans.get(self.selected_plan_idx) {
+            Some(plan) => plan.id.clone(),
+            None => {
+                self.provisioning_phase = ProvisioningPhase::ProvisionError("No plan selected".to_string());
+                return;
+            }
+        };
+
+        // Transition to Provisioning state
+        self.provisioning_phase = ProvisioningPhase::Provisioning;
+        self.mark_dirty();
+
+        // Clone necessary data for the async task
+        let central_api = match self.central_api.clone() {
+            Some(api) => api,
+            None => {
+                self.provisioning_phase = ProvisioningPhase::ProvisionError("No API client".to_string());
+                return;
+            }
+        };
+        let message_tx = self.message_tx.clone();
+
+        // Spawn async task to provision VPS
+        tokio::spawn(async move {
+            match central_api.provision_vps(&plan_id).await {
+                Ok(response) => {
+                    // Provisioning started - send status update
+                    let _ = message_tx.send(AppMessage::ProvisioningStatusUpdate(response.status));
+                }
+                Err(e) => {
+                    let _ = message_tx.send(AppMessage::ProvisioningError(e.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Load VPS plans from the central API.
+    ///
+    /// This method fetches available VPS plans and sends the result via AppMessage.
+    pub fn load_vps_plans(&self) {
+        let central_api = match self.central_api.clone() {
+            Some(api) => api,
+            None => return,
+        };
+        let message_tx = self.message_tx.clone();
+
+        tokio::spawn(async move {
+            match central_api.fetch_vps_plans().await {
+                Ok(plans) => {
+                    let _ = message_tx.send(AppMessage::VpsPlansLoaded(plans));
+                }
+                Err(e) => {
+                    let _ = message_tx.send(AppMessage::VpsPlansLoadError(e.to_string()));
+                }
+            }
+        });
+    }
+
     /// Emit a debug state change event (helper for external callers like main.rs)
     pub fn emit_debug_state_change(&self, _state_type: &str, description: &str, current: &str) {
         use crate::debug::{DebugEventKind, StateChangeData, StateType};

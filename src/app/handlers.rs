@@ -4,7 +4,7 @@ use crate::debug::{
     DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType,
 };
 
-use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
+use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, ProvisioningPhase, Screen};
 
 impl App {
     /// Handle an incoming async message
@@ -806,7 +806,9 @@ impl App {
             }
             AppMessage::VpsPlansLoaded(plans) => {
                 let count = plans.len();
-                // TODO: Store VPS plans in app state
+                // Store VPS plans in app state
+                self.vps_plans = plans;
+                self.provisioning_phase = ProvisioningPhase::SelectPlan;
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
@@ -818,7 +820,8 @@ impl App {
                 );
             }
             AppMessage::VpsPlansLoadError(error) => {
-                // TODO: Handle VPS plans load error
+                // Handle VPS plans load error
+                self.provisioning_phase = ProvisioningPhase::PlansError(error.clone());
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
@@ -826,7 +829,8 @@ impl App {
                 );
             }
             AppMessage::ProvisioningStatusUpdate(status) => {
-                // TODO: Handle provisioning status updates
+                // Update provisioning phase with status
+                self.provisioning_phase = ProvisioningPhase::WaitingReady { status: status.clone() };
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
@@ -837,20 +841,62 @@ impl App {
                     None,
                 );
             }
-            AppMessage::ProvisioningComplete(_response) => {
-                // TODO: Handle provisioning completion
+            AppMessage::ProvisioningComplete(response) => {
+                // Extract VPS info from response
+                let hostname = response.hostname.clone().unwrap_or_default();
+                let ip = response.ip.clone().unwrap_or_default();
+
+                // Update credentials with VPS info
+                self.credentials.vps_id = Some(response.vps_id.clone());
+                self.credentials.vps_status = Some("ready".to_string());
+                self.credentials.vps_hostname = hostname.clone().into();
+                self.credentials.vps_ip = ip.clone().into();
+                if let Some(url) = response.url.clone() {
+                    self.credentials.vps_url = Some(url);
+                }
+
+                // Save credentials to disk
+                if let Some(ref manager) = self.credentials_manager {
+                    if !manager.save(&self.credentials) {
+                        emit_debug(
+                            &self.debug_tx,
+                            DebugEventKind::Error(ErrorData::new(
+                                ErrorSource::AppState,
+                                "Failed to save credentials",
+                            )),
+                            None,
+                        );
+                    }
+                }
+
+                // Update provisioning phase to Ready
+                self.provisioning_phase = ProvisioningPhase::Ready {
+                    hostname: hostname.clone(),
+                    ip: ip.clone(),
+                };
+
+                // Create ConductorClient with VPS URL if available
+                if let Some(ref url) = self.credentials.vps_url {
+                    self.client = std::sync::Arc::new(crate::conductor::ConductorClient::with_url(url));
+                }
+
+                // Transition to CommandDeck after a brief delay (handled in main.rs)
+                // For now, just set the screen
+                self.screen = Screen::CommandDeck;
+
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
                         StateType::SessionState,
                         "Provisioning complete",
-                        "success",
+                        format!("VPS ready: {} ({})", hostname, ip),
                     )),
                     None,
                 );
             }
             AppMessage::ProvisioningError(error) => {
-                // TODO: Handle provisioning errors
+                // Handle provisioning errors
+                self.provisioning_phase = ProvisioningPhase::ProvisionError(error.clone());
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
