@@ -293,7 +293,7 @@ mod tests {
             .collect();
         // Messages now use vertical bar prefix instead of role labels
         assert!(
-            buffer_str.contains("│"),
+            buffer_str.contains("|"),
             "Conversation screen should show vertical bar for messages"
         );
         assert!(
@@ -713,7 +713,7 @@ mod tests {
         );
         // Messages now use vertical bar prefix instead of role labels
         assert!(
-            buffer_str.contains("│"),
+            buffer_str.contains("|"),
             "Conversation screen should show vertical bar for user messages"
         );
     }
