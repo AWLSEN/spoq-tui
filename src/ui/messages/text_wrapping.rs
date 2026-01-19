@@ -9,12 +9,26 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-/// Apply background color to a single line (text content only, no padding).
-/// Only applies bg to existing spans, does not pad to full width.
-pub fn apply_background_to_line(line: &mut Line<'static>, bg_color: Color, _max_width: usize) {
-    // Apply background to all existing spans (content only, no padding)
+/// Apply full-width background color to a single line.
+/// Pads with spaces to reach max_width and applies bg to all spans.
+pub fn apply_background_to_line(line: &mut Line<'static>, bg_color: Color, max_width: usize) {
+    // Calculate current visual width using unicode width
+    let current_width: usize = line.spans.iter()
+        .map(|s| s.content.width())
+        .sum();
+
+    // Apply background to all existing spans
     for span in line.spans.iter_mut() {
         span.style = span.style.bg(bg_color);
+    }
+
+    // Pad with background-colored spaces to fill full width
+    let padding = max_width.saturating_sub(current_width);
+    if padding > 0 {
+        line.spans.push(Span::styled(
+            " ".repeat(padding),
+            Style::default().bg(bg_color),
+        ));
     }
 }
 
@@ -456,8 +470,8 @@ mod tests {
         for span in &line.spans {
             assert!(span.style.bg.is_some());
         }
-        // Should NOT have padding - background only applies to text content
-        assert_eq!(line.spans.len(), 2);
+        // Should have padding span added (original width was 7, padded to 20)
+        assert!(line.spans.len() >= 3);
     }
 
     #[test]

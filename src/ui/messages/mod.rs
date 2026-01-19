@@ -67,8 +67,7 @@ pub fn render_single_message(
     }
 
     // Use vertical bar prefix for all messages (user and assistant)
-    // Using ASCII pipe "|" instead of box drawing "│" for better vertical alignment
-    let (label, label_style) = ("| ", Style::default().fg(COLOR_DIM));
+    let (label, label_style) = ("\u{2502} ", Style::default().fg(COLOR_DIM));
 
     // Calculate max width for wrapping
     let max_width = ctx.text_wrap_width(0) as usize;
@@ -341,7 +340,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         let mut lines = header_lines;
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled("| ", Style::default().fg(COLOR_DIM)),
+            Span::styled("\u{2502} ", Style::default().fg(COLOR_DIM)),
             Span::styled("Waiting for your message...", Style::default().fg(COLOR_DIM)),
         ]));
         lines.push(Line::from(""));
