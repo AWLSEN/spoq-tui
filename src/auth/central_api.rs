@@ -193,8 +193,21 @@ impl CentralApiClient {
             return Err(CentralApiError::ServerError { status, message });
         }
 
-        let data: DeviceCodeResponse = response.json().await?;
-        Ok(data)
+        // Get the response text first for better error messages
+        let text = response.text().await.map_err(|e| {
+            CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to read response: {}", e),
+            }
+        })?;
+
+        // Try to parse the JSON
+        serde_json::from_str::<DeviceCodeResponse>(&text).map_err(|e| {
+            CentralApiError::ServerError {
+                status: 0,
+                message: format!("Invalid response format: {}. Response: {}", e, &text[..text.len().min(200)]),
+            }
+        })
     }
 
     /// Poll for the device token after user authorization.
