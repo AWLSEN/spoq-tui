@@ -386,8 +386,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     let max_scroll = total_visual_lines.saturating_sub(viewport_height) as u16;
     app.max_scroll = max_scroll;
 
-    // Clamp user's scroll to valid range
-    let clamped_scroll = app.conversation_scroll.min(max_scroll);
+    // Clamp user's scroll to valid range (unified_scroll is the source of truth)
+    let clamped_scroll = app.unified_scroll.min(max_scroll);
 
     // Convert from "scroll from bottom" to ratatui's "scroll from top"
     // If user_scroll=0, show bottom -> actual_scroll = max_scroll
@@ -395,10 +395,10 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     let scroll_from_top = (max_scroll.saturating_sub(clamped_scroll)) as usize;
 
     crate::app::log_thread_update(&format!(
-        "RENDER: total_visual_lines={}, max_scroll={}, user_scroll={}, scroll_from_top={}",
+        "RENDER: total_visual_lines={}, max_scroll={}, unified_scroll={}, scroll_from_top={}",
         total_visual_lines,
         max_scroll,
-        app.conversation_scroll,
+        app.unified_scroll,
         scroll_from_top
     ));
 

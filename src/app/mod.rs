@@ -75,8 +75,6 @@ pub struct App {
     pub client: Arc<ConductorClient>,
     /// Tick counter for animations (blinking cursor, etc.)
     pub tick_count: u64,
-    /// Scroll position for conversation view (0 = bottom/latest content)
-    pub conversation_scroll: u16,
     /// Maximum scroll value (calculated during render, used for clamping)
     pub max_scroll: u16,
     /// Unified scroll offset (0 = input visible at bottom, higher = scrolled up)
@@ -207,7 +205,6 @@ impl App {
             stream_error: None,
             client,
             tick_count: 0,
-            conversation_scroll: 0,
             max_scroll: 0,
             unified_scroll: 0,
             user_has_scrolled: false,
@@ -1025,8 +1022,9 @@ mod tests {
         // Set thread 1 as active
         app.active_thread_id = Some(thread1_id.clone());
 
-        // Set conversation scroll to a non-zero value (user has scrolled up)
-        app.conversation_scroll = 5;
+        // Set unified scroll to a non-zero value (user has scrolled up)
+        app.unified_scroll = 5;
+        app.user_has_scrolled = true;
 
         // Receive token for thread 2 (non-active thread)
         app.handle_message(AppMessage::StreamToken {
@@ -1035,7 +1033,7 @@ mod tests {
         });
 
         // Scroll should NOT be reset (should still be 5)
-        assert_eq!(app.conversation_scroll, 5);
+        assert_eq!(app.unified_scroll, 5);
     }
 
     #[test]
@@ -1046,8 +1044,9 @@ mod tests {
         let thread_id = app.cache.create_streaming_thread("Active thread".to_string());
         app.active_thread_id = Some(thread_id.clone());
 
-        // Set conversation scroll to a non-zero value
-        app.conversation_scroll = 10;
+        // Set unified scroll to a non-zero value
+        app.unified_scroll = 10;
+        app.user_has_scrolled = true;
 
         // Receive token for the active thread
         app.handle_message(AppMessage::StreamToken {
@@ -1056,7 +1055,7 @@ mod tests {
         });
 
         // Scroll should be reset to 0 (auto-scroll to bottom)
-        assert_eq!(app.conversation_scroll, 0);
+        assert_eq!(app.unified_scroll, 0);
     }
 
     #[test]
@@ -1070,8 +1069,9 @@ mod tests {
         // Set thread 1 as active
         app.active_thread_id = Some(thread1_id.clone());
 
-        // Set conversation scroll to a non-zero value
-        app.conversation_scroll = 7;
+        // Set unified scroll to a non-zero value
+        app.unified_scroll = 7;
+        app.user_has_scrolled = true;
 
         // Complete stream for thread 2 (non-active thread)
         app.handle_message(AppMessage::StreamComplete {
@@ -1080,7 +1080,7 @@ mod tests {
         });
 
         // Scroll should NOT be reset
-        assert_eq!(app.conversation_scroll, 7);
+        assert_eq!(app.unified_scroll, 7);
     }
 
     #[test]
@@ -1091,8 +1091,9 @@ mod tests {
         let thread_id = app.cache.create_streaming_thread("Active thread".to_string());
         app.active_thread_id = Some(thread_id.clone());
 
-        // Set conversation scroll to a non-zero value
-        app.conversation_scroll = 15;
+        // Set unified scroll to a non-zero value
+        app.unified_scroll = 15;
+        app.user_has_scrolled = true;
 
         // Complete stream for the active thread
         app.handle_message(AppMessage::StreamComplete {
@@ -1101,7 +1102,7 @@ mod tests {
         });
 
         // Scroll should be reset to 0
-        assert_eq!(app.conversation_scroll, 0);
+        assert_eq!(app.unified_scroll, 0);
     }
 
     // ============= PermissionMode Tests =============

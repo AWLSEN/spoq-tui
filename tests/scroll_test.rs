@@ -22,7 +22,7 @@ fn create_test_app_in_conversation() -> App {
 #[test]
 fn test_scroll_offset_initializes_to_zero() {
     let app = create_test_app_in_conversation();
-    assert_eq!(app.conversation_scroll, 0, "Initial scroll offset should be 0");
+    assert_eq!(app.unified_scroll, 0, "Initial scroll offset should be 0");
 }
 
 #[test]
@@ -34,21 +34,21 @@ fn test_max_scroll_initializes_to_zero() {
 #[test]
 fn test_scroll_down_decreases_offset() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = 10;
+    app.unified_scroll = 10;
     app.max_scroll = 100;
 
     // Simulate scroll down (see newer content)
     // Based on the code: near_bottom = scroll <= threshold
     // amount = if near_bottom { 1 } else { 3 }
     let threshold = (app.max_scroll / 10).max(5);
-    let near_bottom = app.conversation_scroll <= threshold;
+    let near_bottom = app.unified_scroll <= threshold;
     let amount = if near_bottom { 1 } else { 3 };
 
-    let original_scroll = app.conversation_scroll;
-    app.conversation_scroll = app.conversation_scroll.saturating_sub(amount);
+    let original_scroll = app.unified_scroll;
+    app.unified_scroll = app.unified_scroll.saturating_sub(amount);
 
     assert!(
-        app.conversation_scroll < original_scroll,
+        app.unified_scroll < original_scroll,
         "Scroll down should decrease offset (see newer content)"
     );
 }
@@ -56,19 +56,19 @@ fn test_scroll_down_decreases_offset() {
 #[test]
 fn test_scroll_up_increases_offset() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = 10;
+    app.unified_scroll = 10;
     app.max_scroll = 100;
 
     // Simulate scroll up (see older content)
     let threshold = (app.max_scroll / 10).max(5);
-    let near_top = app.conversation_scroll >= app.max_scroll.saturating_sub(threshold);
+    let near_top = app.unified_scroll >= app.max_scroll.saturating_sub(threshold);
     let amount = if near_top { 1 } else { 3 };
 
-    let original_scroll = app.conversation_scroll;
-    app.conversation_scroll = app.conversation_scroll.saturating_add(amount).min(app.max_scroll);
+    let original_scroll = app.unified_scroll;
+    app.unified_scroll = app.unified_scroll.saturating_add(amount).min(app.max_scroll);
 
     assert!(
-        app.conversation_scroll > original_scroll,
+        app.unified_scroll > original_scroll,
         "Scroll up should increase offset (see older content)"
     );
 }
@@ -76,12 +76,12 @@ fn test_scroll_up_increases_offset() {
 #[test]
 fn test_scroll_acceleration_far_from_boundary() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = 50; // Middle position
+    app.unified_scroll = 50; // Middle position
     app.max_scroll = 100;
 
     // Test scroll down acceleration
     let threshold = (app.max_scroll / 10).max(5);
-    let near_bottom = app.conversation_scroll <= threshold;
+    let near_bottom = app.unified_scroll <= threshold;
     let amount = if near_bottom { 1 } else { 3 };
 
     assert_eq!(amount, 3, "Should scroll 3 lines when far from boundary");
@@ -92,10 +92,10 @@ fn test_scroll_acceleration_near_bottom_boundary() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 100;
     let threshold = (app.max_scroll / 10).max(5);
-    app.conversation_scroll = threshold; // At the threshold
+    app.unified_scroll = threshold; // At the threshold
 
     // Test scroll down near bottom
-    let near_bottom = app.conversation_scroll <= threshold;
+    let near_bottom = app.unified_scroll <= threshold;
     let amount = if near_bottom { 1 } else { 3 };
 
     assert_eq!(amount, 1, "Should scroll 1 line when near bottom");
@@ -106,10 +106,10 @@ fn test_scroll_acceleration_near_top_boundary() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 100;
     let threshold = (app.max_scroll / 10).max(5);
-    app.conversation_scroll = app.max_scroll - threshold; // Near top
+    app.unified_scroll = app.max_scroll - threshold; // Near top
 
     // Test scroll up near top
-    let near_top = app.conversation_scroll >= app.max_scroll.saturating_sub(threshold);
+    let near_top = app.unified_scroll >= app.max_scroll.saturating_sub(threshold);
     let amount = if near_top { 1 } else { 3 };
 
     assert_eq!(amount, 1, "Should scroll 1 line when near top");
@@ -118,14 +118,14 @@ fn test_scroll_acceleration_near_top_boundary() {
 #[test]
 fn test_scroll_clamping_at_bottom() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = 2;
+    app.unified_scroll = 2;
     app.max_scroll = 100;
 
     // Scroll down more than current offset
-    app.conversation_scroll = app.conversation_scroll.saturating_sub(5);
+    app.unified_scroll = app.unified_scroll.saturating_sub(5);
 
     assert_eq!(
-        app.conversation_scroll, 0,
+        app.unified_scroll, 0,
         "Scroll should clamp to 0 at bottom"
     );
 }
@@ -133,14 +133,14 @@ fn test_scroll_clamping_at_bottom() {
 #[test]
 fn test_scroll_clamping_at_top() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = 98;
+    app.unified_scroll = 98;
     app.max_scroll = 100;
 
     // Scroll up beyond max
-    app.conversation_scroll = app.conversation_scroll.saturating_add(5).min(app.max_scroll);
+    app.unified_scroll = app.unified_scroll.saturating_add(5).min(app.max_scroll);
 
     assert_eq!(
-        app.conversation_scroll, app.max_scroll,
+        app.unified_scroll, app.max_scroll,
         "Scroll should clamp to max_scroll at top"
     );
 }
@@ -150,7 +150,7 @@ fn test_scroll_only_active_on_conversation_screen() {
     let mut app = create_test_app_in_conversation();
     app.screen = Screen::CommandDeck;
 
-    let _original_scroll = app.conversation_scroll;
+    let _original_scroll = app.unified_scroll;
 
     // Scroll events should be ignored on CommandDeck
     // (This is enforced in main.rs event handler, not in App)
@@ -201,23 +201,23 @@ fn test_scroll_threshold_scales_with_max_scroll() {
 #[test]
 fn test_natural_scrolling_direction() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = 50;
+    app.unified_scroll = 50;
     app.max_scroll = 100;
 
     // ScrollDown -> see newer content -> decrease offset
-    let original_scroll = app.conversation_scroll;
-    app.conversation_scroll = app.conversation_scroll.saturating_sub(3);
+    let original_scroll = app.unified_scroll;
+    app.unified_scroll = app.unified_scroll.saturating_sub(3);
     assert!(
-        app.conversation_scroll < original_scroll,
+        app.unified_scroll < original_scroll,
         "ScrollDown should decrease offset (natural scrolling)"
     );
 
     // ScrollUp -> see older content -> increase offset
-    app.conversation_scroll = 50; // Reset
-    let original_scroll = app.conversation_scroll;
-    app.conversation_scroll = app.conversation_scroll.saturating_add(3).min(app.max_scroll);
+    app.unified_scroll = 50; // Reset
+    let original_scroll = app.unified_scroll;
+    app.unified_scroll = app.unified_scroll.saturating_add(3).min(app.max_scroll);
     assert!(
-        app.conversation_scroll > original_scroll,
+        app.unified_scroll > original_scroll,
         "ScrollUp should increase offset (natural scrolling)"
     );
 }
@@ -225,16 +225,16 @@ fn test_natural_scrolling_direction() {
 #[test]
 fn test_scroll_saturating_operations_prevent_overflow() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = u16::MAX;
+    app.unified_scroll = u16::MAX;
     app.max_scroll = u16::MAX;
 
     // Test saturating_add doesn't overflow
-    let result = app.conversation_scroll.saturating_add(100);
+    let result = app.unified_scroll.saturating_add(100);
     assert_eq!(result, u16::MAX, "saturating_add should not overflow");
 
     // Test saturating_sub doesn't underflow
-    app.conversation_scroll = 0;
-    let result = app.conversation_scroll.saturating_sub(100);
+    app.unified_scroll = 0;
+    let result = app.unified_scroll.saturating_sub(100);
     assert_eq!(result, 0, "saturating_sub should not underflow");
 }
 
@@ -278,17 +278,17 @@ fn test_scroll_boundary_enum_copy() {
 fn test_bottom_boundary_detection() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 100;
-    app.conversation_scroll = 1;
+    app.unified_scroll = 1;
     app.tick_count = 42;
 
     // Simulate scroll down that hits bottom boundary
     let threshold = (app.max_scroll / 10).max(5);
-    let near_bottom = app.conversation_scroll <= threshold;
+    let near_bottom = app.unified_scroll <= threshold;
     let amount = if near_bottom { 1 } else { 3 };
-    app.conversation_scroll = app.conversation_scroll.saturating_sub(amount);
+    app.unified_scroll = app.unified_scroll.saturating_sub(amount);
 
     // Detect bottom boundary hit
-    if app.conversation_scroll == 0 {
+    if app.unified_scroll == 0 {
         app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
         app.boundary_hit_tick = app.tick_count;
     }
@@ -308,17 +308,17 @@ fn test_bottom_boundary_detection() {
 fn test_top_boundary_detection() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 100;
-    app.conversation_scroll = 99;
+    app.unified_scroll = 99;
     app.tick_count = 123;
 
     // Simulate scroll up that hits top boundary
     let threshold = (app.max_scroll / 10).max(5);
-    let near_top = app.conversation_scroll >= app.max_scroll.saturating_sub(threshold);
+    let near_top = app.unified_scroll >= app.max_scroll.saturating_sub(threshold);
     let amount = if near_top { 1 } else { 3 };
-    app.conversation_scroll = app.conversation_scroll.saturating_add(amount).min(app.max_scroll);
+    app.unified_scroll = app.unified_scroll.saturating_add(amount).min(app.max_scroll);
 
     // Detect top boundary hit
-    if app.conversation_scroll == app.max_scroll && app.max_scroll > 0 {
+    if app.unified_scroll == app.max_scroll && app.max_scroll > 0 {
         app.scroll_boundary_hit = Some(ScrollBoundary::Top);
         app.boundary_hit_tick = app.tick_count;
     }
@@ -381,11 +381,11 @@ fn test_boundary_state_persists_within_timeout() {
 fn test_no_top_boundary_when_max_scroll_zero() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 0; // No scrollable content
-    app.conversation_scroll = 0;
+    app.unified_scroll = 0;
     app.tick_count = 10;
 
     // This scenario shouldn't trigger top boundary (max_scroll > 0 check)
-    let at_top = app.conversation_scroll == app.max_scroll && app.max_scroll > 0;
+    let at_top = app.unified_scroll == app.max_scroll && app.max_scroll > 0;
 
     assert!(
         !at_top,
@@ -397,14 +397,14 @@ fn test_no_top_boundary_when_max_scroll_zero() {
 fn test_scroll_does_not_hit_boundary_when_in_middle() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 100;
-    app.conversation_scroll = 50;
+    app.unified_scroll = 50;
 
     // Scroll up a bit (still in middle)
-    app.conversation_scroll = app.conversation_scroll.saturating_add(3).min(app.max_scroll);
+    app.unified_scroll = app.unified_scroll.saturating_add(3).min(app.max_scroll);
 
     // Check neither boundary is hit
-    let at_bottom = app.conversation_scroll == 0;
-    let at_top = app.conversation_scroll == app.max_scroll && app.max_scroll > 0;
+    let at_bottom = app.unified_scroll == 0;
+    let at_top = app.unified_scroll == app.max_scroll && app.max_scroll > 0;
 
     assert!(!at_bottom, "Should not be at bottom when in middle");
     assert!(!at_top, "Should not be at top when in middle");
@@ -550,7 +550,7 @@ fn test_tick_detects_top_boundary_hit() {
 }
 
 #[test]
-fn test_conversation_scroll_synced_with_position() {
+fn test_unified_scroll_synced_with_position() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 100;
     app.scroll_position = 42.7;
@@ -558,24 +558,24 @@ fn test_conversation_scroll_synced_with_position() {
 
     app.tick();
 
-    // conversation_scroll should be rounded from scroll_position
+    // unified_scroll should be rounded from scroll_position
     let expected = app.scroll_position.round() as u16;
     assert_eq!(
-        app.conversation_scroll, expected,
-        "conversation_scroll should be synced with scroll_position (rounded)"
+        app.unified_scroll, expected,
+        "unified_scroll should be synced with scroll_position (rounded)"
     );
 }
 
 #[test]
 fn test_reset_scroll_clears_all_scroll_state() {
     let mut app = create_test_app_in_conversation();
-    app.conversation_scroll = 50;
+    app.unified_scroll = 50;
     app.scroll_position = 50.0;
     app.scroll_velocity = 10.0;
 
     app.reset_scroll();
 
-    assert_eq!(app.conversation_scroll, 0, "conversation_scroll should reset to 0");
+    assert_eq!(app.unified_scroll, 0, "unified_scroll should reset to 0");
     assert_eq!(app.scroll_position, 0.0, "scroll_position should reset to 0.0");
     assert_eq!(app.scroll_velocity, 0.0, "scroll_velocity should reset to 0.0");
 }

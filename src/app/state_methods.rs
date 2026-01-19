@@ -39,9 +39,10 @@ impl App {
 
     /// Reset scroll state to bottom (newest content)
     pub fn reset_scroll(&mut self) {
-        self.conversation_scroll = 0;
+        self.unified_scroll = 0;
         self.scroll_position = 0.0;
         self.scroll_velocity = 0.0;
+        self.user_has_scrolled = false;
         self.mark_dirty();
     }
 
@@ -72,6 +73,10 @@ impl App {
     }
 
     /// Update smooth scroll position with velocity and friction
+    ///
+    /// The momentum system reads/writes `unified_scroll` as the source of truth.
+    /// `scroll_position` is used only for sub-line precision during animation,
+    /// and is synced FROM `unified_scroll` when momentum stops.
     fn update_smooth_scroll(&mut self) {
         // Friction factor: lower = more friction, stops faster
         const FRICTION: f32 = 0.80;
@@ -80,10 +85,12 @@ impl App {
         // Skip if no velocity
         if self.scroll_velocity.abs() < VELOCITY_THRESHOLD {
             self.scroll_velocity = 0.0;
+            // Sync scroll_position from unified_scroll when momentum stops
+            self.scroll_position = self.unified_scroll as f32;
             return;
         }
 
-        // Apply velocity to position
+        // Apply velocity to position (sub-line precision for smooth animation)
         let new_position = self.scroll_position + self.scroll_velocity;
 
         // Clamp to valid range [0, max_scroll]
@@ -96,6 +103,7 @@ impl App {
             self.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
             self.boundary_hit_tick = self.tick_count;
             self.scroll_velocity = 0.0; // Stop on boundary hit
+            self.user_has_scrolled = false; // Back at bottom
         } else if new_position > max && self.scroll_position <= max && self.max_scroll > 0 {
             // Hit top boundary
             self.scroll_boundary_hit = Some(ScrollBoundary::Top);
@@ -106,9 +114,10 @@ impl App {
             self.scroll_velocity *= FRICTION;
         }
 
-        // Update positions
+        // Update scroll_position for sub-line precision during animation
         self.scroll_position = clamped_position;
-        self.conversation_scroll = clamped_position.round() as u16;
+        // Update unified_scroll as the source of truth (rounded to whole lines)
+        self.unified_scroll = clamped_position.round() as u16;
     }
 
     /// Check if the currently active thread is a Programming thread

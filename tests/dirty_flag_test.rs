@@ -42,14 +42,14 @@ fn test_clear_error_marks_dirty() {
 #[test]
 fn test_reset_scroll_marks_dirty() {
     let mut app = App::new().unwrap();
-    app.conversation_scroll = 10;
+    app.unified_scroll = 10;
     app.scroll_position = 10.0;
     app.needs_redraw = false;
 
     app.reset_scroll();
 
     assert!(app.needs_redraw, "reset_scroll() should mark dirty");
-    assert_eq!(app.conversation_scroll, 0, "Scroll should be reset to 0");
+    assert_eq!(app.unified_scroll, 0, "Scroll should be reset to 0");
     assert_eq!(app.scroll_position, 0.0, "Scroll position should be reset to 0.0");
 }
 
@@ -132,13 +132,13 @@ fn test_scroll_mouse_event_marks_dirty() {
     let mut app = App::new().unwrap();
     app.screen = Screen::Conversation;
     app.max_scroll = 10;
-    app.conversation_scroll = 5;
+    app.unified_scroll = 5;
     app.needs_redraw = false;
 
     // Simulate scroll up (increasing offset)
-    if app.conversation_scroll < app.max_scroll {
-        app.conversation_scroll += 1;
-        app.scroll_position = app.conversation_scroll as f32;
+    if app.unified_scroll < app.max_scroll {
+        app.unified_scroll += 1;
+        app.scroll_position = app.unified_scroll as f32;
         app.mark_dirty();
     }
 

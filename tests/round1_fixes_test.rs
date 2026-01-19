@@ -19,16 +19,16 @@ fn test_arrow_up_scrolls_conversation_when_on_conversation_screen() {
     let mut app = App::new().expect("Failed to create app");
     app.screen = Screen::Conversation;
     app.max_scroll = 100;
-    app.conversation_scroll = 50;
+    app.unified_scroll = 50;
 
     // Simulate arrow up (see older content)
-    if app.conversation_scroll < app.max_scroll {
-        app.conversation_scroll += 1;
-        app.scroll_position = app.conversation_scroll as f32;
+    if app.unified_scroll < app.max_scroll {
+        app.unified_scroll += 1;
+        app.scroll_position = app.unified_scroll as f32;
         app.mark_dirty();
     }
 
-    assert_eq!(app.conversation_scroll, 51, "Arrow up should increase scroll offset");
+    assert_eq!(app.unified_scroll, 51, "Arrow up should increase scroll offset");
 }
 
 #[test]
@@ -36,16 +36,16 @@ fn test_arrow_down_scrolls_conversation_when_on_conversation_screen() {
     let mut app = App::new().expect("Failed to create app");
     app.screen = Screen::Conversation;
     app.max_scroll = 100;
-    app.conversation_scroll = 50;
+    app.unified_scroll = 50;
 
     // Simulate arrow down (see newer content)
-    if app.conversation_scroll > 0 {
-        app.conversation_scroll -= 1;
-        app.scroll_position = app.conversation_scroll as f32;
+    if app.unified_scroll > 0 {
+        app.unified_scroll -= 1;
+        app.scroll_position = app.unified_scroll as f32;
         app.mark_dirty();
     }
 
-    assert_eq!(app.conversation_scroll, 49, "Arrow down should decrease scroll offset");
+    assert_eq!(app.unified_scroll, 49, "Arrow down should decrease scroll offset");
 }
 
 #[test]
@@ -53,12 +53,12 @@ fn test_arrow_up_at_top_boundary_sets_boundary_hit() {
     let mut app = App::new().expect("Failed to create app");
     app.screen = Screen::Conversation;
     app.max_scroll = 100;
-    app.conversation_scroll = 100; // Already at top
+    app.unified_scroll = 100; // Already at top
     app.tick_count = 42;
 
     // Simulate arrow up when at top boundary
-    if app.conversation_scroll < app.max_scroll {
-        app.conversation_scroll += 1;
+    if app.unified_scroll < app.max_scroll {
+        app.unified_scroll += 1;
     } else if app.max_scroll > 0 {
         app.scroll_boundary_hit = Some(ScrollBoundary::Top);
         app.boundary_hit_tick = app.tick_count;
@@ -78,12 +78,12 @@ fn test_arrow_down_at_bottom_boundary_sets_boundary_hit() {
     let mut app = App::new().expect("Failed to create app");
     app.screen = Screen::Conversation;
     app.max_scroll = 100;
-    app.conversation_scroll = 0; // Already at bottom
+    app.unified_scroll = 0; // Already at bottom
     app.tick_count = 123;
 
     // Simulate arrow down when at bottom boundary
-    if app.conversation_scroll > 0 {
-        app.conversation_scroll -= 1;
+    if app.unified_scroll > 0 {
+        app.unified_scroll -= 1;
     } else {
         app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
         app.boundary_hit_tick = app.tick_count;
@@ -103,39 +103,39 @@ fn test_arrow_keys_work_regardless_of_focus() {
     let mut app = App::new().expect("Failed to create app");
     app.screen = Screen::Conversation;
     app.max_scroll = 100;
-    app.conversation_scroll = 50;
+    app.unified_scroll = 50;
 
     // Test with different focus states
     use spoq::app::Focus;
 
     // Focus on Input - should still scroll
     app.focus = Focus::Input;
-    let original_scroll = app.conversation_scroll;
-    app.conversation_scroll += 1;
-    assert!(app.conversation_scroll > original_scroll, "Should scroll even when Input focused");
+    let original_scroll = app.unified_scroll;
+    app.unified_scroll += 1;
+    assert!(app.unified_scroll > original_scroll, "Should scroll even when Input focused");
 
     // Focus on Threads - should still scroll
     app.focus = Focus::Threads;
-    let original_scroll = app.conversation_scroll;
-    app.conversation_scroll += 1;
-    assert!(app.conversation_scroll > original_scroll, "Should scroll even when Threads focused");
+    let original_scroll = app.unified_scroll;
+    app.unified_scroll += 1;
+    assert!(app.unified_scroll > original_scroll, "Should scroll even when Threads focused");
 }
 
 #[test]
-fn test_arrow_keys_sync_scroll_position_with_conversation_scroll() {
+fn test_arrow_keys_sync_scroll_position_with_unified_scroll() {
     let mut app = App::new().expect("Failed to create app");
     app.screen = Screen::Conversation;
     app.max_scroll = 100;
-    app.conversation_scroll = 50;
+    app.unified_scroll = 50;
     app.scroll_position = 50.0;
 
     // Simulate arrow up
-    app.conversation_scroll += 1;
-    app.scroll_position = app.conversation_scroll as f32;
+    app.unified_scroll += 1;
+    app.scroll_position = app.unified_scroll as f32;
 
     assert_eq!(
         app.scroll_position, 51.0,
-        "scroll_position should be synced with conversation_scroll"
+        "scroll_position should be synced with unified_scroll"
     );
 }
 
