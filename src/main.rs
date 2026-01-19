@@ -69,20 +69,35 @@ async fn main() -> Result<()> {
     let size = terminal.size()?;
     app.update_terminal_dimensions(size.width, size.height);
 
-    // Load threads from backend (async initialization)
-    app.initialize().await;
+    // Only initialize server connection if already authenticated with ready VPS
+    // Login and Provisioning screens don't need server data
+    match app.screen {
+        Screen::CommandDeck | Screen::Conversation => {
+            // Load threads from backend (async initialization)
+            app.initialize().await;
 
-    // Load folders for the folder picker (async, non-blocking)
-    app.load_folders();
+            // Load folders for the folder picker (async, non-blocking)
+            app.load_folders();
 
-    // Load VPS plans if starting on Provisioning screen
-    if app.screen == Screen::Provisioning {
-        app.load_vps_plans();
+            // Connect WebSocket for real-time communication
+            // If connection fails, app continues in SSE-only mode
+            app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
+        }
+        Screen::Provisioning => {
+            // Load VPS plans for provisioning screen
+            app.load_vps_plans();
+        }
+        Screen::Login => {
+            // Initialize device flow for login - start the OAuth flow immediately
+            if let Some(ref central_api) = app.central_api {
+                let mut device_flow = DeviceFlowManager::new(central_api.clone());
+                // Start the device flow (requests device code from server)
+                // Start the device flow - if it fails, the UI will show error state
+                let _ = device_flow.start().await;
+                app.device_flow = Some(device_flow);
+            }
+        }
     }
-
-    // Connect WebSocket for real-time communication
-    // If connection fails, app continues in SSE-only mode
-    app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
 
     // Main event loop
     let result = run_app(&mut terminal, &mut app).await;
