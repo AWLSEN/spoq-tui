@@ -1,13 +1,9 @@
 //! Message virtualization
 //!
 //! Provides virtualization support for efficient rendering of long message lists,
-//! only rendering messages within the visible viewport plus a buffer.
+//! only rendering messages within the visible viewport.
 
 use crate::models::{Message, MessageRole, MessageSegment};
-
-/// Number of messages to render as buffer above and below the visible viewport.
-/// This provides smooth scrolling when messages come into view.
-pub const VIRTUALIZATION_BUFFER: usize = 5;
 
 /// Represents the height in visual lines of a single message.
 /// Used for virtualization to determine which messages are visible.
@@ -28,23 +24,28 @@ pub struct MessageHeight {
 /// - start_index is the first message to render (inclusive)
 /// - end_index is the last message to render (exclusive)
 ///
-/// The range includes a buffer of messages above and below the viewport
-/// for smooth scrolling.
-///
 /// # Arguments
 /// * `message_heights` - Pre-computed heights for each message
 /// * `scroll_from_top` - The scroll offset from the top (in visual lines)
 /// * `viewport_height` - The height of the viewport in visual lines
 ///
 /// # Returns
-/// (start_index, end_index) tuple defining which messages to render
+/// (start_index, end_index, first_message_line_offset) tuple defining which messages to render
 pub fn calculate_visible_range(
     message_heights: &[MessageHeight],
     scroll_from_top: usize,
     viewport_height: usize,
-) -> (usize, usize) {
-    if message_heights.is_empty() {
-        return (0, 0);
+) -> (usize, usize, usize) {
+    if message_heights.is_empty() || viewport_height == 0 {
+        return (0, 0, 0);
+    }
+
+    let total_message_lines = message_heights
+        .last()
+        .map(|h| h.cumulative_offset + h.visual_lines)
+        .unwrap_or(0);
+    if scroll_from_top >= total_message_lines {
+        return (message_heights.len(), message_heights.len(), 0);
     }
 
     // Find the first message that starts within or after the visible range
@@ -58,8 +59,16 @@ pub fn calculate_visible_range(
         start_index = i + 1;
     }
 
-    // Apply buffer to start (go back N messages)
-    start_index = start_index.saturating_sub(VIRTUALIZATION_BUFFER);
+    if start_index >= message_heights.len() {
+        return (message_heights.len(), message_heights.len(), 0);
+    }
+
+    let first_message_line_offset = scroll_from_top.saturating_sub(
+        message_heights
+            .get(start_index)
+            .map(|h| h.cumulative_offset)
+            .unwrap_or(0),
+    );
 
     // Find the first message that starts after the visible range
     let visible_end = scroll_from_top + viewport_height;
@@ -71,10 +80,7 @@ pub fn calculate_visible_range(
         }
     }
 
-    // Apply buffer to end (render N more messages)
-    end_index = (end_index + VIRTUALIZATION_BUFFER).min(message_heights.len());
-
-    (start_index, end_index)
+    (start_index, end_index, first_message_line_offset)
 }
 
 /// Calculate the number of visual lines to skip when rendering virtualized messages.
@@ -89,6 +95,7 @@ pub fn calculate_visible_range(
 ///
 /// # Returns
 /// The number of visual lines occupied by messages before start_index
+#[allow(dead_code)]
 pub fn calculate_skip_lines(message_heights: &[MessageHeight], start_index: usize) -> usize {
     if start_index == 0 || message_heights.is_empty() {
         return 0;
@@ -193,9 +200,10 @@ mod tests {
     #[test]
     fn test_calculate_visible_range_empty() {
         let heights: Vec<MessageHeight> = vec![];
-        let (start, end) = calculate_visible_range(&heights, 0, 20);
+        let (start, end, offset) = calculate_visible_range(&heights, 0, 20);
         assert_eq!(start, 0);
         assert_eq!(end, 0);
+        assert_eq!(offset, 0);
     }
 
     #[test]
@@ -210,9 +218,10 @@ mod tests {
             })
             .collect();
 
-        let (start, end) = calculate_visible_range(&heights, 0, 100);
+        let (start, end, offset) = calculate_visible_range(&heights, 0, 100);
         assert_eq!(start, 0);
         assert_eq!(end, 5);
+        assert_eq!(offset, 0);
     }
 
     #[test]
@@ -227,11 +236,10 @@ mod tests {
             })
             .collect();
 
-        let (start, end) = calculate_visible_range(&heights, 0, 25);
-        assert_eq!(start, 0); // Start at 0 (can't go negative with buffer)
-        // Messages 0, 1, 2 are visible (lines 0-29 cover messages up to index 2)
-        // Plus VIRTUALIZATION_BUFFER (5) = min(2 + 5, 10) = 7
-        assert!((3..=10).contains(&end));
+        let (start, end, offset) = calculate_visible_range(&heights, 0, 25);
+        assert_eq!(start, 0);
+        assert_eq!(end, 3);
+        assert_eq!(offset, 0);
     }
 
     #[test]
@@ -246,15 +254,10 @@ mod tests {
             })
             .collect();
 
-        let (start, end) = calculate_visible_range(&heights, 100, 30);
-        // Message 10 starts at offset 100
-        // With buffer of 5, start should be around 10 - 5 = 5
-        assert!(start <= 10);
-        assert!(start >= 5);
-        // Messages visible: 10, 11, 12 (lines 100-129)
-        // Plus buffer: end should be around 13 + 5 = 18
-        assert!(end >= 13);
-        assert!(end <= 20);
+        let (start, end, offset) = calculate_visible_range(&heights, 100, 30);
+        assert_eq!(start, 10);
+        assert_eq!(end, 13);
+        assert_eq!(offset, 0);
     }
 
     #[test]
@@ -269,11 +272,10 @@ mod tests {
             })
             .collect();
 
-        let (start, end) = calculate_visible_range(&heights, 75, 25);
-        // End should be 10 (all messages)
+        let (start, end, offset) = calculate_visible_range(&heights, 75, 25);
+        assert_eq!(start, 7);
         assert_eq!(end, 10);
-        // Start should be around message 7 - buffer = max(7 - 5, 0) = 2
-        assert!(start <= 7);
+        assert_eq!(offset, 5);
     }
 
     #[test]
@@ -288,12 +290,10 @@ mod tests {
         ];
 
         // Viewport at offset 10 (middle of message 1) with height 20
-        let (start, end) = calculate_visible_range(&heights, 10, 20);
-        // Message 1 (offset 5-24) is partially visible
-        // Message 2 (offset 25-29) is fully visible
-        // With buffer, should include earlier and later messages
-        assert_eq!(start, 0); // Buffer goes back 5, but we only have 5 messages
-        assert!(end >= 2); // At least message 2 should be included
+        let (start, end, offset) = calculate_visible_range(&heights, 10, 20);
+        assert_eq!(start, 1);
+        assert_eq!(end, 3);
+        assert_eq!(offset, 5);
     }
 
     #[test]
@@ -322,39 +322,15 @@ mod tests {
     }
 
     #[test]
-    fn test_virtualization_buffer_constant() {
-        // Ensure the buffer constant is reasonable
-        assert_eq!(VIRTUALIZATION_BUFFER, 5);
-    }
-
-    #[test]
-    fn test_calculate_visible_range_with_large_buffer() {
-        // Small message list where buffer exceeds message count
-        // 3 messages, each 10 lines, viewport 20, buffer is 5
-        let heights: Vec<MessageHeight> = (0..3)
-            .map(|i| MessageHeight {
-                message_index: i,
-                visual_lines: 10,
-                cumulative_offset: i * 10,
-            })
-            .collect();
-
-        let (start, end) = calculate_visible_range(&heights, 0, 20);
-        // Buffer would want to go back 5, but only 3 messages
-        assert_eq!(start, 0);
-        // Buffer would want to extend to 7, but only 3 messages
-        assert_eq!(end, 3);
-    }
-
-    #[test]
     fn test_calculate_visible_range_single_message() {
         let heights = vec![
             MessageHeight { message_index: 0, visual_lines: 50, cumulative_offset: 0 },
         ];
 
-        let (start, end) = calculate_visible_range(&heights, 0, 30);
+        let (start, end, offset) = calculate_visible_range(&heights, 0, 30);
         assert_eq!(start, 0);
         assert_eq!(end, 1);
+        assert_eq!(offset, 0);
     }
 
     #[test]
@@ -371,7 +347,7 @@ mod tests {
 
         // Test various scroll positions
         for scroll in [0, 50, 100, 200, 400] {
-            let (start, end) = calculate_visible_range(&heights, scroll, 50);
+            let (start, end, _offset) = calculate_visible_range(&heights, scroll, 50);
 
             // Verify range is valid
             assert!(start <= end, "start ({}) should be <= end ({})", start, end);
