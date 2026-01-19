@@ -7,16 +7,17 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Clear, Paragraph, Wrap},
     Frame,
 };
 
 use crate::app::App;
 use crate::auth::device_flow::DeviceFlowState;
+use crate::markdown::wrap_osc8_hyperlink;
 
 use super::command_deck::SPOQ_LOGO;
 use super::layout::LayoutContext;
-use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
+use super::theme::{COLOR_DIM, COLOR_HEADER};
 
 /// Render the login screen as a centered overlay.
 ///
@@ -49,56 +50,34 @@ pub fn render_login_screen(frame: &mut Frame, app: &App) {
     // Clear the background behind the dialog
     frame.render_widget(Clear, dialog_area);
 
-    // Outer border (double border like command deck)
-    let outer_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(COLOR_BORDER));
-    frame.render_widget(outer_block, dialog_area);
-
-    // Inner area for logo
+    // Logo area at top (minimal padding)
     let logo_area = Rect {
-        x: dialog_area.x + 2,
-        y: dialog_area.y + 1,
-        width: dialog_area.width.saturating_sub(4),
+        x: dialog_area.x + 1,
+        y: dialog_area.y,
+        width: dialog_area.width.saturating_sub(2),
         height: 6, // SPOQ logo height
     };
 
     // Render SPOQ logo centered at top
     render_centered_logo(frame, logo_area);
 
-    // Inner rounded dialog box for content
+    // Content area below logo (use more horizontal space)
     let content_y = logo_area.y + logo_area.height + 1;
-    let content_height = dialog_area
-        .height
-        .saturating_sub(logo_area.height + 4);
+    let content_height = dialog_area.height.saturating_sub(logo_area.height + 1);
 
-    let content_dialog_area = Rect {
-        x: dialog_area.x + 4,
+    let content_area = Rect {
+        x: dialog_area.x + 1,
         y: content_y,
-        width: dialog_area.width.saturating_sub(8),
+        width: dialog_area.width.saturating_sub(2),
         height: content_height,
-    };
-
-    let inner_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(COLOR_BORDER));
-    frame.render_widget(inner_block, content_dialog_area);
-
-    // Inner content area
-    let inner = Rect {
-        x: content_dialog_area.x + 2,
-        y: content_dialog_area.y + 1,
-        width: content_dialog_area.width.saturating_sub(4),
-        height: content_dialog_area.height.saturating_sub(2),
     };
 
     // Build content based on device flow state
     let content = build_content_for_state(app);
     let paragraph = Paragraph::new(content)
-        .alignment(ratatui::layout::Alignment::Center);
-    frame.render_widget(paragraph, inner);
+        .alignment(ratatui::layout::Alignment::Center)
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, content_area);
 }
 
 /// Calculate dialog width based on terminal dimensions.
@@ -114,7 +93,7 @@ fn calculate_dialog_width(ctx: &LayoutContext, area_width: u16) -> u16 {
 
 /// Calculate dialog height based on content and terminal dimensions.
 fn calculate_dialog_height(ctx: &LayoutContext, app: &App, area_height: u16) -> u16 {
-    // Base height: 2 (outer border) + 6 (logo) + 1 (spacing) + 2 (inner border) + content
+    // Base height: 6 (logo) + 1 (spacing) + content lines
     let base_content_lines = if let Some(ref device_flow) = app.device_flow {
         match device_flow.state() {
             DeviceFlowState::WaitingForUser { .. } => 8, // More lines for URI display
@@ -124,7 +103,7 @@ fn calculate_dialog_height(ctx: &LayoutContext, app: &App, area_height: u16) -> 
         4
     };
 
-    let content_height = 2 + 6 + 1 + 2 + base_content_lines + 2; // +2 for padding
+    let content_height = 6 + 1 + base_content_lines + 2; // +2 for padding
 
     let max_height = if ctx.is_extra_small() {
         area_height.saturating_sub(2)
@@ -142,8 +121,7 @@ fn render_centered_logo(frame: &mut Frame, area: Rect) {
         .map(|line| Line::from(Span::styled(*line, Style::default().fg(COLOR_HEADER))))
         .collect();
 
-    let logo = Paragraph::new(logo_lines)
-        .alignment(ratatui::layout::Alignment::Center);
+    let logo = Paragraph::new(logo_lines).alignment(ratatui::layout::Alignment::Center);
     frame.render_widget(logo, area);
 }
 
@@ -155,12 +133,10 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
         match device_flow.state() {
             DeviceFlowState::NotStarted => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "Initializing...".to_string(),
-                        Style::default().fg(COLOR_DIM),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Initializing...".to_string(),
+                    Style::default().fg(COLOR_DIM),
+                )]));
             }
 
             DeviceFlowState::WaitingForUser {
@@ -169,21 +145,19 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
                 ..
             } => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "Please visit:".to_string(),
-                        Style::default().fg(COLOR_HEADER),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "Please visit:".to_string(),
+                    Style::default().fg(COLOR_HEADER),
+                )]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        verification_uri.clone(),
-                        Style::default()
-                            .fg(Color::LightGreen)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
+                // Wrap verification URI with OSC 8 for clickability
+                let osc8_uri = wrap_osc8_hyperlink(verification_uri, verification_uri);
+                lines.push(Line::from(vec![Span::styled(
+                    osc8_uri,
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD),
+                )]));
                 // Only show user code line if provided separately
                 if let Some(code) = user_code {
                     lines.push(Line::from(""));
@@ -202,10 +176,7 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
                 }
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
-                    Span::styled(
-                        "⣾ ".to_string(),
-                        Style::default().fg(Color::Cyan),
-                    ),
+                    Span::styled("⣾ ".to_string(), Style::default().fg(Color::Cyan)),
                     Span::styled(
                         "Waiting for authorization...".to_string(),
                         Style::default().fg(COLOR_DIM),
@@ -215,89 +186,71 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
 
             DeviceFlowState::Authorized { .. } => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "✓ Successfully signed in!".to_string(),
-                        Style::default()
-                            .fg(Color::LightGreen)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "✓ Successfully signed in!".to_string(),
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD),
+                )]));
             }
 
             DeviceFlowState::Denied => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "✗ Authorization denied".to_string(),
-                        Style::default()
-                            .fg(Color::Red)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "✗ Authorization denied".to_string(),
+                    Style::default()
+                        .fg(Color::Red)
+                        .add_modifier(Modifier::BOLD),
+                )]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "[Enter] Try again".to_string(),
-                        Style::default().fg(COLOR_DIM),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "[Enter] Try again".to_string(),
+                    Style::default().fg(COLOR_DIM),
+                )]));
             }
 
             DeviceFlowState::Expired => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "✗ Authorization code expired".to_string(),
-                        Style::default()
-                            .fg(Color::Red)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "✗ Authorization code expired".to_string(),
+                    Style::default()
+                        .fg(Color::Red)
+                        .add_modifier(Modifier::BOLD),
+                )]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "[Enter] Try again".to_string(),
-                        Style::default().fg(COLOR_DIM),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "[Enter] Try again".to_string(),
+                    Style::default().fg(COLOR_DIM),
+                )]));
             }
 
             DeviceFlowState::Error(message) => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "✗ Error:".to_string(),
-                        Style::default()
-                            .fg(Color::Red)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "✗ Error:".to_string(),
+                    Style::default()
+                        .fg(Color::Red)
+                        .add_modifier(Modifier::BOLD),
+                )]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        message.clone(),
-                        Style::default().fg(Color::Red),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    message.clone(),
+                    Style::default().fg(Color::Red),
+                )]));
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "[Enter] Try again".to_string(),
-                        Style::default().fg(COLOR_DIM),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "[Enter] Try again".to_string(),
+                    Style::default().fg(COLOR_DIM),
+                )]));
             }
         }
     } else {
         // No device flow manager, show initializing
         lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(
-                "Initializing...".to_string(),
-                Style::default().fg(COLOR_DIM),
-            ),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "Initializing...".to_string(),
+            Style::default().fg(COLOR_DIM),
+        )]));
     }
 
     lines.push(Line::from("")); // Bottom padding
