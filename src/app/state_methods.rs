@@ -52,16 +52,19 @@ impl App {
 
         // Only update smooth scrolling if there's meaningful velocity
         const VELOCITY_THRESHOLD: f32 = 0.1;
-        let had_velocity = self.scroll_velocity.abs() > VELOCITY_THRESHOLD;
-        if had_velocity {
+        let has_velocity = self.scroll_velocity.abs() > VELOCITY_THRESHOLD;
+        if has_velocity {
             self.update_smooth_scroll();
+        } else if self.scroll_velocity != 0.0 {
+            // Zero out small residual velocities
+            self.scroll_velocity = 0.0;
         }
 
         // Mark dirty if there are active animations:
         // - Scroll momentum (velocity > 0)
         // - Streaming (spinner animation)
         // - Boundary hit indicator (fades after a few ticks)
-        if had_velocity || self.is_streaming() || self.scroll_boundary_hit.is_some() {
+        if has_velocity || self.is_streaming() || self.scroll_boundary_hit.is_some() {
             self.mark_dirty();
         }
 

@@ -469,7 +469,7 @@ fn test_tick_stops_velocity_when_very_small() {
     let mut app = create_test_app_in_conversation();
     app.max_scroll = 100;
     app.scroll_position = 50.0;
-    app.scroll_velocity = 0.04; // Below threshold (0.05)
+    app.scroll_velocity = 0.09; // Below threshold (0.1)
 
     app.tick();
 
