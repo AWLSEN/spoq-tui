@@ -1544,14 +1544,15 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect();
 
-        // Check that permission prompt elements are rendered
-        assert!(
-            buffer_str.contains("Permission Required"),
-            "Should show 'Permission Required' title"
-        );
+        // Check that permission prompt elements are rendered (inline style)
         assert!(
             buffer_str.contains("Bash"),
-            "Should show tool name"
+            "Should show tool name in inline permission prompt"
+        );
+        // Check for permission key options (y/a/n)
+        assert!(
+            buffer_str.contains("[y]") && buffer_str.contains("[a]") && buffer_str.contains("[n]"),
+            "Should show permission key options [y], [a], [n]"
         );
     }
 
