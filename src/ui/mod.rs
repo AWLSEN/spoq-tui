@@ -27,8 +27,11 @@ pub mod input;
 mod layout;
 mod messages;
 mod panels;
+pub mod provisioning;
 mod theme;
 mod thread_switcher;
+
+pub use provisioning::*;
 
 // Re-export theme colors for external use
 pub use theme::{

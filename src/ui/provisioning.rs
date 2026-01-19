@@ -1,7 +1,8 @@
-//! Provisioning Screen rendering
+//! VPS Provisioning Screen UI
 //!
-//! Implements the provisioning/setup screen for initial application configuration.
-//! Shows SPOQ logo, plan list, password field, and status information.
+//! Implements the VPS provisioning screen with plan selection, password input,
+//! and provisioning progress display. Uses the state machine pattern with
+//! `ProvisioningPhase` to track the current stage of the provisioning flow.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -12,285 +13,408 @@ use ratatui::{
 };
 
 use crate::app::App;
+use crate::auth::central_api::{VpsPlan, VpsStatusResponse};
 
 use super::command_deck::SPOQ_LOGO;
-use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
+use super::helpers::{inner_rect, SPINNER_FRAMES};
+use super::layout::LayoutContext;
+use super::theme::{COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 
 // ============================================================================
-// Provisioning Screen Rendering
+// Provisioning Phase State Machine
 // ============================================================================
 
-/// Render the provisioning screen
+/// Current phase of the VPS provisioning flow
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProvisioningPhase {
+    /// Loading available VPS plans from API
+    LoadingPlans,
+    /// User selecting a plan and entering password
+    SelectPlan,
+    /// Provisioning in progress (VPS being created)
+    Provisioning,
+    /// Waiting for VPS to become ready
+    WaitingReady,
+    /// VPS is ready with connection info
+    Ready,
+    /// Error occurred during any phase
+    Error(String),
+}
+
+impl Default for ProvisioningPhase {
+    fn default() -> Self {
+        Self::LoadingPlans
+    }
+}
+
+// ============================================================================
+// Provisioning UI State
+// ============================================================================
+
+/// UI state for the provisioning screen
+#[derive(Debug, Clone, Default)]
+pub struct ProvisioningState {
+    /// Current phase of provisioning
+    pub phase: ProvisioningPhase,
+    /// Available VPS plans (populated after LoadingPlans)
+    pub plans: Vec<VpsPlan>,
+    /// Currently selected plan index
+    pub selected_plan_index: usize,
+    /// Password input (masked in display)
+    pub password: String,
+    /// Status message for progress display
+    pub status_message: Option<String>,
+    /// VPS info when ready
+    pub vps_info: Option<VpsStatusResponse>,
+    /// Animation tick for spinners
+    pub tick: u64,
+}
+
+impl ProvisioningState {
+    /// Create new provisioning state in loading phase
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if password is valid (>= 12 characters)
+    pub fn is_password_valid(&self) -> bool {
+        self.password.len() >= 12
+    }
+
+    /// Get the currently selected plan, if any
+    pub fn selected_plan(&self) -> Option<&VpsPlan> {
+        self.plans.get(self.selected_plan_index)
+    }
+
+    /// Move selection up in plan list
+    pub fn select_previous_plan(&mut self) {
+        if self.selected_plan_index > 0 {
+            self.selected_plan_index -= 1;
+        }
+    }
+
+    /// Move selection down in plan list
+    pub fn select_next_plan(&mut self) {
+        if self.selected_plan_index + 1 < self.plans.len() {
+            self.selected_plan_index += 1;
+        }
+    }
+
+    /// Add character to password
+    pub fn password_push(&mut self, c: char) {
+        self.password.push(c);
+    }
+
+    /// Remove last character from password
+    pub fn password_pop(&mut self) {
+        self.password.pop();
+    }
+
+    /// Increment tick for animations
+    pub fn tick(&mut self) {
+        self.tick = self.tick.wrapping_add(1);
+    }
+}
+
+// ============================================================================
+// Main Render Function
+// ============================================================================
+
+/// Render the VPS provisioning screen
 pub fn render_provisioning_screen(frame: &mut Frame, app: &App) {
-    let area = frame.area();
+    let size = frame.area();
+    let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
 
-    // Main outer border
+    // Outer double border with title
     let outer_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .border_style(Style::default().fg(COLOR_BORDER))
         .title(Span::styled(
-            " SPOQ Setup ",
-            Style::default()
-                .fg(COLOR_HEADER)
-                .add_modifier(Modifier::BOLD),
+            " VPS Setup ",
+            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
         ));
-    frame.render_widget(outer_block, area);
+    frame.render_widget(outer_block, size);
 
-    // Inner area for content
-    let inner = Rect {
-        x: area.x + 2,
-        y: area.y + 1,
-        width: area.width.saturating_sub(4),
-        height: area.height.saturating_sub(2),
-    };
+    let inner = inner_rect(size, 1);
 
-    // Main layout: Logo | Content
+    // Layout: Logo area | Content area
     let main_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8),  // Logo section
-            Constraint::Length(1),  // Spacer
-            Constraint::Min(10),    // Main content
-            Constraint::Length(3),  // Status bar
+            Constraint::Length(SPOQ_LOGO.len() as u16 + 1), // Logo
+            Constraint::Min(10),                            // Content
         ])
         .split(inner);
 
-    render_logo_section(frame, main_chunks[0]);
-    render_content_section(frame, main_chunks[2], app);
-    render_status_bar(frame, main_chunks[3], app);
+    render_logo(frame, main_chunks[0]);
+
+    // Render content based on current phase
+    match &app.provisioning.phase {
+        ProvisioningPhase::LoadingPlans => {
+            render_loading_plans(frame, main_chunks[1], &app.provisioning);
+        }
+        ProvisioningPhase::SelectPlan => {
+            render_plan_selection(frame, main_chunks[1], &app.provisioning, &ctx);
+        }
+        ProvisioningPhase::Provisioning => {
+            render_provisioning_progress(frame, main_chunks[1], &app.provisioning, "Provisioning VPS...");
+        }
+        ProvisioningPhase::WaitingReady => {
+            let msg = app.provisioning.status_message.as_deref().unwrap_or("Waiting for VPS to become ready...");
+            render_provisioning_progress(frame, main_chunks[1], &app.provisioning, msg);
+        }
+        ProvisioningPhase::Ready => {
+            render_vps_ready(frame, main_chunks[1], &app.provisioning);
+        }
+        ProvisioningPhase::Error(msg) => {
+            render_error(frame, main_chunks[1], msg);
+        }
+    }
 }
 
 // ============================================================================
-// Logo Section
+// Component Renderers
 // ============================================================================
 
-fn render_logo_section(frame: &mut Frame, area: Rect) {
-    // Center the logo horizontally
-    let logo_width = 35u16; // Approximate width of SPOQ logo
-    let x_offset = area.width.saturating_sub(logo_width) / 2;
-
-    let logo_area = Rect {
-        x: area.x + x_offset,
-        y: area.y + 1,
-        width: logo_width.min(area.width),
-        height: 6,
-    };
-
+/// Render the SPOQ logo at top-left
+fn render_logo(frame: &mut Frame, area: Rect) {
     let logo_lines: Vec<Line> = SPOQ_LOGO
         .iter()
         .map(|line| Line::from(Span::styled(*line, Style::default().fg(COLOR_HEADER))))
         .collect();
 
     let logo = Paragraph::new(logo_lines);
-    frame.render_widget(logo, logo_area);
+    frame.render_widget(logo, area);
 }
 
-// ============================================================================
-// Content Section
-// ============================================================================
+/// Render loading spinner for plans
+fn render_loading_plans(frame: &mut Frame, area: Rect, state: &ProvisioningState) {
+    let spinner_idx = (state.tick as usize) % SPINNER_FRAMES.len();
+    let spinner = SPINNER_FRAMES[spinner_idx];
 
-fn render_content_section(frame: &mut Frame, area: Rect, app: &App) {
-    // Split into two columns: Plan list | Password/Settings
-    let content_chunks = Layout::default()
-        .direction(Direction::Horizontal)
+    let text = Line::from(vec![
+        Span::styled(spinner, Style::default().fg(COLOR_ACTIVE)),
+        Span::raw(" Loading available plans..."),
+    ]);
+
+    let paragraph = Paragraph::new(text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(COLOR_DIM)),
+    );
+    frame.render_widget(paragraph, area);
+}
+
+/// Render plan selection with password field
+fn render_plan_selection(frame: &mut Frame, area: Rect, state: &ProvisioningState, _ctx: &LayoutContext) {
+    // Split into plan list and password section
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Min(6),     // Plan list
+            Constraint::Length(5),  // Password section
         ])
         .split(area);
 
-    render_plan_list(frame, content_chunks[0], app);
-    render_settings_panel(frame, content_chunks[1], app);
+    render_plan_list(frame, chunks[0], state);
+    render_password_field(frame, chunks[1], state);
 }
 
-fn render_plan_list(frame: &mut Frame, area: Rect, app: &App) {
-    let block = Block::default()
-        .title(Span::styled(
-            " Available Plans ",
-            Style::default()
-                .fg(COLOR_HEADER)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(COLOR_BORDER));
-
-    // Create plan list items
-    let items: Vec<ListItem> = app
-        .provisioning
+/// Render the list of available plans
+fn render_plan_list(frame: &mut Frame, area: Rect, state: &ProvisioningState) {
+    let items: Vec<ListItem> = state
         .plans
         .iter()
         .enumerate()
         .map(|(idx, plan)| {
-            let is_selected = idx == app.provisioning.selected_plan_index;
+            let is_selected = idx == state.selected_plan_index;
             let marker = if is_selected { "▶ " } else { "  " };
 
+            // Format: name | vcpus | ram | disk | price
+            let ram_gb = plan.ram_mb / 1024;
+            let price_dollars = plan.price_cents as f64 / 100.0;
+
+            let line = format!(
+                "{}{} | {}vCPU | {}GB RAM | {}GB Disk | ${:.2}/mo",
+                marker, plan.name, plan.vcpus, ram_gb, plan.disk_gb, price_dollars
+            );
+
             let style = if is_selected {
-                Style::default()
-                    .fg(COLOR_ACCENT)
-                    .add_modifier(Modifier::BOLD)
+                Style::default().fg(COLOR_ACTIVE).add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(COLOR_DIM)
             };
 
-            ListItem::new(Line::from(vec![
-                Span::styled(marker, style),
-                Span::styled(&plan.name, style),
-            ]))
+            ListItem::new(Line::from(Span::styled(line, style)))
         })
         .collect();
 
-    let list = List::new(items).block(block);
+    let list = List::new(items).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(COLOR_BORDER))
+            .title(Span::styled(
+                " Select Plan ",
+                Style::default().fg(COLOR_HEADER),
+            )),
+    );
+
     frame.render_widget(list, area);
 }
 
-fn render_settings_panel(frame: &mut Frame, area: Rect, app: &App) {
-    let block = Block::default()
-        .title(Span::styled(
-            " Configuration ",
-            Style::default()
-                .fg(COLOR_HEADER)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(COLOR_BORDER));
+/// Render password input field with validation indicator
+fn render_password_field(frame: &mut Frame, area: Rect, state: &ProvisioningState) {
+    let masked: String = "●".repeat(state.password.len());
+    let is_valid = state.is_password_valid();
 
-    frame.render_widget(block, area);
-
-    // Inner area for settings content
-    let inner = Rect {
-        x: area.x + 2,
-        y: area.y + 2,
-        width: area.width.saturating_sub(4),
-        height: area.height.saturating_sub(3),
+    let validation_indicator = if is_valid {
+        Span::styled(" ✓", Style::default().fg(Color::Green))
+    } else {
+        Span::styled(" ✗", Style::default().fg(Color::Red))
     };
 
-    let mut lines: Vec<Line> = Vec::new();
-
-    // Password field
-    lines.push(Line::from(vec![
-        Span::styled("Password: ", Style::default().fg(COLOR_DIM)),
-    ]));
-
-    let password_display = if app.provisioning.password.is_empty() {
-        Span::styled(
-            "[Enter password]",
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::ITALIC),
-        )
+    let hint = if is_valid {
+        Span::styled(" (valid)", Style::default().fg(Color::Green))
     } else {
         Span::styled(
-            "*".repeat(app.provisioning.password.len()),
-            Style::default().fg(COLOR_ACCENT),
+            format!(" ({}/12 chars)", state.password.len()),
+            Style::default().fg(COLOR_DIM),
         )
     };
-    lines.push(Line::from(vec![
-        Span::raw("  "),
-        password_display,
-    ]));
 
-    lines.push(Line::from(""));
+    let lines = vec![
+        Line::from(vec![
+            Span::styled("Password: ", Style::default().fg(COLOR_HEADER)),
+            Span::raw(&masked),
+            Span::styled("█", Style::default().fg(COLOR_ACTIVE)), // Cursor
+            validation_indicator,
+        ]),
+        Line::from(hint),
+    ];
 
-    // Show selected plan info
-    if let Some(plan) = app.provisioning.plans.get(app.provisioning.selected_plan_index) {
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(COLOR_BORDER))
+            .title(Span::styled(
+                " Root Password ",
+                Style::default().fg(COLOR_HEADER),
+            )),
+    );
+
+    frame.render_widget(paragraph, area);
+}
+
+/// Render provisioning progress with spinner
+fn render_provisioning_progress(frame: &mut Frame, area: Rect, state: &ProvisioningState, message: &str) {
+    let spinner_idx = (state.tick as usize) % SPINNER_FRAMES.len();
+    let spinner = SPINNER_FRAMES[spinner_idx];
+
+    let lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::styled(spinner, Style::default().fg(COLOR_ACTIVE)),
+            Span::raw(" "),
+            Span::raw(message),
+        ]),
+        Line::from(""),
+    ];
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(COLOR_BORDER))
+            .title(Span::styled(
+                " Provisioning ",
+                Style::default().fg(COLOR_HEADER),
+            )),
+    );
+
+    frame.render_widget(paragraph, area);
+}
+
+/// Render VPS ready screen with connection info
+fn render_vps_ready(frame: &mut Frame, area: Rect, state: &ProvisioningState) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "✓ VPS Ready!",
+            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+
+    if let Some(vps_info) = &state.vps_info {
         lines.push(Line::from(vec![
-            Span::styled("Selected: ", Style::default().fg(COLOR_DIM)),
-            Span::styled(&plan.name, Style::default().fg(COLOR_ACCENT)),
+            Span::styled("VPS ID: ", Style::default().fg(COLOR_HEADER)),
+            Span::raw(&vps_info.vps_id),
         ]));
 
-        if let Some(desc) = &plan.description {
+        if let Some(hostname) = &vps_info.hostname {
             lines.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(desc, Style::default().fg(COLOR_DIM)),
+                Span::styled("Hostname: ", Style::default().fg(COLOR_HEADER)),
+                Span::raw(hostname),
+            ]));
+        }
+
+        if let Some(ip) = &vps_info.ip {
+            lines.push(Line::from(vec![
+                Span::styled("IP: ", Style::default().fg(COLOR_HEADER)),
+                Span::raw(ip),
+            ]));
+        }
+
+        if let Some(url) = &vps_info.url {
+            lines.push(Line::from(vec![
+                Span::styled("URL: ", Style::default().fg(COLOR_HEADER)),
+                Span::raw(url),
             ]));
         }
     }
 
     lines.push(Line::from(""));
-    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Press Enter to continue...",
+        Style::default().fg(COLOR_DIM),
+    )));
 
-    // Key hints
-    lines.push(Line::from(vec![
-        Span::styled("↑/↓", Style::default().fg(COLOR_ACCENT)),
-        Span::styled(" Select plan  ", Style::default().fg(COLOR_DIM)),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("Tab", Style::default().fg(COLOR_ACCENT)),
-        Span::styled(" Switch focus  ", Style::default().fg(COLOR_DIM)),
-    ]));
-    lines.push(Line::from(vec![
-        Span::styled("Enter", Style::default().fg(COLOR_ACCENT)),
-        Span::styled(" Confirm setup", Style::default().fg(COLOR_DIM)),
-    ]));
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green))
+            .title(Span::styled(
+                " Complete ",
+                Style::default().fg(Color::Green),
+            )),
+    );
 
-    let content = Paragraph::new(lines);
-    frame.render_widget(content, inner);
-}
-
-// ============================================================================
-// Status Bar
-// ============================================================================
-
-fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
-    let status_text = match &app.provisioning.status {
-        ProvisioningStatus::Idle => "Ready to configure",
-        ProvisioningStatus::Loading => "Loading plans...",
-        ProvisioningStatus::Error(msg) => msg.as_str(),
-        ProvisioningStatus::Success => "Configuration complete!",
-    };
-
-    let status_color = match &app.provisioning.status {
-        ProvisioningStatus::Idle => COLOR_DIM,
-        ProvisioningStatus::Loading => Color::Yellow,
-        ProvisioningStatus::Error(_) => Color::Red,
-        ProvisioningStatus::Success => Color::Green,
-    };
-
-    let status_line = Line::from(vec![
-        Span::styled(" Status: ", Style::default().fg(COLOR_DIM)),
-        Span::styled(status_text, Style::default().fg(status_color)),
-    ]);
-
-    let block = Block::default()
-        .borders(Borders::TOP)
-        .border_style(Style::default().fg(COLOR_BORDER));
-
-    let paragraph = Paragraph::new(status_line).block(block);
     frame.render_widget(paragraph, area);
 }
 
-// ============================================================================
-// Provisioning State Types
-// ============================================================================
+/// Render error message
+fn render_error(frame: &mut Frame, area: Rect, message: &str) {
+    let lines = vec![
+        Line::from(Span::styled(
+            "✗ Error",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(message, Style::default().fg(Color::Red))),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Press Esc to go back",
+            Style::default().fg(COLOR_DIM),
+        )),
+    ];
 
-/// Status of the provisioning process
-#[derive(Debug, Clone, Default)]
-pub enum ProvisioningStatus {
-    #[default]
-    Idle,
-    Loading,
-    Error(String),
-    Success,
-}
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Red))
+            .title(Span::styled(" Error ", Style::default().fg(Color::Red))),
+    );
 
-/// A plan available for provisioning
-#[derive(Debug, Clone)]
-pub struct ProvisioningPlan {
-    pub name: String,
-    pub description: Option<String>,
-    pub id: String,
-}
-
-/// State for the provisioning screen
-#[derive(Debug, Clone, Default)]
-pub struct ProvisioningState {
-    pub plans: Vec<ProvisioningPlan>,
-    pub selected_plan_index: usize,
-    pub password: String,
-    pub status: ProvisioningStatus,
+    frame.render_widget(paragraph, area);
 }
 
 // ============================================================================
@@ -302,29 +426,120 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_provisioning_status_default() {
-        let status = ProvisioningStatus::default();
-        assert!(matches!(status, ProvisioningStatus::Idle));
+    fn test_provisioning_phase_default() {
+        let phase = ProvisioningPhase::default();
+        assert_eq!(phase, ProvisioningPhase::LoadingPlans);
     }
 
     #[test]
-    fn test_provisioning_state_default() {
-        let state = ProvisioningState::default();
+    fn test_provisioning_state_new() {
+        let state = ProvisioningState::new();
+        assert_eq!(state.phase, ProvisioningPhase::LoadingPlans);
         assert!(state.plans.is_empty());
         assert_eq!(state.selected_plan_index, 0);
         assert!(state.password.is_empty());
-        assert!(matches!(state.status, ProvisioningStatus::Idle));
     }
 
     #[test]
-    fn test_provisioning_plan_creation() {
-        let plan = ProvisioningPlan {
-            name: "Basic Plan".to_string(),
-            description: Some("A basic plan for testing".to_string()),
-            id: "basic-001".to_string(),
-        };
-        assert_eq!(plan.name, "Basic Plan");
-        assert_eq!(plan.id, "basic-001");
-        assert!(plan.description.is_some());
+    fn test_password_validation() {
+        let mut state = ProvisioningState::new();
+
+        // Less than 12 chars is invalid
+        state.password = "short".to_string();
+        assert!(!state.is_password_valid());
+
+        // Exactly 12 chars is valid
+        state.password = "123456789012".to_string();
+        assert!(state.is_password_valid());
+
+        // More than 12 chars is valid
+        state.password = "this_is_a_long_password".to_string();
+        assert!(state.is_password_valid());
+    }
+
+    #[test]
+    fn test_password_push_pop() {
+        let mut state = ProvisioningState::new();
+
+        state.password_push('a');
+        state.password_push('b');
+        state.password_push('c');
+        assert_eq!(state.password, "abc");
+
+        state.password_pop();
+        assert_eq!(state.password, "ab");
+
+        state.password_pop();
+        state.password_pop();
+        state.password_pop(); // Should handle empty gracefully
+        assert!(state.password.is_empty());
+    }
+
+    #[test]
+    fn test_plan_selection() {
+        let mut state = ProvisioningState::new();
+        state.plans = vec![
+            VpsPlan {
+                id: "1".to_string(),
+                name: "Small".to_string(),
+                vcpus: 1,
+                ram_mb: 1024,
+                disk_gb: 25,
+                price_cents: 500,
+            },
+            VpsPlan {
+                id: "2".to_string(),
+                name: "Medium".to_string(),
+                vcpus: 2,
+                ram_mb: 2048,
+                disk_gb: 50,
+                price_cents: 1000,
+            },
+            VpsPlan {
+                id: "3".to_string(),
+                name: "Large".to_string(),
+                vcpus: 4,
+                ram_mb: 4096,
+                disk_gb: 100,
+                price_cents: 2000,
+            },
+        ];
+
+        assert_eq!(state.selected_plan_index, 0);
+        assert_eq!(state.selected_plan().unwrap().name, "Small");
+
+        state.select_next_plan();
+        assert_eq!(state.selected_plan_index, 1);
+        assert_eq!(state.selected_plan().unwrap().name, "Medium");
+
+        state.select_next_plan();
+        assert_eq!(state.selected_plan_index, 2);
+        assert_eq!(state.selected_plan().unwrap().name, "Large");
+
+        // Should not go past the end
+        state.select_next_plan();
+        assert_eq!(state.selected_plan_index, 2);
+
+        state.select_previous_plan();
+        assert_eq!(state.selected_plan_index, 1);
+
+        state.select_previous_plan();
+        state.select_previous_plan();
+        // Should not go below 0
+        state.select_previous_plan();
+        assert_eq!(state.selected_plan_index, 0);
+    }
+
+    #[test]
+    fn test_tick_increment() {
+        let mut state = ProvisioningState::new();
+        assert_eq!(state.tick, 0);
+
+        state.tick();
+        assert_eq!(state.tick, 1);
+
+        state.tick();
+        state.tick();
+        assert_eq!(state.tick, 3);
     }
 }

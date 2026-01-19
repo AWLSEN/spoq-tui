@@ -237,6 +237,8 @@ pub struct App {
     pub folder_picker_filter: String,
     /// Selected index in the filtered folder list
     pub folder_picker_cursor: usize,
+    /// Provisioning screen state
+    pub provisioning: crate::ui::ProvisioningState,
 }
 
 impl App {
@@ -325,6 +327,7 @@ impl App {
             folder_picker_visible: false,
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
+            provisioning: crate::ui::ProvisioningState::default(),
         })
     }
 
