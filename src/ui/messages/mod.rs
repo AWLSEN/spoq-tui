@@ -40,7 +40,6 @@ use crate::app::App;
 use crate::models::{Message, MessageRole};
 
 use super::helpers::inner_rect;
-use super::input::render_permission_prompt;
 use super::layout::LayoutContext;
 use super::theme::{COLOR_ACCENT, COLOR_DIM, COLOR_HUMAN_BG};
 
@@ -393,6 +392,17 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         ]));
         lines.push(Line::from(""));
 
+        // Add permission lines if pending
+        if let Some(perm) = app.session_state.pending_permission.as_ref() {
+            let perm_lines = build_permission_lines(
+                perm,
+                &app.question_state,
+                &ctx,
+                app.tick_count,
+            );
+            lines.extend(perm_lines);
+        }
+
         // === UNIFIED SCROLL: Record where input section starts ===
         app.input_section_start = lines.len();
 
@@ -420,11 +430,6 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
             .wrap(Wrap { trim: false })
             .scroll((unified_scroll_from_top, 0));
         frame.render_widget(messages_widget, inner);
-
-        // Render inline permission prompt if pending
-        if app.session_state.has_pending_permission() {
-            render_permission_prompt(frame, inner, app);
-        }
         return;
     }
 
@@ -537,6 +542,17 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         }
     }
 
+    // Add permission lines if pending
+    if let Some(perm) = app.session_state.pending_permission.as_ref() {
+        let perm_lines = build_permission_lines(
+            perm,
+            &app.question_state,
+            &ctx,
+            app.tick_count,
+        );
+        lines.extend(perm_lines);
+    }
+
     // === UNIFIED SCROLL: Record where input section starts ===
     app.input_section_start = lines.len();
 
@@ -554,11 +570,6 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         .wrap(Wrap { trim: false })
         .scroll((unified_scroll_from_top, 0));
     frame.render_widget(messages_widget, inner);
-
-    // Render inline permission prompt if pending (overlays on top of messages)
-    if app.session_state.has_pending_permission() {
-        render_permission_prompt(frame, inner, app);
-    }
 }
 
 // ============================================================================

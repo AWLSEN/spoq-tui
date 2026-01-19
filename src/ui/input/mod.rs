@@ -16,7 +16,7 @@ pub use folder_chip::{
 pub use height::{calculate_input_area_height, calculate_input_box_height, MAX_INPUT_LINES};
 pub use keybinds::{build_contextual_keybinds, build_responsive_keybinds};
 pub use permission::{
-    get_permission_preview, parse_ask_user_question, render_permission_box,
+    get_permission_preview, parse_ask_user_question,
     DEFAULT_PERMISSION_BOX_HEIGHT, DEFAULT_PERMISSION_BOX_WIDTH, MIN_PERMISSION_BOX_HEIGHT,
     MIN_PERMISSION_BOX_WIDTH,
 };
@@ -147,28 +147,6 @@ impl Widget for InputWithChipWidget<'_, '_> {
     }
 }
 
-// ============================================================================
-// Permission Prompt (wrapper for backwards compatibility)
-// ============================================================================
-
-/// Render an inline permission prompt in the message flow.
-///
-/// Shows a Claude Code-style permission box with:
-/// - Tool name and description
-/// - Preview of the action (file path, command, etc.)
-/// - Keyboard options: [y] Yes, [a] Always, [n] No
-///
-/// For AskUserQuestion tools, renders a special tabbed question UI instead.
-pub fn render_permission_prompt(frame: &mut Frame, area: Rect, app: &App) {
-    permission::render_permission_prompt(
-        frame,
-        area,
-        app.session_state.pending_permission.as_ref(),
-        &app.question_state,
-        app.terminal_width,
-        app.terminal_height,
-    );
-}
 
 // ============================================================================
 // Input Section Builder (Unified Scroll)
