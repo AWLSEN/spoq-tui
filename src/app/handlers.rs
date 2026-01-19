@@ -877,7 +877,11 @@ impl App {
 
                 // Create ConductorClient with VPS URL if available
                 if let Some(ref url) = self.credentials.vps_url {
-                    self.client = std::sync::Arc::new(crate::conductor::ConductorClient::with_url(url));
+                    let conductor = match self.credentials.access_token.as_ref() {
+                        Some(token) => crate::conductor::ConductorClient::with_url(url).with_auth(token),
+                        None => crate::conductor::ConductorClient::with_url(url),
+                    };
+                    self.client = std::sync::Arc::new(conductor);
                 }
 
                 // Transition to CommandDeck after a brief delay (handled in main.rs)

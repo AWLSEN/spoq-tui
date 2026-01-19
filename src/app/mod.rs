@@ -335,7 +335,10 @@ impl App {
             // Has credentials and ready VPS - go to CommandDeck
             // Create ConductorClient with VPS URL
             let vps_url = credentials.vps_url.as_ref().unwrap();
-            let conductor_client = ConductorClient::with_url(vps_url);
+            let conductor_client = match credentials.access_token.as_ref() {
+                Some(token) => ConductorClient::with_url(vps_url).with_auth(token),
+                None => ConductorClient::with_url(vps_url),
+            };
             (
                 Screen::CommandDeck,
                 ProvisioningPhase::default(),
