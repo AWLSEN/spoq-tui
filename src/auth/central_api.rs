@@ -63,72 +63,57 @@ impl From<serde_json::Error> for CentralApiError {
     }
 }
 
-/// Response from device authorization endpoint
+/// Response from the device code endpoint (POST /auth/device).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeviceAuthResponse {
+pub struct DeviceCodeResponse {
     pub device_code: String,
     pub user_code: String,
     pub verification_uri: String,
-    pub expires_in: i64,
-    pub interval: i64,
+    pub expires_in: u32,
+    pub interval: u32,
 }
 
-/// Response from device token endpoint
+/// Response from token endpoints (POST /auth/device/token and POST /auth/refresh).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeviceTokenResponse {
+pub struct TokenResponse {
     pub access_token: String,
     pub refresh_token: String,
-    pub expires_in: i64,
+    pub expires_in: u32,
     pub token_type: String,
+    #[serde(default)]
     pub user_id: Option<String>,
+    #[serde(default)]
     pub username: Option<String>,
 }
 
-/// Response from token refresh endpoint
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RefreshTokenResponse {
-    pub access_token: String,
-    pub refresh_token: String,
-    pub expires_in: i64,
-    pub token_type: String,
-}
-
-/// VPS plan information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// VPS plan information (GET /api/vps/plans).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VpsPlan {
     pub id: String,
     pub name: String,
-    pub description: Option<String>,
-    pub price_monthly: f64,
-    pub cpu_cores: i32,
-    pub memory_mb: i64,
-    pub storage_gb: i64,
+    pub vcpus: u32,
+    pub ram_mb: u32,
+    pub disk_gb: u32,
+    pub price_cents: u32,
 }
 
-/// VPS provision request
+/// Response from VPS provision endpoint (POST /api/vps/provision).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProvisionVpsRequest {
-    pub plan_id: String,
-    pub hostname: String,
-    pub region: Option<String>,
-}
-
-/// VPS provision response
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProvisionVpsResponse {
+pub struct ProvisionResponse {
     pub vps_id: String,
-    pub hostname: String,
-    pub ip_address: Option<String>,
     pub status: String,
 }
 
-/// VPS status response
+/// Response from VPS status endpoint (GET /api/vps/status).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VpsStatusResponse {
     pub vps_id: String,
-    pub hostname: String,
-    pub ip_address: Option<String>,
     pub status: String,
+    #[serde(default)]
+    pub hostname: Option<String>,
+    #[serde(default)]
+    pub ip: Option<String>,
+    #[serde(default)]
     pub url: Option<String>,
 }
 
@@ -186,13 +171,21 @@ impl CentralApiClient {
         }
     }
 
-    /// Start the device authorization flow.
+    /// Initiate the device code authentication flow.
     ///
-    /// Returns a device code and user code that the user can use to authorize.
-    pub async fn device_authorize(&self) -> Result<DeviceAuthResponse, CentralApiError> {
-        let url = format!("{}/auth/device/authorize", self.base_url);
+    /// POST /auth/device
+    ///
+    /// Returns the device code response containing the user code and verification URL.
+    pub async fn request_device_code(&self) -> Result<DeviceCodeResponse, CentralApiError> {
+        let url = format!("{}/auth/device", self.base_url);
 
-        let response = self.client.post(&url).send().await?;
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({}))
+            .send()
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -200,56 +193,69 @@ impl CentralApiClient {
             return Err(CentralApiError::ServerError { status, message });
         }
 
-        let data: DeviceAuthResponse = response.json().await?;
+        let data: DeviceCodeResponse = response.json().await?;
         Ok(data)
     }
 
-    /// Poll for device token after user has authorized.
+    /// Poll for the device token after user authorization.
     ///
-    /// Returns tokens if authorization is complete, or an error if pending/expired.
-    pub async fn device_token(&self, device_code: &str) -> Result<DeviceTokenResponse, CentralApiError> {
+    /// POST /auth/device/token
+    ///
+    /// Returns the token response on success, or specific errors for pending/denied states.
+    pub async fn poll_device_token(&self, device_code: &str) -> Result<TokenResponse, CentralApiError> {
         let url = format!("{}/auth/device/token", self.base_url);
 
         let body = serde_json::json!({
             "device_code": device_code,
-            "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
         });
 
-        let response = self.client.post(&url).json(&body).send().await?;
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
 
         let status = response.status().as_u16();
 
-        if status == 400 {
-            let text = response.text().await.unwrap_or_default();
-            if text.contains("authorization_pending") {
-                return Err(CentralApiError::AuthorizationPending);
-            } else if text.contains("expired") {
-                return Err(CentralApiError::AuthorizationExpired);
-            } else if text.contains("access_denied") {
-                return Err(CentralApiError::AccessDenied);
-            }
-            return Err(CentralApiError::ServerError { status, message: text });
+        if response.status().is_success() {
+            let data: TokenResponse = response.json().await?;
+            return Ok(data);
         }
 
-        if !response.status().is_success() {
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError { status, message });
+        // Handle OAuth2 device flow specific errors
+        let text = response.text().await.unwrap_or_default();
+        if text.contains("authorization_pending") {
+            return Err(CentralApiError::AuthorizationPending);
+        } else if text.contains("expired") {
+            return Err(CentralApiError::AuthorizationExpired);
+        } else if text.contains("access_denied") {
+            return Err(CentralApiError::AccessDenied);
         }
 
-        let data: DeviceTokenResponse = response.json().await?;
-        Ok(data)
+        Err(CentralApiError::ServerError { status, message: text })
     }
 
     /// Refresh an access token using a refresh token.
-    pub async fn refresh_token(&self, refresh_token: &str) -> Result<RefreshTokenResponse, CentralApiError> {
-        let url = format!("{}/auth/token/refresh", self.base_url);
+    ///
+    /// POST /auth/refresh
+    ///
+    /// Returns a new token response with fresh access and refresh tokens.
+    pub async fn refresh_token(&self, refresh_token: &str) -> Result<TokenResponse, CentralApiError> {
+        let url = format!("{}/auth/refresh", self.base_url);
 
         let body = serde_json::json!({
             "refresh_token": refresh_token,
-            "grant_type": "refresh_token"
         });
 
-        let response = self.client.post(&url).json(&body).send().await?;
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -257,13 +263,17 @@ impl CentralApiClient {
             return Err(CentralApiError::ServerError { status, message });
         }
 
-        let data: RefreshTokenResponse = response.json().await?;
+        let data: TokenResponse = response.json().await?;
         Ok(data)
     }
 
-    /// Get available VPS plans.
-    pub async fn get_vps_plans(&self) -> Result<Vec<VpsPlan>, CentralApiError> {
-        let url = format!("{}/vps/plans", self.base_url);
+    /// Fetch available VPS plans.
+    ///
+    /// GET /api/vps/plans
+    ///
+    /// Returns a list of available VPS plans.
+    pub async fn fetch_vps_plans(&self) -> Result<Vec<VpsPlan>, CentralApiError> {
+        let url = format!("{}/api/vps/plans", self.base_url);
 
         let builder = self.client.get(&url);
         let response = self.add_auth_header(builder).send().await?;
@@ -274,15 +284,27 @@ impl CentralApiClient {
             return Err(CentralApiError::ServerError { status, message });
         }
 
-        let data: Vec<VpsPlan> = response.json().await?;
-        Ok(data)
+        let plans: Vec<VpsPlan> = response.json().await?;
+        Ok(plans)
     }
 
     /// Provision a new VPS.
-    pub async fn provision_vps(&self, request: &ProvisionVpsRequest) -> Result<ProvisionVpsResponse, CentralApiError> {
-        let url = format!("{}/vps/provision", self.base_url);
+    ///
+    /// POST /api/vps/provision
+    ///
+    /// Requires authentication. Returns the provision response with VPS ID and initial status.
+    pub async fn provision_vps(&self, plan_id: &str) -> Result<ProvisionResponse, CentralApiError> {
+        let url = format!("{}/api/vps/provision", self.base_url);
 
-        let builder = self.client.post(&url).json(request);
+        let body = serde_json::json!({
+            "plan_id": plan_id,
+        });
+
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
         let response = self.add_auth_header(builder).send().await?;
 
         if !response.status().is_success() {
@@ -291,13 +313,17 @@ impl CentralApiClient {
             return Err(CentralApiError::ServerError { status, message });
         }
 
-        let data: ProvisionVpsResponse = response.json().await?;
+        let data: ProvisionResponse = response.json().await?;
         Ok(data)
     }
 
-    /// Get the status of a VPS.
-    pub async fn get_vps_status(&self, vps_id: &str) -> Result<VpsStatusResponse, CentralApiError> {
-        let url = format!("{}/vps/{}/status", self.base_url, vps_id);
+    /// Get the status of the user's VPS.
+    ///
+    /// GET /api/vps/status
+    ///
+    /// Requires authentication. Returns the current VPS status including hostname, IP, and URL.
+    pub async fn fetch_vps_status(&self) -> Result<VpsStatusResponse, CentralApiError> {
+        let url = format!("{}/api/vps/status", self.base_url);
 
         let builder = self.client.get(&url);
         let response = self.add_auth_header(builder).send().await?;
@@ -338,6 +364,12 @@ mod tests {
     }
 
     #[test]
+    fn test_central_api_client_default() {
+        let client = CentralApiClient::default();
+        assert_eq!(client.base_url, CENTRAL_API_URL);
+    }
+
+    #[test]
     fn test_central_api_client_with_auth() {
         let client = CentralApiClient::new().with_auth("test-token");
         assert_eq!(client.auth_token(), Some("test-token"));
@@ -374,61 +406,194 @@ mod tests {
     }
 
     #[test]
-    fn test_device_auth_response_serialization() {
-        let response = DeviceAuthResponse {
-            device_code: "device-123".to_string(),
-            user_code: "ABCD-1234".to_string(),
-            verification_uri: "https://auth.example.com/device".to_string(),
-            expires_in: 1800,
-            interval: 5,
-        };
-
-        let json = serde_json::to_string(&response).unwrap();
-        let parsed: DeviceAuthResponse = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(parsed.device_code, response.device_code);
-        assert_eq!(parsed.user_code, response.user_code);
-        assert_eq!(parsed.verification_uri, response.verification_uri);
+    fn test_central_api_error_authorization_expired() {
+        let err = CentralApiError::AuthorizationExpired;
+        let display = format!("{}", err);
+        assert!(display.contains("expired"));
     }
 
     #[test]
-    fn test_vps_plan_serialization() {
+    fn test_central_api_error_access_denied() {
+        let err = CentralApiError::AccessDenied;
+        let display = format!("{}", err);
+        assert!(display.contains("denied"));
+    }
+
+    #[test]
+    fn test_device_code_response_deserialize() {
+        let json = r#"{
+            "device_code": "dev-code-123",
+            "user_code": "ABCD-1234",
+            "verification_uri": "https://example.com/verify",
+            "expires_in": 900,
+            "interval": 5
+        }"#;
+
+        let response: DeviceCodeResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.device_code, "dev-code-123");
+        assert_eq!(response.user_code, "ABCD-1234");
+        assert_eq!(response.verification_uri, "https://example.com/verify");
+        assert_eq!(response.expires_in, 900);
+        assert_eq!(response.interval, 5);
+    }
+
+    #[test]
+    fn test_token_response_deserialize() {
+        let json = r#"{
+            "access_token": "access-123",
+            "refresh_token": "refresh-456",
+            "expires_in": 3600,
+            "token_type": "Bearer"
+        }"#;
+
+        let response: TokenResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.access_token, "access-123");
+        assert_eq!(response.refresh_token, "refresh-456");
+        assert_eq!(response.expires_in, 3600);
+        assert_eq!(response.token_type, "Bearer");
+        assert!(response.user_id.is_none());
+        assert!(response.username.is_none());
+    }
+
+    #[test]
+    fn test_token_response_deserialize_with_user_info() {
+        let json = r#"{
+            "access_token": "access-123",
+            "refresh_token": "refresh-456",
+            "expires_in": 3600,
+            "token_type": "Bearer",
+            "user_id": "user-789",
+            "username": "testuser"
+        }"#;
+
+        let response: TokenResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.user_id, Some("user-789".to_string()));
+        assert_eq!(response.username, Some("testuser".to_string()));
+    }
+
+    #[test]
+    fn test_vps_plan_deserialize() {
+        let json = r#"{
+            "id": "plan-small",
+            "name": "Small",
+            "vcpus": 1,
+            "ram_mb": 1024,
+            "disk_gb": 25,
+            "price_cents": 500
+        }"#;
+
+        let plan: VpsPlan = serde_json::from_str(json).unwrap();
+        assert_eq!(plan.id, "plan-small");
+        assert_eq!(plan.name, "Small");
+        assert_eq!(plan.vcpus, 1);
+        assert_eq!(plan.ram_mb, 1024);
+        assert_eq!(plan.disk_gb, 25);
+        assert_eq!(plan.price_cents, 500);
+    }
+
+    #[test]
+    fn test_vps_plan_serialize() {
         let plan = VpsPlan {
-            id: "plan-1".to_string(),
-            name: "Basic".to_string(),
-            description: Some("Basic plan".to_string()),
-            price_monthly: 9.99,
-            cpu_cores: 2,
-            memory_mb: 2048,
-            storage_gb: 50,
+            id: "plan-medium".to_string(),
+            name: "Medium".to_string(),
+            vcpus: 2,
+            ram_mb: 2048,
+            disk_gb: 50,
+            price_cents: 1000,
         };
 
         let json = serde_json::to_string(&plan).unwrap();
-        let parsed: VpsPlan = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(parsed.id, plan.id);
-        assert_eq!(parsed.name, plan.name);
-        assert_eq!(parsed.price_monthly, plan.price_monthly);
+        assert!(json.contains("\"id\":\"plan-medium\""));
+        assert!(json.contains("\"vcpus\":2"));
     }
 
+    #[test]
+    fn test_provision_response_deserialize() {
+        let json = r#"{
+            "vps_id": "vps-abc123",
+            "status": "provisioning"
+        }"#;
+
+        let response: ProvisionResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.vps_id, "vps-abc123");
+        assert_eq!(response.status, "provisioning");
+    }
+
+    #[test]
+    fn test_vps_status_response_deserialize_minimal() {
+        let json = r#"{
+            "vps_id": "vps-abc123",
+            "status": "provisioning"
+        }"#;
+
+        let response: VpsStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.vps_id, "vps-abc123");
+        assert_eq!(response.status, "provisioning");
+        assert!(response.hostname.is_none());
+        assert!(response.ip.is_none());
+        assert!(response.url.is_none());
+    }
+
+    #[test]
+    fn test_vps_status_response_deserialize_full() {
+        let json = r#"{
+            "vps_id": "vps-abc123",
+            "status": "running",
+            "hostname": "vps-abc123.spoq.io",
+            "ip": "192.168.1.100",
+            "url": "https://vps-abc123.spoq.io:8000"
+        }"#;
+
+        let response: VpsStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.vps_id, "vps-abc123");
+        assert_eq!(response.status, "running");
+        assert_eq!(response.hostname, Some("vps-abc123.spoq.io".to_string()));
+        assert_eq!(response.ip, Some("192.168.1.100".to_string()));
+        assert_eq!(response.url, Some("https://vps-abc123.spoq.io:8000".to_string()));
+    }
+
+    // Async tests for HTTP methods (with invalid server to test error handling)
     #[tokio::test]
-    async fn test_device_authorize_with_invalid_server() {
+    async fn test_request_device_code_with_invalid_server() {
         let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
-        let result = client.device_authorize().await;
+        let result = client.request_device_code().await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn test_device_token_with_invalid_server() {
+    async fn test_poll_device_token_with_invalid_server() {
         let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
-        let result = client.device_token("test-code").await;
+        let result = client.poll_device_token("test-code").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn test_get_vps_plans_with_invalid_server() {
+    async fn test_refresh_token_with_invalid_server() {
         let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
-        let result = client.get_vps_plans().await;
+        let result = client.refresh_token("test-refresh").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_vps_plans_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let result = client.fetch_vps_plans().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_provision_vps_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.provision_vps("plan-small").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_vps_status_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.fetch_vps_status().await;
         assert!(result.is_err());
     }
 }
