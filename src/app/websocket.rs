@@ -201,6 +201,7 @@ mod tests {
             host: "127.0.0.1:59999".to_string(),
             max_retries: 1,
             max_backoff_secs: 1,
+            auth_token: None,
         };
 
         let result = start_websocket_with_config(tx, config).await;

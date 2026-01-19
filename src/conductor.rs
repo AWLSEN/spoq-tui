@@ -13,7 +13,8 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use std::pin::Pin;
 
-pub const CONDUCTOR_BASE_URL: &str = "http://100.80.115.93:8000";
+/// Default URL for the Conductor API
+pub const DEFAULT_CONDUCTOR_URL: &str = "http://100.80.115.93:8000";
 
 /// Error type for Conductor client operations
 #[derive(Debug)]
@@ -84,14 +85,17 @@ pub struct ConductorClient {
     pub base_url: String,
     /// Reusable HTTP client
     client: Client,
+    /// Optional authentication token for Bearer auth
+    auth_token: Option<String>,
 }
 
 impl ConductorClient {
     /// Create a new ConductorClient with the default base URL.
     pub fn new() -> Self {
         Self {
-            base_url: CONDUCTOR_BASE_URL.to_string(),
+            base_url: DEFAULT_CONDUCTOR_URL.to_string(),
             client: Client::new(),
+            auth_token: None,
         }
     }
 
@@ -100,6 +104,39 @@ impl ConductorClient {
         Self {
             base_url,
             client: Client::new(),
+            auth_token: None,
+        }
+    }
+
+    /// Create a new ConductorClient with a custom URL (alias for with_base_url).
+    pub fn with_url(base_url: &str) -> Self {
+        Self::with_base_url(base_url.to_string())
+    }
+
+    /// Set the authentication token for Bearer auth.
+    ///
+    /// Returns self for method chaining.
+    pub fn with_auth(mut self, token: &str) -> Self {
+        self.auth_token = Some(token.to_string());
+        self
+    }
+
+    /// Set the authentication token on an existing client.
+    pub fn set_auth_token(&mut self, token: Option<String>) {
+        self.auth_token = token;
+    }
+
+    /// Get the current authentication token, if set.
+    pub fn auth_token(&self) -> Option<&str> {
+        self.auth_token.as_deref()
+    }
+
+    /// Helper to add auth header to a request builder if token is set.
+    fn add_auth_header(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some(ref token) = self.auth_token {
+            builder.header("Authorization", format!("Bearer {}", token))
+        } else {
+            builder
         }
     }
 
@@ -139,14 +176,13 @@ impl ConductorClient {
     {
         let url = format!("{}/v1/stream", self.base_url);
 
-        let response = self
+        let builder = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("Accept", "text/event-stream")
-            .json(request)
-            .send()
-            .await?;
+            .json(request);
+        let response = self.add_auth_header(builder).send().await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -257,7 +293,8 @@ impl ConductorClient {
     pub async fn health_check(&self) -> Result<bool, ConductorError> {
         let url = format!("{}/v1/health", self.base_url);
 
-        let response = self.client.get(&url).send().await?;
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
 
         Ok(response.status().is_success())
     }
@@ -271,7 +308,8 @@ impl ConductorClient {
 
         let body = serde_json::json!({ "session_id": session_id });
 
-        let response = self.client.post(&url).json(&body).send().await?;
+        let builder = self.client.post(&url).json(&body);
+        let response = self.add_auth_header(builder).send().await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -289,10 +327,8 @@ impl ConductorClient {
     pub async fn fetch_threads(&self) -> Result<Vec<Thread>, ConductorError> {
         let url = format!("{}/v1/threads", self.base_url);
 
-        let response = self.client
-            .get(&url)
-            .send()
-            .await?;
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -310,7 +346,8 @@ impl ConductorClient {
     /// A vector of folders, or an error if the request fails
     pub async fn fetch_folders(&self) -> Result<Vec<Folder>, ConductorError> {
         let url = format!("{}/v1/folders", self.base_url);
-        let response = self.client.get(&url).send().await?;
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
@@ -357,10 +394,8 @@ impl ConductorClient {
             self.base_url, thread_id
         );
 
-        let response = self.client
-            .get(&url)
-            .send()
-            .await?;
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -407,11 +442,8 @@ impl ConductorClient {
             "approved": approved
         });
 
-        let response = self.client
-            .post(&url)
-            .json(&body)
-            .send()
-            .await?;
+        let builder = self.client.post(&url).json(&body);
+        let response = self.add_auth_header(builder).send().await?;
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -585,7 +617,7 @@ mod tests {
     #[test]
     fn test_conductor_client_new() {
         let client = ConductorClient::new();
-        assert_eq!(client.base_url, CONDUCTOR_BASE_URL);
+        assert_eq!(client.base_url, DEFAULT_CONDUCTOR_URL);
     }
 
     #[test]
@@ -598,7 +630,7 @@ mod tests {
     #[test]
     fn test_conductor_client_default() {
         let client = ConductorClient::default();
-        assert_eq!(client.base_url, CONDUCTOR_BASE_URL);
+        assert_eq!(client.base_url, DEFAULT_CONDUCTOR_URL);
     }
 
     #[test]
@@ -735,6 +767,52 @@ mod tests {
         let display = format!("{}", err);
         assert!(display.contains("not implemented"));
         assert!(display.contains("/v1/test/endpoint"));
+    }
+
+    #[test]
+    fn test_conductor_client_with_url() {
+        let client = ConductorClient::with_url("http://custom.example.com:9000");
+        assert_eq!(client.base_url, "http://custom.example.com:9000");
+        assert!(client.auth_token().is_none());
+    }
+
+    #[test]
+    fn test_conductor_client_with_auth() {
+        let client = ConductorClient::new().with_auth("my-secret-token");
+        assert_eq!(client.base_url, DEFAULT_CONDUCTOR_URL);
+        assert_eq!(client.auth_token(), Some("my-secret-token"));
+    }
+
+    #[test]
+    fn test_conductor_client_with_url_and_auth() {
+        let client = ConductorClient::with_url("http://localhost:3000")
+            .with_auth("test-token");
+        assert_eq!(client.base_url, "http://localhost:3000");
+        assert_eq!(client.auth_token(), Some("test-token"));
+    }
+
+    #[test]
+    fn test_conductor_client_set_auth_token() {
+        let mut client = ConductorClient::new();
+        assert!(client.auth_token().is_none());
+
+        client.set_auth_token(Some("new-token".to_string()));
+        assert_eq!(client.auth_token(), Some("new-token"));
+
+        client.set_auth_token(None);
+        assert!(client.auth_token().is_none());
+    }
+
+    #[test]
+    fn test_conductor_client_no_auth_by_default() {
+        let client = ConductorClient::new();
+        assert!(client.auth_token().is_none());
+
+        let client2 = ConductorClient::with_base_url("http://example.com".to_string());
+        assert!(client2.auth_token().is_none());
+
+        let client3 = ConductorClient::default();
+        assert!(client3.auth_token().is_none());
     }
 
 }

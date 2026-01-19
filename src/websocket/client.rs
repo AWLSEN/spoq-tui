@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, watch};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
+use tokio_tungstenite::{connect_async, tungstenite::Message, tungstenite::client::IntoClientRequest};
 use tracing::{debug, error, info, warn};
 
 use super::messages::{WsIncomingMessage, WsOutgoingMessage};
@@ -45,6 +45,8 @@ pub struct WsClientConfig {
     pub host: String,
     pub max_retries: u8,
     pub max_backoff_secs: u64,
+    /// Optional authentication token for Bearer auth
+    pub auth_token: Option<String>,
 }
 
 impl Default for WsClientConfig {
@@ -56,7 +58,18 @@ impl Default for WsClientConfig {
             host,
             max_retries: 5,
             max_backoff_secs: 30,
+            auth_token: None,
         }
+    }
+}
+
+impl WsClientConfig {
+    /// Set the authentication token for Bearer auth.
+    ///
+    /// Returns self for method chaining.
+    pub fn with_auth(mut self, token: &str) -> Self {
+        self.auth_token = Some(token.to_string());
+        self
     }
 }
 
@@ -79,10 +92,22 @@ impl WsClient {
     pub async fn connect(config: WsClientConfig) -> Result<Self, WsError> {
         let url = format!("ws://{}/ws", config.host);
 
+        // Build the WebSocket request with optional auth header
+        let mut request = url.clone().into_client_request()
+            .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
+
+        if let Some(ref token) = config.auth_token {
+            request.headers_mut().insert(
+                "Authorization",
+                format!("Bearer {}", token).parse()
+                    .map_err(|e: tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue| WsError::ConnectionFailed(e.to_string()))?,
+            );
+        }
+
         // Try initial connection with 5 second timeout
         let ws_stream = tokio::time::timeout(
             Duration::from_secs(5),
-            connect_async(&url)
+            connect_async(request)
         )
             .await
             .map_err(|_| WsError::ConnectionFailed(format!("Connection timeout to {}", url)))?
@@ -359,7 +384,23 @@ async fn attempt_reconnect(
             return None;
         }
 
-        match connect_async(url).await {
+        // Build the WebSocket request with optional auth header
+        let request = match url.into_client_request() {
+            Ok(mut req) => {
+                if let Some(ref token) = config.auth_token {
+                    if let Ok(header_value) = format!("Bearer {}", token).parse() {
+                        req.headers_mut().insert("Authorization", header_value);
+                    }
+                }
+                req
+            }
+            Err(e) => {
+                warn!("Failed to build reconnection request: {}", e);
+                continue;
+            }
+        };
+
+        match connect_async(request).await {
             Ok((ws_stream, _)) => {
                 info!("Reconnected successfully on attempt {}", attempt);
                 let (ws_sink, ws_stream) = ws_stream.split();
@@ -464,6 +505,7 @@ mod tests {
             host: "127.0.0.1:59999".to_string(),
             max_retries: 1,
             max_backoff_secs: 1,
+            auth_token: None,
         };
 
         let result = WsClient::connect(config).await;
@@ -511,11 +553,13 @@ mod tests {
             host: "example.com:8080".to_string(),
             max_retries: 10,
             max_backoff_secs: 60,
+            auth_token: None,
         };
 
         assert_eq!(config.host, "example.com:8080");
         assert_eq!(config.max_retries, 10);
         assert_eq!(config.max_backoff_secs, 60);
+        assert!(config.auth_token.is_none());
     }
 
     #[test]
@@ -524,12 +568,14 @@ mod tests {
             host: "localhost:3000".to_string(),
             max_retries: 3,
             max_backoff_secs: 15,
+            auth_token: Some("test-token".to_string()),
         };
 
         let cloned = config.clone();
         assert_eq!(config.host, cloned.host);
         assert_eq!(config.max_retries, cloned.max_retries);
         assert_eq!(config.max_backoff_secs, cloned.max_backoff_secs);
+        assert_eq!(config.auth_token, cloned.auth_token);
     }
 
     #[test]
@@ -609,10 +655,35 @@ mod tests {
             host: "test.example.com:8000".to_string(),
             max_retries: 5,
             max_backoff_secs: 30,
+            auth_token: None,
         };
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("test.example.com:8000"));
         assert!(debug_str.contains("5"));
         assert!(debug_str.contains("30"));
+    }
+
+    #[test]
+    fn test_ws_client_config_with_auth() {
+        let config = WsClientConfig::default().with_auth("my-auth-token");
+        assert_eq!(config.auth_token, Some("my-auth-token".to_string()));
+    }
+
+    #[test]
+    fn test_ws_client_config_default_no_auth() {
+        let config = WsClientConfig::default();
+        assert!(config.auth_token.is_none());
+    }
+
+    #[test]
+    fn test_ws_client_config_with_auth_custom() {
+        let config = WsClientConfig {
+            host: "custom.example.com:9000".to_string(),
+            max_retries: 3,
+            max_backoff_secs: 10,
+            auth_token: Some("secret-token".to_string()),
+        };
+        assert_eq!(config.host, "custom.example.com:9000");
+        assert_eq!(config.auth_token, Some("secret-token".to_string()));
     }
 }
