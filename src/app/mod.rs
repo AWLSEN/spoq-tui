@@ -21,6 +21,7 @@ pub use types::{ActivePanel, Focus, ProvisioningPhase, Screen, ScrollBoundary, T
 pub use websocket::{start_websocket, start_websocket_with_config};
 
 use crate::auth::{central_api::VpsPlan, CentralApiClient, Credentials, CredentialsManager, DeviceFlowManager};
+use chrono::Utc;
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::DebugEventSender;
@@ -118,6 +119,19 @@ impl CachedHeights {
 }
 
 pub(crate) use utils::{emit_debug, log_thread_update, truncate_for_debug};
+
+/// Errors that can occur during authentication operations.
+#[derive(Debug, Clone)]
+pub enum AuthError {
+    /// No credentials are stored.
+    NoCredentials,
+    /// No refresh token is available.
+    NoRefreshToken,
+    /// Central API client is not configured.
+    NoCentralApi,
+    /// Token refresh failed.
+    RefreshFailed,
+}
 
 /// Main application state
 pub struct App {
@@ -399,6 +413,62 @@ impl App {
             ssh_password_input: String::new(),
             entering_ssh_password: false,
         })
+    }
+
+    /// Ensure we have a valid access token, refreshing if necessary.
+    ///
+    /// Returns the access token if valid, or attempts to refresh it.
+    /// If refresh fails, redirects to the login screen.
+    pub async fn ensure_valid_token(&mut self) -> Result<String, AuthError> {
+        // Check if we have an access token
+        let Some(ref token) = self.credentials.access_token else {
+            return Err(AuthError::NoCredentials);
+        };
+
+        // Check expiration (with 5-minute buffer)
+        if let Some(expires_at) = self.credentials.expires_at {
+            let now = Utc::now().timestamp();
+            let buffer = 5 * 60; // 5 minutes
+
+            if now + buffer >= expires_at {
+                // Token expired or about to expire, refresh it
+                return self.refresh_token().await;
+            }
+        }
+
+        Ok(token.clone())
+    }
+
+    /// Refresh the access token using the refresh token.
+    async fn refresh_token(&mut self) -> Result<String, AuthError> {
+        let refresh_token = self
+            .credentials
+            .refresh_token
+            .clone()
+            .ok_or(AuthError::NoRefreshToken)?;
+
+        let central_api = self.central_api.as_ref().ok_or(AuthError::NoCentralApi)?;
+
+        match central_api.refresh_token(&refresh_token).await {
+            Ok(response) => {
+                // Update credentials
+                self.credentials.access_token = Some(response.access_token.clone());
+                self.credentials.expires_at =
+                    Some(Utc::now().timestamp() + i64::from(response.expires_in));
+
+                // Save to disk
+                if let Some(ref manager) = self.credentials_manager {
+                    let _ = manager.save(&self.credentials);
+                }
+
+                Ok(response.access_token)
+            }
+            Err(_) => {
+                // Refresh failed, need to re-login
+                self.screen = Screen::Login;
+                Err(AuthError::RefreshFailed)
+            }
+        }
     }
 
     /// Initialize the app by fetching data from the backend.
