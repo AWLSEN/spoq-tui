@@ -531,6 +531,54 @@ where
                                 continue;
                             }
 
+                            // =========================================================
+                            // Provisioning Screen Key Handling
+                            // =========================================================
+                            if app.screen == Screen::Provisioning {
+                                if app.entering_ssh_password {
+                                    // Password entry mode
+                                    match key.code {
+                                        KeyCode::Char(c) => app.ssh_password_input.push(c),
+                                        KeyCode::Backspace => { app.ssh_password_input.pop(); }
+                                        KeyCode::Enter | KeyCode::Esc => {
+                                            app.entering_ssh_password = false;
+                                        }
+                                        _ => {}
+                                    }
+                                } else {
+                                    // Normal mode navigation
+                                    match key.code {
+                                        KeyCode::Char('q') | KeyCode::Esc => {
+                                            // Exit app from provisioning
+                                            return Ok(());
+                                        }
+                                        KeyCode::Up | KeyCode::Char('k') => {
+                                            if app.selected_plan_idx > 0 {
+                                                app.selected_plan_idx -= 1;
+                                            }
+                                        }
+                                        KeyCode::Down | KeyCode::Char('j') => {
+                                            if app.selected_plan_idx < app.vps_plans.len().saturating_sub(1) {
+                                                app.selected_plan_idx += 1;
+                                            }
+                                        }
+                                        KeyCode::Char('p') | KeyCode::Char('P') => {
+                                            app.entering_ssh_password = true;
+                                        }
+                                        KeyCode::Enter => {
+                                            // Validate password >= 12 chars, then start provisioning
+                                            if app.ssh_password_input.len() >= 12 && !app.vps_plans.is_empty() {
+                                                app.provisioning_phase = ProvisioningPhase::Provisioning;
+                                                app.mark_dirty();
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                                app.mark_dirty();
+                                continue;
+                            }
+
                             // Handle OAuth consent 'o' key to open URL in browser
                             if let KeyCode::Char('o') = key.code {
                                 if let Some(url) = &app.session_state.oauth_url {
