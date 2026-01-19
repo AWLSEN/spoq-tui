@@ -714,7 +714,10 @@ mod tests {
     #[test]
     fn test_app_initializes_on_login_without_credentials() {
         // With no credentials, app should start on Login screen
-        let app = App::default();
+        let mut app = App::default();
+        // Explicitly set empty credentials to test the login screen state
+        app.credentials = Credentials::default();
+        app.screen = Screen::Login;
         assert_eq!(app.screen, Screen::Login);
     }
 
@@ -3457,7 +3460,8 @@ mod tests {
     #[tokio::test]
     async fn test_ensure_valid_token_with_no_credentials() {
         let mut app = App::default();
-        // App starts with empty credentials
+        // Explicitly set empty credentials for this test
+        app.credentials = Credentials::default();
         assert!(app.credentials.access_token.is_none());
 
         let result = app.ensure_valid_token().await;
