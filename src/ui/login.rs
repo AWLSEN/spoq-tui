@@ -7,13 +7,12 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph, Wrap},
+    widgets::{Clear, Paragraph},
     Frame,
 };
 
 use crate::app::App;
 use crate::auth::device_flow::DeviceFlowState;
-use crate::markdown::wrap_osc8_hyperlink;
 
 use super::command_deck::SPOQ_LOGO;
 use super::layout::LayoutContext;
@@ -73,10 +72,10 @@ pub fn render_login_screen(frame: &mut Frame, app: &App) {
     };
 
     // Build content based on device flow state
+    // No wrapping - keeps URLs on single line for Cmd+click support
     let content = build_content_for_state(app);
     let paragraph = Paragraph::new(content)
-        .alignment(ratatui::layout::Alignment::Center)
-        .wrap(Wrap { trim: false });
+        .alignment(ratatui::layout::Alignment::Center);
     frame.render_widget(paragraph, content_area);
 }
 
@@ -125,18 +124,27 @@ fn render_centered_logo(frame: &mut Frame, area: Rect) {
     frame.render_widget(logo, area);
 }
 
+/// Braille spinner frames for loading animation
+const SPINNER_FRAMES: [&str; 8] = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
+
 /// Build content lines based on the current device flow state.
 fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from("")]; // Top padding
+
+    // Get spinner frame based on tick count (cycle through frames)
+    let spinner = SPINNER_FRAMES[(app.tick_count / 8) as usize % SPINNER_FRAMES.len()];
 
     if let Some(ref device_flow) = app.device_flow {
         match device_flow.state() {
             DeviceFlowState::NotStarted => {
                 lines.push(Line::from(""));
-                lines.push(Line::from(vec![Span::styled(
-                    "Initializing...".to_string(),
-                    Style::default().fg(COLOR_DIM),
-                )]));
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{} ", spinner), Style::default().fg(Color::Cyan)),
+                    Span::styled(
+                        "Initializing...".to_string(),
+                        Style::default().fg(COLOR_DIM),
+                    ),
+                ]));
             }
 
             DeviceFlowState::WaitingForUser {
@@ -150,10 +158,9 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
                     Style::default().fg(COLOR_HEADER),
                 )]));
                 lines.push(Line::from(""));
-                // Wrap verification URI with OSC 8 for clickability
-                let osc8_uri = wrap_osc8_hyperlink(verification_uri, verification_uri);
+                // Display verification URI as plain text (no wrapping for Cmd+click)
                 lines.push(Line::from(vec![Span::styled(
-                    osc8_uri,
+                    verification_uri.clone(),
                     Style::default()
                         .fg(Color::LightGreen)
                         .add_modifier(Modifier::BOLD),
@@ -176,12 +183,18 @@ fn build_content_for_state(app: &App) -> Vec<Line<'static>> {
                 }
                 lines.push(Line::from(""));
                 lines.push(Line::from(vec![
-                    Span::styled("⣾ ".to_string(), Style::default().fg(Color::Cyan)),
+                    Span::styled(format!("{} ", spinner), Style::default().fg(Color::Cyan)),
                     Span::styled(
                         "Waiting for authorization...".to_string(),
                         Style::default().fg(COLOR_DIM),
                     ),
                 ]));
+                // Hint: press Enter to open URL
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![Span::styled(
+                    "Press [Enter] to open URL in browser".to_string(),
+                    Style::default().fg(COLOR_DIM),
+                )]));
             }
 
             DeviceFlowState::Authorized { .. } => {
