@@ -287,12 +287,31 @@ impl App {
         // Create the message channel for async communication
         let (message_tx, message_rx) = mpsc::unbounded_channel();
 
+        // Create credentials manager and load credentials
+        let credentials_manager = CredentialsManager::new();
+        let credentials = credentials_manager
+            .as_ref()
+            .map(|cm| cm.load())
+            .unwrap_or_default();
+
+        // Create central API client
+        let central_api = Arc::new(CentralApiClient::new());
+
+        // Determine initial screen based on auth state
+        let screen = if credentials.access_token.is_none() {
+            Screen::Login
+        } else if credentials.vps_url.is_none() || credentials.vps_status.as_deref() != Some("ready") {
+            Screen::Provisioning
+        } else {
+            Screen::CommandDeck
+        };
+
         Ok(Self {
             // Start with empty vectors - will be populated from server in initialize()
             threads: Vec::new(),
             tasks: Vec::new(),
             should_quit: false,
-            screen: Screen::default(),
+            screen,
             active_thread_id: None,
             focus: Focus::default(),
             notifications_index: 0,
@@ -347,9 +366,9 @@ impl App {
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
             provisioning: crate::ui::ProvisioningState::default(),
-            central_api: None,
-            credentials_manager: None,
-            credentials: Credentials::default(),
+            central_api: Some(central_api),
+            credentials_manager,
+            credentials,
             device_flow: None,
             provisioning_phase: ProvisioningPhase::default(),
             vps_plans: Vec::new(),
