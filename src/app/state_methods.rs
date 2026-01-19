@@ -50,9 +50,12 @@ impl App {
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
 
-        // Update smooth scrolling with momentum
-        let had_velocity = self.scroll_velocity.abs() > 0.05;
-        self.update_smooth_scroll();
+        // Only update smooth scrolling if there's meaningful velocity
+        const VELOCITY_THRESHOLD: f32 = 0.1;
+        let had_velocity = self.scroll_velocity.abs() > VELOCITY_THRESHOLD;
+        if had_velocity {
+            self.update_smooth_scroll();
+        }
 
         // Mark dirty if there are active animations:
         // - Scroll momentum (velocity > 0)
@@ -62,8 +65,8 @@ impl App {
             self.mark_dirty();
         }
 
-        // Clear boundary hit indicator after a few ticks (visual feedback duration)
-        if let Some(_boundary) = self.scroll_boundary_hit {
+        // Only check boundary expiration when there is one
+        if self.scroll_boundary_hit.is_some() {
             // Clear after 10 ticks (~160ms at 16ms/tick)
             if self.tick_count.saturating_sub(self.boundary_hit_tick) > 10 {
                 self.scroll_boundary_hit = None;
@@ -79,8 +82,8 @@ impl App {
     /// and is synced FROM `unified_scroll` when momentum stops.
     fn update_smooth_scroll(&mut self) {
         // Friction factor: lower = more friction, stops faster
-        const FRICTION: f32 = 0.80;
-        const VELOCITY_THRESHOLD: f32 = 0.05;
+        const FRICTION: f32 = 0.85;
+        const VELOCITY_THRESHOLD: f32 = 0.1;
 
         // Skip if no velocity
         if self.scroll_velocity.abs() < VELOCITY_THRESHOLD {
