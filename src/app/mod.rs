@@ -3336,4 +3336,123 @@ mod tests {
         assert!(uuid::Uuid::parse_str(thread_id).is_ok());
         assert_eq!(app.screen, Screen::Conversation);
     }
+
+    // ============= Token Refresh Tests =============
+
+    #[tokio::test]
+    async fn test_ensure_valid_token_with_no_credentials() {
+        let mut app = App::default();
+        // App starts with empty credentials
+        assert!(app.credentials.access_token.is_none());
+
+        let result = app.ensure_valid_token().await;
+
+        // Should return NoCredentials error
+        assert!(matches!(result, Err(AuthError::NoCredentials)));
+    }
+
+    #[tokio::test]
+    async fn test_ensure_valid_token_with_valid_token() {
+        let mut app = App::default();
+
+        // Set up valid token with far future expiration
+        let future_timestamp = Utc::now().timestamp() + 3600; // Expires in 1 hour
+        app.credentials.access_token = Some("valid_token_123".to_string());
+        app.credentials.expires_at = Some(future_timestamp);
+
+        let result = app.ensure_valid_token().await;
+
+        // Should return the valid token
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "valid_token_123");
+    }
+
+    #[tokio::test]
+    async fn test_ensure_valid_token_with_expired_token_no_refresh() {
+        let mut app = App::default();
+
+        // Set up expired token without refresh token
+        let past_timestamp = Utc::now().timestamp() - 3600; // Expired 1 hour ago
+        app.credentials.access_token = Some("expired_token".to_string());
+        app.credentials.expires_at = Some(past_timestamp);
+        app.credentials.refresh_token = None; // No refresh token available
+
+        let result = app.ensure_valid_token().await;
+
+        // Should return NoRefreshToken error
+        assert!(matches!(result, Err(AuthError::NoRefreshToken)));
+    }
+
+    #[tokio::test]
+    async fn test_ensure_valid_token_near_expiration() {
+        let mut app = App::default();
+
+        // Set up token that expires in 4 minutes (within 5-minute buffer)
+        let near_expiration = Utc::now().timestamp() + 240; // 4 minutes
+        app.credentials.access_token = Some("soon_expired_token".to_string());
+        app.credentials.expires_at = Some(near_expiration);
+        app.credentials.refresh_token = None; // No refresh token to actually refresh
+
+        let result = app.ensure_valid_token().await;
+
+        // Should attempt to refresh and fail with NoRefreshToken
+        assert!(matches!(result, Err(AuthError::NoRefreshToken)));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_without_refresh_token() {
+        let mut app = App::default();
+        app.credentials.refresh_token = None;
+
+        let result = app.refresh_token().await;
+
+        // Should return NoRefreshToken error
+        assert!(matches!(result, Err(AuthError::NoRefreshToken)));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_without_central_api() {
+        let mut app = App::default();
+        app.credentials.refresh_token = Some("refresh_token_123".to_string());
+        app.central_api = None; // No API client configured
+
+        let result = app.refresh_token().await;
+
+        // Should return NoCentralApi error
+        assert!(matches!(result, Err(AuthError::NoCentralApi)));
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_failure_redirects_to_login() {
+        use crate::auth::CentralApiClient;
+
+        let mut app = App::default();
+        app.screen = Screen::Conversation; // Start on conversation screen
+        app.credentials.refresh_token = Some("invalid_refresh_token".to_string());
+
+        // Set up a real API client (will fail to refresh with invalid token)
+        app.central_api = Some(Arc::new(CentralApiClient::new()));
+
+        let result = app.refresh_token().await;
+
+        // Should return RefreshFailed error
+        assert!(matches!(result, Err(AuthError::RefreshFailed)));
+
+        // Should redirect to Login screen on failure
+        assert_eq!(app.screen, Screen::Login);
+    }
+
+    #[test]
+    fn test_auth_error_variants() {
+        // Test that all AuthError variants can be created and matched
+        let no_creds = AuthError::NoCredentials;
+        let no_refresh = AuthError::NoRefreshToken;
+        let no_api = AuthError::NoCentralApi;
+        let refresh_failed = AuthError::RefreshFailed;
+
+        assert!(matches!(no_creds, AuthError::NoCredentials));
+        assert!(matches!(no_refresh, AuthError::NoRefreshToken));
+        assert!(matches!(no_api, AuthError::NoCentralApi));
+        assert!(matches!(refresh_failed, AuthError::RefreshFailed));
+    }
 }
