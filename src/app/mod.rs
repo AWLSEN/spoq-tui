@@ -93,15 +93,6 @@ impl CachedHeights {
         self.total_lines = cumulative;
     }
 
-    /// Update a single message's height and recalculate offsets
-    pub fn update_height(&mut self, idx: usize, new_height: usize, render_version: u64) {
-        if idx < self.heights.len() {
-            self.heights[idx].visual_lines = new_height;
-            self.heights[idx].render_version = render_version;
-            self.recalculate_offsets_from(idx);
-        }
-    }
-
     /// Append a new message height entry
     pub fn append(&mut self, message_id: i64, render_version: u64, visual_lines: usize) {
         let cumulative_offset = self.total_lines;

@@ -342,9 +342,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     }
 
                     // Convert to MessageHeight for the virtualization API
-                    let heights: Vec<MessageHeight> = cache.heights.iter().enumerate().map(|(i, h)| {
+                    let heights: Vec<MessageHeight> = cache.heights.iter().map(|h| {
                         MessageHeight {
-                            message_index: i,
                             visual_lines: h.visual_lines,
                             cumulative_offset: h.cumulative_offset,
                         }
@@ -364,9 +363,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     }
 
                     // Convert to MessageHeight for the virtualization API
-                    let heights: Vec<MessageHeight> = cache.heights.iter().enumerate().map(|(i, h)| {
+                    let heights: Vec<MessageHeight> = cache.heights.iter().map(|h| {
                         MessageHeight {
-                            message_index: i,
                             visual_lines: h.visual_lines,
                             cumulative_offset: h.cumulative_offset,
                         }

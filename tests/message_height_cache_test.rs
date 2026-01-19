@@ -55,33 +55,6 @@ async fn test_cached_heights_is_valid_for() {
     assert!(!cache.is_valid_for("test-thread", 100));
 }
 
-#[tokio::test]
-async fn test_cached_heights_update_height() {
-    let thread_id = Arc::new("test-thread".to_string());
-    let mut cache = CachedHeights::new(thread_id, 80);
-
-    // Add initial heights
-    cache.append(1, 0, 5);
-    cache.append(2, 0, 10);
-    cache.append(3, 0, 8);
-
-    assert_eq!(cache.total_lines, 23);
-
-    // Update middle height
-    cache.update_height(1, 15, 1);
-
-    // Verify updated height
-    assert_eq!(cache.heights[1].visual_lines, 15);
-    assert_eq!(cache.heights[1].render_version, 1);
-
-    // Verify cumulative offsets were recalculated
-    assert_eq!(cache.heights[0].cumulative_offset, 0);
-    assert_eq!(cache.heights[1].cumulative_offset, 5);
-    assert_eq!(cache.heights[2].cumulative_offset, 20);
-
-    // Verify total lines updated
-    assert_eq!(cache.total_lines, 28);
-}
 
 #[tokio::test]
 async fn test_cached_heights_truncate() {
