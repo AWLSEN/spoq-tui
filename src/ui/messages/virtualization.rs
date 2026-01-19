@@ -48,16 +48,11 @@ pub fn calculate_visible_range(
         return (message_heights.len(), message_heights.len(), 0);
     }
 
-    // Find the first message that starts within or after the visible range
-    let mut start_index = 0;
-    for (i, height) in message_heights.iter().enumerate() {
-        let message_end = height.cumulative_offset + height.visual_lines;
-        if message_end > scroll_from_top {
-            start_index = i;
-            break;
-        }
-        start_index = i + 1;
-    }
+    // Binary search: find the first message where message_end > scroll_from_top
+    // partition_point finds the first element where the predicate is FALSE
+    // We want: first message where (message_end <= scroll_from_top) is FALSE
+    let start_index = message_heights
+        .partition_point(|h| h.cumulative_offset + h.visual_lines <= scroll_from_top);
 
     if start_index >= message_heights.len() {
         return (message_heights.len(), message_heights.len(), 0);
@@ -70,15 +65,10 @@ pub fn calculate_visible_range(
             .unwrap_or(0),
     );
 
-    // Find the first message that starts after the visible range
+    // Binary search: find the first message that starts after the visible range
     let visible_end = scroll_from_top + viewport_height;
-    let mut end_index = message_heights.len();
-    for (i, height) in message_heights.iter().enumerate() {
-        if height.cumulative_offset >= visible_end {
-            end_index = i;
-            break;
-        }
-    }
+    let end_index = message_heights
+        .partition_point(|h| h.cumulative_offset < visible_end);
 
     (start_index, end_index, first_message_line_offset)
 }
