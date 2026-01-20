@@ -1,5 +1,5 @@
 use spoq::app::{start_websocket, App, AppMessage, Focus, Screen, ScrollBoundary};
-use spoq::auth::{run_auth_flow, run_provisioning_flow, CredentialsManager};
+use spoq::auth::{run_auth_flow, run_provisioning_flow, start_stopped_vps, CredentialsManager};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
@@ -51,23 +51,45 @@ fn main() -> Result<()> {
     }
 
     // VPS check - ensure VPS is in a usable state before launching TUI
-    // State matrix: ready/running/active → Launch TUI, others → provision/re-provision
-    let vps_ready = matches!(
-        credentials.vps_status.as_deref(),
-        Some("ready") | Some("running") | Some("active")
-    );
-
-    // Check if we need to provision or re-provision
-    let needs_provisioning = credentials.vps_url.is_none() || !vps_ready;
-
-    if needs_provisioning {
-        if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
-            eprintln!("Provisioning failed: {}", e);
-            std::process::exit(1);
+    // State matrix handles all possible VPS states
+    match credentials.vps_status.as_deref() {
+        Some("ready") | Some("running") | Some("active") => {
+            // Good to go - launch TUI
         }
-        // Save updated credentials after provisioning
-        if !manager.save(&credentials) {
-            eprintln!("Warning: Failed to save credentials after provisioning");
+        Some("stopped") => {
+            // Auto-start existing VPS (don't re-provision!)
+            match start_stopped_vps(&runtime, &credentials) {
+                Ok(status) => {
+                    credentials.vps_status = Some(status.status);
+                    credentials.vps_ip = status.ip;
+                    if !manager.save(&credentials) {
+                        eprintln!("Warning: Failed to save credentials after starting VPS");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to start VPS: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Some("failed") | Some("terminated") | None => {
+            // Need to provision
+            if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
+                eprintln!("Provisioning failed: {}", e);
+                std::process::exit(1);
+            }
+            // Save updated credentials after provisioning
+            if !manager.save(&credentials) {
+                eprintln!("Warning: Failed to save credentials after provisioning");
+            }
+        }
+        Some(other) => {
+            // Unknown state - probably still provisioning
+            eprintln!(
+                "VPS in unexpected state: {}. Please wait or contact support.",
+                other
+            );
+            std::process::exit(1);
         }
     }
 
