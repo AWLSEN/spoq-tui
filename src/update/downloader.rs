@@ -112,9 +112,9 @@ impl Platform {
     pub fn as_str(&self) -> &'static str {
         match self {
             Platform::DarwinArm64 => "darwin-aarch64",
-            Platform::DarwinX64 => "darwin-x64",
+            Platform::DarwinX64 => "darwin-x86_64",
             Platform::LinuxArm64 => "linux-aarch64",
-            Platform::LinuxX64 => "linux-x64",
+            Platform::LinuxX64 => "linux-x86_64",
         }
     }
 }
@@ -668,15 +668,15 @@ mod tests {
     #[test]
     fn test_platform_as_str() {
         assert_eq!(Platform::DarwinArm64.as_str(), "darwin-aarch64");
-        assert_eq!(Platform::DarwinX64.as_str(), "darwin-x64");
+        assert_eq!(Platform::DarwinX64.as_str(), "darwin-x86_64");
         assert_eq!(Platform::LinuxArm64.as_str(), "linux-aarch64");
-        assert_eq!(Platform::LinuxX64.as_str(), "linux-x64");
+        assert_eq!(Platform::LinuxX64.as_str(), "linux-x86_64");
     }
 
     #[test]
     fn test_platform_display() {
         assert_eq!(format!("{}", Platform::DarwinArm64), "darwin-aarch64");
-        assert_eq!(format!("{}", Platform::LinuxX64), "linux-x64");
+        assert_eq!(format!("{}", Platform::LinuxX64), "linux-x86_64");
     }
 
     #[test]
