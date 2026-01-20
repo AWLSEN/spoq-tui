@@ -2,7 +2,6 @@ tui-textarea
 ============
 [![crate][crates-io-badge]][crate]
 [![docs][doc-badge]][doc]
-[![CI][ci-badge]][ci]
 [![coverage][codecov-badge]][codecov]
 
 [tui-textarea][crate] is a simple yet powerful text editor widget like `<textarea>` in HTML for [ratatui][] and [tui-rs][].
@@ -713,8 +712,6 @@ tui-textarea is distributed under [The MIT License](./LICENSE.txt).
 [crate]: https://crates.io/crates/tui-textarea
 [doc-badge]: https://docs.rs/tui-textarea/badge.svg
 [doc]: https://docs.rs/tui-textarea/latest/tui_textarea/
-[ci-badge]: https://github.com/rhysd/tui-textarea/actions/workflows/ci.yml/badge.svg?event=push
-[ci]: https://github.com/rhysd/tui-textarea/actions/workflows/ci.yml
 [codecov-badge]: https://codecov.io/gh/rhysd/tui-textarea/graph/badge.svg?token=YAA3EVRXAY
 [codecov]: https://codecov.io/gh/rhysd/tui-textarea
 [tui-rs]: https://github.com/fdehau/tui-rs

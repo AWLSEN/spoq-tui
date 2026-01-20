@@ -196,87 +196,23 @@ echo "spoq installed successfully!"
 echo "Run 'spoq' to get started (restart shell or run: source ~/.zshrc)"
 ```
 
-### GitHub Actions Release Workflow
+### Railway CLI Release Deployment
 
-```yaml
-name: Release
+Binaries are deployed to Railway's `conductor-version` service using Railway CLI:
 
-on:
-  push:
-    tags: ['v*']
+```bash
+# Build for current platform
+cargo build --release
 
-env:
-  CARGO_TERM_COLOR: always
-
-jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: macos-latest
-            target: aarch64-apple-darwin
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Strip binary
-        run: |
-          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-            strip target/${{ matrix.target }}/release/spoq
-          else
-            strip target/${{ matrix.target }}/release/spoq || true
-          fi
-
-      - name: Package binary
-        run: |
-          cd target/${{ matrix.target }}/release
-          tar -czvf spoq-${{ matrix.target }}.tar.gz spoq
-          shasum -a 256 spoq-${{ matrix.target }}.tar.gz > spoq-${{ matrix.target }}.tar.gz.sha256
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: spoq-${{ matrix.target }}
-          path: |
-            target/${{ matrix.target }}/release/spoq-${{ matrix.target }}.tar.gz
-            target/${{ matrix.target }}/release/spoq-${{ matrix.target }}.tar.gz.sha256
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            spoq-*/spoq-*.tar.gz
-            spoq-*/spoq-*.tar.gz.sha256
-          generate_release_notes: true
+# Upload to Railway
+curl -X POST https://download.spoq.dev/cli/release \
+  -H "Authorization: Bearer $DEPLOY_KEY" \
+  -F "version=0.1.5" \
+  -F "platform=darwin-x86_64" \
+  -F "binary=@target/release/spoq"
 ```
+
+For cross-platform builds, build on each platform natively or use cross-compilation tools locally, then upload each binary to Railway.
 
 ---
 
@@ -294,8 +230,6 @@ src/
 scripts/
 └── install.sh           # NEW: Distribution install script
 
-.github/workflows/
-└── release.yml          # NEW: Build & publish workflow
 
 Cargo.toml               # MODIFY: Add release profile, metadata
 ```
@@ -332,8 +266,7 @@ Cargo.toml               # MODIFY: Add release profile, metadata
 ### Phase 5: Distribution
 - [ ] Create `scripts/install.sh`
 - [ ] Add release profile to `Cargo.toml`
-- [ ] Create `.github/workflows/release.yml`
-- [ ] Setup releases CDN/hosting
+- [ ] Setup Railway CLI deployment
 - [ ] macOS code signing (optional)
 
 ### Phase 6: Backend (Conductor)
