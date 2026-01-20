@@ -488,7 +488,7 @@ fn poll_vps_status_with_interrupt(
                 io::stdout().flush().ok();
                 return Ok(status);
             }
-            "failed" | "error" => {
+            "stopped" | "failed" | "terminated" | "error" => {
                 return Err(CentralApiError::ServerError {
                     status: 500,
                     message: format!("VPS provisioning failed with status: {}", status.status),
