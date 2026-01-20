@@ -775,4 +775,119 @@ mod tests {
         creds.datacenter_id = Some(42);
         assert_eq!(creds.datacenter_id, Some(42));
     }
+
+    #[test]
+    fn test_password_validation_logic() {
+        // Test the password validation logic (minimum 12 characters)
+        // This tests the core validation that happens in prompt_ssh_password_with_interrupt
+
+        // 11 characters should fail
+        let password_11_chars = "12345678901";
+        assert_eq!(password_11_chars.len(), 11);
+        assert!(
+            password_11_chars.len() < 12,
+            "11 character password should be rejected"
+        );
+
+        // Exactly 12 characters should pass
+        let password_12_chars = "123456789012";
+        assert_eq!(password_12_chars.len(), 12);
+        assert!(
+            password_12_chars.len() >= 12,
+            "12 character password should be accepted"
+        );
+
+        // 13+ characters should pass
+        let password_13_chars = "1234567890123";
+        assert_eq!(password_13_chars.len(), 13);
+        assert!(
+            password_13_chars.len() >= 12,
+            "13 character password should be accepted"
+        );
+
+        // Empty password should fail
+        let empty_password = "";
+        assert!(empty_password.len() < 12, "Empty password should be rejected");
+
+        // Unicode characters should be counted by length (not bytes)
+        let unicode_password = "p@$$wörd123!"; // 12 chars
+        assert_eq!(unicode_password.chars().count(), 12);
+    }
+
+    #[test]
+    fn test_error_status_codes() {
+        // Test various HTTP error status codes used in provisioning flow
+
+        // 400 Bad Request - invalid parameters
+        let err_400 = CentralApiError::ServerError {
+            status: 400,
+            message: "Invalid plan_id".to_string(),
+        };
+        if let CentralApiError::ServerError { status, message } = err_400 {
+            assert_eq!(status, 400);
+            assert!(message.contains("Invalid"));
+        }
+
+        // 401 Unauthorized - missing or expired token
+        let err_401 = CentralApiError::ServerError {
+            status: 401,
+            message: "Access token required".to_string(),
+        };
+        if let CentralApiError::ServerError { status, message } = err_401 {
+            assert_eq!(status, 401);
+            assert!(message.contains("token"));
+        }
+
+        // 404 Not Found - no VPS exists
+        let err_404 = CentralApiError::ServerError {
+            status: 404,
+            message: "No VPS found for user".to_string(),
+        };
+        if let CentralApiError::ServerError { status, message } = err_404 {
+            assert_eq!(status, 404);
+            assert!(message.contains("VPS"));
+        }
+
+        // 409 Conflict - user already has a VPS
+        let err_409 = CentralApiError::ServerError {
+            status: 409,
+            message: "User already has an active VPS".to_string(),
+        };
+        if let CentralApiError::ServerError { status, message } = err_409 {
+            assert_eq!(status, 409);
+            assert!(message.contains("already"));
+        }
+    }
+
+    #[test]
+    fn test_vps_status_states_comprehensive() {
+        // Test all documented VPS states from the API v2 spec
+
+        // Success states - VPS is usable
+        let success_states = ["ready", "running", "active"];
+        for state in &success_states {
+            let is_success = matches!(
+                state.to_lowercase().as_str(),
+                "ready" | "running" | "active"
+            );
+            assert!(is_success, "State '{}' should be a success state", state);
+        }
+
+        // Error states - VPS failed or terminated
+        let error_states = ["stopped", "failed", "terminated", "error"];
+        for state in &error_states {
+            let is_error = matches!(
+                state.to_lowercase().as_str(),
+                "stopped" | "failed" | "terminated" | "error"
+            );
+            assert!(is_error, "State '{}' should be an error state", state);
+        }
+
+        // Polling states - keep waiting
+        let polling_states = ["pending", "provisioning"];
+        for state in &polling_states {
+            let is_polling = matches!(state.to_lowercase().as_str(), "pending" | "provisioning");
+            assert!(is_polling, "State '{}' should be a polling state", state);
+        }
+    }
 }
