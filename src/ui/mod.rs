@@ -21,9 +21,11 @@
 
 mod command_deck;
 mod conversation;
+pub mod dashboard;
 mod folder_picker;
 mod helpers;
 pub mod input;
+pub mod interaction;
 mod layout;
 mod messages;
 mod panels;
@@ -50,6 +52,9 @@ pub use helpers::{
 
 // Re-export rendering functions for external use
 pub use messages::{estimate_wrapped_line_count, truncate_preview};
+
+// Re-export interaction system for external use
+pub use interaction::{handle_click_action, ClickAction, HitArea, HitAreaRegistry};
 
 use ratatui::{
     layout::{Alignment, Rect},

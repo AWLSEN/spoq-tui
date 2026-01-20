@@ -10,7 +10,7 @@ use crossterm::{
     event::{
         DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
         Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
-        MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -863,9 +863,28 @@ where
                             }
                         }
                         Event::Mouse(mouse_event) => {
-                            // Handle scroll wheel for conversation navigation.
-                            // Click/drag events are ignored - terminal handles text selection natively.
+                            // Handle mouse events for scroll, click, and hover
                             match mouse_event.kind {
+                                // Left click: check hit areas for interactive elements
+                                MouseEventKind::Down(MouseButton::Left) => {
+                                    if let Some(action) = app.hit_registry.hit_test(
+                                        mouse_event.column,
+                                        mouse_event.row,
+                                    ) {
+                                        ui::handle_click_action(&mut app, action);
+                                        app.mark_dirty();
+                                    }
+                                    // If no hit area was clicked, let terminal handle text selection
+                                }
+                                // Mouse move: update hover state for visual feedback
+                                MouseEventKind::Moved => {
+                                    if app.hit_registry.update_hover(
+                                        mouse_event.column,
+                                        mouse_event.row,
+                                    ) {
+                                        app.mark_dirty();
+                                    }
+                                }
                                 // Simple line-based scrolling (like native terminal apps)
                                 // Each scroll event moves 3 lines (unified scroll)
                                 MouseEventKind::ScrollDown => {
@@ -913,7 +932,8 @@ where
                                         }
                                     }
                                 }
-                                // Ignore click/drag events - terminal handles selection natively
+                                // Ignore other mouse events (right click, drag, etc.)
+                                // Terminal handles text selection natively
                                 _ => {}
                             }
                             continue;

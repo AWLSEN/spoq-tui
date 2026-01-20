@@ -29,6 +29,7 @@ use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
 use crate::models::{Folder, PermissionMode};
+use crate::ui::interaction::HitAreaRegistry;
 use crate::state::{
     AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
 };
@@ -262,6 +263,9 @@ pub struct App {
     pub credentials_manager: Option<CredentialsManager>,
     /// Current authentication credentials
     pub credentials: Credentials,
+    /// Hit area registry for touch/click interactions
+    /// Cleared at the start of each render cycle, populated during rendering
+    pub hit_registry: HitAreaRegistry,
 }
 
 impl App {
@@ -376,6 +380,7 @@ impl App {
             central_api: Some(central_api),
             credentials_manager,
             credentials,
+            hit_registry: HitAreaRegistry::new(),
         })
     }
 

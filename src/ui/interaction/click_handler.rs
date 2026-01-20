@@ -1,0 +1,232 @@
+//! Click action handler for the touch interaction system.
+//!
+//! This module processes click actions dispatched from the hit area registry,
+//! translating them into App state mutations.
+
+use super::hit_area::ClickAction;
+use crate::app::App;
+
+/// Handle a click action by updating App state.
+///
+/// This function is called from the event loop when a mouse click lands on
+/// a registered hit area. It dispatches to the appropriate App methods based
+/// on the action type.
+///
+/// Note: Some actions may call methods that don't exist yet (implemented in
+/// later phases). These are marked with todo!() and will be filled in as
+/// the dashboard features are implemented.
+pub fn handle_click_action(app: &mut App, action: ClickAction) {
+    // Mark the app as dirty since any click action likely changes state
+    app.mark_dirty();
+
+    match action {
+        // =====================================================================
+        // Filter Actions (CommandDeck dashboard filters)
+        // =====================================================================
+        ClickAction::FilterWorking => {
+            // TODO: Implement in Phase 2 when dashboard filtering is added
+            // app.dashboard.toggle_filter(DashboardFilter::Working);
+            tracing::debug!("Click: FilterWorking (stub)");
+        }
+        ClickAction::FilterReadyToTest => {
+            // TODO: Implement in Phase 2 when dashboard filtering is added
+            // app.dashboard.toggle_filter(DashboardFilter::ReadyToTest);
+            tracing::debug!("Click: FilterReadyToTest (stub)");
+        }
+        ClickAction::FilterIdle => {
+            // TODO: Implement in Phase 2 when dashboard filtering is added
+            // app.dashboard.toggle_filter(DashboardFilter::Idle);
+            tracing::debug!("Click: FilterIdle (stub)");
+        }
+        ClickAction::ClearFilter => {
+            // TODO: Implement in Phase 2 when dashboard filtering is added
+            // app.dashboard.clear_filter();
+            tracing::debug!("Click: ClearFilter (stub)");
+        }
+
+        // =====================================================================
+        // Overlay Actions (Expanded thread overlay)
+        // =====================================================================
+        ClickAction::ExpandThread {
+            thread_id,
+            anchor_y,
+        } => {
+            // TODO: Implement in Phase 2 when thread expansion overlay is added
+            // app.dashboard.expand_thread(&thread_id, anchor_y);
+            tracing::debug!(
+                "Click: ExpandThread(thread_id={}, anchor_y={}) (stub)",
+                thread_id,
+                anchor_y
+            );
+        }
+        ClickAction::CollapseOverlay => {
+            // TODO: Implement in Phase 2 when thread expansion overlay is added
+            // app.dashboard.collapse_overlay();
+            tracing::debug!("Click: CollapseOverlay (stub)");
+        }
+
+        // =====================================================================
+        // Thread Action Buttons
+        // =====================================================================
+        ClickAction::ApproveThread(thread_id) => {
+            // TODO: Implement when thread approval API integration is added
+            // This would send an approval action to the backend
+            tracing::debug!("Click: ApproveThread(thread_id={}) (stub)", thread_id);
+        }
+        ClickAction::RejectThread(thread_id) => {
+            // TODO: Implement when thread rejection API integration is added
+            tracing::debug!("Click: RejectThread(thread_id={}) (stub)", thread_id);
+        }
+        ClickAction::VerifyThread(thread_id) => {
+            // TODO: Implement when thread verification API integration is added
+            tracing::debug!("Click: VerifyThread(thread_id={}) (stub)", thread_id);
+        }
+        ClickAction::ArchiveThread(thread_id) => {
+            // TODO: Implement when thread archiving is added
+            tracing::debug!("Click: ArchiveThread(thread_id={}) (stub)", thread_id);
+        }
+        ClickAction::ResumeThread(thread_id) => {
+            // TODO: Implement when thread resume functionality is added
+            tracing::debug!("Click: ResumeThread(thread_id={}) (stub)", thread_id);
+        }
+        ClickAction::DeleteThread(thread_id) => {
+            // TODO: Implement when thread deletion is added (with confirmation)
+            tracing::debug!("Click: DeleteThread(thread_id={}) (stub)", thread_id);
+        }
+        ClickAction::ReportIssue(thread_id) => {
+            // TODO: Implement when issue reporting is added
+            tracing::debug!("Click: ReportIssue(thread_id={}) (stub)", thread_id);
+        }
+
+        // =====================================================================
+        // Question Prompt Interactions
+        // =====================================================================
+        ClickAction::SelectOption { thread_id, index } => {
+            // Select a specific option in the current question prompt
+            // This updates the question state to toggle/select the option
+            tracing::debug!(
+                "Click: SelectOption(thread_id={}, index={}) (stub)",
+                thread_id,
+                index
+            );
+            // TODO: Implement when clickable question options are added
+            // For now, question navigation is keyboard-only
+        }
+        ClickAction::ShowFreeFormInput(thread_id) => {
+            // Show the free-form text input for a question
+            tracing::debug!("Click: ShowFreeFormInput(thread_id={}) (stub)", thread_id);
+            // TODO: Implement when clickable "Other" option is added
+        }
+        ClickAction::SubmitFreeForm(thread_id) => {
+            // Submit the free-form text response
+            tracing::debug!("Click: SubmitFreeForm(thread_id={}) (stub)", thread_id);
+            // TODO: Implement when clickable submit button for free-form is added
+        }
+        ClickAction::BackToOptions(thread_id) => {
+            // Go back from free-form input to option selection
+            tracing::debug!("Click: BackToOptions(thread_id={}) (stub)", thread_id);
+            // TODO: Implement when clickable back button is added
+        }
+
+        // =====================================================================
+        // Navigation
+        // =====================================================================
+        ClickAction::ViewFullPlan(thread_id) => {
+            // Open the full plan view for a thread
+            // This would navigate to a detailed plan display
+            tracing::debug!("Click: ViewFullPlan(thread_id={}) (stub)", thread_id);
+            // TODO: Implement when plan view screen is added
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Note: These tests verify the click handler doesn't panic and marks dirty.
+    // More comprehensive tests will be added when the actual implementations
+    // are completed in later phases.
+
+    fn create_test_app() -> App {
+        App::new().expect("Failed to create test app")
+    }
+
+    #[test]
+    fn test_handle_click_marks_dirty() {
+        let mut app = create_test_app();
+
+        // Clear the dirty flag
+        app.needs_redraw = false;
+
+        // Any click action should mark the app as dirty
+        handle_click_action(&mut app, ClickAction::FilterWorking);
+        assert!(app.needs_redraw);
+    }
+
+    #[test]
+    fn test_handle_filter_actions_no_panic() {
+        let mut app = create_test_app();
+
+        // These should not panic even though they're stubs
+        handle_click_action(&mut app, ClickAction::FilterWorking);
+        handle_click_action(&mut app, ClickAction::FilterReadyToTest);
+        handle_click_action(&mut app, ClickAction::FilterIdle);
+        handle_click_action(&mut app, ClickAction::ClearFilter);
+    }
+
+    #[test]
+    fn test_handle_overlay_actions_no_panic() {
+        let mut app = create_test_app();
+
+        handle_click_action(
+            &mut app,
+            ClickAction::ExpandThread {
+                thread_id: "test-123".to_string(),
+                anchor_y: 10,
+            },
+        );
+        handle_click_action(&mut app, ClickAction::CollapseOverlay);
+    }
+
+    #[test]
+    fn test_handle_thread_actions_no_panic() {
+        let mut app = create_test_app();
+        let thread_id = "test-thread".to_string();
+
+        handle_click_action(&mut app, ClickAction::ApproveThread(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::RejectThread(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::VerifyThread(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::ArchiveThread(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::ResumeThread(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::DeleteThread(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::ReportIssue(thread_id));
+    }
+
+    #[test]
+    fn test_handle_question_actions_no_panic() {
+        let mut app = create_test_app();
+        let thread_id = "test-thread".to_string();
+
+        handle_click_action(
+            &mut app,
+            ClickAction::SelectOption {
+                thread_id: thread_id.clone(),
+                index: 0,
+            },
+        );
+        handle_click_action(&mut app, ClickAction::ShowFreeFormInput(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::SubmitFreeForm(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::BackToOptions(thread_id));
+    }
+
+    #[test]
+    fn test_handle_navigation_actions_no_panic() {
+        let mut app = create_test_app();
+
+        handle_click_action(
+            &mut app,
+            ClickAction::ViewFullPlan("test-thread".to_string()),
+        );
+    }
+}
