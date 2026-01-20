@@ -5,6 +5,7 @@
 
 mod context;
 pub mod header;
+pub mod overlay;
 pub mod status_bar;
 pub mod thread_list;
 pub mod thread_row;
