@@ -11,7 +11,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{ActivePanel, App};
+use crate::app::App;
 use crate::state::TaskStatus;
 use crate::ui::dashboard::{render_dashboard, Theme};
 
@@ -20,14 +20,9 @@ use super::folder_picker::render_folder_picker;
 use super::helpers::{format_tokens, inner_rect};
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
-use super::panels::{render_left_panel, render_right_panel};
 use super::theme::{
     COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_QUEUED,
 };
-
-/// Configuration flag for whether to show the new dashboard view.
-/// Set to true to enable the dashboard, false to show the legacy panels.
-const USE_DASHBOARD_VIEW: bool = true;
 
 // ============================================================================
 // SPOQ ASCII Logo
@@ -247,42 +242,11 @@ pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
 // Main Content Area
 // ============================================================================
 
-/// Render the main content area with responsive panel layout.
+/// Render the main content area with the dashboard view.
 ///
-/// When USE_DASHBOARD_VIEW is enabled, renders the new multi-thread dashboard.
-/// Otherwise falls back to the legacy panel layout:
-/// - When the terminal is narrow (< 60 cols), panels are stacked and only one
-///   is shown at a time with a panel switcher indicator.
-/// - Otherwise, panels are shown side-by-side with fluid widths.
-pub fn render_main_content(frame: &mut Frame, area: Rect, app: &mut App, ctx: &LayoutContext) {
-    use crate::app::Focus;
-
-    // Use the new dashboard view if enabled
-    if USE_DASHBOARD_VIEW {
-        render_dashboard_content(frame, area, app);
-        return;
-    }
-
-    // Legacy panel layout below
-    // Check if we should stack panels (narrow terminal mode)
-    if ctx.should_collapse_sidebar() {
-        // Stacked mode: show only one panel at a time with panel switcher
-        render_stacked_panels(frame, area, app, ctx);
-    } else {
-        // Side-by-side mode: use responsive two-column widths
-        let (left_width, right_width) = ctx.two_column_widths();
-
-        let content_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(left_width),
-                Constraint::Length(right_width),
-            ])
-            .split(area);
-
-        render_left_panel(frame, content_chunks[0], app);
-        render_right_panel(frame, content_chunks[1], app, app.focus == Focus::Threads);
-    }
+/// Renders the multi-thread dashboard showing active threads, plans, and questions.
+pub fn render_main_content(frame: &mut Frame, area: Rect, app: &mut App, _ctx: &LayoutContext) {
+    render_dashboard_content(frame, area, app);
 }
 
 /// Render the new dashboard content view.
@@ -302,89 +266,6 @@ fn render_dashboard_content(frame: &mut Frame, area: Rect, app: &mut App) {
     render_dashboard(frame, area, &render_ctx, &mut app.hit_registry);
 }
 
-/// Render stacked panels for narrow terminals (< 60 cols).
-///
-/// Shows only one panel at a time with a panel switcher indicator at the top.
-/// Users can switch between panels using a keyboard shortcut.
-fn render_stacked_panels(frame: &mut Frame, area: Rect, app: &App, _ctx: &LayoutContext) {
-    use crate::app::Focus;
-
-    // Reserve space for panel switcher indicator at the top
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1), // Panel switcher indicator
-            Constraint::Min(5),    // Panel content
-        ])
-        .split(area);
-
-    // Render panel switcher indicator
-    render_panel_switcher(frame, chunks[0], app.active_panel);
-
-    // Render the active panel
-    match app.active_panel {
-        ActivePanel::Left => {
-            render_left_panel(frame, chunks[1], app);
-        }
-        ActivePanel::Right => {
-            render_right_panel(frame, chunks[1], app, app.focus == Focus::Threads);
-        }
-    }
-}
-
-/// Render the panel switcher indicator for stacked layout mode.
-///
-/// Shows which panel is currently active and provides visual hint for switching.
-fn render_panel_switcher(frame: &mut Frame, area: Rect, active_panel: ActivePanel) {
-    let (left_style, right_style) = match active_panel {
-        ActivePanel::Left => (
-            Style::default()
-                .fg(COLOR_HEADER)
-                .add_modifier(Modifier::BOLD),
-            Style::default().fg(COLOR_DIM),
-        ),
-        ActivePanel::Right => (
-            Style::default().fg(COLOR_DIM),
-            Style::default()
-                .fg(COLOR_HEADER)
-                .add_modifier(Modifier::BOLD),
-        ),
-    };
-
-    let indicator = Line::from(vec![
-        Span::styled(" [", Style::default().fg(COLOR_DIM)),
-        Span::styled(
-            "◀ ",
-            if active_panel == ActivePanel::Left {
-                Style::default().fg(COLOR_ACCENT)
-            } else {
-                Style::default().fg(COLOR_DIM)
-            },
-        ),
-        Span::styled("Tasks", left_style),
-        Span::styled(" | ", Style::default().fg(COLOR_DIM)),
-        Span::styled("Threads", right_style),
-        Span::styled(
-            " ▶",
-            if active_panel == ActivePanel::Right {
-                Style::default().fg(COLOR_ACCENT)
-            } else {
-                Style::default().fg(COLOR_DIM)
-            },
-        ),
-        Span::styled("] ", Style::default().fg(COLOR_DIM)),
-        Span::styled(
-            "(←/→ switch)",
-            Style::default()
-                .fg(COLOR_DIM)
-                .add_modifier(Modifier::ITALIC),
-        ),
-    ]);
-
-    let paragraph = Paragraph::new(indicator);
-    frame.render_widget(paragraph, area);
-}
-
 // ============================================================================
 // Tests
 // ============================================================================
@@ -392,7 +273,7 @@ fn render_panel_switcher(frame: &mut Frame, area: Rect, active_panel: ActivePane
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::{ActivePanel, App};
+    use crate::app::App;
     use crate::ui::layout::LayoutContext;
 
     // ========================================================================
@@ -407,17 +288,6 @@ mod tests {
         // Default app dimensions are 80x24
         assert_eq!(ctx.width, 80);
         assert_eq!(ctx.height, 24);
-    }
-
-    #[test]
-    fn test_narrow_terminal_triggers_stacked_mode() {
-        // Terminal width < 60 should trigger stacked panels
-        let ctx = LayoutContext::new(59, 24);
-        assert!(ctx.should_collapse_sidebar());
-
-        // Width >= 60 should use side-by-side layout
-        let ctx_wide = LayoutContext::new(60, 24);
-        assert!(!ctx_wide.should_collapse_sidebar());
     }
 
     #[test]
@@ -444,53 +314,6 @@ mod tests {
         // Compact terminal
         let ctx_compact = LayoutContext::new(60, 40);
         assert_eq!(ctx_compact.input_area_height(), 4);
-    }
-
-    #[test]
-    fn test_two_column_widths_medium_terminal() {
-        // Medium terminal (80-120 cols) should use 40/60 split
-        let ctx = LayoutContext::new(100, 24);
-        let (left, right) = ctx.two_column_widths();
-        assert_eq!(left, 40);
-        assert_eq!(right, 60);
-    }
-
-    #[test]
-    fn test_two_column_widths_wide_terminal() {
-        // Wide terminal (>= 120 cols) should cap left at 60
-        let ctx = LayoutContext::new(200, 24);
-        let (left, right) = ctx.two_column_widths();
-        assert_eq!(left, 60);
-        assert_eq!(right, 140);
-    }
-
-    // ========================================================================
-    // Active Panel Tests
-    // ========================================================================
-
-    #[test]
-    fn test_active_panel_default_is_left() {
-        assert_eq!(ActivePanel::default(), ActivePanel::Left);
-    }
-
-    #[test]
-    fn test_active_panel_equality() {
-        assert_eq!(ActivePanel::Left, ActivePanel::Left);
-        assert_eq!(ActivePanel::Right, ActivePanel::Right);
-        assert_ne!(ActivePanel::Left, ActivePanel::Right);
-    }
-
-    #[test]
-    fn test_active_panel_copy() {
-        let panel = ActivePanel::Right;
-        let copied = panel;
-        assert_eq!(panel, copied);
-    }
-
-    #[test]
-    fn test_app_initializes_with_left_panel_active() {
-        let app = App::default();
-        assert_eq!(app.active_panel, ActivePanel::Left);
     }
 
     // ========================================================================

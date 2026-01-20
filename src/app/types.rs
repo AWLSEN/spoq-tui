@@ -4,7 +4,6 @@
 //! - [`Screen`] - Which screen is currently displayed
 //! - [`Focus`] - Which UI component has focus
 //! - [`ScrollBoundary`] - Scroll boundary hit state
-//! - [`ActivePanel`] - Active panel in narrow layout
 //! - [`ThreadSwitcher`] - Thread switcher dialog state
 
 /// Represents which screen is currently active
@@ -18,8 +17,6 @@ pub enum Screen {
 /// Represents which UI component has focus
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Focus {
-    Notifications,
-    Tasks,
     #[default]
     Threads,
     Input,
@@ -43,16 +40,4 @@ pub struct ThreadSwitcher {
 pub enum ScrollBoundary {
     Top,
     Bottom,
-}
-
-/// Represents which panel is active in narrow/stacked layout mode.
-/// When the terminal is too narrow for side-by-side panels (< 60 cols),
-/// only one panel is shown at a time and users can switch between them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ActivePanel {
-    /// Left panel (Notifications + Tasks/Todos)
-    #[default]
-    Left,
-    /// Right panel (Threads)
-    Right,
 }

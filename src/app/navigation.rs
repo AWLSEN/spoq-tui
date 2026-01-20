@@ -5,18 +5,16 @@ use std::sync::Arc;
 use super::{App, Focus, Screen};
 
 impl App {
-    /// Cycle focus to the next panel
+    /// Cycle focus between Threads and Input
     pub fn cycle_focus(&mut self) {
         self.focus = match self.focus {
-            Focus::Notifications => Focus::Tasks,
-            Focus::Tasks => Focus::Threads,
             Focus::Threads => Focus::Input,
-            Focus::Input => Focus::Notifications,
+            Focus::Input => Focus::Threads,
         };
         self.mark_dirty();
     }
 
-    /// Cycle through permission modes: Default → Plan → BypassPermissions → Default
+    /// Cycle through permission modes: Default -> Plan -> BypassPermissions -> Default
     pub fn cycle_permission_mode(&mut self) {
         use crate::models::PermissionMode;
         self.permission_mode = match self.permission_mode {
@@ -30,22 +28,6 @@ impl App {
     /// Move selection up in the current focused panel
     pub fn move_up(&mut self) {
         let changed = match self.focus {
-            Focus::Notifications => {
-                if self.notifications_index > 0 {
-                    self.notifications_index -= 1;
-                    true
-                } else {
-                    false
-                }
-            }
-            Focus::Tasks => {
-                if self.tasks_index > 0 {
-                    self.tasks_index -= 1;
-                    true
-                } else {
-                    false
-                }
-            }
             Focus::Threads => {
                 if self.threads_index > 0 {
                     self.threads_index -= 1;
@@ -62,24 +44,8 @@ impl App {
     }
 
     /// Move selection down in the current focused panel
-    pub fn move_down(&mut self, max_notifications: usize, max_tasks: usize, max_threads: usize) {
+    pub fn move_down(&mut self, max_threads: usize) {
         let changed = match self.focus {
-            Focus::Notifications => {
-                if max_notifications > 0 && self.notifications_index < max_notifications - 1 {
-                    self.notifications_index += 1;
-                    true
-                } else {
-                    false
-                }
-            }
-            Focus::Tasks => {
-                if max_tasks > 0 && self.tasks_index < max_tasks - 1 {
-                    self.tasks_index += 1;
-                    true
-                } else {
-                    false
-                }
-            }
             Focus::Threads => {
                 if max_threads > 0 && self.threads_index < max_threads - 1 {
                     self.threads_index += 1;

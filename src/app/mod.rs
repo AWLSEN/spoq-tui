@@ -18,7 +18,7 @@ mod utils;
 mod websocket;
 
 pub use messages::AppMessage;
-pub use types::{ActivePanel, Focus, Screen, ScrollBoundary, ThreadSwitcher};
+pub use types::{Focus, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 
 use crate::auth::{
@@ -155,10 +155,6 @@ pub struct App {
     pub active_thread_id: Option<String>,
     /// Current focus panel
     pub focus: Focus,
-    /// Selected index in notifications panel
-    pub notifications_index: usize,
-    /// Selected index in tasks panel
-    pub tasks_index: usize,
     /// Selected index in threads panel
     pub threads_index: usize,
     /// TextArea input (tui-textarea wrapper)
@@ -231,8 +227,6 @@ pub struct App {
     pub terminal_width: u16,
     /// Current terminal height in rows
     pub terminal_height: u16,
-    /// Active panel for narrow/stacked layout mode (when width < 60 cols)
-    pub active_panel: ActivePanel,
     /// Cache for pre-rendered message lines (avoids re-rendering on every tick)
     pub rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache,
     /// Click detector for multi-click detection (single/double/triple click)
@@ -320,8 +314,6 @@ impl App {
             screen: Screen::CommandDeck,
             active_thread_id: None,
             focus: Focus::default(),
-            notifications_index: 0,
-            tasks_index: 0,
             threads_index: 0,
             textarea: TextAreaInput::new(),
             migration_progress: Some(0),
@@ -358,7 +350,6 @@ impl App {
             scroll_position: 0.0,
             terminal_width: 80,  // Default, will be updated on first render
             terminal_height: 24, // Default, will be updated on first render
-            active_panel: ActivePanel::default(),
             rendered_lines_cache: crate::rendered_lines_cache::RenderedLinesCache::new(),
             markdown_cache: MarkdownCache::new(),
             height_cache: None,
@@ -3312,47 +3303,6 @@ mod tests {
             app.ws_connection_state,
             WsConnectionState::Connected
         ));
-    }
-
-    // ========================================================================
-    // ActivePanel Tests
-    // ========================================================================
-
-    #[test]
-    fn test_active_panel_default_is_left() {
-        assert_eq!(ActivePanel::default(), ActivePanel::Left);
-    }
-
-    #[test]
-    fn test_active_panel_equality() {
-        assert_eq!(ActivePanel::Left, ActivePanel::Left);
-        assert_eq!(ActivePanel::Right, ActivePanel::Right);
-        assert_ne!(ActivePanel::Left, ActivePanel::Right);
-    }
-
-    #[test]
-    fn test_active_panel_copy() {
-        let panel = ActivePanel::Right;
-        let copied = panel;
-        assert_eq!(panel, copied);
-    }
-
-    #[test]
-    fn test_app_initializes_with_left_panel_active() {
-        let app = App::default();
-        assert_eq!(app.active_panel, ActivePanel::Left);
-    }
-
-    #[test]
-    fn test_app_active_panel_can_be_changed() {
-        let mut app = App::default();
-        assert_eq!(app.active_panel, ActivePanel::Left);
-
-        app.active_panel = ActivePanel::Right;
-        assert_eq!(app.active_panel, ActivePanel::Right);
-
-        app.active_panel = ActivePanel::Left;
-        assert_eq!(app.active_panel, ActivePanel::Left);
     }
 
     #[test]

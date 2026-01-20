@@ -269,10 +269,6 @@ async fn run_app<B: ratatui::backend::Backend>(
 where
     B::Error: Send + Sync + 'static,
 {
-    // Mock data counts for navigation bounds
-    const MOCK_NOTIFICATIONS_COUNT: usize = 4;
-    const MOCK_THREADS_COUNT: usize = 3;
-
     // Track migration progress animation
     let migration_start = tokio::time::Instant::now();
     const MIGRATION_DURATION_MS: u64 = 5000; // 5 seconds
@@ -841,8 +837,8 @@ where
                                     app.move_up();
                                 }
                                 KeyCode::Down => {
-                                    let max_tasks = app.tasks.len().max(5); // Mock minimum of 5
-                                    app.move_down(MOCK_NOTIFICATIONS_COUNT, max_tasks, MOCK_THREADS_COUNT.max(app.threads.len()));
+                                    let max_threads = app.cache.threads().len();
+                                    app.move_down(max_threads);
                                 }
                                 KeyCode::Char('q') if app.focus != Focus::Input => {
                                     app.quit();

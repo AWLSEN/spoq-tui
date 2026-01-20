@@ -1771,7 +1771,7 @@ mod ui_rendering_integration {
         app.update_terminal_dimensions(MOBILE_WIDTH, MOBILE_HEIGHT);
 
         // Add a thread to the cache
-        app.cache.upsert_thread(spoq::models::Thread {
+        let thread = spoq::models::Thread {
             id: "test-thread".to_string(),
             title: "Test Thread Title".to_string(),
             description: Some("Test description".to_string()),
@@ -1786,7 +1786,13 @@ mod ui_rendering_integration {
             status: None,
             verified: None,
             verified_at: None,
-        });
+        };
+        app.cache.upsert_thread(thread.clone());
+
+        // Sync threads to dashboard for rendering
+        let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
+        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard.compute_thread_views();
 
         terminal
             .draw(|f| {
@@ -1812,7 +1818,7 @@ mod ui_rendering_integration {
         app.update_terminal_dimensions(STANDARD_WIDTH, STANDARD_HEIGHT);
 
         // Add a thread to the cache
-        app.cache.upsert_thread(spoq::models::Thread {
+        let thread = spoq::models::Thread {
             id: "test-thread".to_string(),
             title: "Test Thread Title".to_string(),
             description: Some("Test description".to_string()),
@@ -1827,7 +1833,13 @@ mod ui_rendering_integration {
             status: None,
             verified: None,
             verified_at: None,
-        });
+        };
+        app.cache.upsert_thread(thread.clone());
+
+        // Sync threads to dashboard for rendering
+        let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
+        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard.compute_thread_views();
 
         terminal
             .draw(|f| {
@@ -1853,7 +1865,7 @@ mod ui_rendering_integration {
         app.update_terminal_dimensions(WIDE_WIDTH, WIDE_HEIGHT);
 
         // Add a thread to the cache
-        app.cache.upsert_thread(spoq::models::Thread {
+        let thread = spoq::models::Thread {
             id: "test-thread".to_string(),
             title: "Test Thread Title That Is Quite Long".to_string(),
             description: Some("This is a detailed description for testing".to_string()),
@@ -1868,7 +1880,13 @@ mod ui_rendering_integration {
             status: None,
             verified: None,
             verified_at: None,
-        });
+        };
+        app.cache.upsert_thread(thread.clone());
+
+        // Sync threads to dashboard for rendering
+        let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
+        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard.compute_thread_views();
 
         terminal
             .draw(|f| {
