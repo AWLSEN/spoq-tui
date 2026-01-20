@@ -25,15 +25,10 @@ mod folder_picker;
 mod helpers;
 pub mod input;
 mod layout;
-pub mod login;
 mod messages;
 mod panels;
-pub mod provisioning;
 mod theme;
 mod thread_switcher;
-
-pub use login::*;
-pub use provisioning::*;
 
 // Re-export theme colors for external use
 pub use theme::{
@@ -83,8 +78,6 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     match app.screen {
         Screen::CommandDeck => render_command_deck(frame, app),
         Screen::Conversation => render_conversation_screen(frame, app),
-        Screen::Login => render_login_screen(frame, app),
-        Screen::Provisioning => render_provisioning_screen(frame, app),
     }
 
     // Render thread switcher overlay (if visible)

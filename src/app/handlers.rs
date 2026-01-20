@@ -4,7 +4,7 @@ use crate::debug::{
     DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType,
 };
 
-use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, ProvisioningPhase, Screen};
+use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
 
 impl App {
     /// Handle an incoming async message
@@ -789,132 +789,6 @@ impl App {
                         "Folder cleared",
                         "none",
                     )),
-                    None,
-                );
-            }
-            AppMessage::DeviceFlowUpdated => {
-                // TODO: Handle device flow state updates
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::SessionState,
-                        "Device flow updated",
-                        "placeholder",
-                    )),
-                    None,
-                );
-            }
-            AppMessage::VpsPlansLoaded(plans) => {
-                let count = plans.len();
-                // Store VPS plans in BOTH app state locations (legacy + provisioning UI)
-                self.vps_plans = plans.clone();
-                self.provisioning.plans = plans;
-                self.provisioning_phase = ProvisioningPhase::SelectPlan;
-                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::SelectPlan;
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::SessionState,
-                        "VPS plans loaded",
-                        format!("{} plans", count),
-                    )),
-                    None,
-                );
-            }
-            AppMessage::VpsPlansLoadError(error) => {
-                // Handle VPS plans load error
-                self.provisioning_phase = ProvisioningPhase::PlansError(error.clone());
-                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error(error.clone());
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
-                    None,
-                );
-            }
-            AppMessage::ProvisioningStatusUpdate(status) => {
-                // Update provisioning phase with status
-                self.provisioning_phase = ProvisioningPhase::WaitingReady { status: status.clone() };
-                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::WaitingReady;
-                self.provisioning.status_message = Some(status.clone());
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::SessionState,
-                        "Provisioning status update",
-                        truncate_for_debug(&status, 40),
-                    )),
-                    None,
-                );
-            }
-            AppMessage::ProvisioningComplete(response) => {
-                // Extract VPS info from response
-                let hostname = response.hostname.clone().unwrap_or_default();
-                let ip = response.ip.clone().unwrap_or_default();
-
-                // Update credentials with VPS info
-                self.credentials.vps_id = Some(response.vps_id.clone());
-                self.credentials.vps_status = Some("ready".to_string());
-                self.credentials.vps_hostname = hostname.clone().into();
-                self.credentials.vps_ip = ip.clone().into();
-                // Construct URL if not provided by API
-                let url = response.url.clone().or_else(|| {
-                    response.hostname.as_ref().map(|h| format!("http://{}:8000", h))
-                });
-                if let Some(u) = url {
-                    self.credentials.vps_url = Some(u);
-                }
-
-                // Save credentials to disk
-                if let Some(ref manager) = self.credentials_manager {
-                    if !manager.save(&self.credentials) {
-                        emit_debug(
-                            &self.debug_tx,
-                            DebugEventKind::Error(ErrorData::new(
-                                ErrorSource::AppState,
-                                "Failed to save credentials",
-                            )),
-                            None,
-                        );
-                    }
-                }
-
-                // Update provisioning phase to Ready
-                self.provisioning_phase = ProvisioningPhase::Ready {
-                    hostname: hostname.clone(),
-                    ip: ip.clone(),
-                };
-                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Ready;
-
-                // Create ConductorClient with VPS URL if available
-                if let Some(ref url) = self.credentials.vps_url {
-                    let conductor = match self.credentials.access_token.as_ref() {
-                        Some(token) => crate::conductor::ConductorClient::with_url(url).with_auth(token),
-                        None => crate::conductor::ConductorClient::with_url(url),
-                    };
-                    self.client = std::sync::Arc::new(conductor);
-                }
-
-                // Transition to CommandDeck after a brief delay (handled in main.rs)
-                // For now, just set the screen
-                self.screen = Screen::CommandDeck;
-
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::SessionState,
-                        "Provisioning complete",
-                        format!("VPS ready: {} ({})", hostname, ip),
-                    )),
-                    None,
-                );
-            }
-            AppMessage::ProvisioningError(error) => {
-                // Handle provisioning errors
-                self.provisioning_phase = ProvisioningPhase::ProvisionError(error.clone());
-                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error(error.clone());
-                emit_debug(
-                    &self.debug_tx,
-                    DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
                     None,
                 );
             }

@@ -17,10 +17,10 @@ mod utils;
 mod websocket;
 
 pub use messages::AppMessage;
-pub use types::{ActivePanel, Focus, ProvisioningPhase, Screen, ScrollBoundary, ThreadSwitcher};
+pub use types::{ActivePanel, Focus, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 
-use crate::auth::{central_api::{get_jwt_expires_in, VpsPlan}, CentralApiClient, Credentials, CredentialsManager, DeviceFlowManager};
+use crate::auth::{central_api::get_jwt_expires_in, CentralApiClient, Credentials, CredentialsManager};
 use chrono::Utc;
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
@@ -252,26 +252,12 @@ pub struct App {
     pub folder_picker_filter: String,
     /// Selected index in the filtered folder list
     pub folder_picker_cursor: usize,
-    /// Provisioning screen state
-    pub provisioning: crate::ui::ProvisioningState,
     /// Central API client for authenticated requests
     pub central_api: Option<Arc<CentralApiClient>>,
     /// Credentials manager for secure storage
     pub credentials_manager: Option<CredentialsManager>,
     /// Current authentication credentials
     pub credentials: Credentials,
-    /// Device flow manager for OAuth authentication
-    pub device_flow: Option<DeviceFlowManager>,
-    /// Current provisioning phase
-    pub provisioning_phase: ProvisioningPhase,
-    /// Available VPS plans from API
-    pub vps_plans: Vec<VpsPlan>,
-    /// Selected plan index in the plan list
-    pub selected_plan_idx: usize,
-    /// SSH password input buffer
-    pub ssh_password_input: String,
-    /// Whether user is entering SSH password
-    pub entering_ssh_password: bool,
 }
 
 impl App {
@@ -311,39 +297,17 @@ impl App {
         // Create central API client with production URL
         let central_api = Arc::new(CentralApiClient::new());
 
-        // Determine initial screen and provisioning phase based on auth state:
-        // - No access_token: Login screen
-        // - Has access_token but no vps_url or vps_status != 'ready': Provisioning screen
-        // - Has vps_url and vps_status == 'ready': CommandDeck screen
-        let (screen, provisioning_phase, client) = if credentials.access_token.is_none() {
-            // No credentials - go to login
-            (
-                Screen::Login,
-                ProvisioningPhase::default(),
-                Arc::new(ConductorClient::new()),
-            )
-        } else if credentials.vps_url.is_none()
-            || credentials.vps_status.as_deref() != Some("ready")
-        {
-            // Has credentials but no ready VPS - go to provisioning
-            (
-                Screen::Provisioning,
-                ProvisioningPhase::LoadingPlans,
-                Arc::new(ConductorClient::new()),
-            )
-        } else {
-            // Has credentials and ready VPS - go to CommandDeck
-            // Create ConductorClient with VPS URL
-            let vps_url = credentials.vps_url.as_ref().unwrap();
+        // Pre-flight checks in main.rs ensure we have valid credentials and VPS
+        // Always start at CommandDeck - create ConductorClient with VPS URL
+        let client = if let Some(ref vps_url) = credentials.vps_url {
             let conductor_client = match credentials.access_token.as_ref() {
                 Some(token) => ConductorClient::with_url(vps_url).with_auth(token),
                 None => ConductorClient::with_url(vps_url),
             };
-            (
-                Screen::CommandDeck,
-                ProvisioningPhase::default(),
-                Arc::new(conductor_client),
-            )
+            Arc::new(conductor_client)
+        } else {
+            // Fallback - should not happen after pre-flight checks
+            Arc::new(ConductorClient::new())
         };
 
         Ok(Self {
@@ -351,7 +315,7 @@ impl App {
             threads: Vec::new(),
             tasks: Vec::new(),
             should_quit: false,
-            screen,
+            screen: Screen::CommandDeck,
             active_thread_id: None,
             focus: Focus::default(),
             notifications_index: 0,
@@ -405,16 +369,9 @@ impl App {
             folder_picker_visible: false,
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
-            provisioning: crate::ui::ProvisioningState::default(),
             central_api: Some(central_api),
             credentials_manager,
             credentials,
-            device_flow: None,
-            provisioning_phase,
-            vps_plans: Vec::new(),
-            selected_plan_idx: 0,
-            ssh_password_input: String::new(),
-            entering_ssh_password: false,
         })
     }
 
@@ -471,8 +428,7 @@ impl App {
                 Ok(response.access_token)
             }
             Err(_) => {
-                // Refresh failed, need to re-login
-                self.screen = Screen::Login;
+                // Refresh failed - caller should handle re-authentication
                 Err(AuthError::RefreshFailed)
             }
         }
@@ -515,76 +471,6 @@ impl App {
                 }
             }
         }
-    }
-
-    /// Start VPS provisioning with the selected plan.
-    ///
-    /// This method initiates the VPS provisioning process by:
-    /// 1. Getting the selected plan ID
-    /// 2. Calling the central API to provision the VPS
-    /// 3. Transitioning to WaitingReady state on success
-    /// 4. Transitioning to ProvisionError state on failure
-    pub fn start_vps_provisioning(&mut self) {
-        // Get selected plan
-        let plan_id = match self.vps_plans.get(self.selected_plan_idx) {
-            Some(plan) => plan.id.clone(),
-            None => {
-                self.provisioning_phase = ProvisioningPhase::ProvisionError("No plan selected".to_string());
-                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error("No plan selected".to_string());
-                return;
-            }
-        };
-
-        // Transition to Provisioning state
-        self.provisioning_phase = ProvisioningPhase::Provisioning;
-        self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Provisioning;
-        self.mark_dirty();
-
-        // Clone necessary data for the async task
-        let central_api = match self.central_api.clone() {
-            Some(api) => api,
-            None => {
-                self.provisioning_phase = ProvisioningPhase::ProvisionError("No API client".to_string());
-                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error("No API client".to_string());
-                return;
-            }
-        };
-        let message_tx = self.message_tx.clone();
-
-        // Spawn async task to provision VPS
-        tokio::spawn(async move {
-            match central_api.provision_vps(&plan_id).await {
-                Ok(response) => {
-                    // Provisioning started - send status update
-                    let _ = message_tx.send(AppMessage::ProvisioningStatusUpdate(response.status));
-                }
-                Err(e) => {
-                    let _ = message_tx.send(AppMessage::ProvisioningError(e.to_string()));
-                }
-            }
-        });
-    }
-
-    /// Load VPS plans from the central API.
-    ///
-    /// This method fetches available VPS plans and sends the result via AppMessage.
-    pub fn load_vps_plans(&self) {
-        let central_api = match self.central_api.clone() {
-            Some(api) => api,
-            None => return,
-        };
-        let message_tx = self.message_tx.clone();
-
-        tokio::spawn(async move {
-            match central_api.fetch_vps_plans().await {
-                Ok(plans) => {
-                    let _ = message_tx.send(AppMessage::VpsPlansLoaded(plans));
-                }
-                Err(e) => {
-                    let _ = message_tx.send(AppMessage::VpsPlansLoadError(e.to_string()));
-                }
-            }
-        });
     }
 
     /// Emit a debug state change event (helper for external callers like main.rs)
@@ -633,8 +519,6 @@ impl App {
 
         // Log initial screen
         let screen_name = match self.screen {
-            Screen::Login => "Login",
-            Screen::Provisioning => "Provisioning",
             Screen::CommandDeck => "CommandDeck",
             Screen::Conversation => "Conversation",
         };
@@ -719,16 +603,6 @@ mod tests {
     fn test_app_initializes_with_no_active_thread() {
         let app = App::default();
         assert!(app.active_thread_id.is_none());
-    }
-
-    #[test]
-    fn test_app_initializes_on_login_without_credentials() {
-        // With no credentials, app should start on Login screen
-        let mut app = App::default();
-        // Explicitly set empty credentials to test the login screen state
-        app.credentials = Credentials::default();
-        app.screen = Screen::Login;
-        assert_eq!(app.screen, Screen::Login);
     }
 
     #[test]
@@ -3552,7 +3426,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_refresh_token_failure_redirects_to_login() {
+    async fn test_refresh_token_failure_returns_error() {
         use crate::auth::CentralApiClient;
 
         let mut app = App::default();
@@ -3567,8 +3441,8 @@ mod tests {
         // Should return RefreshFailed error
         assert!(matches!(result, Err(AuthError::RefreshFailed)));
 
-        // Should redirect to Login screen on failure
-        assert_eq!(app.screen, Screen::Login);
+        // Screen should remain unchanged (caller handles re-auth)
+        assert_eq!(app.screen, Screen::Conversation);
     }
 
     #[test]

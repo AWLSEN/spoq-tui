@@ -1,7 +1,5 @@
-use spoq::app::{start_websocket, App, AppMessage, Focus, ProvisioningPhase, Screen, ScrollBoundary};
-use spoq::auth::{
-    run_auth_flow, run_provisioning_flow, CredentialsManager, DeviceFlowManager, DeviceFlowState,
-};
+use spoq::app::{start_websocket, App, AppMessage, Focus, Screen, ScrollBoundary};
+use spoq::auth::{run_auth_flow, run_provisioning_flow, CredentialsManager};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
@@ -118,42 +116,15 @@ fn main() -> Result<()> {
     // Initialize server connection - user is already authenticated with ready VPS
     // Login and Provisioning screens are handled by pre-flight checks above
     runtime.block_on(async {
-        match app.screen {
-            Screen::CommandDeck | Screen::Conversation => {
-                // Load threads from backend (async initialization)
-                app.initialize().await;
+        // Load threads from backend (async initialization)
+        app.initialize().await;
 
-                // Load folders for the folder picker (async, non-blocking)
-                app.load_folders();
+        // Load folders for the folder picker (async, non-blocking)
+        app.load_folders();
 
-                // Connect WebSocket for real-time communication
-                // If connection fails, app continues in SSE-only mode
-                app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
-            }
-            Screen::Provisioning => {
-                // Should not reach here after pre-flight checks, but handle gracefully
-                // This can happen if credentials file was modified externally
-                app.load_vps_plans();
-            }
-            Screen::Login => {
-                // Should not reach here after pre-flight checks
-                // If somehow we get here, initialize device flow for fallback
-                app.emit_debug_state_change("auth", "Device flow", "Starting (fallback)...");
-                if let Some(ref central_api) = app.central_api {
-                    let mut device_flow = DeviceFlowManager::new(central_api.clone());
-                    if let Ok(()) = device_flow.start().await {
-                        let state_desc = match device_flow.state() {
-                            DeviceFlowState::WaitingForUser { verification_uri, .. } => {
-                                format!("WaitingForUser: {}", verification_uri)
-                            }
-                            other => format!("{:?}", other),
-                        };
-                        app.emit_debug_state_change("auth", "Device flow started", &state_desc);
-                    }
-                    app.device_flow = Some(device_flow);
-                }
-            }
-        }
+        // Connect WebSocket for real-time communication
+        // If connection fails, app continues in SSE-only mode
+        app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
     });
 
     // Main event loop
@@ -299,155 +270,8 @@ where
                 // Increment tick counter for animations (spinner, cursor blink)
                 app.tick();
 
-                // Increment provisioning tick for loading animation
-                if app.screen == Screen::Provisioning {
-                    app.provisioning.tick();
-                    app.mark_dirty();
-                }
-
-                // Mark dirty for login screen animation (spinner)
-                if app.screen == Screen::Login {
-                    app.mark_dirty();
-                }
-
                 // Check for thread switcher auto-confirm (Tab release simulation)
                 app.check_switcher_timeout();
-
-                // Poll device flow when on Login screen in WaitingForUser state
-                // Uses tick_count to rate-limit polling attempts (~1 second intervals)
-                // Device flow internally respects server-specified interval
-                if app.screen == Screen::Login && app.tick_count % 60 == 0 {
-                    // Poll device flow and extract result (avoiding borrow conflicts)
-                    let poll_result = if let Some(ref mut device_flow) = app.device_flow {
-                        if matches!(device_flow.state(), DeviceFlowState::WaitingForUser { .. }) {
-                            Some(device_flow.poll().await)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    // Handle poll result outside of borrow
-                    if let Some(result) = poll_result {
-                        match result {
-                            Ok(state_changed) => {
-                                if state_changed {
-                                    // Extract state info (clone to avoid borrow)
-                                    let new_state = if let Some(ref device_flow) = app.device_flow {
-                                        match device_flow.state() {
-                                            DeviceFlowState::Authorized { access_token, refresh_token, expires_in } => {
-                                                Some((access_token.clone(), refresh_token.clone(), *expires_in))
-                                            }
-                                            DeviceFlowState::Denied => None,
-                                            DeviceFlowState::Expired => None,
-                                            DeviceFlowState::Error(e) => {
-                                                app.emit_debug_state_change("auth", "Device flow error", e);
-                                                None
-                                            }
-                                            _ => None,
-                                        }
-                                    } else {
-                                        None
-                                    };
-
-                                    // Handle authorization
-                                    if let Some((access_token, refresh_token, expires_in)) = new_state {
-                                        app.emit_debug_state_change(
-                                            "auth",
-                                            "Device flow authorized",
-                                            "saving credentials and transitioning to provisioning",
-                                        );
-
-                                        // Save tokens to credentials
-                                        app.credentials.access_token = Some(access_token);
-                                        app.credentials.refresh_token = Some(refresh_token);
-                                        app.credentials.expires_at = Some(
-                                            chrono::Utc::now().timestamp() + expires_in
-                                        );
-
-                                        // Save to disk
-                                        if let Some(ref manager) = app.credentials_manager {
-                                            let saved = manager.save(&app.credentials);
-                                            app.emit_debug_state_change(
-                                                "auth",
-                                                "Credentials saved",
-                                                if saved { "success" } else { "failed" },
-                                            );
-                                        }
-
-                                        // Transition to provisioning screen
-                                        app.screen = Screen::Provisioning;
-                                        app.provisioning_phase = ProvisioningPhase::LoadingPlans;
-                                        app.provisioning.phase = spoq::ui::provisioning::ProvisioningPhase::LoadingPlans;
-                                        app.load_vps_plans();
-
-                                        app.emit_debug_state_change(
-                                            "auth",
-                                            "Transitioned to provisioning",
-                                            "loading VPS plans",
-                                        );
-                                    } else {
-                                        // Denied, Expired, or Error - just log and mark dirty
-                                        if let Some(ref device_flow) = app.device_flow {
-                                            match device_flow.state() {
-                                                DeviceFlowState::Denied => {
-                                                    app.emit_debug_state_change("auth", "Device flow denied", "user can press Enter to retry");
-                                                }
-                                                DeviceFlowState::Expired => {
-                                                    app.emit_debug_state_change("auth", "Device flow expired", "user can press Enter to retry");
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    }
-                                    app.mark_dirty();
-                                }
-                            }
-                            Err(e) => {
-                                app.emit_debug_state_change(
-                                    "auth",
-                                    "Device flow poll error",
-                                    &e.to_string(),
-                                );
-                            }
-                        }
-                    }
-                }
-
-                // Poll VPS status when on Provisioning screen in WaitingReady phase
-                // Rate-limited to ~1 second intervals
-                if app.screen == Screen::Provisioning && app.tick_count % 60 == 0 {
-                    if let ProvisioningPhase::WaitingReady { .. } = &app.provisioning_phase {
-                        if let Some(ref central_api) = app.central_api {
-                            let message_tx = app.message_tx.clone();
-                            let api_client = central_api.clone();
-                            tokio::spawn(async move {
-                                match api_client.fetch_vps_status().await {
-                                    Ok(status) => {
-                                        // VPS is ready when we have hostname OR ip
-                                        if status.hostname.is_some() || status.ip.is_some() {
-                                            // Construct URL if not provided
-                                            let url = status.url.clone().or_else(|| {
-                                                status.hostname.as_ref().map(|h| format!("http://{}:8000", h))
-                                            });
-                                            let mut complete_status = status;
-                                            complete_status.url = url;
-                                            let _ = message_tx.send(AppMessage::ProvisioningComplete(complete_status));
-                                        } else {
-                                            let _ = message_tx.send(AppMessage::ProvisioningStatusUpdate(
-                                                status.status.clone()
-                                            ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        let _ = message_tx.send(AppMessage::ProvisioningError(e.to_string()));
-                                    }
-                                }
-                            });
-                        }
-                    }
-                }
             }
 
             // Handle keyboard events
@@ -678,145 +502,6 @@ where
                                         continue;
                                     }
                                 }
-                            }
-
-                            // =========================================================
-                            // Login Screen Key Handling
-                            // =========================================================
-                            if app.screen == Screen::Login {
-                                match key.code {
-                                    KeyCode::Char('q') | KeyCode::Esc => {
-                                        // Exit app - strict auth, no bypass
-                                        return Ok(());
-                                    }
-                                    KeyCode::Enter => {
-                                        if let Some(ref device_flow) = app.device_flow {
-                                            match device_flow.state() {
-                                                // Open verification URL in browser
-                                                DeviceFlowState::WaitingForUser { verification_uri, .. } => {
-                                                    app.emit_debug_state_change(
-                                                        "auth",
-                                                        "Opening URL in browser",
-                                                        verification_uri,
-                                                    );
-                                                    match open::that(verification_uri) {
-                                                        Ok(()) => {
-                                                            app.emit_debug_state_change(
-                                                                "auth",
-                                                                "Browser opened",
-                                                                "success",
-                                                            );
-                                                        }
-                                                        Err(e) => {
-                                                            app.emit_debug_state_change(
-                                                                "auth",
-                                                                "Failed to open browser",
-                                                                &e.to_string(),
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                                // Restart flow on error states
-                                                DeviceFlowState::Error(_) | DeviceFlowState::Denied | DeviceFlowState::Expired => {
-                                                    app.emit_debug_state_change(
-                                                        "auth",
-                                                        "Restarting device flow",
-                                                        "user requested retry",
-                                                    );
-                                                    if let Some(ref central_api) = app.central_api {
-                                                        app.device_flow = Some(DeviceFlowManager::new(central_api.clone()));
-                                                    }
-                                                }
-                                                DeviceFlowState::Authorized { .. } => {
-                                                    app.emit_debug_state_change(
-                                                        "auth",
-                                                        "Already authorized",
-                                                        "transitioning to next screen",
-                                                    );
-                                                }
-                                                _ => {
-                                                    app.emit_debug_state_change(
-                                                        "auth",
-                                                        "Enter pressed",
-                                                        &format!("unhandled state: {:?}", device_flow.state()),
-                                                    );
-                                                }
-                                            }
-                                        } else {
-                                            app.emit_debug_state_change(
-                                                "auth",
-                                                "Enter pressed",
-                                                "no device flow active",
-                                            );
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                                continue;
-                            }
-
-                            // =========================================================
-                            // Provisioning Screen Key Handling
-                            // =========================================================
-                            if app.screen == Screen::Provisioning {
-                                if app.entering_ssh_password {
-                                    // Password entry mode
-                                    match key.code {
-                                        KeyCode::Char(c) => app.ssh_password_input.push(c),
-                                        KeyCode::Backspace => { app.ssh_password_input.pop(); }
-                                        KeyCode::Enter | KeyCode::Esc => {
-                                            app.entering_ssh_password = false;
-                                        }
-                                        _ => {}
-                                    }
-                                } else {
-                                    // Normal mode navigation
-                                    match key.code {
-                                        KeyCode::Char('q') | KeyCode::Esc => {
-                                            // Exit app from provisioning
-                                            return Ok(());
-                                        }
-                                        KeyCode::Up | KeyCode::Char('k') => {
-                                            if app.selected_plan_idx > 0 {
-                                                app.selected_plan_idx -= 1;
-                                            }
-                                        }
-                                        KeyCode::Down | KeyCode::Char('j') => {
-                                            if app.selected_plan_idx < app.vps_plans.len().saturating_sub(1) {
-                                                app.selected_plan_idx += 1;
-                                            }
-                                        }
-                                        KeyCode::Char('p') | KeyCode::Char('P') => {
-                                            app.entering_ssh_password = true;
-                                        }
-                                        KeyCode::Enter => {
-                                            // Validate password >= 12 chars, then start provisioning
-                                            if app.ssh_password_input.len() >= 12 && !app.vps_plans.is_empty() {
-                                                app.start_vps_provisioning();
-                                            }
-                                        }
-                                        KeyCode::Char('r') | KeyCode::Char('R') => {
-                                            // Retry loading plans or provisioning on error
-                                            match &app.provisioning_phase {
-                                                ProvisioningPhase::PlansError(_) => {
-                                                    app.provisioning_phase = ProvisioningPhase::LoadingPlans;
-                                                    app.provisioning.phase = spoq::ui::provisioning::ProvisioningPhase::LoadingPlans;
-                                                    app.load_vps_plans();
-                                                }
-                                                ProvisioningPhase::ProvisionError(_) => {
-                                                    // Retry provisioning with same settings
-                                                    if app.ssh_password_input.len() >= 12 && !app.vps_plans.is_empty() {
-                                                        app.start_vps_provisioning();
-                                                    }
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                app.mark_dirty();
-                                continue;
                             }
 
                             // Handle OAuth consent 'o' key to open URL in browser
