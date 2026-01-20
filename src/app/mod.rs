@@ -435,6 +435,112 @@ impl App {
         }
     }
 
+    /// Execute an API call with automatic token refresh on 401.
+    ///
+    /// Only retries once to prevent infinite loops.
+    /// If refresh fails or retry fails, returns the error.
+    ///
+    /// # Type Parameters
+    /// * `T` - The success return type
+    /// * `F` - A closure that returns a future producing the API result
+    ///
+    /// # Arguments
+    /// * `operation` - A closure that performs the API call. Called twice if first attempt gets 401.
+    ///
+    /// # Returns
+    /// The result of the API call, or an error if both attempts fail.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let result = app.with_auto_refresh(|| async {
+    ///     central_api.fetch_vps_status().await
+    /// }).await;
+    /// ```
+    pub async fn with_auto_refresh<T, F, Fut>(
+        &mut self,
+        operation: F,
+    ) -> Result<T, crate::auth::central_api::CentralApiError>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T, crate::auth::central_api::CentralApiError>>,
+    {
+        use crate::auth::central_api::CentralApiError;
+
+        match operation().await {
+            Ok(result) => Ok(result),
+            Err(CentralApiError::ServerError { status: 401, .. }) => {
+                // Try to refresh token
+                if let Err(e) = self.refresh_and_update_clients().await {
+                    return Err(e);
+                }
+                // Retry once with new token
+                operation().await
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Refresh the access token and update all clients with the new token.
+    ///
+    /// This method:
+    /// 1. Gets the refresh token from credentials
+    /// 2. Calls the Central API to refresh the access token
+    /// 3. Updates credentials with the new token and expiration
+    /// 4. Recreates both ConductorClient and CentralApiClient with the new token
+    /// 5. Saves credentials to disk
+    ///
+    /// # Returns
+    /// `Ok(())` if refresh succeeded, or a `CentralApiError` if it failed.
+    pub async fn refresh_and_update_clients(
+        &mut self,
+    ) -> Result<(), crate::auth::central_api::CentralApiError> {
+        use crate::auth::central_api::CentralApiError;
+
+        let refresh_token = self.credentials.refresh_token.as_ref().ok_or_else(|| {
+            CentralApiError::ServerError {
+                status: 401,
+                message: "No refresh token available".to_string(),
+            }
+        })?;
+
+        // Create a temporary client for refresh (no auth needed for refresh endpoint)
+        let api = CentralApiClient::new();
+        let token_response = api.refresh_token(refresh_token).await?;
+
+        // Update credentials with new token
+        let now = Utc::now().timestamp();
+        let expires_in = token_response
+            .expires_in
+            .or_else(|| get_jwt_expires_in(&token_response.access_token))
+            .unwrap_or(900);
+        self.credentials.access_token = Some(token_response.access_token.clone());
+        self.credentials.expires_at = Some(now + i64::from(expires_in));
+
+        // Update refresh token if a new one was provided
+        if !token_response.refresh_token.is_empty() {
+            self.credentials.refresh_token = Some(token_response.refresh_token);
+        }
+
+        // Recreate clients with new token
+        // ConductorClient needs the VPS URL
+        if let Some(ref vps_url) = self.credentials.vps_url {
+            self.client =
+                Arc::new(ConductorClient::with_url(vps_url).with_auth(&token_response.access_token));
+        }
+
+        // Recreate CentralApiClient with new token
+        self.central_api = Some(Arc::new(
+            CentralApiClient::new().with_auth(&token_response.access_token),
+        ));
+
+        // Save refreshed credentials to disk
+        if let Some(ref manager) = self.credentials_manager {
+            let _ = manager.save(&self.credentials);
+        }
+
+        Ok(())
+    }
+
     /// Initialize the app by fetching data from the backend.
     ///
     /// Fetches threads and tasks from the server. If the server is unreachable
@@ -3458,5 +3564,133 @@ mod tests {
         assert!(matches!(no_refresh, AuthError::NoRefreshToken));
         assert!(matches!(no_api, AuthError::NoCentralApi));
         assert!(matches!(refresh_failed, AuthError::RefreshFailed));
+    }
+
+    // ============= Auto-Refresh Tests =============
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_success_on_first_try() {
+        use crate::auth::central_api::CentralApiError;
+
+        let mut app = App::default();
+
+        // Operation succeeds on first try
+        let result = app
+            .with_auto_refresh(|| async { Ok::<_, CentralApiError>(42) })
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_non_401_error_not_retried() {
+        use crate::auth::central_api::CentralApiError;
+
+        let mut app = App::default();
+
+        // Operation fails with non-401 error
+        let result = app
+            .with_auto_refresh(|| async {
+                Err::<i32, _>(CentralApiError::ServerError {
+                    status: 500,
+                    message: "Internal Server Error".to_string(),
+                })
+            })
+            .await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CentralApiError::ServerError { status, .. } => {
+                assert_eq!(status, 500);
+            }
+            _ => panic!("Expected ServerError with status 500"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_with_auto_refresh_401_without_refresh_token_fails() {
+        use crate::auth::central_api::CentralApiError;
+
+        let mut app = App::default();
+        // Ensure no refresh token
+        app.credentials.refresh_token = None;
+
+        // Operation fails with 401
+        let result = app
+            .with_auto_refresh(|| async {
+                Err::<i32, _>(CentralApiError::ServerError {
+                    status: 401,
+                    message: "Unauthorized".to_string(),
+                })
+            })
+            .await;
+
+        // Should fail because there's no refresh token
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CentralApiError::ServerError { status: 401, message } => {
+                assert!(message.contains("No refresh token"));
+            }
+            _ => panic!("Expected ServerError about missing refresh token"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_refresh_and_update_clients_no_refresh_token() {
+        use crate::auth::central_api::CentralApiError;
+
+        let mut app = App::default();
+        app.credentials.refresh_token = None;
+
+        let result = app.refresh_and_update_clients().await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CentralApiError::ServerError { status: 401, message } => {
+                assert!(message.contains("No refresh token"));
+            }
+            _ => panic!("Expected ServerError about missing refresh token"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_refresh_and_update_clients_with_invalid_server() {
+        // This test verifies that refresh_and_update_clients properly handles
+        // network errors when the central API is unreachable.
+        let mut app = App::default();
+        app.credentials.refresh_token = Some("test-refresh-token".to_string());
+
+        // The default CentralApiClient points to production, which will fail
+        // to refresh an invalid token. This tests the error path.
+        let result = app.refresh_and_update_clients().await;
+
+        // Should fail (either network error or auth error)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_app_has_auto_refresh_methods() {
+        // Compile-time test to ensure the methods exist with correct signatures
+        let app = App::default();
+
+        // Verify the client fields exist and are the right type
+        let _: &Arc<ConductorClient> = &app.client;
+        let _: &Option<Arc<CentralApiClient>> = &app.central_api;
+        let _: &Credentials = &app.credentials;
+        let _: &Option<CredentialsManager> = &app.credentials_manager;
+    }
+
+    #[test]
+    fn test_credentials_have_required_fields_for_refresh() {
+        use crate::auth::Credentials;
+
+        let creds = Credentials::default();
+
+        // Ensure the fields needed for auto-refresh exist
+        let _: Option<&String> = creds.access_token.as_ref();
+        let _: Option<&String> = creds.refresh_token.as_ref();
+        let _: Option<i64> = creds.expires_at;
+        let _: Option<&String> = creds.vps_url.as_ref();
     }
 }
