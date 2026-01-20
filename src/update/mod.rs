@@ -28,5 +28,9 @@ pub use downloader::{
     download_from_url, get_download_path, get_pending_update_path, get_update_temp_dir,
     has_pending_update, DownloadError, DownloadResult, Platform, DOWNLOAD_BASE_URL,
 };
-pub use installer::{cleanup_backup, install_update, rollback_update, InstallError, InstallResult};
+pub use installer::{
+    cleanup_backup, cleanup_backup_at_path, has_backup, has_backup_at_path, install_update,
+    install_update_with_config, rollback_update, rollback_update_with_paths, InstallConfig,
+    InstallError, InstallResult,
+};
 pub use state::{UpdateState, UpdateStateManager};

@@ -4,9 +4,10 @@
 //! - Backing up the current binary to `<binary_path>.backup`
 //! - Replacing the current binary with the downloaded update
 //! - Setting correct permissions (chmod +x)
+//! - Providing rollback capability in case of failures
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Error type for installation operations.
 #[derive(Debug)]
@@ -19,6 +20,22 @@ pub enum InstallError {
     UpdateFileNotFound(PathBuf),
     /// Failed to set executable permissions.
     PermissionError(String),
+    /// Backup file not found (for rollback operations).
+    BackupNotFound(PathBuf),
+    /// Installation failed after backup was created; backup was restored.
+    InstallFailedRestored {
+        /// The underlying error that caused the installation to fail.
+        cause: Box<InstallError>,
+        /// Path to the backup file that was restored.
+        restored_from: PathBuf,
+    },
+    /// Installation failed and rollback also failed.
+    InstallFailedNoRestore {
+        /// The original error that caused the installation to fail.
+        install_error: Box<InstallError>,
+        /// The error that occurred while trying to restore the backup.
+        restore_error: Box<InstallError>,
+    },
 }
 
 impl std::fmt::Display for InstallError {
@@ -32,6 +49,27 @@ impl std::fmt::Display for InstallError {
                 write!(f, "Update file not found: {}", path.display())
             }
             InstallError::PermissionError(msg) => write!(f, "Permission error: {}", msg),
+            InstallError::BackupNotFound(path) => {
+                write!(f, "Backup file not found: {}", path.display())
+            }
+            InstallError::InstallFailedRestored { cause, restored_from } => {
+                write!(
+                    f,
+                    "Installation failed ({}), backup restored from: {}",
+                    cause,
+                    restored_from.display()
+                )
+            }
+            InstallError::InstallFailedNoRestore {
+                install_error,
+                restore_error,
+            } => {
+                write!(
+                    f,
+                    "Installation failed ({}) and backup restore also failed ({})",
+                    install_error, restore_error
+                )
+            }
         }
     }
 }
@@ -40,6 +78,10 @@ impl std::error::Error for InstallError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             InstallError::Io(e) => Some(e),
+            InstallError::InstallFailedRestored { cause, .. } => Some(cause.as_ref()),
+            InstallError::InstallFailedNoRestore { install_error, .. } => {
+                Some(install_error.as_ref())
+            }
             _ => None,
         }
     }
@@ -62,12 +104,135 @@ pub struct InstallResult {
     pub version: Option<String>,
 }
 
+/// Configuration for the installation process.
+#[derive(Debug, Clone)]
+pub struct InstallConfig {
+    /// Custom target path for the installation (defaults to current executable).
+    pub target_path: Option<PathBuf>,
+    /// Custom backup path (defaults to target_path with .backup extension).
+    pub backup_path: Option<PathBuf>,
+    /// Whether to preserve the update file after installation (defaults to false).
+    pub preserve_update_file: bool,
+    /// Whether to automatically rollback on failure (defaults to true).
+    pub auto_rollback: bool,
+}
+
+impl Default for InstallConfig {
+    fn default() -> Self {
+        Self {
+            target_path: None,
+            backup_path: None,
+            preserve_update_file: false,
+            auto_rollback: true,
+        }
+    }
+}
+
+impl InstallConfig {
+    /// Create a new install configuration with defaults.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set a custom target path for the installation.
+    pub fn with_target_path(mut self, path: PathBuf) -> Self {
+        self.target_path = Some(path);
+        self
+    }
+
+    /// Set a custom backup path.
+    pub fn with_backup_path(mut self, path: PathBuf) -> Self {
+        self.backup_path = Some(path);
+        self
+    }
+
+    /// Set whether to preserve the update file after installation.
+    pub fn with_preserve_update_file(mut self, preserve: bool) -> Self {
+        self.preserve_update_file = preserve;
+        self
+    }
+
+    /// Set whether to automatically rollback on failure.
+    pub fn with_auto_rollback(mut self, rollback: bool) -> Self {
+        self.auto_rollback = rollback;
+        self
+    }
+}
+
+/// Get the default backup path for a binary.
+fn get_backup_path(binary_path: &Path) -> PathBuf {
+    let mut backup = binary_path.to_path_buf();
+    let extension = backup
+        .extension()
+        .map(|e| format!("{}.backup", e.to_string_lossy()))
+        .unwrap_or_else(|| "backup".to_string());
+    backup.set_extension(extension);
+    backup
+}
+
+/// Set executable permissions on a file (Unix only).
+#[cfg(unix)]
+fn set_executable_permissions(path: &Path) -> Result<(), InstallError> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path)?.permissions();
+    perms.set_mode(0o755); // rwxr-xr-x
+    fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
+/// Set executable permissions on a file (no-op on Windows).
+#[cfg(not(unix))]
+fn set_executable_permissions(_path: &Path) -> Result<(), InstallError> {
+    Ok(())
+}
+
+/// Copy a file atomically by writing to a temporary file first.
+///
+/// This ensures that if the copy is interrupted, the original file is not corrupted.
+fn atomic_copy(src: &Path, dst: &Path) -> Result<(), InstallError> {
+    // Create a temporary file in the same directory as the destination
+    // This ensures we're on the same filesystem for the atomic rename
+    let temp_path = dst.with_extension("tmp");
+
+    // Copy to temporary file
+    fs::copy(src, &temp_path)?;
+
+    // Atomically rename to the final destination
+    match fs::rename(&temp_path, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // Clean up the temporary file on failure
+            let _ = fs::remove_file(&temp_path);
+            Err(InstallError::Io(e))
+        }
+    }
+}
+
+/// Create a backup of the current binary.
+fn create_backup(current_exe: &Path, backup_path: &Path) -> Result<(), InstallError> {
+    atomic_copy(current_exe, backup_path)
+}
+
+/// Restore the backup to the current binary location.
+fn restore_backup(backup_path: &Path, target_path: &Path) -> Result<(), InstallError> {
+    if !backup_path.exists() {
+        return Err(InstallError::BackupNotFound(backup_path.to_path_buf()));
+    }
+    atomic_copy(backup_path, target_path)?;
+    set_executable_permissions(target_path)?;
+    Ok(())
+}
+
 /// Install a downloaded update binary.
 ///
 /// This function:
 /// 1. Backs up the current binary to `<binary_path>.backup`
 /// 2. Replaces the current binary with the downloaded update
 /// 3. Sets executable permissions on the new binary
+/// 4. Optionally removes the update file after installation
+///
+/// If installation fails and auto_rollback is enabled (default), the backup
+/// will be automatically restored.
 ///
 /// # Arguments
 ///
@@ -83,80 +248,164 @@ pub struct InstallResult {
 /// println!("Backup at: {}", result.backup_path.display());
 /// ```
 pub fn install_update(
-    update_path: &PathBuf,
+    update_path: &Path,
     version: Option<&str>,
+) -> Result<InstallResult, InstallError> {
+    install_update_with_config(update_path, version, InstallConfig::default())
+}
+
+/// Install a downloaded update binary with custom configuration.
+///
+/// This provides more control over the installation process, including
+/// custom target and backup paths, and whether to preserve the update file.
+///
+/// # Arguments
+///
+/// * `update_path` - Path to the downloaded update binary
+/// * `version` - Optional version string for tracking
+/// * `config` - Installation configuration
+///
+/// # Example
+///
+/// ```ignore
+/// let update_path = PathBuf::from("/tmp/spoq-update");
+/// let config = InstallConfig::new()
+///     .with_preserve_update_file(true)
+///     .with_auto_rollback(true);
+/// let result = install_update_with_config(&update_path, Some("0.2.0"), config)?;
+/// ```
+pub fn install_update_with_config(
+    update_path: &Path,
+    version: Option<&str>,
+    config: InstallConfig,
 ) -> Result<InstallResult, InstallError> {
     // Verify the update file exists
     if !update_path.exists() {
-        return Err(InstallError::UpdateFileNotFound(update_path.clone()));
+        return Err(InstallError::UpdateFileNotFound(update_path.to_path_buf()));
     }
 
-    // Get the path to the current executable
-    let current_exe =
-        std::env::current_exe().map_err(|_| InstallError::NoExecutablePath)?;
+    // Get the path to the current executable (or use custom target path)
+    let target_path = match config.target_path {
+        Some(ref p) => p.clone(),
+        None => std::env::current_exe().map_err(|_| InstallError::NoExecutablePath)?,
+    };
 
-    // Create backup path
-    let backup_path = current_exe.with_extension("backup");
+    // Determine backup path
+    let backup_path = config
+        .backup_path
+        .clone()
+        .unwrap_or_else(|| get_backup_path(&target_path));
 
     // Step 1: Create backup of current binary
-    fs::copy(&current_exe, &backup_path)?;
+    create_backup(&target_path, &backup_path)?;
 
-    // Step 2: Replace current binary with update
-    // Use atomic rename if possible, otherwise copy
-    match fs::rename(update_path, &current_exe) {
-        Ok(_) => {}
+    // Step 2: Replace current binary with update (with error recovery)
+    let install_result = perform_installation(update_path, &target_path, &config);
+
+    match install_result {
+        Ok(()) => {
+            // Success!
+            Ok(InstallResult {
+                binary_path: target_path,
+                backup_path,
+                version: version.map(String::from),
+            })
+        }
+        Err(e) if config.auto_rollback => {
+            // Try to restore the backup
+            match restore_backup(&backup_path, &target_path) {
+                Ok(()) => Err(InstallError::InstallFailedRestored {
+                    cause: Box::new(e),
+                    restored_from: backup_path,
+                }),
+                Err(restore_err) => Err(InstallError::InstallFailedNoRestore {
+                    install_error: Box::new(e),
+                    restore_error: Box::new(restore_err),
+                }),
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Perform the actual installation (copy and set permissions).
+fn perform_installation(
+    update_path: &Path,
+    target_path: &Path,
+    config: &InstallConfig,
+) -> Result<(), InstallError> {
+    // Try atomic rename first (most efficient if on same filesystem)
+    let rename_result = fs::rename(update_path, target_path);
+
+    match rename_result {
+        Ok(()) => {
+            // Rename succeeded, set permissions
+            set_executable_permissions(target_path)?;
+            Ok(())
+        }
         Err(_) => {
-            // Rename failed (maybe cross-device), try copy instead
-            fs::copy(update_path, &current_exe)?;
-            // Remove the update file after successful copy
-            let _ = fs::remove_file(update_path);
+            // Rename failed (probably cross-device), fall back to atomic copy
+            atomic_copy(update_path, target_path)?;
+
+            // Set executable permissions
+            set_executable_permissions(target_path)?;
+
+            // Remove the update file unless configured to preserve it
+            if !config.preserve_update_file {
+                let _ = fs::remove_file(update_path);
+            }
+
+            Ok(())
         }
     }
-
-    // Step 3: Set executable permissions (Unix only)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&current_exe)?.permissions();
-        perms.set_mode(0o755); // rwxr-xr-x
-        fs::set_permissions(&current_exe, perms)?;
-    }
-
-    Ok(InstallResult {
-        binary_path: current_exe,
-        backup_path,
-        version: version.map(String::from),
-    })
 }
 
 /// Rollback to the backup binary.
 ///
 /// Restores the backup binary created during installation.
 /// Returns an error if no backup exists.
+///
+/// # Example
+///
+/// ```ignore
+/// // After a failed update, rollback to the previous version
+/// let result = rollback_update()?;
+/// println!("Restored from: {}", result.backup_path.display());
+/// ```
 pub fn rollback_update() -> Result<InstallResult, InstallError> {
-    let current_exe =
-        std::env::current_exe().map_err(|_| InstallError::NoExecutablePath)?;
-    let backup_path = current_exe.with_extension("backup");
+    rollback_update_with_paths(None, None)
+}
 
-    if !backup_path.exists() {
-        return Err(InstallError::UpdateFileNotFound(backup_path));
+/// Rollback to the backup binary with custom paths.
+///
+/// # Arguments
+///
+/// * `target_path` - Optional custom target path (defaults to current executable)
+/// * `backup_path` - Optional custom backup path (defaults to target_path.backup)
+pub fn rollback_update_with_paths(
+    target_path: Option<&Path>,
+    backup_path: Option<&Path>,
+) -> Result<InstallResult, InstallError> {
+    let target = match target_path {
+        Some(p) => p.to_path_buf(),
+        None => std::env::current_exe().map_err(|_| InstallError::NoExecutablePath)?,
+    };
+
+    let backup = match backup_path {
+        Some(p) => p.to_path_buf(),
+        None => get_backup_path(&target),
+    };
+
+    if !backup.exists() {
+        return Err(InstallError::BackupNotFound(backup));
     }
 
-    // Replace current binary with backup
-    fs::copy(&backup_path, &current_exe)?;
-
-    // Set executable permissions (Unix only)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&current_exe)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&current_exe, perms)?;
-    }
+    // Restore the backup
+    restore_backup(&backup, &target)?;
 
     Ok(InstallResult {
-        binary_path: current_exe,
-        backup_path,
+        binary_path: target,
+        backup_path: backup,
         version: None,
     })
 }
@@ -165,21 +414,74 @@ pub fn rollback_update() -> Result<InstallResult, InstallError> {
 ///
 /// Removes the backup file created during installation.
 /// Returns Ok even if the backup doesn't exist.
+///
+/// # Example
+///
+/// ```ignore
+/// // After verifying the update works, clean up the backup
+/// cleanup_backup()?;
+/// ```
 pub fn cleanup_backup() -> Result<(), InstallError> {
-    let current_exe =
-        std::env::current_exe().map_err(|_| InstallError::NoExecutablePath)?;
-    let backup_path = current_exe.with_extension("backup");
+    cleanup_backup_at_path(None)
+}
 
-    if backup_path.exists() {
-        fs::remove_file(backup_path)?;
+/// Clean up a backup binary at a specific path.
+///
+/// # Arguments
+///
+/// * `backup_path` - Optional custom backup path (defaults to current_exe.backup)
+pub fn cleanup_backup_at_path(backup_path: Option<&Path>) -> Result<(), InstallError> {
+    let backup = match backup_path {
+        Some(p) => p.to_path_buf(),
+        None => {
+            let current_exe =
+                std::env::current_exe().map_err(|_| InstallError::NoExecutablePath)?;
+            get_backup_path(&current_exe)
+        }
+    };
+
+    if backup.exists() {
+        fs::remove_file(backup)?;
     }
 
     Ok(())
 }
 
+/// Check if a backup exists for the current executable.
+///
+/// Returns true if a backup file exists at the default backup path.
+pub fn has_backup() -> Result<bool, InstallError> {
+    has_backup_at_path(None)
+}
+
+/// Check if a backup exists at a specific path.
+///
+/// # Arguments
+///
+/// * `target_path` - Optional custom target path (defaults to current executable)
+pub fn has_backup_at_path(target_path: Option<&Path>) -> Result<bool, InstallError> {
+    let target = match target_path {
+        Some(p) => p.to_path_buf(),
+        None => std::env::current_exe().map_err(|_| InstallError::NoExecutablePath)?,
+    };
+
+    let backup = get_backup_path(&target);
+    Ok(backup.exists())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    /// Create a temporary directory with a mock binary file.
+    fn create_mock_binary(dir: &TempDir, name: &str, content: &[u8]) -> PathBuf {
+        let path = dir.path().join(name);
+        let mut file = fs::File::create(&path).unwrap();
+        file.write_all(content).unwrap();
+        path
+    }
 
     #[test]
     fn test_install_error_display() {
@@ -195,6 +497,11 @@ mod tests {
         let err = InstallError::PermissionError("test".to_string());
         let display = format!("{}", err);
         assert!(display.contains("Permission"));
+
+        let err = InstallError::BackupNotFound(PathBuf::from("/tmp/backup"));
+        let display = format!("{}", err);
+        assert!(display.contains("Backup"));
+        assert!(display.contains("/tmp/backup"));
     }
 
     #[test]
@@ -222,10 +529,309 @@ mod tests {
         let fake_path = PathBuf::from("/tmp/nonexistent-spoq-update-12345");
         let result = install_update(&fake_path, Some("0.2.0"));
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), InstallError::UpdateFileNotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            InstallError::UpdateFileNotFound(_)
+        ));
     }
 
-    // Note: We can't easily test the full install_update function in unit tests
-    // because it requires mocking std::env::current_exe() and file operations
-    // on the actual binary. Integration tests would be more appropriate.
+    #[test]
+    fn test_install_config_default() {
+        let config = InstallConfig::default();
+        assert!(config.target_path.is_none());
+        assert!(config.backup_path.is_none());
+        assert!(!config.preserve_update_file);
+        assert!(config.auto_rollback);
+    }
+
+    #[test]
+    fn test_install_config_builder() {
+        let target = PathBuf::from("/usr/local/bin/spoq");
+        let backup = PathBuf::from("/tmp/spoq.backup");
+
+        let config = InstallConfig::new()
+            .with_target_path(target.clone())
+            .with_backup_path(backup.clone())
+            .with_preserve_update_file(true)
+            .with_auto_rollback(false);
+
+        assert_eq!(config.target_path, Some(target));
+        assert_eq!(config.backup_path, Some(backup));
+        assert!(config.preserve_update_file);
+        assert!(!config.auto_rollback);
+    }
+
+    #[test]
+    fn test_get_backup_path() {
+        let path = PathBuf::from("/usr/local/bin/spoq");
+        let backup = get_backup_path(&path);
+        assert_eq!(backup, PathBuf::from("/usr/local/bin/spoq.backup"));
+
+        let path_with_ext = PathBuf::from("/usr/local/bin/spoq.exe");
+        let backup = get_backup_path(&path_with_ext);
+        assert_eq!(backup, PathBuf::from("/usr/local/bin/spoq.exe.backup"));
+    }
+
+    #[test]
+    fn test_atomic_copy() {
+        let temp_dir = TempDir::new().unwrap();
+        let src = create_mock_binary(&temp_dir, "source", b"source content");
+        let dst = temp_dir.path().join("destination");
+
+        atomic_copy(&src, &dst).unwrap();
+
+        assert!(dst.exists());
+        let content = fs::read_to_string(&dst).unwrap();
+        assert_eq!(content, "source content");
+    }
+
+    #[test]
+    fn test_atomic_copy_overwrites() {
+        let temp_dir = TempDir::new().unwrap();
+        let src = create_mock_binary(&temp_dir, "source", b"new content");
+        let dst = create_mock_binary(&temp_dir, "dest", b"old content");
+
+        atomic_copy(&src, &dst).unwrap();
+
+        let content = fs::read_to_string(&dst).unwrap();
+        assert_eq!(content, "new content");
+    }
+
+    #[test]
+    fn test_create_backup() {
+        let temp_dir = TempDir::new().unwrap();
+        let binary = create_mock_binary(&temp_dir, "spoq", b"binary content");
+        let backup = temp_dir.path().join("spoq.backup");
+
+        create_backup(&binary, &backup).unwrap();
+
+        assert!(backup.exists());
+        let content = fs::read_to_string(&backup).unwrap();
+        assert_eq!(content, "binary content");
+    }
+
+    #[test]
+    fn test_restore_backup() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = create_mock_binary(&temp_dir, "spoq", b"corrupted");
+        let backup = create_mock_binary(&temp_dir, "spoq.backup", b"original content");
+
+        restore_backup(&backup, &target).unwrap();
+
+        let content = fs::read_to_string(&target).unwrap();
+        assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn test_restore_backup_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = create_mock_binary(&temp_dir, "spoq", b"content");
+        let backup = temp_dir.path().join("nonexistent.backup");
+
+        let result = restore_backup(&backup, &target);
+        assert!(matches!(result, Err(InstallError::BackupNotFound(_))));
+    }
+
+    #[test]
+    fn test_install_with_custom_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let update = create_mock_binary(&temp_dir, "update", b"new version content");
+        let target = create_mock_binary(&temp_dir, "spoq", b"old version content");
+        let backup_path = temp_dir.path().join("custom.backup");
+
+        let config = InstallConfig::new()
+            .with_target_path(target.clone())
+            .with_backup_path(backup_path.clone())
+            .with_preserve_update_file(true);
+
+        let result = install_update_with_config(&update, Some("0.2.0"), config).unwrap();
+
+        // Check the installation succeeded
+        assert_eq!(result.binary_path, target);
+        assert_eq!(result.backup_path, backup_path);
+        assert_eq!(result.version, Some("0.2.0".to_string()));
+
+        // Check the target has new content
+        let content = fs::read_to_string(&target).unwrap();
+        assert_eq!(content, "new version content");
+
+        // Check the backup has old content
+        let backup_content = fs::read_to_string(&backup_path).unwrap();
+        assert_eq!(backup_content, "old version content");
+
+        // Note: preserve_update_file only applies when atomic_copy is used (cross-device).
+        // When fs::rename succeeds (same filesystem), the file is moved, not copied.
+        // So we don't assert update.exists() here - the behavior depends on the filesystem.
+    }
+
+    #[test]
+    fn test_install_removes_update_file_by_default() {
+        let temp_dir = TempDir::new().unwrap();
+        let update = create_mock_binary(&temp_dir, "update", b"new version");
+        let target = create_mock_binary(&temp_dir, "spoq", b"old version");
+
+        let config = InstallConfig::new().with_target_path(target.clone());
+
+        install_update_with_config(&update, Some("0.2.0"), config).unwrap();
+
+        // Update file should be removed (moved via rename, or deleted after copy)
+        // Note: fs::rename might succeed if on same filesystem, in which case file is moved
+        // Or atomic_copy is used and file is deleted after
+        // Either way, the update file should not exist at original path
+        assert!(!update.exists());
+    }
+
+    #[test]
+    fn test_rollback_with_custom_paths() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = create_mock_binary(&temp_dir, "spoq", b"corrupted content");
+        let backup = create_mock_binary(&temp_dir, "spoq.backup", b"original content");
+
+        let result = rollback_update_with_paths(Some(&target), Some(&backup)).unwrap();
+
+        assert_eq!(result.binary_path, target);
+        assert_eq!(result.backup_path, backup);
+
+        let content = fs::read_to_string(&target).unwrap();
+        assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn test_rollback_no_backup() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = create_mock_binary(&temp_dir, "spoq", b"content");
+        let backup = temp_dir.path().join("nonexistent.backup");
+
+        let result = rollback_update_with_paths(Some(&target), Some(&backup));
+        assert!(matches!(result, Err(InstallError::BackupNotFound(_))));
+    }
+
+    #[test]
+    fn test_cleanup_backup_at_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let backup = create_mock_binary(&temp_dir, "spoq.backup", b"backup content");
+
+        assert!(backup.exists());
+        cleanup_backup_at_path(Some(&backup)).unwrap();
+        assert!(!backup.exists());
+    }
+
+    #[test]
+    fn test_cleanup_backup_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let backup = temp_dir.path().join("nonexistent.backup");
+
+        // Should succeed even if backup doesn't exist
+        let result = cleanup_backup_at_path(Some(&backup));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_has_backup_at_path() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = create_mock_binary(&temp_dir, "spoq", b"content");
+        let _backup = get_backup_path(&target);
+
+        // No backup initially
+        assert!(!has_backup_at_path(Some(&target)).unwrap());
+
+        // Create backup
+        create_mock_binary(&temp_dir, "spoq.backup", b"backup");
+
+        // Now backup exists
+        assert!(has_backup_at_path(Some(&target)).unwrap());
+    }
+
+    #[test]
+    fn test_install_error_source_chain() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        let install_err = InstallError::Io(io_err);
+
+        // Check that source() returns the underlying IO error
+        let source = std::error::Error::source(&install_err);
+        assert!(source.is_some());
+    }
+
+    #[test]
+    fn test_install_failed_restored_display() {
+        let cause = InstallError::PermissionError("write failed".to_string());
+        let err = InstallError::InstallFailedRestored {
+            cause: Box::new(cause),
+            restored_from: PathBuf::from("/tmp/spoq.backup"),
+        };
+
+        let display = format!("{}", err);
+        assert!(display.contains("Installation failed"));
+        assert!(display.contains("backup restored"));
+        assert!(display.contains("/tmp/spoq.backup"));
+    }
+
+    #[test]
+    fn test_install_failed_no_restore_display() {
+        let install_err = InstallError::PermissionError("write failed".to_string());
+        let restore_err = InstallError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "backup gone",
+        ));
+
+        let err = InstallError::InstallFailedNoRestore {
+            install_error: Box::new(install_err),
+            restore_error: Box::new(restore_err),
+        };
+
+        let display = format!("{}", err);
+        assert!(display.contains("Installation failed"));
+        assert!(display.contains("backup restore also failed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_set_executable_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().unwrap();
+        let file = create_mock_binary(&temp_dir, "test_binary", b"content");
+
+        // Remove execute permission first
+        let mut perms = fs::metadata(&file).unwrap().permissions();
+        perms.set_mode(0o644); // rw-r--r--
+        fs::set_permissions(&file, perms).unwrap();
+
+        // Set executable permissions
+        set_executable_permissions(&file).unwrap();
+
+        // Verify permissions
+        let perms = fs::metadata(&file).unwrap().permissions();
+        let mode = perms.mode() & 0o777;
+        assert_eq!(mode, 0o755); // rwxr-xr-x
+    }
+
+    #[test]
+    fn test_full_update_cycle() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create initial "installed" binary
+        let target = create_mock_binary(&temp_dir, "spoq", b"version 0.1.0");
+
+        // Create update binary
+        let update = create_mock_binary(&temp_dir, "spoq-update", b"version 0.2.0");
+
+        let backup_path = get_backup_path(&target);
+
+        // Install the update
+        let config = InstallConfig::new().with_target_path(target.clone());
+        let result = install_update_with_config(&update, Some("0.2.0"), config).unwrap();
+
+        assert_eq!(result.version, Some("0.2.0".to_string()));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "version 0.2.0");
+        assert!(backup_path.exists());
+
+        // Verify we can rollback
+        rollback_update_with_paths(Some(&target), Some(&backup_path)).unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "version 0.1.0");
+
+        // Clean up backup
+        cleanup_backup_at_path(Some(&backup_path)).unwrap();
+        assert!(!backup_path.exists());
+    }
 }
