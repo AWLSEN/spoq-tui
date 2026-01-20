@@ -8,12 +8,10 @@
 
 pub mod central_api;
 pub mod credentials;
-pub mod device_flow;
 pub mod flow;
 pub mod provisioning_flow;
 
 pub use central_api::CentralApiClient;
 pub use credentials::{Credentials, CredentialsManager};
-pub use device_flow::{DeviceFlowManager, DeviceFlowState};
 pub use flow::run_auth_flow;
 pub use provisioning_flow::run_provisioning_flow;
