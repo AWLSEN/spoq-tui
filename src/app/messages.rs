@@ -2,6 +2,7 @@
 
 use crate::models::Folder;
 use crate::state::Todo;
+use crate::ui::dashboard::SystemStats;
 
 /// Messages received from async operations (streaming, connection status)
 #[derive(Debug, Clone)]
@@ -131,6 +132,8 @@ pub enum AppMessage {
     FolderSelected(Folder),
     /// Clear the currently selected folder
     FolderCleared,
+    /// System stats update (CPU, RAM)
+    SystemStatsUpdate(SystemStats),
 }
 
 #[cfg(test)]

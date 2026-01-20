@@ -14,6 +14,7 @@ pub mod models;
 pub mod rendered_lines_cache;
 pub mod sse;
 pub mod state;
+pub mod system;
 pub mod ui;
 pub mod websocket;
 pub mod widgets;

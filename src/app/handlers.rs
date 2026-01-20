@@ -799,6 +799,12 @@ impl App {
                     None,
                 );
             }
+            AppMessage::SystemStatsUpdate(_stats) => {
+                // Update system stats for dashboard header display
+                // TODO: Wire this up in Phase 11 when dashboard integration happens
+                // self.system_stats = stats;
+                // self.mark_dirty();
+            }
         }
     }
 }
