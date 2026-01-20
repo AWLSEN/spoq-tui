@@ -132,24 +132,50 @@ fn route_ws_message(
                 })
                 .map_err(|e| format!("Failed to send PermissionRequested: {}", e))
         }
-        WsIncomingMessage::AgentStatus(_status) => {
-            // Agent status updates are informational - ignore for now
-            // Could be used in future to show agent state in UI
-            Ok(())
+        WsIncomingMessage::AgentStatus(status) => {
+            // Agent status updates are routed to dashboard state
+            info!(
+                "Received agent status: thread={}, state={}",
+                status.thread_id, status.state
+            );
+            message_tx
+                .send(AppMessage::AgentStatusUpdate {
+                    thread_id: status.thread_id,
+                    state: status.state,
+                })
+                .map_err(|e| format!("Failed to send AgentStatusUpdate: {}", e))
         }
         WsIncomingMessage::Connected(_connected) => {
             // Connection confirmation is informational - ignore for now
             Ok(())
         }
-        WsIncomingMessage::ThreadStatusUpdate(_update) => {
-            // Thread status updates for dashboard view - will be handled in future phases
-            // when dashboard rendering is implemented
-            Ok(())
+        WsIncomingMessage::ThreadStatusUpdate(update) => {
+            // Thread status updates for dashboard view
+            info!(
+                "Received thread status update: thread={}, status={:?}",
+                update.thread_id, update.status
+            );
+            message_tx
+                .send(AppMessage::ThreadStatusUpdate {
+                    thread_id: update.thread_id,
+                    status: update.status,
+                    waiting_for: update.waiting_for,
+                })
+                .map_err(|e| format!("Failed to send ThreadStatusUpdate: {}", e))
         }
-        WsIncomingMessage::PlanApprovalRequest(_request) => {
-            // Plan approval requests for dashboard view - will be handled in future phases
-            // when plan approval UI is implemented
-            Ok(())
+        WsIncomingMessage::PlanApprovalRequest(request) => {
+            // Plan approval requests for dashboard view
+            info!(
+                "Received plan approval request: thread={}, request_id={}",
+                request.thread_id, request.request_id
+            );
+            message_tx
+                .send(AppMessage::PlanApprovalRequest {
+                    thread_id: request.thread_id,
+                    request_id: request.request_id,
+                    plan_summary: request.plan_summary,
+                })
+                .map_err(|e| format!("Failed to send PlanApprovalRequest: {}", e))
         }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })

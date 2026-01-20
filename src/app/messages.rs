@@ -1,5 +1,6 @@
 //! AppMessage enum for async communication within the application.
 
+use crate::models::dashboard::{PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::Folder;
 use crate::state::Todo;
 use crate::ui::dashboard::SystemStats;
@@ -134,6 +135,23 @@ pub enum AppMessage {
     FolderCleared,
     /// System stats update (CPU, RAM)
     SystemStatsUpdate(SystemStats),
+    /// Thread status update from WebSocket (for dashboard)
+    ThreadStatusUpdate {
+        thread_id: String,
+        status: ThreadStatus,
+        waiting_for: Option<WaitingFor>,
+    },
+    /// Agent status update from WebSocket (for dashboard)
+    AgentStatusUpdate {
+        thread_id: String,
+        state: String,
+    },
+    /// Plan approval request from WebSocket (for dashboard)
+    PlanApprovalRequest {
+        thread_id: String,
+        request_id: String,
+        plan_summary: PlanSummary,
+    },
 }
 
 #[cfg(test)]

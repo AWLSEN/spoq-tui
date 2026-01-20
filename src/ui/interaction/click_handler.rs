@@ -5,16 +5,13 @@
 
 use super::hit_area::ClickAction;
 use crate::app::App;
+use crate::ui::dashboard::FilterState;
 
 /// Handle a click action by updating App state.
 ///
 /// This function is called from the event loop when a mouse click lands on
 /// a registered hit area. It dispatches to the appropriate App methods based
 /// on the action type.
-///
-/// Note: Some actions may call methods that don't exist yet (implemented in
-/// later phases). These are marked with todo!() and will be filled in as
-/// the dashboard features are implemented.
 pub fn handle_click_action(app: &mut App, action: ClickAction) {
     // Mark the app as dirty since any click action likely changes state
     app.mark_dirty();
@@ -24,24 +21,20 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
         // Filter Actions (CommandDeck dashboard filters)
         // =====================================================================
         ClickAction::FilterWorking => {
-            // TODO: Implement in Phase 2 when dashboard filtering is added
-            // app.dashboard.toggle_filter(DashboardFilter::Working);
-            tracing::debug!("Click: FilterWorking (stub)");
+            app.dashboard.toggle_filter(FilterState::Working);
+            tracing::debug!("Click: FilterWorking - toggled filter");
         }
         ClickAction::FilterReadyToTest => {
-            // TODO: Implement in Phase 2 when dashboard filtering is added
-            // app.dashboard.toggle_filter(DashboardFilter::ReadyToTest);
-            tracing::debug!("Click: FilterReadyToTest (stub)");
+            app.dashboard.toggle_filter(FilterState::ReadyToTest);
+            tracing::debug!("Click: FilterReadyToTest - toggled filter");
         }
         ClickAction::FilterIdle => {
-            // TODO: Implement in Phase 2 when dashboard filtering is added
-            // app.dashboard.toggle_filter(DashboardFilter::Idle);
-            tracing::debug!("Click: FilterIdle (stub)");
+            app.dashboard.toggle_filter(FilterState::Idle);
+            tracing::debug!("Click: FilterIdle - toggled filter");
         }
         ClickAction::ClearFilter => {
-            // TODO: Implement in Phase 2 when dashboard filtering is added
-            // app.dashboard.clear_filter();
-            tracing::debug!("Click: ClearFilter (stub)");
+            app.dashboard.clear_filter();
+            tracing::debug!("Click: ClearFilter - filter cleared");
         }
 
         // =====================================================================
@@ -51,18 +44,16 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
             thread_id,
             anchor_y,
         } => {
-            // TODO: Implement in Phase 2 when thread expansion overlay is added
-            // app.dashboard.expand_thread(&thread_id, anchor_y);
+            app.dashboard.expand_thread(&thread_id, anchor_y);
             tracing::debug!(
-                "Click: ExpandThread(thread_id={}, anchor_y={}) (stub)",
+                "Click: ExpandThread(thread_id={}, anchor_y={})",
                 thread_id,
                 anchor_y
             );
         }
         ClickAction::CollapseOverlay => {
-            // TODO: Implement in Phase 2 when thread expansion overlay is added
-            // app.dashboard.collapse_overlay();
-            tracing::debug!("Click: CollapseOverlay (stub)");
+            app.dashboard.collapse_overlay();
+            tracing::debug!("Click: CollapseOverlay - overlay closed");
         }
 
         // =====================================================================
@@ -78,8 +69,9 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
             tracing::debug!("Click: RejectThread(thread_id={}) (stub)", thread_id);
         }
         ClickAction::VerifyThread(thread_id) => {
-            // TODO: Implement when thread verification API integration is added
-            tracing::debug!("Click: VerifyThread(thread_id={}) (stub)", thread_id);
+            // Mark thread as verified locally
+            app.dashboard.mark_verified_local(&thread_id);
+            tracing::debug!("Click: VerifyThread(thread_id={}) - marked verified", thread_id);
         }
         ClickAction::ArchiveThread(thread_id) => {
             // TODO: Implement when thread archiving is added
@@ -114,8 +106,8 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
         }
         ClickAction::ShowFreeFormInput(thread_id) => {
             // Show the free-form text input for a question
-            tracing::debug!("Click: ShowFreeFormInput(thread_id={}) (stub)", thread_id);
-            // TODO: Implement when clickable "Other" option is added
+            app.dashboard.show_free_form(&thread_id);
+            tracing::debug!("Click: ShowFreeFormInput(thread_id={})", thread_id);
         }
         ClickAction::SubmitFreeForm(thread_id) => {
             // Submit the free-form text response
@@ -124,18 +116,17 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
         }
         ClickAction::BackToOptions(thread_id) => {
             // Go back from free-form input to option selection
-            tracing::debug!("Click: BackToOptions(thread_id={}) (stub)", thread_id);
-            // TODO: Implement when clickable back button is added
+            app.dashboard.back_to_options(&thread_id);
+            tracing::debug!("Click: BackToOptions(thread_id={})", thread_id);
         }
 
         // =====================================================================
         // Navigation
         // =====================================================================
         ClickAction::ViewFullPlan(thread_id) => {
-            // Open the full plan view for a thread
-            // This would navigate to a detailed plan display
-            tracing::debug!("Click: ViewFullPlan(thread_id={}) (stub)", thread_id);
-            // TODO: Implement when plan view screen is added
+            // Open the full plan view for a thread by expanding with a default anchor
+            app.dashboard.expand_thread(&thread_id, 5);
+            tracing::debug!("Click: ViewFullPlan(thread_id={})", thread_id);
         }
     }
 }

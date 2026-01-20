@@ -799,11 +799,87 @@ impl App {
                     None,
                 );
             }
-            AppMessage::SystemStatsUpdate(_stats) => {
+            AppMessage::SystemStatsUpdate(stats) => {
                 // Update system stats for dashboard header display
-                // TODO: Wire this up in Phase 11 when dashboard integration happens
-                // self.system_stats = stats;
-                // self.mark_dirty();
+                self.system_stats = stats;
+                // Emit StateChange for system stats update
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "System stats updated",
+                        format!(
+                            "cpu: {:.1}%, ram: {:.1}/{:.1}GB",
+                            self.system_stats.cpu_percent,
+                            self.system_stats.ram_used_gb,
+                            self.system_stats.ram_total_gb
+                        ),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::ThreadStatusUpdate {
+                thread_id,
+                status,
+                waiting_for,
+            } => {
+                // Update dashboard state with thread status
+                self.dashboard
+                    .update_thread_status(&thread_id, status.clone(), waiting_for.clone());
+                // Emit StateChange for thread status update
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::DashboardState,
+                        "Thread status updated",
+                        format!("thread: {}, status: {:?}", thread_id, status),
+                    )),
+                    Some(&thread_id),
+                );
+            }
+            AppMessage::AgentStatusUpdate { thread_id, state } => {
+                // Update dashboard state with agent status
+                self.dashboard.update_agent_state(&thread_id, &state);
+                // Emit StateChange for agent status update
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::DashboardState,
+                        "Agent state updated",
+                        format!("thread: {}, state: {}", thread_id, state),
+                    )),
+                    Some(&thread_id),
+                );
+            }
+            AppMessage::PlanApprovalRequest {
+                thread_id,
+                request_id,
+                plan_summary,
+            } => {
+                // Update dashboard state with plan request and waiting state
+                use crate::models::dashboard::{ThreadStatus, WaitingFor};
+                self.dashboard.update_thread_status(
+                    &thread_id,
+                    ThreadStatus::Waiting,
+                    Some(WaitingFor::PlanApproval {
+                        plan_summary: plan_summary.title.clone(),
+                    }),
+                );
+                self.dashboard
+                    .set_plan_request(&thread_id, request_id.clone(), plan_summary.clone());
+                // Emit StateChange for plan approval request
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::DashboardState,
+                        "Plan approval requested",
+                        format!(
+                            "thread: {}, request_id: {}, plan: {}",
+                            thread_id, request_id, plan_summary.title
+                        ),
+                    )),
+                    Some(&thread_id),
+                );
             }
         }
     }

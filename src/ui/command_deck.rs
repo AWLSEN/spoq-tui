@@ -13,6 +13,7 @@ use ratatui::{
 
 use crate::app::{ActivePanel, App};
 use crate::state::TaskStatus;
+use crate::ui::dashboard::{render_dashboard, Theme};
 
 use super::conversation::{create_mode_indicator_line, render_mode_indicator};
 use super::folder_picker::render_folder_picker;
@@ -23,6 +24,10 @@ use super::panels::{render_left_panel, render_right_panel};
 use super::theme::{
     COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_QUEUED,
 };
+
+/// Configuration flag for whether to show the new dashboard view.
+/// Set to true to enable the dashboard, false to show the legacy panels.
+const USE_DASHBOARD_VIEW: bool = true;
 
 // ============================================================================
 // SPOQ ASCII Logo
@@ -244,12 +249,21 @@ pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
 
 /// Render the main content area with responsive panel layout.
 ///
-/// When the terminal is narrow (< 60 cols), panels are stacked and only one
-/// is shown at a time with a panel switcher indicator. Otherwise, panels are
-/// shown side-by-side with fluid widths calculated by LayoutContext.
-pub fn render_main_content(frame: &mut Frame, area: Rect, app: &App, ctx: &LayoutContext) {
+/// When USE_DASHBOARD_VIEW is enabled, renders the new multi-thread dashboard.
+/// Otherwise falls back to the legacy panel layout:
+/// - When the terminal is narrow (< 60 cols), panels are stacked and only one
+///   is shown at a time with a panel switcher indicator.
+/// - Otherwise, panels are shown side-by-side with fluid widths.
+pub fn render_main_content(frame: &mut Frame, area: Rect, app: &mut App, ctx: &LayoutContext) {
     use crate::app::Focus;
 
+    // Use the new dashboard view if enabled
+    if USE_DASHBOARD_VIEW {
+        render_dashboard_content(frame, area, app);
+        return;
+    }
+
+    // Legacy panel layout below
     // Check if we should stack panels (narrow terminal mode)
     if ctx.should_collapse_sidebar() {
         // Stacked mode: show only one panel at a time with panel switcher
@@ -269,6 +283,23 @@ pub fn render_main_content(frame: &mut Frame, area: Rect, app: &App, ctx: &Layou
         render_left_panel(frame, content_chunks[0], app);
         render_right_panel(frame, content_chunks[1], app, app.focus == Focus::Threads);
     }
+}
+
+/// Render the new dashboard content view.
+///
+/// This builds a RenderContext from App state and calls render_dashboard
+/// to display the multi-thread dashboard view.
+fn render_dashboard_content(frame: &mut Frame, area: Rect, app: &mut App) {
+    // Build the render context from app state
+    let theme = Theme::default();
+    let render_ctx = app.dashboard.build_render_context(
+        &app.system_stats,
+        &theme,
+    );
+
+    // Clear hit registry and render dashboard
+    app.hit_registry.clear();
+    render_dashboard(frame, area, &render_ctx, &mut app.hit_registry);
 }
 
 /// Render stacked panels for narrow terminals (< 60 cols).

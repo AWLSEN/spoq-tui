@@ -148,6 +148,8 @@ pub enum StateType {
     WebSocket,
     /// Authentication state
     Auth,
+    /// Dashboard state update
+    DashboardState,
 }
 
 /// Stream lifecycle event data.

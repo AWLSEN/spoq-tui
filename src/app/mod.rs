@@ -29,6 +29,7 @@ use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
 use crate::models::{Folder, PermissionMode};
+use crate::ui::dashboard::SystemStats;
 use crate::ui::interaction::HitAreaRegistry;
 use crate::state::{
     AskUserQuestionState, DashboardState, SessionState, SubagentTracker, Task, Thread, Todo,
@@ -266,6 +267,8 @@ pub struct App {
     pub credentials_manager: Option<CredentialsManager>,
     /// Current authentication credentials
     pub credentials: Credentials,
+    /// System statistics (CPU, RAM) for dashboard header
+    pub system_stats: SystemStats,
     /// Hit area registry for touch/click interactions
     /// Cleared at the start of each render cycle, populated during rendering
     pub hit_registry: HitAreaRegistry,
@@ -371,6 +374,7 @@ impl App {
             central_api: Some(central_api),
             credentials_manager,
             credentials,
+            system_stats: SystemStats::default(),
             hit_registry: HitAreaRegistry::new(),
         })
     }
