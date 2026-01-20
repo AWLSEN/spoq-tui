@@ -31,7 +31,8 @@ use crate::markdown::MarkdownCache;
 use crate::models::{Folder, PermissionMode};
 use crate::ui::interaction::HitAreaRegistry;
 use crate::state::{
-    AskUserQuestionState, SessionState, SubagentTracker, Task, Thread, Todo, ToolTracker,
+    AskUserQuestionState, DashboardState, SessionState, SubagentTracker, Task, Thread, Todo,
+    ToolTracker,
 };
 use crate::websocket::WsConnectionState;
 use crate::widgets::textarea_input::TextAreaInput;
@@ -195,6 +196,8 @@ pub struct App {
     /// Session-level todos from the assistant
     /// Subagent activity tracking (cleared on done event)
     pub subagent_tracker: SubagentTracker,
+    /// Dashboard state for multi-thread view
+    pub dashboard: DashboardState,
     pub todos: Vec<Todo>,
     /// Debug event sender for emitting internal events to debug server
     pub debug_tx: Option<DebugEventSender>,
@@ -347,6 +350,7 @@ impl App {
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
             subagent_tracker: SubagentTracker::new(),
+            dashboard: DashboardState::new(),
             todos: Vec::new(),
             debug_tx,
             stream_start_time: None,

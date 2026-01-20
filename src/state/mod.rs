@@ -5,7 +5,9 @@
 //! - SessionState: Session-level information (skills, tokens, permissions)
 //! - ToolTracker: Per-thread ephemeral tool execution states
 //! - SubagentTracker: Per-thread ephemeral subagent execution states
+//! - DashboardState: Multi-thread dashboard view state
 
+pub mod dashboard;
 pub mod session;
 pub mod tools;
 
@@ -13,6 +15,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 // Re-export new state types at module level
+pub use dashboard::DashboardState;
 pub use session::{
     AskUserQuestionData, AskUserQuestionState, PermissionRequest, Question, QuestionOption,
     SessionState,
