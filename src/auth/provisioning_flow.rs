@@ -13,10 +13,10 @@ use super::central_api::{CentralApiClient, CentralApiError, VpsPlan, VpsStatusRe
 use super::credentials::Credentials;
 
 /// Poll interval for VPS status checks (in seconds).
-const POLL_INTERVAL_SECS: u64 = 5;
+const POLL_INTERVAL_SECS: u64 = 3;
 
 /// Maximum number of poll attempts before timing out.
-const MAX_POLL_ATTEMPTS: u32 = 60; // 5 minutes at 5 second intervals
+const MAX_POLL_ATTEMPTS: u32 = 200; // 10 minutes at 3 second intervals
 
 /// Set up Ctrl+C handler that sets the interrupted flag.
 /// Returns the Arc<AtomicBool> that will be set to true on interrupt.
