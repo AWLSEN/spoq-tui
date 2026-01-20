@@ -24,7 +24,15 @@ use std::io;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 fn main() -> Result<()> {
+    // Handle --version flag before any initialization
+    if std::env::args().any(|arg| arg == "--version") {
+        println!("spoq {}", VERSION);
+        std::process::exit(0);
+    }
+
     color_eyre::install()?;
 
     // Setup panic hook to ensure terminal cleanup on panic
