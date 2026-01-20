@@ -341,6 +341,7 @@ where
                                         // Transition to provisioning screen
                                         app.screen = Screen::Provisioning;
                                         app.provisioning_phase = ProvisioningPhase::LoadingPlans;
+                                        app.provisioning.phase = spoq::ui::provisioning::ProvisioningPhase::LoadingPlans;
                                         app.load_vps_plans();
 
                                         app.emit_debug_state_change(
@@ -761,6 +762,7 @@ where
                                             match &app.provisioning_phase {
                                                 ProvisioningPhase::PlansError(_) => {
                                                     app.provisioning_phase = ProvisioningPhase::LoadingPlans;
+                                                    app.provisioning.phase = spoq::ui::provisioning::ProvisioningPhase::LoadingPlans;
                                                     app.load_vps_plans();
                                                 }
                                                 ProvisioningPhase::ProvisionError(_) => {

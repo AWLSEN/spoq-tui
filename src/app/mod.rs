@@ -530,12 +530,14 @@ impl App {
             Some(plan) => plan.id.clone(),
             None => {
                 self.provisioning_phase = ProvisioningPhase::ProvisionError("No plan selected".to_string());
+                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error("No plan selected".to_string());
                 return;
             }
         };
 
         // Transition to Provisioning state
         self.provisioning_phase = ProvisioningPhase::Provisioning;
+        self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Provisioning;
         self.mark_dirty();
 
         // Clone necessary data for the async task
@@ -543,6 +545,7 @@ impl App {
             Some(api) => api,
             None => {
                 self.provisioning_phase = ProvisioningPhase::ProvisionError("No API client".to_string());
+                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error("No API client".to_string());
                 return;
             }
         };

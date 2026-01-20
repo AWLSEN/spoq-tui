@@ -806,9 +806,11 @@ impl App {
             }
             AppMessage::VpsPlansLoaded(plans) => {
                 let count = plans.len();
-                // Store VPS plans in app state
-                self.vps_plans = plans;
+                // Store VPS plans in BOTH app state locations (legacy + provisioning UI)
+                self.vps_plans = plans.clone();
+                self.provisioning.plans = plans;
                 self.provisioning_phase = ProvisioningPhase::SelectPlan;
+                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::SelectPlan;
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
@@ -822,6 +824,7 @@ impl App {
             AppMessage::VpsPlansLoadError(error) => {
                 // Handle VPS plans load error
                 self.provisioning_phase = ProvisioningPhase::PlansError(error.clone());
+                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error(error.clone());
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
@@ -831,6 +834,8 @@ impl App {
             AppMessage::ProvisioningStatusUpdate(status) => {
                 // Update provisioning phase with status
                 self.provisioning_phase = ProvisioningPhase::WaitingReady { status: status.clone() };
+                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::WaitingReady;
+                self.provisioning.status_message = Some(status.clone());
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
@@ -878,6 +883,7 @@ impl App {
                     hostname: hostname.clone(),
                     ip: ip.clone(),
                 };
+                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Ready;
 
                 // Create ConductorClient with VPS URL if available
                 if let Some(ref url) = self.credentials.vps_url {
@@ -905,6 +911,7 @@ impl App {
             AppMessage::ProvisioningError(error) => {
                 // Handle provisioning errors
                 self.provisioning_phase = ProvisioningPhase::ProvisionError(error.clone());
+                self.provisioning.phase = crate::ui::provisioning::ProvisioningPhase::Error(error.clone());
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
