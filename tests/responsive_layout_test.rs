@@ -1783,6 +1783,9 @@ mod ui_rendering_integration {
             message_count: 5,
             created_at: chrono::Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal
@@ -1821,6 +1824,9 @@ mod ui_rendering_integration {
             message_count: 5,
             created_at: chrono::Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal
@@ -1859,6 +1865,9 @@ mod ui_rendering_integration {
             message_count: 5,
             created_at: chrono::Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal

@@ -289,7 +289,7 @@ impl App {
 
     /// Create a new App instance with a custom ConductorClient and optional debug sender
     pub fn with_client_and_debug(
-        _client: Arc<ConductorClient>,
+        client: Arc<ConductorClient>,
         debug_tx: Option<DebugEventSender>,
     ) -> Result<Self> {
         // Initialize empty cache - will be populated by initialize()
@@ -307,19 +307,6 @@ impl App {
 
         // Create central API client with production URL
         let central_api = Arc::new(CentralApiClient::new());
-
-        // Pre-flight checks in main.rs ensure we have valid credentials and VPS
-        // Always start at CommandDeck - create ConductorClient with VPS URL
-        let client = if let Some(ref vps_url) = credentials.vps_url {
-            let conductor_client = match credentials.access_token.as_ref() {
-                Some(token) => ConductorClient::with_url(vps_url).with_auth(token),
-                None => ConductorClient::with_url(vps_url),
-            };
-            Arc::new(conductor_client)
-        } else {
-            // Fallback - should not happen after pre-flight checks
-            Arc::new(ConductorClient::new())
-        };
 
         Ok(Self {
             // Start with empty vectors - will be populated from server in initialize()

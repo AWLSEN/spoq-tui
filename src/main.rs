@@ -871,7 +871,7 @@ where
                                         mouse_event.column,
                                         mouse_event.row,
                                     ) {
-                                        ui::handle_click_action(&mut app, action);
+                                        ui::handle_click_action(app, action);
                                         app.mark_dirty();
                                     }
                                     // If no hit area was clicked, let terminal handle text selection

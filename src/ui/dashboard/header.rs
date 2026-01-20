@@ -191,12 +191,13 @@ fn render_right_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
 ///
 /// # Example
 /// ```
+/// use spoq::ui::dashboard::header::render_cpu_bar;
 /// let bar = render_cpu_bar(45.0);
 /// assert_eq!(bar, "\u{2593}\u{2593}\u{2593}\u{2591}\u{2591}");
 /// ```
 pub fn render_cpu_bar(cpu_percent: f32) -> String {
     // 5 segments: each represents 20%
-    let filled = (cpu_percent / 20.0).ceil() as usize;
+    let filled = (cpu_percent / 20.0).ceil().max(0.0) as usize;
     let filled = filled.min(5);
     let empty = 5 - filled;
     format!("{}{}", "\u{2593}".repeat(filled), "\u{2591}".repeat(empty))
@@ -259,7 +260,8 @@ mod tests {
         let bar = render_cpu_bar(-10.0);
         // ceil(-0.5) = 0, but since we use usize it might wrap or be 0
         // The bar should be all empty
-        assert_eq!(bar.len(), 5);
+        assert_eq!(bar.chars().count(), 5);
+        assert_eq!(bar, "\u{2591}\u{2591}\u{2591}\u{2591}\u{2591}");
     }
 
     #[test]
