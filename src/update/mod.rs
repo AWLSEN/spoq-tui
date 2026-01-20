@@ -17,6 +17,7 @@
 
 mod checker;
 mod downloader;
+mod installer;
 pub mod state;
 
 pub use checker::{
@@ -27,4 +28,5 @@ pub use downloader::{
     download_from_url, get_download_path, get_pending_update_path, get_update_temp_dir,
     has_pending_update, DownloadError, DownloadResult, Platform, DOWNLOAD_BASE_URL,
 };
+pub use installer::{cleanup_backup, install_update, rollback_update, InstallError, InstallResult};
 pub use state::{UpdateState, UpdateStateManager};
