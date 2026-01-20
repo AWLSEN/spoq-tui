@@ -93,15 +93,6 @@ impl LayoutContext {
         Self { width, height }
     }
 
-    /// Create a layout context from a `Rect`.
-    ///
-    /// This is useful when you have a rendering area from ratatui's layout system.
-    pub fn from_rect(rect: Rect) -> Self {
-        Self {
-            width: rect.width,
-            height: rect.height,
-        }
-    }
 
     // ========================================================================
     // Percentage-Based Calculations
@@ -442,14 +433,6 @@ mod tests {
         let ctx = LayoutContext::new(120, 40);
         assert_eq!(ctx.width, 120);
         assert_eq!(ctx.height, 40);
-    }
-
-    #[test]
-    fn test_from_rect() {
-        let rect = Rect::new(0, 0, 100, 30);
-        let ctx = LayoutContext::from_rect(rect);
-        assert_eq!(ctx.width, 100);
-        assert_eq!(ctx.height, 30);
     }
 
     #[test]

@@ -199,8 +199,8 @@ mod tests {
         handle_click_action(&mut app, ClickAction::CollapseOverlay);
     }
 
-    #[test]
-    fn test_handle_thread_actions_no_panic() {
+    #[tokio::test]
+    async fn test_handle_thread_actions_no_panic() {
         let mut app = create_test_app();
         let thread_id = "test-thread".to_string();
 

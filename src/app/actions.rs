@@ -605,8 +605,8 @@ mod tests {
         assert!(!result);
     }
 
-    #[test]
-    fn test_handle_thread_verification() {
+    #[tokio::test]
+    async fn test_handle_thread_verification() {
         let (mut app, _rx) = create_test_app_with_ws();
 
         use crate::models::Thread;
