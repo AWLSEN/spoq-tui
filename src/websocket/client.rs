@@ -55,7 +55,7 @@ impl Default for WsClientConfig {
     fn default() -> Self {
         // Allow WebSocket host to be configured via environment variable
         let host =
-            std::env::var("SPOQ_WS_HOST").unwrap_or_else(|_| "100.80.115.93:8000".to_string());
+            std::env::var("SPOQ_WS_HOST").unwrap_or_else(|_| "100.85.185.33:8000".to_string());
         Self {
             host,
             max_retries: 5,
@@ -466,7 +466,7 @@ mod tests {
         let config = WsClientConfig::default();
         // Default host when env var is not set
         if std::env::var("SPOQ_WS_HOST").is_err() {
-            assert_eq!(config.host, "100.80.115.93:8000");
+            assert_eq!(config.host, "100.85.185.33:8000");
         }
         assert_eq!(config.max_retries, 5);
         assert_eq!(config.max_backoff_secs, 30);

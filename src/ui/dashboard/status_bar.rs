@@ -74,6 +74,17 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
         return;
     }
 
+    // Calculate 70% width, centered
+    let bar_width = (area.width as f32 * 0.70).round() as u16;
+    let left_padding = (area.width - bar_width) / 2;
+
+    let bar_area = Rect {
+        x: area.x + left_padding,
+        y: area.y,
+        width: bar_width,
+        height: area.height,
+    };
+
     let buf = frame.buffer_mut();
 
     // Calculate segment widths
@@ -81,17 +92,17 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
         ctx.aggregate.working(),
         ctx.aggregate.ready_to_test(),
         ctx.aggregate.idle(),
-        area.width,
+        bar_area.width,
     );
 
     // Row 0: Proportional bar
-    render_proportional_bar(buf, area, &widths, ctx.filter);
+    render_proportional_bar(buf, bar_area, &widths, ctx.filter);
 
     // Row 1: Labels
-    render_labels(buf, area, ctx, &widths);
+    render_labels(buf, bar_area, ctx, &widths);
 
     // Register hit areas for clickable segments
-    register_hit_areas(registry, area, &widths);
+    register_hit_areas(registry, bar_area, &widths);
 }
 
 // ============================================================================

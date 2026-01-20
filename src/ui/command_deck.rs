@@ -103,13 +103,6 @@ pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
-    // Connection status indicator
-    let (status_icon, status_text, status_color) = if app.connection_status {
-        ("●", "Connected", Color::LightGreen)
-    } else {
-        ("○", "Disconnected", Color::Red)
-    };
-
     // Build session badges line
     let mut badges_spans = vec![];
 
@@ -161,11 +154,6 @@ pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
             }
         }
     }
-
-    // Connection status
-    badges_spans.push(Span::styled(status_icon, Style::default().fg(status_color)));
-    badges_spans.push(Span::raw(" "));
-    badges_spans.push(Span::styled(status_text, Style::default().fg(status_color)));
 
     let mut lines = vec![Line::from(""), Line::from(badges_spans), Line::from("")];
 

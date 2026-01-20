@@ -58,13 +58,6 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
     // Create layout context for responsive calculations
     let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
 
-    // Main outer border
-    let outer_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(COLOR_BORDER));
-    frame.render_widget(outer_block, size);
-
     // Determine if we should show the streaming indicator
     let show_streaming_indicator = app.is_streaming();
 

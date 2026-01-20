@@ -62,8 +62,24 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext) {
 
 /// Render the left section with CPU bar and RAM usage
 fn render_left_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
-    let x = area.x + 2;
+    let mut x = area.x + 2;
     let y = area.y;
+
+    // Connection status circle (far left, before CPU)
+    let (conn_char, conn_color) = if ctx.system_stats.connected {
+        ('●', ctx.theme.success)  // Filled circle, green
+    } else {
+        ('○', ctx.theme.error)    // Empty circle, red
+    };
+
+    // Render circle at x position
+    buf[(x, y)]
+        .set_char(conn_char)
+        .set_style(Style::default().fg(conn_color));
+
+    // Add space after circle, then continue with CPU
+    // Shift all subsequent rendering by 2 positions (circle + space)
+    x += 2;  // Now CPU starts after "● "
 
     // Format: "cpu ▓▓▓░░  4.2/8g"
     // CPU label and bar

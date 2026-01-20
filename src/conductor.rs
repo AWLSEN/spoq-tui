@@ -17,7 +17,7 @@ use reqwest::Client;
 use std::pin::Pin;
 
 /// Default URL for the Conductor API
-pub const DEFAULT_CONDUCTOR_URL: &str = "http://100.80.115.93:8000";
+pub const DEFAULT_CONDUCTOR_URL: &str = "http://100.85.185.33:8000";
 
 /// Error type for Conductor client operations
 #[derive(Debug)]
