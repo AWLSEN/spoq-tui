@@ -64,6 +64,23 @@ impl From<serde_json::Error> for CentralApiError {
     }
 }
 
+/// Parse error response from API.
+/// Tries to extract {"error": "message"} format, falls back to raw body.
+fn parse_error_response(status: u16, body: &str) -> CentralApiError {
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(msg) = json.get("error").and_then(|e| e.as_str()) {
+            return CentralApiError::ServerError {
+                status,
+                message: msg.to_string(),
+            };
+        }
+    }
+    CentralApiError::ServerError {
+        status,
+        message: body.to_string(),
+    }
+}
+
 /// Response from the device code endpoint (POST /auth/device).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceCodeResponse {
@@ -289,8 +306,8 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError { status, message });
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
         }
 
         // Get the response text first for better error messages
@@ -381,8 +398,8 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError { status, message });
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
         }
 
         let data: TokenResponse = response.json().await?;
@@ -402,8 +419,8 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError { status, message });
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
         }
 
         let wrapper: VpsPlansResponse = response.json().await?;
@@ -415,12 +432,29 @@ impl CentralApiClient {
     /// POST /api/vps/provision
     ///
     /// Requires authentication. Returns the provision response with VPS ID and initial status.
-    pub async fn provision_vps(&self, plan_id: &str) -> Result<ProvisionResponse, CentralApiError> {
+    ///
+    /// # Arguments
+    /// * `ssh_password` - The SSH password for the VPS (required)
+    /// * `plan_id` - Optional plan ID for the VPS
+    /// * `data_center_id` - Optional data center ID for VPS location
+    pub async fn provision_vps(
+        &self,
+        ssh_password: &str,
+        plan_id: Option<&str>,
+        data_center_id: Option<u32>,
+    ) -> Result<ProvisionResponse, CentralApiError> {
         let url = format!("{}/api/vps/provision", self.base_url);
 
-        let body = serde_json::json!({
-            "plan_id": plan_id,
+        let mut body = serde_json::json!({
+            "ssh_password": ssh_password,
         });
+
+        if let Some(plan) = plan_id {
+            body["plan_id"] = serde_json::json!(plan);
+        }
+        if let Some(dc_id) = data_center_id {
+            body["data_center_id"] = serde_json::json!(dc_id);
+        }
 
         let builder = self
             .client
@@ -431,8 +465,8 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError { status, message });
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
         }
 
         let data: ProvisionResponse = response.json().await?;
@@ -452,12 +486,161 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError { status, message });
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
         }
 
         let data: VpsStatusResponse = response.json().await?;
         Ok(data)
+    }
+
+    /// Fetch available data centers.
+    ///
+    /// GET /api/vps/datacenters (no auth required)
+    ///
+    /// Returns a list of available data centers.
+    pub async fn fetch_datacenters(&self) -> Result<Vec<DataCenter>, CentralApiError> {
+        let url = format!("{}/api/vps/datacenters", self.base_url);
+
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(CentralApiError::Http)?;
+
+        let status = response.status().as_u16();
+        if !response.status().is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: DataCentersResponse = response
+            .json()
+            .await
+            .map_err(CentralApiError::Http)?;
+
+        Ok(data.data_centers)
+    }
+
+    /// Start VPS.
+    ///
+    /// POST /api/vps/start
+    ///
+    /// Requires authentication. Returns the action response.
+    pub async fn start_vps(&self) -> Result<VpsActionResponse, CentralApiError> {
+        let url = format!("{}/api/vps/start", self.base_url);
+
+        let builder = self.client.post(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: VpsActionResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Stop VPS.
+    ///
+    /// POST /api/vps/stop
+    ///
+    /// Requires authentication. Returns the action response.
+    pub async fn stop_vps(&self) -> Result<VpsActionResponse, CentralApiError> {
+        let url = format!("{}/api/vps/stop", self.base_url);
+
+        let builder = self.client.post(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: VpsActionResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Restart VPS.
+    ///
+    /// POST /api/vps/restart
+    ///
+    /// Requires authentication. Returns the action response.
+    pub async fn restart_vps(&self) -> Result<VpsActionResponse, CentralApiError> {
+        let url = format!("{}/api/vps/restart", self.base_url);
+
+        let builder = self.client.post(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: VpsActionResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Reset VPS password.
+    ///
+    /// POST /api/vps/reset-password
+    ///
+    /// Requires authentication. Returns the action response.
+    pub async fn reset_vps_password(&self, new_password: &str) -> Result<VpsActionResponse, CentralApiError> {
+        let url = format!("{}/api/vps/reset-password", self.base_url);
+
+        let body = serde_json::json!({
+            "password": new_password,
+        });
+
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: VpsActionResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Revoke a refresh token.
+    ///
+    /// POST /api/auth/revoke
+    ///
+    /// Requires authentication. Returns empty body on success.
+    pub async fn revoke_token(&self, refresh_token: &str) -> Result<(), CentralApiError> {
+        let url = format!("{}/api/auth/revoke", self.base_url);
+
+        let body = serde_json::json!({
+            "refresh_token": refresh_token,
+        });
+
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        Ok(())
     }
 }
 
@@ -724,8 +907,24 @@ mod tests {
     async fn test_provision_vps_with_invalid_server() {
         let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
-        let result = client.provision_vps("plan-small").await;
+        let result = client.provision_vps("test-password", Some("plan-small"), None).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_provision_vps_with_datacenter_id() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.provision_vps("test-password", Some("plan-small"), Some(9)).await;
+        assert!(result.is_err()); // Connection error expected
+    }
+
+    #[tokio::test]
+    async fn test_provision_vps_minimal_params() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.provision_vps("test-password", None, None).await;
+        assert!(result.is_err()); // Connection error expected
     }
 
     #[tokio::test]
@@ -909,5 +1108,147 @@ mod tests {
         assert_eq!(response.status, "provisioning");
         assert!(response.hostname.is_none());
         assert!(response.message.is_none());
+    }
+
+    #[test]
+    fn test_parse_error_response_with_error_field() {
+        // API returns {"error": "message"} format
+        let body = r#"{"error": "Invalid credentials"}"#;
+        let err = parse_error_response(401, body);
+        match err {
+            CentralApiError::ServerError { status, message } => {
+                assert_eq!(status, 401);
+                assert_eq!(message, "Invalid credentials");
+            }
+            _ => panic!("Expected ServerError"),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_response_with_raw_body() {
+        // API returns plain text or non-standard JSON
+        let body = "Internal Server Error";
+        let err = parse_error_response(500, body);
+        match err {
+            CentralApiError::ServerError { status, message } => {
+                assert_eq!(status, 500);
+                assert_eq!(message, "Internal Server Error");
+            }
+            _ => panic!("Expected ServerError"),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_response_with_json_without_error_field() {
+        // API returns JSON but without "error" field
+        let body = r#"{"message": "Something went wrong", "code": 123}"#;
+        let err = parse_error_response(400, body);
+        match err {
+            CentralApiError::ServerError { status, message } => {
+                assert_eq!(status, 400);
+                // Falls back to raw body
+                assert_eq!(message, r#"{"message": "Something went wrong", "code": 123}"#);
+            }
+            _ => panic!("Expected ServerError"),
+        }
+    }
+
+    #[test]
+    fn test_parse_error_response_with_empty_body() {
+        let body = "";
+        let err = parse_error_response(503, body);
+        match err {
+            CentralApiError::ServerError { status, message } => {
+                assert_eq!(status, 503);
+                assert_eq!(message, "");
+            }
+            _ => panic!("Expected ServerError"),
+        }
+    }
+
+    #[test]
+    fn test_data_center_deserialize() {
+        let json = r#"{"id": 1, "name": "NYC1", "city": "New York", "country": "USA", "continent": "North America"}"#;
+        let dc: DataCenter = serde_json::from_str(json).unwrap();
+        assert_eq!(dc.id, 1);
+        assert_eq!(dc.name, "NYC1");
+        assert_eq!(dc.city, "New York");
+        assert_eq!(dc.country, "USA");
+        assert_eq!(dc.continent, "North America");
+    }
+
+    #[test]
+    fn test_data_centers_response_deserialize() {
+        let json = r#"{"data_centers": [
+            {"id": 1, "name": "NYC1", "city": "New York", "country": "USA", "continent": "North America"},
+            {"id": 2, "name": "LAX1", "city": "Los Angeles", "country": "USA", "continent": "North America"}
+        ]}"#;
+        let response: DataCentersResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.data_centers.len(), 2);
+        assert_eq!(response.data_centers[0].name, "NYC1");
+        assert_eq!(response.data_centers[1].name, "LAX1");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_datacenters_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let result = client.fetch_datacenters().await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vps_action_response_deserialize() {
+        let json = r#"{"success": true, "message": "VPS started successfully"}"#;
+        let response: VpsActionResponse = serde_json::from_str(json).unwrap();
+        assert!(response.success);
+        assert_eq!(response.message, "VPS started successfully");
+    }
+
+    #[test]
+    fn test_vps_action_response_deserialize_failure() {
+        let json = r#"{"success": false, "message": "VPS is already running"}"#;
+        let response: VpsActionResponse = serde_json::from_str(json).unwrap();
+        assert!(!response.success);
+        assert_eq!(response.message, "VPS is already running");
+    }
+
+    #[tokio::test]
+    async fn test_start_vps_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.start_vps().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_stop_vps_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.stop_vps().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_restart_vps_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.restart_vps().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_reset_vps_password_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.reset_vps_password("new-password").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_revoke_token_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client.revoke_token("refresh-token-123").await;
+        assert!(result.is_err());
     }
 }
