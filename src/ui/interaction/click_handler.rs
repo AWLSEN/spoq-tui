@@ -60,18 +60,37 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
         // Thread Action Buttons
         // =====================================================================
         ClickAction::ApproveThread(thread_id) => {
-            // TODO: Implement when thread approval API integration is added
-            // This would send an approval action to the backend
-            tracing::debug!("Click: ApproveThread(thread_id={}) (stub)", thread_id);
+            // Handle thread approval (permission or plan) via WebSocket
+            let sent = app.handle_thread_approval(&thread_id);
+            if sent {
+                // Collapse overlay after successful approval
+                app.dashboard.collapse_overlay();
+                tracing::info!("Click: ApproveThread(thread_id={}) - response sent", thread_id);
+            } else {
+                tracing::debug!(
+                    "Click: ApproveThread(thread_id={}) - no action needed",
+                    thread_id
+                );
+            }
         }
         ClickAction::RejectThread(thread_id) => {
-            // TODO: Implement when thread rejection API integration is added
-            tracing::debug!("Click: RejectThread(thread_id={}) (stub)", thread_id);
+            // Handle thread rejection (permission or plan) via WebSocket
+            let sent = app.handle_thread_rejection(&thread_id);
+            if sent {
+                // Collapse overlay after successful rejection
+                app.dashboard.collapse_overlay();
+                tracing::info!("Click: RejectThread(thread_id={}) - response sent", thread_id);
+            } else {
+                tracing::debug!(
+                    "Click: RejectThread(thread_id={}) - no action needed",
+                    thread_id
+                );
+            }
         }
         ClickAction::VerifyThread(thread_id) => {
-            // Mark thread as verified locally
-            app.dashboard.mark_verified_local(&thread_id);
-            tracing::debug!("Click: VerifyThread(thread_id={}) - marked verified", thread_id);
+            // Handle verification via REST endpoint with local fallback
+            app.handle_thread_verification(&thread_id);
+            tracing::info!("Click: VerifyThread(thread_id={}) - verification initiated", thread_id);
         }
         ClickAction::ArchiveThread(thread_id) => {
             // TODO: Implement when thread archiving is added

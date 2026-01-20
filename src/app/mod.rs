@@ -6,6 +6,7 @@
 //! - [`PermissionMode`] - Current permission mode for Claude interactions
 //! - [`AppMessage`] - Messages for async communication
 
+mod actions;
 mod handlers;
 mod messages;
 mod navigation;

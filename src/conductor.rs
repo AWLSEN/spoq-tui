@@ -495,6 +495,52 @@ impl ConductorClient {
 
         Ok(())
     }
+
+    /// Verify a thread via the REST endpoint.
+    ///
+    /// Calls `POST /v1/threads/{thread_id}/verify` to mark a thread as verified.
+    /// The endpoint may return 404 if not implemented by the backend.
+    ///
+    /// # Returns
+    /// - `Ok(true)` if the thread was successfully verified
+    /// - `Ok(false)` if the response indicates verification failed
+    /// - `Err(ConductorError::NotImplemented)` if the endpoint returns 404
+    /// - `Err(ConductorError::ServerError)` for other errors
+    pub async fn verify_thread(&self, thread_id: &str) -> Result<bool, ConductorError> {
+        let url = format!("{}/v1/threads/{}/verify", self.base_url, thread_id);
+
+        let builder = self.client.post(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        let status = response.status();
+
+        if status.as_u16() == 404 {
+            return Err(ConductorError::NotImplemented(format!(
+                "/v1/threads/{}/verify",
+                thread_id
+            )));
+        }
+
+        if !status.is_success() {
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError {
+                status: status.as_u16(),
+                message,
+            });
+        }
+
+        // Parse the response to check if verified
+        let body: serde_json::Value = response.json().await?;
+        let verified = body
+            .get("verified")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(verified)
+    }
 }
 
 impl Default for ConductorClient {
