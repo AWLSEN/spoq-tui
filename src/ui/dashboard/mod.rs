@@ -5,6 +5,9 @@
 
 mod context;
 pub mod header;
+pub mod status_bar;
+pub mod thread_list;
+pub mod thread_row;
 
 pub use context::{
     FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadMode, ThreadView,
