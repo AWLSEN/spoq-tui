@@ -413,6 +413,7 @@ impl App {
             Ok(response) => {
                 // Update credentials
                 self.credentials.access_token = Some(response.access_token.clone());
+                // Token lifetime: Actual lifetime comes from API response, this is just a fallback default (15 min)
                 let expires_in = response
                     .expires_in
                     .or_else(|| get_jwt_expires_in(&response.access_token))

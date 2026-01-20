@@ -65,10 +65,11 @@ pub fn run_auth_flow(runtime: &tokio::runtime::Runtime) -> Result<Credentials, C
     println!("done\n");
 
     // Calculate expiration from JWT or response
+    // Token lifetime: Actual lifetime comes from API response, this is just a fallback default (15 min)
     let expires_in = tokens
         .expires_in
         .or_else(|| get_jwt_expires_in(&tokens.access_token))
-        .unwrap_or(3600); // Default 1 hour
+        .unwrap_or(900); // Default 15 minutes
     let expires_at = Utc::now().timestamp() + expires_in as i64;
 
     // Build credentials from token response
@@ -231,12 +232,12 @@ mod tests {
             username: None,
         };
 
-        // With None expires_in and invalid JWT, should fall back to 3600
+        // With None expires_in and invalid JWT, should fall back to 900 (15 min)
         let expires_in = token_response
             .expires_in
             .or_else(|| get_jwt_expires_in(&token_response.access_token))
-            .unwrap_or(3600);
-        assert_eq!(expires_in, 3600);
+            .unwrap_or(900);
+        assert_eq!(expires_in, 900);
 
         // With Some expires_in, should use that value
         let token_with_expires = TokenResponse {
@@ -251,7 +252,7 @@ mod tests {
         let expires_in_explicit = token_with_expires
             .expires_in
             .or_else(|| get_jwt_expires_in(&token_with_expires.access_token))
-            .unwrap_or(3600);
+            .unwrap_or(900);
         assert_eq!(expires_in_explicit, 7200);
     }
 
