@@ -84,6 +84,15 @@ impl DashboardState {
         self.thread_views_dirty = true;
     }
 
+    /// Add a single thread (from WebSocket thread_created event)
+    ///
+    /// If the thread already exists, it will be replaced.
+    pub fn add_thread(&mut self, thread: Thread) {
+        self.threads.insert(thread.id.clone(), thread);
+        self.recompute_aggregate();
+        self.thread_views_dirty = true;
+    }
+
     /// Update a single thread's status
     pub fn update_thread_status(
         &mut self,

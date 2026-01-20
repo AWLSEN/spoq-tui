@@ -94,20 +94,28 @@ pub struct ConductorClient {
 
 impl ConductorClient {
     /// Create a new ConductorClient with the default base URL.
+    ///
+    /// If `SPOQ_DEV_TOKEN` environment variable is set, it will be used
+    /// as the Bearer token for all requests (useful for local development).
     pub fn new() -> Self {
+        let auth_token = std::env::var("SPOQ_DEV_TOKEN").ok();
         Self {
             base_url: DEFAULT_CONDUCTOR_URL.to_string(),
             client: Client::new(),
-            auth_token: None,
+            auth_token,
         }
     }
 
     /// Create a new ConductorClient with a custom base URL.
+    ///
+    /// If `SPOQ_DEV_TOKEN` environment variable is set, it will be used
+    /// as the Bearer token for all requests (useful for local development).
     pub fn with_base_url(base_url: String) -> Self {
+        let auth_token = std::env::var("SPOQ_DEV_TOKEN").ok();
         Self {
             base_url,
             client: Client::new(),
-            auth_token: None,
+            auth_token,
         }
     }
 
@@ -178,6 +186,14 @@ impl ConductorClient {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<SseEvent, ConductorError>> + Send>>, ConductorError>
     {
         let url = format!("{}/v1/stream", self.base_url);
+
+        // Debug: Log stream request details
+        tracing::info!(
+            "STREAM_REQUEST: url={}, has_auth={}, thread_id={:?}",
+            url,
+            self.auth_token.is_some(),
+            request.thread_id
+        );
 
         let builder = self
             .client

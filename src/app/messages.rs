@@ -1,7 +1,7 @@
 //! AppMessage enum for async communication within the application.
 
 use crate::models::dashboard::{PlanSummary, ThreadStatus, WaitingFor};
-use crate::models::Folder;
+use crate::models::{Folder, Thread};
 use crate::state::Todo;
 use crate::ui::dashboard::SystemStats;
 
@@ -152,6 +152,10 @@ pub enum AppMessage {
         request_id: String,
         plan_summary: PlanSummary,
     },
+    /// New thread created notification from WebSocket (for dashboard)
+    ///
+    /// Allows dashboard to immediately add new threads without polling.
+    WsThreadCreated { thread: Thread },
 }
 
 #[cfg(test)]

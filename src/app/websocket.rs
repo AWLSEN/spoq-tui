@@ -177,6 +177,18 @@ fn route_ws_message(
                 })
                 .map_err(|e| format!("Failed to send PlanApprovalRequest: {}", e))
         }
+        WsIncomingMessage::ThreadCreated(created) => {
+            // New thread created - add to dashboard immediately
+            info!(
+                "Received thread_created: thread_id={}",
+                created.thread.id
+            );
+            message_tx
+                .send(AppMessage::WsThreadCreated {
+                    thread: created.thread,
+                })
+                .map_err(|e| format!("Failed to send WsThreadCreated: {}", e))
+        }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })
             .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),

@@ -277,7 +277,23 @@ impl App {
 
     /// Create a new App instance with an optional debug event sender
     pub fn with_debug(debug_tx: Option<DebugEventSender>) -> Result<Self> {
-        Self::with_client_and_debug(Arc::new(ConductorClient::new()), debug_tx)
+        // Load credentials to get the token and VPS URL
+        let credentials_manager = CredentialsManager::new();
+        let credentials = credentials_manager
+            .as_ref()
+            .map(|cm| cm.load())
+            .unwrap_or_default();
+
+        // Create client with credentials if available
+        let client = match (&credentials.vps_url, &credentials.access_token) {
+            (Some(vps_url), Some(token)) => {
+                ConductorClient::with_url(vps_url).with_auth(token)
+            }
+            (Some(vps_url), None) => ConductorClient::with_url(vps_url),
+            _ => ConductorClient::new(),
+        };
+
+        Self::with_client_and_debug_and_credentials(Arc::new(client), debug_tx, credentials)
     }
 
     /// Create a new App instance with a custom ConductorClient
@@ -290,21 +306,36 @@ impl App {
         client: Arc<ConductorClient>,
         debug_tx: Option<DebugEventSender>,
     ) -> Result<Self> {
+        // Load credentials (for tests/custom clients that don't pre-load)
+        let credentials_manager = CredentialsManager::new();
+        let credentials = credentials_manager
+            .as_ref()
+            .map(|cm| cm.load())
+            .unwrap_or_default();
+        Self::with_client_and_debug_and_credentials(client, debug_tx, credentials)
+    }
+
+    /// Create a new App instance with pre-loaded credentials
+    fn with_client_and_debug_and_credentials(
+        client: Arc<ConductorClient>,
+        debug_tx: Option<DebugEventSender>,
+        credentials: Credentials,
+    ) -> Result<Self> {
         // Initialize empty cache - will be populated by initialize()
         let cache = ThreadCache::new();
 
         // Create the message channel for async communication
         let (message_tx, message_rx) = mpsc::unbounded_channel();
 
-        // Create credentials manager and load credentials
+        // Create credentials manager (needed for saving credentials later)
         let credentials_manager = CredentialsManager::new();
-        let credentials = credentials_manager
-            .as_ref()
-            .map(|cm| cm.load())
-            .unwrap_or_default();
 
-        // Create central API client with production URL
-        let central_api = Arc::new(CentralApiClient::new());
+        // Create central API client, with auth if token available
+        let central_api = if let Some(ref token) = credentials.access_token {
+            Arc::new(CentralApiClient::new().with_auth(token))
+        } else {
+            Arc::new(CentralApiClient::new())
+        };
 
         Ok(Self {
             // Start with empty vectors - will be populated from server in initialize()

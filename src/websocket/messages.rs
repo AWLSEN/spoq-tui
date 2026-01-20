@@ -1,7 +1,6 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::models::{PlanSummary, ThreadStatus, WaitingFor};
+use crate::models::{PlanSummary, Thread, ThreadStatus, WaitingFor};
 
 /// Incoming WebSocket messages from the client
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -9,7 +8,7 @@ use crate::models::{PlanSummary, ThreadStatus, WaitingFor};
 pub enum WsIncomingMessage {
     #[serde(rename = "permission_request")]
     PermissionRequest(WsPermissionRequest),
-    /// Agent status update (thinking, idle, tool_use, etc.)
+    /// Agent status update (thinking, idle, streaming, tool_use)
     #[serde(rename = "agent_status")]
     AgentStatus(WsAgentStatus),
     /// Connection confirmation from server
@@ -18,6 +17,9 @@ pub enum WsIncomingMessage {
     /// Thread status update for dashboard view
     #[serde(rename = "thread_status_update")]
     ThreadStatusUpdate(WsThreadStatusUpdate),
+    /// New thread created (first message to a new thread_id)
+    #[serde(rename = "thread_created")]
+    ThreadCreated(WsThreadCreated),
     /// Plan approval request from agent
     #[serde(rename = "plan_approval_request")]
     PlanApprovalRequest(WsPlanApprovalRequest),
@@ -67,8 +69,20 @@ pub struct WsThreadStatusUpdate {
     /// What the thread is waiting for (if status is Waiting)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub waiting_for: Option<WaitingFor>,
-    /// When this update occurred
-    pub timestamp: DateTime<Utc>,
+    /// When this update occurred (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// New thread created notification
+///
+/// Sent when a new thread is created (first message to a new thread_id).
+/// Allows clients to immediately add the thread without polling.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsThreadCreated {
+    /// The newly created thread
+    pub thread: Thread,
+    /// When this event occurred (unix ms)
+    pub timestamp: u64,
 }
 
 /// Plan approval request from agent
@@ -80,8 +94,8 @@ pub struct WsPlanApprovalRequest {
     pub request_id: String,
     /// Summary of the plan
     pub plan_summary: PlanSummary,
-    /// When this request was created
-    pub timestamp: DateTime<Utc>,
+    /// When this request was created (Unix milliseconds)
+    pub timestamp: u64,
 }
 
 /// Command response sent to client
@@ -556,7 +570,7 @@ mod tests {
             "type": "thread_status_update",
             "thread_id": "thread-123",
             "status": "running",
-            "timestamp": "2024-01-15T10:30:00Z"
+            "timestamp": 1705315800000
         }"#;
 
         let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
@@ -565,6 +579,7 @@ mod tests {
                 assert_eq!(update.thread_id, "thread-123");
                 assert_eq!(update.status, ThreadStatus::Running);
                 assert!(update.waiting_for.is_none());
+                assert_eq!(update.timestamp, 1705315800000);
             }
             _ => panic!("Expected ThreadStatusUpdate"),
         }
@@ -581,7 +596,7 @@ mod tests {
                 "request_id": "req-789",
                 "tool_name": "Bash"
             },
-            "timestamp": "2024-01-15T10:30:00Z"
+            "timestamp": 1705315800000
         }"#;
 
         let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
@@ -608,7 +623,7 @@ mod tests {
             thread_id: "thread-serialize".to_string(),
             status: ThreadStatus::Done,
             waiting_for: None,
-            timestamp: Utc::now(),
+            timestamp: 1705315800000, // Unix ms
         };
 
         let json = serde_json::to_string(&update).unwrap();
@@ -617,6 +632,7 @@ mod tests {
         assert_eq!(parsed["thread_id"], "thread-serialize");
         assert_eq!(parsed["status"], "done");
         assert!(parsed.get("waiting_for").is_none() || parsed["waiting_for"].is_null());
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
     }
 
     // -------------------- Plan Approval Request Tests --------------------
@@ -633,7 +649,7 @@ mod tests {
                 "file_count": 15,
                 "estimated_tokens": 50000
             },
-            "timestamp": "2024-01-15T10:30:00Z"
+            "timestamp": 1705315800000
         }"#;
 
         let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
@@ -645,6 +661,7 @@ mod tests {
                 assert_eq!(req.plan_summary.phases.len(), 3);
                 assert_eq!(req.plan_summary.file_count, 15);
                 assert_eq!(req.plan_summary.estimated_tokens, 50000);
+                assert_eq!(req.timestamp, 1705315800000);
             }
             _ => panic!("Expected PlanApprovalRequest"),
         }
@@ -663,7 +680,7 @@ mod tests {
                 5,
                 10000,
             ),
-            timestamp: Utc::now(),
+            timestamp: 1705315800000, // Unix ms
         };
 
         let json = serde_json::to_string(&req).unwrap();
@@ -672,6 +689,7 @@ mod tests {
         assert_eq!(parsed["thread_id"], "thread-plan-serialize");
         assert_eq!(parsed["request_id"], "plan-req-456");
         assert_eq!(parsed["plan_summary"]["title"], "Refactor module");
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
         assert_eq!(parsed["plan_summary"]["phases"].as_array().unwrap().len(), 2);
     }
 

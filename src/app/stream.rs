@@ -206,18 +206,16 @@ impl App {
                                 continue;
                             }
 
-                            // Emit ProcessedEvent
-                            emit_debug(
-                                &debug_tx,
-                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
-                                    "StreamToken",
-                                    format!(
-                                        "token: '{}'",
-                                        truncate_for_debug(&content_event.text, 50)
-                                    ),
-                                )),
-                                Some(thread_id),
-                            );
+                            // NOTE: StreamToken debug logging disabled to reduce noise
+                            // Uncomment below to debug streaming content:
+                            // emit_debug(
+                            //     &debug_tx,
+                            //     DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                            //         "StreamToken",
+                            //         format!("token: '{}'", truncate_for_debug(&content_event.text, 50)),
+                            //     )),
+                            //     Some(thread_id),
+                            // );
 
                             let _ = message_tx.send(AppMessage::StreamToken {
                                 thread_id: thread_id.to_string(),

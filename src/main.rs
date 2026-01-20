@@ -1,6 +1,9 @@
-use spoq::app::{start_websocket, App, AppMessage, Focus, Screen, ScrollBoundary};
+use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary};
+use spoq::websocket::WsClientConfig;
 use spoq::auth::{run_auth_flow, run_provisioning_flow, start_stopped_vps, CredentialsManager};
-use spoq::debug::{create_debug_channel, start_debug_server};
+use spoq::debug::{
+    create_debug_channel, start_debug_server, DebugEvent, DebugEventKind, StateChangeData, StateType,
+};
 use spoq::models;
 use spoq::ui;
 
@@ -159,8 +162,43 @@ fn main() -> Result<()> {
         app.load_folders();
 
         // Connect WebSocket for real-time communication
+        // Build config with token from credentials (not just env var)
+        let ws_config = if let Some(ref token) = app.credentials.access_token {
+            WsClientConfig::default().with_auth(token)
+        } else {
+            WsClientConfig::default()
+        };
+
+        // Emit debug event showing connection attempt
+        if let Some(ref tx) = app.debug_tx {
+            let _ = tx.send(DebugEvent::new(DebugEventKind::StateChange(
+                StateChangeData::new(
+                    StateType::WebSocket,
+                    "WS_CONNECTING",
+                    format!("Connecting to {} (has_token={})", ws_config.host, ws_config.auth_token.is_some()),
+                ),
+            )));
+        }
+
         // If connection fails, app continues in SSE-only mode
-        app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
+        match start_websocket_with_config(app.message_tx.clone(), ws_config).await {
+            Ok(sender) => {
+                if let Some(ref tx) = app.debug_tx {
+                    let _ = tx.send(DebugEvent::new(DebugEventKind::StateChange(
+                        StateChangeData::new(StateType::WebSocket, "WS_INIT", "WebSocket connected successfully"),
+                    )));
+                }
+                app.ws_sender = Some(sender);
+            }
+            Err(e) => {
+                if let Some(ref tx) = app.debug_tx {
+                    let _ = tx.send(DebugEvent::new(DebugEventKind::StateChange(
+                        StateChangeData::new(StateType::WebSocket, "WS_INIT_FAILED", format!("WebSocket connection failed: {}", e)),
+                    )));
+                }
+                app.ws_sender = None;
+            }
+        }
     });
 
     // Main event loop

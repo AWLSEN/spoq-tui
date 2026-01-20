@@ -161,14 +161,21 @@ impl Aggregate {
 
 /// Infer thread status from agent state string
 ///
-/// Maps backend agent state strings to ThreadStatus enum
+/// Maps backend agent state strings to ThreadStatus enum.
+///
+/// Actual backend values: `thinking`, `streaming`, `tool_use`, `idle`
+/// Additional legacy values are supported for backward compatibility.
 pub fn infer_status_from_agent_state(state: &str) -> ThreadStatus {
     match state.to_lowercase().as_str() {
-        "thinking" | "tool_use" | "running" | "executing" => ThreadStatus::Running,
+        // Primary backend values
+        "thinking" | "streaming" | "tool_use" => ThreadStatus::Running,
+        "idle" => ThreadStatus::Idle,
+        // Legacy/extended values for backward compatibility
+        "running" | "executing" => ThreadStatus::Running,
         "waiting" | "awaiting_permission" | "awaiting_input" | "paused" => ThreadStatus::Waiting,
         "done" | "complete" | "completed" | "finished" | "success" => ThreadStatus::Done,
         "error" | "failed" | "failure" => ThreadStatus::Error,
-        "idle" | "ready" | "" => ThreadStatus::Idle,
+        "ready" | "" => ThreadStatus::Idle,
         _ => ThreadStatus::Idle, // Default to Idle for unknown states
     }
 }
@@ -506,14 +513,20 @@ mod tests {
 
     #[test]
     fn test_infer_status_running() {
+        // Primary backend values
         assert_eq!(
             infer_status_from_agent_state("thinking"),
+            ThreadStatus::Running
+        );
+        assert_eq!(
+            infer_status_from_agent_state("streaming"),
             ThreadStatus::Running
         );
         assert_eq!(
             infer_status_from_agent_state("tool_use"),
             ThreadStatus::Running
         );
+        // Legacy values
         assert_eq!(
             infer_status_from_agent_state("running"),
             ThreadStatus::Running
@@ -524,6 +537,10 @@ mod tests {
         );
         assert_eq!(
             infer_status_from_agent_state("THINKING"),
+            ThreadStatus::Running
+        ); // case insensitive
+        assert_eq!(
+            infer_status_from_agent_state("STREAMING"),
             ThreadStatus::Running
         ); // case insensitive
     }

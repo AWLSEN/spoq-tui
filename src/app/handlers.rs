@@ -622,15 +622,15 @@ impl App {
             }
             AppMessage::WsConnected => {
                 use crate::websocket::WsConnectionState;
-                tracing::info!("WebSocket connected");
+                tracing::info!("WS_CONNECTED: WebSocket connection established");
                 self.ws_connection_state = WsConnectionState::Connected;
                 // Emit StateChange for WebSocket connection
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::SessionState,
-                        "WebSocket connected",
-                        "connected",
+                        StateType::WebSocket,
+                        "WS_CONNECTED",
+                        "WebSocket connection established - awaiting backend events",
                     )),
                     None,
                 );
@@ -666,12 +666,14 @@ impl App {
                 );
             }
             AppMessage::WsRawMessage { message } => {
+                // Log WebSocket raw message for debugging
+                tracing::info!("WS_RAW: {}", &message[..message.len().min(100)]);
                 // Emit debug event for raw WebSocket message (for debugging)
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
                         StateType::WebSocket,
-                        "WS raw message received",
+                        "WS_RECV",
                         message,
                     )),
                     None,
@@ -823,6 +825,8 @@ impl App {
                 status,
                 waiting_for,
             } => {
+                // Log for terminal debugging
+                tracing::info!("WS_THREAD_STATUS: thread={}, status={:?}", thread_id, status);
                 // Update dashboard state with thread status
                 self.dashboard
                     .update_thread_status(&thread_id, status.clone(), waiting_for.clone());
@@ -830,22 +834,24 @@ impl App {
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::DashboardState,
-                        "Thread status updated",
+                        StateType::WebSocket,
+                        "WS_THREAD_STATUS",
                         format!("thread: {}, status: {:?}", thread_id, status),
                     )),
                     Some(&thread_id),
                 );
             }
             AppMessage::AgentStatusUpdate { thread_id, state } => {
+                // Log for terminal debugging
+                tracing::info!("WS_AGENT_STATUS: thread={}, state={}", thread_id, state);
                 // Update dashboard state with agent status
                 self.dashboard.update_agent_state(&thread_id, &state);
                 // Emit StateChange for agent status update
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::DashboardState,
-                        "Agent state updated",
+                        StateType::WebSocket,
+                        "WS_AGENT_STATUS",
                         format!("thread: {}, state: {}", thread_id, state),
                     )),
                     Some(&thread_id),
@@ -877,6 +883,23 @@ impl App {
                             "thread: {}, request_id: {}, plan: {}",
                             thread_id, request_id, plan_summary.title
                         ),
+                    )),
+                    Some(&thread_id),
+                );
+            }
+            AppMessage::WsThreadCreated { thread } => {
+                // Log for terminal debugging
+                tracing::info!("WS_THREAD_CREATED: thread_id={}", thread.id);
+                // Add newly created thread to dashboard state
+                let thread_id = thread.id.clone();
+                self.dashboard.add_thread(thread);
+                // Emit StateChange for new thread
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::WebSocket,
+                        "WS_THREAD_CREATED",
+                        format!("thread_id: {}", thread_id),
                     )),
                     Some(&thread_id),
                 );

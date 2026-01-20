@@ -56,11 +56,13 @@ impl Default for WsClientConfig {
         // Allow WebSocket host to be configured via environment variable
         let host =
             std::env::var("SPOQ_WS_HOST").unwrap_or_else(|_| "100.85.185.33:8000".to_string());
+        // Check for dev token in environment
+        let auth_token = std::env::var("SPOQ_DEV_TOKEN").ok();
         Self {
             host,
             max_retries: 5,
             max_backoff_secs: 30,
-            auth_token: None,
+            auth_token,
         }
     }
 }
@@ -92,24 +94,25 @@ impl WsClient {
     ///
     /// Returns a WsClient on success, or WsError if initial connection fails
     pub async fn connect(config: WsClientConfig) -> Result<Self, WsError> {
-        let url = format!("ws://{}/ws", config.host);
+        // Build URL with optional token query param
+        let url = if let Some(ref token) = config.auth_token {
+            format!("ws://{}/ws?token={}", config.host, token)
+        } else {
+            format!("ws://{}/ws", config.host)
+        };
 
-        // Build the WebSocket request with optional auth header
-        let mut request = url
+        // Log connection attempt
+        info!(
+            "WS_CONNECT: Attempting connection to {} (has_token={})",
+            config.host,
+            config.auth_token.is_some()
+        );
+
+        // Build the WebSocket request
+        let request = url
             .clone()
             .into_client_request()
             .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
-
-        if let Some(ref token) = config.auth_token {
-            request.headers_mut().insert(
-                "Authorization",
-                format!("Bearer {}", token).parse().map_err(
-                    |e: tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue| {
-                        WsError::ConnectionFailed(e.to_string())
-                    },
-                )?,
-            );
-        }
 
         // Try initial connection with 5 second timeout
         let ws_stream = tokio::time::timeout(Duration::from_secs(5), connect_async(request))
@@ -385,16 +388,9 @@ async fn attempt_reconnect(
             return None;
         }
 
-        // Build the WebSocket request with optional auth header
+        // Build the WebSocket request (token is already in URL query param)
         let request = match url.into_client_request() {
-            Ok(mut req) => {
-                if let Some(ref token) = config.auth_token {
-                    if let Ok(header_value) = format!("Bearer {}", token).parse() {
-                        req.headers_mut().insert("Authorization", header_value);
-                    }
-                }
-                req
-            }
+            Ok(req) => req,
             Err(e) => {
                 warn!("Failed to build reconnection request: {}", e);
                 continue;

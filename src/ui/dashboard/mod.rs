@@ -75,30 +75,36 @@ pub fn render_dashboard(
         return;
     }
 
-    // Layout: header (2 rows) + status bar (2 rows) + thread list (remaining) + footer (1 row)
+    // Layout: header (3 rows) + margin + status bar (2 rows) + thread list (remaining) + footer (1 row)
+    // Margin between header and status bar is ~8% of remaining height (min 1 row)
+    let margin_rows = ((area.height as f32 * 0.08).round() as u16).max(1);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // Header
-            Constraint::Length(2), // Status bar
-            Constraint::Min(5),    // Thread list
-            Constraint::Length(1), // Footer hint
+            Constraint::Length(3),          // Header (3 rows for better vertical alignment)
+            Constraint::Length(margin_rows), // Margin between header and status bar
+            Constraint::Length(2),          // Status bar
+            Constraint::Min(5),             // Thread list
+            Constraint::Length(1),          // Footer hint
         ])
         .split(area);
 
     // Render header (system stats, logo, counts)
     header::render(frame, chunks[0], ctx);
 
+    // chunks[1] is the margin - intentionally left empty
+
     // Render status bar (proportional segments with filters)
-    status_bar::render(frame, chunks[1], ctx, registry);
+    status_bar::render(frame, chunks[2], ctx, registry);
 
     // Render thread list (split or filtered view)
-    thread_list::render(frame, chunks[2], ctx, registry);
+    thread_list::render(frame, chunks[3], ctx, registry);
 
     // Render footer hint
     let hint = footer::get_footer_hint(ctx);
     let hint_line = Line::styled(hint, Style::default().fg(Color::DarkGray));
-    frame.render_widget(hint_line, chunks[3]);
+    frame.render_widget(hint_line, chunks[4]);
 
     // Render overlay if present
     if let Some(overlay_state) = ctx.overlay {
