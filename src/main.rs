@@ -51,7 +51,11 @@ fn main() -> Result<()> {
     }
 
     // VPS check - run interactive provisioning if no ready VPS
-    if credentials.vps_url.is_none() || credentials.vps_status.as_deref() != Some("ready") {
+    let vps_ready = matches!(
+        credentials.vps_status.as_deref(),
+        Some("ready") | Some("running") | Some("active")
+    );
+    if credentials.vps_url.is_none() || !vps_ready {
         if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
             eprintln!("Provisioning failed: {}", e);
             std::process::exit(1);
