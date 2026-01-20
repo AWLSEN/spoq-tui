@@ -6,6 +6,9 @@
 mod context;
 pub mod header;
 pub mod overlay;
+pub mod plan_card;
+pub mod question_card;
+pub mod states;
 pub mod status_bar;
 pub mod thread_list;
 pub mod thread_row;

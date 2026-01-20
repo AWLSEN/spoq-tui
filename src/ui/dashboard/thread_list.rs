@@ -6,6 +6,7 @@
 use ratatui::{layout::Rect, style::Style, text::Span, Frame};
 
 use super::context::{FilterState, RenderContext, ThreadView};
+use super::states;
 use super::thread_row;
 use crate::models::dashboard::ThreadStatus;
 use crate::ui::interaction::HitAreaRegistry;
@@ -153,17 +154,16 @@ fn render_split_view(
     }
 
     // Special state: "all clear" when no need_action threads
-    // (This will be delegated to states.rs in Phase 10)
     if need_action.is_empty() {
-        // Render "all clear" centered in the need_action area
-        // For now, just show a placeholder message
-        let all_clear_text = "All clear - no threads need attention";
-        let text_width = all_clear_text.len() as u16;
-        let x_offset = area.width.saturating_sub(text_width) / 2;
-        frame.render_widget(
-            Span::raw(all_clear_text),
-            Rect::new(area.x + x_offset, area.y, text_width, 1),
+        // Calculate the area available for the "all clear" message
+        // (from top of area to separator line)
+        let need_action_area = Rect::new(
+            area.x,
+            area.y,
+            area.width,
+            need_action_more_y.saturating_sub(area.y),
         );
+        states::render_all_clear(frame, need_action_area, autonomous.len());
     }
 }
 
