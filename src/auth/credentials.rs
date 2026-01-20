@@ -127,11 +127,10 @@ impl CredentialsManager {
     pub fn save(&self, credentials: &Credentials) -> bool {
         // Ensure the parent directory exists
         if let Some(parent) = self.credentials_path.parent() {
-            if !parent.exists() {
-                if fs::create_dir_all(parent).is_err() {
+            if !parent.exists()
+                && fs::create_dir_all(parent).is_err() {
                     return false;
                 }
-            }
         }
 
         let file = match File::create(&self.credentials_path) {

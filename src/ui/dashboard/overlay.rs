@@ -209,8 +209,6 @@ fn render_plan_content(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Tests removed - card bounds calculation is now inlined in the render function
     // and tested through integration tests
 }

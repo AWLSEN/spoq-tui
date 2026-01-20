@@ -469,9 +469,7 @@ impl App {
             Ok(result) => Ok(result),
             Err(CentralApiError::ServerError { status: 401, .. }) => {
                 // Try to refresh token
-                if let Err(e) = self.refresh_and_update_clients().await {
-                    return Err(e);
-                }
+                self.refresh_and_update_clients().await?;
                 // Retry once with new token
                 operation().await
             }
