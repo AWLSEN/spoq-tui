@@ -1,0 +1,101 @@
+name: Build and Deploy CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., 0.1.5)'
+        required: true
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # macOS Intel
+          - os: macos-13
+            platform: darwin-x86_64
+            target: x86_64-apple-darwin
+
+          # macOS Apple Silicon
+          - os: macos-14
+            platform: darwin-aarch64
+            target: aarch64-apple-darwin
+
+          # Linux x64
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+
+          # Linux ARM64
+          - os: ubuntu-latest
+            platform: linux-aarch64
+            target: aarch64-unknown-linux-gnu
+
+          # Windows x64
+          - os: windows-latest
+            platform: windows-x86_64
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64 only)
+        if: matrix.platform == 'linux-aarch64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cp target/${{ matrix.target }}/release/spoq spoq-${{ matrix.platform }}
+          chmod +x spoq-${{ matrix.platform }}
+
+      - name: Prepare binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cp target/${{ matrix.target }}/release/spoq.exe spoq-${{ matrix.platform }}.exe
+
+      - name: Upload to Railway
+        env:
+          DEPLOY_KEY: ${{ secrets.RAILWAY_DEPLOY_KEY }}
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            BINARY="spoq-${{ matrix.platform }}.exe"
+          else
+            BINARY="spoq-${{ matrix.platform }}"
+          fi
+
+          VERSION_CLEAN=$(echo $VERSION | sed 's/^v//')
+
+          curl -X POST https://download.spoq.dev/cli/release \
+            -H "Authorization: Bearer $DEPLOY_KEY" \
+            -F "version=$VERSION_CLEAN" \
+            -F "platform=${{ matrix.platform }}" \
+            -F "binary=@$BINARY"
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spoq-${{ matrix.platform }}
+          path: spoq-${{ matrix.platform }}*
+          retention-days: 7
