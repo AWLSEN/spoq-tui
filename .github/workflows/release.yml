@@ -168,6 +168,9 @@ jobs:
           DEPLOY_KEY: ${{ secrets.SPOQ_DEPLOY_KEY }}
           VERSION: ${{ needs.release.outputs.version }}
         run: |
+          # Trim whitespace from deploy key
+          DEPLOY_KEY=$(echo "$DEPLOY_KEY" | tr -d '[:space:]')
+
           # Platform mapping: build name -> conductor-version name
           declare -A PLATFORMS=(
             ["darwin-arm64"]="darwin-aarch64"
