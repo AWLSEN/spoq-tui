@@ -21,15 +21,18 @@ use std::io;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     color_eyre::install()?;
 
     // Setup panic hook to ensure terminal cleanup on panic
     setup_panic_hook();
 
-    // Create debug channel and start debug server (optional - continues without if fails)
-    let (debug_tx, debug_server_handle) = start_debug_system().await;
+    // Create Tokio runtime for the entire application
+    // This runtime will be used for auth flows and then for TUI async operations
+    let runtime = tokio::runtime::Runtime::new()?;
+
+    // Run async initialization using the runtime
+    let (debug_tx, debug_server_handle) = runtime.block_on(start_debug_system());
 
     // Open debug dashboard in browser (fire and forget)
     if debug_tx.is_some() {
@@ -74,52 +77,54 @@ async fn main() -> Result<()> {
 
     // Only initialize server connection if already authenticated with ready VPS
     // Login and Provisioning screens don't need server data
-    match app.screen {
-        Screen::CommandDeck | Screen::Conversation => {
-            // Load threads from backend (async initialization)
-            app.initialize().await;
+    runtime.block_on(async {
+        match app.screen {
+            Screen::CommandDeck | Screen::Conversation => {
+                // Load threads from backend (async initialization)
+                app.initialize().await;
 
-            // Load folders for the folder picker (async, non-blocking)
-            app.load_folders();
+                // Load folders for the folder picker (async, non-blocking)
+                app.load_folders();
 
-            // Connect WebSocket for real-time communication
-            // If connection fails, app continues in SSE-only mode
-            app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
-        }
-        Screen::Provisioning => {
-            // Load VPS plans for provisioning screen
-            app.load_vps_plans();
-        }
-        Screen::Login => {
-            // Initialize device flow for login - start the OAuth flow immediately
-            app.emit_debug_state_change("auth", "Device flow", "Starting...");
-            if let Some(ref central_api) = app.central_api {
-                let mut device_flow = DeviceFlowManager::new(central_api.clone());
-                // Start the device flow (requests device code from server)
-                match device_flow.start().await {
-                    Ok(()) => {
-                        // Log the state for debugging
-                        let state_desc = match device_flow.state() {
-                            DeviceFlowState::WaitingForUser { verification_uri, .. } => {
-                                format!("WaitingForUser: {}", verification_uri)
-                            }
-                            other => format!("{:?}", other),
-                        };
-                        app.emit_debug_state_change("auth", "Device flow started", &state_desc);
+                // Connect WebSocket for real-time communication
+                // If connection fails, app continues in SSE-only mode
+                app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
+            }
+            Screen::Provisioning => {
+                // Load VPS plans for provisioning screen
+                app.load_vps_plans();
+            }
+            Screen::Login => {
+                // Initialize device flow for login - start the OAuth flow immediately
+                app.emit_debug_state_change("auth", "Device flow", "Starting...");
+                if let Some(ref central_api) = app.central_api {
+                    let mut device_flow = DeviceFlowManager::new(central_api.clone());
+                    // Start the device flow (requests device code from server)
+                    match device_flow.start().await {
+                        Ok(()) => {
+                            // Log the state for debugging
+                            let state_desc = match device_flow.state() {
+                                DeviceFlowState::WaitingForUser { verification_uri, .. } => {
+                                    format!("WaitingForUser: {}", verification_uri)
+                                }
+                                other => format!("{:?}", other),
+                            };
+                            app.emit_debug_state_change("auth", "Device flow started", &state_desc);
+                        }
+                        Err(e) => {
+                            app.emit_debug_state_change("auth", "Device flow error", &e.to_string());
+                        }
                     }
-                    Err(e) => {
-                        app.emit_debug_state_change("auth", "Device flow error", &e.to_string());
-                    }
+                    app.device_flow = Some(device_flow);
+                } else {
+                    app.emit_debug_state_change("auth", "Device flow", "No central API configured");
                 }
-                app.device_flow = Some(device_flow);
-            } else {
-                app.emit_debug_state_change("auth", "Device flow", "No central API configured");
             }
         }
-    }
+    });
 
     // Main event loop
-    let result = run_app(&mut terminal, &mut app).await;
+    let result = runtime.block_on(run_app(&mut terminal, &mut app));
 
     // Before exiting, save input history
     app.input_history.save();
