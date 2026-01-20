@@ -586,7 +586,7 @@ mod tests {
     #[test]
     fn test_navigate_to_command_deck_when_already_on_command_deck() {
         let mut app = App::default();
-        app.screen = Screen::CommandDeck; // Explicitly set since default may vary based on credentials
+        app.screen = Screen::CommandDeck; // Always starts at CommandDeck since auth happens before TUI
         assert_eq!(app.screen, Screen::CommandDeck);
         app.active_thread_id = Some("thread-456".to_string());
         app.textarea.insert_char('H');
@@ -3220,7 +3220,7 @@ mod tests {
         use crate::models::{ThreadType, PermissionMode};
         let mut app = App {
             permission_mode: PermissionMode::Plan,
-            screen: Screen::CommandDeck, // Explicitly set since default may vary based on credentials
+            screen: Screen::CommandDeck, // Always starts at CommandDeck since auth happens before TUI
             ..Default::default()
         };
 
@@ -3299,7 +3299,7 @@ mod tests {
         use crate::models::{ThreadType, PermissionMode};
         let mut app = App {
             permission_mode: PermissionMode::Default,
-            screen: Screen::CommandDeck, // Explicitly set since default may vary based on credentials
+            screen: Screen::CommandDeck, // Always starts at CommandDeck since auth happens before TUI
             ..Default::default()
         };
 
@@ -3325,7 +3325,7 @@ mod tests {
     async fn test_submit_input_thread_type_conversation() {
         use crate::models::ThreadType;
         let mut app = App::default();
-        app.screen = Screen::CommandDeck; // Explicitly set since default may vary based on credentials
+        app.screen = Screen::CommandDeck; // Always starts at CommandDeck since auth happens before TUI
 
         // Test with Conversation thread type
         app.textarea.insert_char('H');
