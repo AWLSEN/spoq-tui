@@ -90,17 +90,25 @@ pub fn run_provisioning_flow(
 
     println!("\nYou selected: {} (${:.2}/month)", selected_plan.name, selected_plan.price_cents as f64 / 100.0);
 
-    // Step 3: Confirm provisioning
+    // Step 3: Get SSH password from user
+    check_interrupt(&interrupted);
+    let ssh_password = prompt_ssh_password_with_interrupt(&interrupted)?;
+
+    // Step 4: Confirm provisioning
     check_interrupt(&interrupted);
     if !prompt_confirmation_with_interrupt(&interrupted)? {
         println!("Provisioning cancelled.");
         return Ok(());
     }
 
-    // Step 4: Provision the VPS
+    // Step 5: Provision the VPS
     check_interrupt(&interrupted);
     println!("\nProvisioning your VPS...");
-    let provision_response = runtime.block_on(client.provision_vps(&selected_plan.id))?;
+    let provision_response = runtime.block_on(client.provision_vps(
+        &ssh_password,
+        Some(&selected_plan.id),
+        credentials.datacenter_id,
+    ))?;
 
     println!("VPS provisioning started!");
     if let Some(msg) = &provision_response.message {
@@ -114,7 +122,7 @@ pub fn run_provisioning_flow(
         credentials.vps_hostname = Some(hostname.clone());
     }
 
-    // Step 5: Poll for VPS to be ready
+    // Step 6: Poll for VPS to be ready
     println!("\nWaiting for VPS to be ready...");
     let status = poll_vps_status_with_interrupt(runtime, &client, &interrupted)?;
 
@@ -233,6 +241,34 @@ fn prompt_confirmation_with_interrupt(interrupted: &Arc<AtomicBool>) -> Result<b
 
     let trimmed = input.trim().to_lowercase();
     Ok(trimmed == "y" || trimmed == "yes")
+}
+
+/// Prompt the user for SSH password with interrupt support.
+fn prompt_ssh_password_with_interrupt(interrupted: &Arc<AtomicBool>) -> Result<String, CentralApiError> {
+    loop {
+        check_interrupt(interrupted);
+
+        print!("\nEnter SSH password for your VPS (min 8 characters): ");
+        io::stdout().flush().map_err(|e| CentralApiError::ServerError {
+            status: 0,
+            message: format!("Failed to flush stdout: {}", e),
+        })?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).map_err(|e| CentralApiError::ServerError {
+            status: 0,
+            message: format!("Failed to read input: {}", e),
+        })?;
+
+        check_interrupt(interrupted);
+
+        let password = input.trim().to_string();
+        if password.len() >= 8 {
+            return Ok(password);
+        }
+
+        println!("Password must be at least 8 characters.");
+    }
 }
 
 /// Poll the VPS status with interrupt support.
