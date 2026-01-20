@@ -1,13 +1,13 @@
 //! Command Deck rendering
 //!
-//! Implements the main Command Deck UI with header, logo, and content layout.
+//! Implements the main Command Deck UI with header and content layout.
 //! Uses the responsive layout system for fluid sizing based on terminal dimensions.
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 
@@ -17,25 +17,10 @@ use crate::ui::dashboard::{render_dashboard, Theme};
 
 use super::conversation::{create_mode_indicator_line, render_mode_indicator};
 use super::folder_picker::render_folder_picker;
-use super::helpers::{format_tokens, inner_rect};
+use super::helpers::format_tokens;
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
-use super::theme::{
-    COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_QUEUED,
-};
-
-// ============================================================================
-// SPOQ ASCII Logo
-// ============================================================================
-
-pub const SPOQ_LOGO: &[&str] = &[
-    "███████╗██████╗  ██████╗  ██████╗ ",
-    "██╔════╝██╔══██╗██╔═══██╗██╔═══██╗",
-    "███████╗██████╔╝██║   ██║██║   ██║",
-    "╚════██║██╔═══╝ ██║   ██║██║▄▄ ██║",
-    "███████║██║     ╚██████╔╝╚██████╔╝",
-    "╚══════╝╚═╝      ╚═════╝  ╚══▀▀═╝ ",
-];
+use super::theme::{COLOR_ACCENT, COLOR_ACTIVE, COLOR_DIM, COLOR_QUEUED};
 
 // ============================================================================
 // Main Command Deck Rendering
@@ -48,15 +33,7 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
     // Create layout context from terminal dimensions stored in app state
     let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
 
-    // Main outer border
-    let outer_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(COLOR_BORDER));
-    frame.render_widget(outer_block, size);
-
     // Create main layout sections with responsive heights
-    let inner = inner_rect(size, 0);
     let header_height = ctx.header_height();
     // Input height is dynamic based on line count (hard wrap inserts actual newlines)
     let line_count = app.textarea.line_count();
@@ -70,12 +47,12 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(header_height), // Header with logo (responsive)
+                Constraint::Length(header_height), // Header (responsive)
                 Constraint::Min(10),               // Main content area
                 Constraint::Length(1),             // Mode indicator
                 Constraint::Length(input_height),  // Input area (responsive)
             ])
-            .split(inner);
+            .split(size);
 
         render_header(frame, main_chunks[0], app);
         render_main_content(frame, main_chunks[1], app, &ctx);
@@ -91,11 +68,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(header_height), // Header with logo (responsive)
+                Constraint::Length(header_height), // Header (responsive)
                 Constraint::Min(10),               // Main content area
                 Constraint::Length(input_height),  // Input area (responsive)
             ])
-            .split(inner);
+            .split(size);
 
         render_header(frame, main_chunks[0], app);
         render_main_content(frame, main_chunks[1], app, &ctx);
@@ -113,29 +90,16 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
 // ============================================================================
 
 pub fn render_header(frame: &mut Frame, area: Rect, app: &App) {
-    // Split header into: [margin] [logo] [spacer] [status info right-aligned]
+    // Split header into: [margin] [status info]
     let header_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(2),  // Left margin
-            Constraint::Length(38), // Logo width
-            Constraint::Min(1),     // Flexible spacer
-            Constraint::Length(44), // Right-aligned status info (wider for connection status)
+            Constraint::Length(2), // Left margin
+            Constraint::Min(1),    // Status info fills remaining space
         ])
         .split(area);
 
-    render_logo(frame, header_chunks[1]);
-    render_header_info(frame, header_chunks[3], app);
-}
-
-pub fn render_logo(frame: &mut Frame, area: Rect) {
-    let logo_lines: Vec<Line> = SPOQ_LOGO
-        .iter()
-        .map(|line| Line::from(Span::styled(*line, Style::default().fg(COLOR_HEADER))))
-        .collect();
-
-    let logo = Paragraph::new(logo_lines);
-    frame.render_widget(logo, area);
+    render_header_info(frame, header_chunks[1], app);
 }
 
 pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
@@ -294,15 +258,15 @@ mod tests {
     fn test_responsive_header_height() {
         // Normal terminal
         let ctx_normal = LayoutContext::new(100, 40);
-        assert_eq!(ctx_normal.header_height(), 9);
+        assert_eq!(ctx_normal.header_height(), 3);
 
         // Compact terminal (narrow)
         let ctx_narrow = LayoutContext::new(60, 40);
-        assert_eq!(ctx_narrow.header_height(), 3);
+        assert_eq!(ctx_narrow.header_height(), 2);
 
         // Compact terminal (short)
         let ctx_short = LayoutContext::new(100, 16);
-        assert_eq!(ctx_short.header_height(), 3);
+        assert_eq!(ctx_short.header_height(), 2);
     }
 
     #[test]
@@ -314,29 +278,6 @@ mod tests {
         // Compact terminal
         let ctx_compact = LayoutContext::new(60, 40);
         assert_eq!(ctx_compact.input_area_height(), 4);
-    }
-
-    // ========================================================================
-    // SPOQ Logo Tests
-    // ========================================================================
-
-    #[test]
-    fn test_spoq_logo_has_correct_line_count() {
-        assert_eq!(SPOQ_LOGO.len(), 6);
-    }
-
-    #[test]
-    fn test_spoq_logo_lines_are_consistent_width() {
-        // All logo lines should be the same width for proper rendering
-        let first_width = SPOQ_LOGO[0].chars().count();
-        for line in SPOQ_LOGO.iter() {
-            assert_eq!(
-                line.chars().count(),
-                first_width,
-                "Logo line has inconsistent width: {}",
-                line
-            );
-        }
     }
 
     // ========================================================================

@@ -1,6 +1,6 @@
 //! Dashboard header component
 //!
-//! Renders the three-part header with system stats (left), SPOQ logo (center),
+//! Renders the header with system stats (left), SPOQ logo (center),
 //! and aggregate counts (right).
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, Frame};
@@ -31,7 +31,7 @@ const LOGO_WIDTH: u16 = 15;
 /// [left_stats] [spacer] [logo] [spacer] [right_counts]
 /// ```
 ///
-/// - Left section (x=2): Connection status, CPU bar, RAM usage
+/// - Left section (x=2): CPU bar, RAM usage
 /// - Center: SPOQ logo (2 rows, 15 chars wide)
 /// - Right section (right-aligned): Thread and repo counts
 ///
@@ -40,7 +40,6 @@ const LOGO_WIDTH: u16 = 15;
 /// * `area` - The rectangle area allocated for the header
 /// * `ctx` - The render context containing system stats and aggregate data
 pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext) {
-    // Need at least 2 rows for the logo
     if area.height < 2 || area.width < 20 {
         return;
     }
@@ -61,31 +60,17 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext) {
 // Section Renderers
 // ============================================================================
 
-/// Render the left section with connection status, CPU bar, and RAM usage
+/// Render the left section with CPU bar and RAM usage
 fn render_left_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
     let x = area.x + 2;
     let y = area.y;
 
-    // Format: "●  cpu ▓▓▓░░  4.2/8g"
-    // Connection indicator
-    let (conn_char, conn_color) = if ctx.system_stats.connected {
-        ('\u{25CF}', ctx.theme.success) // Filled circle, green
-    } else {
-        ('\u{25CB}', ctx.theme.error) // Empty circle, red
-    };
-
-    // Write connection indicator
-    if x < area.x + area.width {
-        buf[(x, y)]
-            .set_char(conn_char)
-            .set_style(Style::default().fg(conn_color));
-    }
-
+    // Format: "cpu ▓▓▓░░  4.2/8g"
     // CPU label and bar
     let cpu_bar = render_cpu_bar(ctx.system_stats.cpu_percent);
-    let cpu_text = format!("  cpu {}  ", cpu_bar);
+    let cpu_text = format!("cpu {}  ", cpu_bar);
 
-    let mut offset = 1;
+    let mut offset = 0u16;
     for ch in cpu_text.chars() {
         let pos_x = x + offset;
         if pos_x < area.x + area.width {

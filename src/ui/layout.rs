@@ -325,9 +325,9 @@ impl LayoutContext {
     /// Returns a smaller header for compact terminals.
     pub fn header_height(&self) -> u16 {
         if self.is_compact() {
-            3
+            2
         } else {
-            9
+            3
         }
     }
 
@@ -680,10 +680,10 @@ mod tests {
     #[test]
     fn test_header_height() {
         // Compact terminal
-        assert_eq!(LayoutContext::new(60, 40).header_height(), 3);
-        assert_eq!(LayoutContext::new(100, 16).header_height(), 3);
+        assert_eq!(LayoutContext::new(60, 40).header_height(), 2);
+        assert_eq!(LayoutContext::new(100, 16).header_height(), 2);
         // Normal terminal
-        assert_eq!(LayoutContext::new(100, 40).header_height(), 9);
+        assert_eq!(LayoutContext::new(100, 40).header_height(), 3);
     }
 
     #[test]

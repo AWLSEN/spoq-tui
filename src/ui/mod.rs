@@ -1,7 +1,7 @@
 //! UI rendering for SPOQ Command Deck
 //!
 //! Implements the full cyberpunk-styled terminal interface with:
-//! - Header with ASCII logo and status badges
+//! - Header with system stats and status badges
 //! - Dashboard view: Thread list, active plans, questions, system stats
 //! - Conversation view: Message display with virtualized scrolling
 //! - Bottom: Input box and keybind hints
@@ -2484,7 +2484,7 @@ mod tests {
         assert_eq!(right, 20, "Right panel should be half width at 40 cols");
 
         // Verify header/input heights are reduced
-        assert_eq!(ctx.header_height(), 3, "Header should be compact at 40x20");
+        assert_eq!(ctx.header_height(), 2, "Header should be compact at 40x20");
         assert_eq!(
             ctx.input_area_height(),
             4,
@@ -2529,7 +2529,7 @@ mod tests {
         assert_eq!(right, 48, "Right panel should be 60% at 80 cols");
 
         // Verify header/input heights are normal
-        assert_eq!(ctx.header_height(), 9, "Header should be normal at 80x24");
+        assert_eq!(ctx.header_height(), 3, "Header should be normal at 80x24");
         assert_eq!(
             ctx.input_area_height(),
             6,

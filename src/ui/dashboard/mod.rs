@@ -34,7 +34,7 @@ use crate::ui::interaction::HitAreaRegistry;
 /// Render the complete dashboard view
 ///
 /// This is the top-level function that composes all dashboard components:
-/// - Header: System stats, SPOQ logo, aggregate counts
+/// - Header: System stats (CPU, RAM), SPOQ logo, aggregate counts (threads, repos)
 /// - Status bar: Proportional bar showing working/ready/idle distribution
 /// - Thread list: Threads split by need-action vs autonomous
 /// - Overlay: Question/Plan dialogs when a thread is expanded
@@ -42,7 +42,7 @@ use crate::ui::interaction::HitAreaRegistry;
 /// # Layout
 /// ```text
 /// +------------------------------------------+
-/// | HEADER: ●  cpu ▓▓░░  4/8g   SPOQ   n threads |
+/// | HEADER: cpu ▓▓░░  4/8g   SPOQ   n threads|
 /// +------------------------------------------+
 /// | STATUS BAR: ████████████░░░░░░░░░░░░░░░  |
 /// |             working 24  ready 8   idle 15|
@@ -86,7 +86,7 @@ pub fn render_dashboard(
         ])
         .split(area);
 
-    // Render header (logo, system stats, counts)
+    // Render header (system stats, logo, counts)
     header::render(frame, chunks[0], ctx);
 
     // Render status bar (proportional segments with filters)

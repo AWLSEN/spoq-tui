@@ -14,7 +14,7 @@ pub const COLOR_BORDER: Color = Color::DarkGray;
 /// Accent color - white for highlights and important elements
 pub const COLOR_ACCENT: Color = Color::White;
 
-/// Header text color - white for the logo
+/// Header text color - white for header elements
 pub const COLOR_HEADER: Color = Color::White;
 
 /// Active/running elements - bright green

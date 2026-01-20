@@ -146,7 +146,7 @@ mod mobile_size {
     #[test]
     fn test_mobile_header_and_input_sizes() {
         let layout = ctx();
-        assert_eq!(layout.header_height(), 3, "Compact header for mobile");
+        assert_eq!(layout.header_height(), 2, "Compact header for mobile");
         assert_eq!(layout.input_area_height(), 4, "Compact input for mobile");
     }
 }
@@ -273,7 +273,7 @@ mod standard_size {
     fn test_standard_header_and_input_sizes() {
         let layout = ctx();
         // 80x24 is not compact (width >= 80, height >= 24)
-        assert_eq!(layout.header_height(), 9, "Full header for standard");
+        assert_eq!(layout.header_height(), 3, "Full header for standard");
         assert_eq!(layout.input_area_height(), 6, "Full input for standard");
     }
 
@@ -428,7 +428,7 @@ mod wide_size {
     #[test]
     fn test_wide_header_and_input_sizes() {
         let layout = ctx();
-        assert_eq!(layout.header_height(), 9, "Full header for wide");
+        assert_eq!(layout.header_height(), 3, "Full header for wide");
         assert_eq!(layout.input_area_height(), 6, "Full input for wide");
     }
 }
@@ -647,7 +647,7 @@ mod minimum_boundary_size {
     #[test]
     fn test_minimum_header_and_input_sizes() {
         let layout = ctx();
-        assert_eq!(layout.header_height(), 3, "Compact header for minimum");
+        assert_eq!(layout.header_height(), 2, "Compact header for minimum");
         assert_eq!(layout.input_area_height(), 4, "Compact input for minimum");
     }
 }
