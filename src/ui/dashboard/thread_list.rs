@@ -229,49 +229,6 @@ fn render_filtered_view(
     }
 }
 
-// ============================================================================
-// Helper Functions for Partitioning (exposed for testing)
-// ============================================================================
-
-/// Partition threads into need-action and autonomous groups
-///
-/// # Arguments
-/// * `threads` - Slice of thread views to partition
-///
-/// # Returns
-/// Tuple of (need_action, autonomous) thread references
-pub fn partition_threads<'a>(
-    threads: &'a [ThreadView],
-) -> (Vec<&'a ThreadView>, Vec<&'a ThreadView>) {
-    threads.iter().partition(|t| t.needs_action)
-}
-
-/// Filter threads by status based on filter state
-///
-/// # Arguments
-/// * `threads` - Slice of thread views to filter
-/// * `filter` - Optional filter state
-///
-/// # Returns
-/// Vector of filtered thread references
-pub fn filter_threads_by_status<'a>(
-    threads: &'a [ThreadView],
-    filter: Option<FilterState>,
-) -> Vec<&'a ThreadView> {
-    threads
-        .iter()
-        .filter(|t| match filter {
-            Some(FilterState::Working) => {
-                matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting)
-            }
-            Some(FilterState::ReadyToTest) => t.status == ThreadStatus::Done,
-            Some(FilterState::Idle) => {
-                matches!(t.status, ThreadStatus::Idle | ThreadStatus::Error)
-            }
-            None | Some(FilterState::All) => true,
-        })
-        .collect()
-}
 
 // ============================================================================
 // Tests
@@ -313,7 +270,8 @@ mod tests {
     #[test]
     fn test_partition_threads_basic() {
         let threads = make_test_threads();
-        let (need_action, autonomous) = partition_threads(&threads);
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
 
         assert_eq!(need_action.len(), 3);
         assert_eq!(autonomous.len(), 3);
@@ -339,7 +297,8 @@ mod tests {
             make_thread("1", "T1", true, ThreadStatus::Waiting),
             make_thread("2", "T2", true, ThreadStatus::Error),
         ];
-        let (need_action, autonomous) = partition_threads(&threads);
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
 
         assert_eq!(need_action.len(), 2);
         assert_eq!(autonomous.len(), 0);
@@ -351,7 +310,8 @@ mod tests {
             make_thread("1", "T1", false, ThreadStatus::Running),
             make_thread("2", "T2", false, ThreadStatus::Idle),
         ];
-        let (need_action, autonomous) = partition_threads(&threads);
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
 
         assert_eq!(need_action.len(), 0);
         assert_eq!(autonomous.len(), 2);
@@ -360,7 +320,8 @@ mod tests {
     #[test]
     fn test_partition_threads_empty() {
         let threads: Vec<ThreadView> = vec![];
-        let (need_action, autonomous) = partition_threads(&threads);
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
 
         assert_eq!(need_action.len(), 0);
         assert_eq!(autonomous.len(), 0);
@@ -371,7 +332,10 @@ mod tests {
     #[test]
     fn test_filter_threads_working() {
         let threads = make_test_threads();
-        let filtered = filter_threads_by_status(&threads, Some(FilterState::Working));
+        let filtered: Vec<&ThreadView> = threads
+            .iter()
+            .filter(|t| matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting))
+            .collect();
 
         // Should include Running and Waiting threads
         // From make_test_threads: 2 Waiting (id=1,3) + 1 Running (id=4) = 3 working threads
@@ -388,7 +352,10 @@ mod tests {
     #[test]
     fn test_filter_threads_ready_to_test() {
         let threads = make_test_threads();
-        let filtered = filter_threads_by_status(&threads, Some(FilterState::ReadyToTest));
+        let filtered: Vec<&ThreadView> = threads
+            .iter()
+            .filter(|t| t.status == ThreadStatus::Done)
+            .collect();
 
         // Should only include Done threads
         assert_eq!(filtered.len(), 1);
@@ -398,7 +365,10 @@ mod tests {
     #[test]
     fn test_filter_threads_idle() {
         let threads = make_test_threads();
-        let filtered = filter_threads_by_status(&threads, Some(FilterState::Idle));
+        let filtered: Vec<&ThreadView> = threads
+            .iter()
+            .filter(|t| matches!(t.status, ThreadStatus::Idle | ThreadStatus::Error))
+            .collect();
 
         // Should include Idle and Error threads
         assert_eq!(filtered.len(), 2); // 1 Idle + 1 Error
@@ -414,15 +384,7 @@ mod tests {
     #[test]
     fn test_filter_threads_all() {
         let threads = make_test_threads();
-        let filtered = filter_threads_by_status(&threads, Some(FilterState::All));
-
-        assert_eq!(filtered.len(), threads.len());
-    }
-
-    #[test]
-    fn test_filter_threads_none() {
-        let threads = make_test_threads();
-        let filtered = filter_threads_by_status(&threads, None);
+        let filtered: Vec<&ThreadView> = threads.iter().collect();
 
         assert_eq!(filtered.len(), threads.len());
     }
@@ -433,7 +395,10 @@ mod tests {
             make_thread("1", "T1", false, ThreadStatus::Running),
             make_thread("2", "T2", false, ThreadStatus::Running),
         ];
-        let filtered = filter_threads_by_status(&threads, Some(FilterState::ReadyToTest));
+        let filtered: Vec<&ThreadView> = threads
+            .iter()
+            .filter(|t| t.status == ThreadStatus::Done)
+            .collect();
 
         assert_eq!(filtered.len(), 0);
     }
@@ -448,7 +413,8 @@ mod tests {
             make_thread("c", "Third", true, ThreadStatus::Error),
             make_thread("d", "Fourth", false, ThreadStatus::Idle),
         ];
-        let (need_action, autonomous) = partition_threads(&threads);
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
 
         // Check order is preserved within each partition
         assert_eq!(need_action[0].id, "a");
@@ -464,7 +430,10 @@ mod tests {
             make_thread("b", "Second", false, ThreadStatus::Done),
             make_thread("c", "Third", false, ThreadStatus::Running),
         ];
-        let filtered = filter_threads_by_status(&threads, Some(FilterState::Working));
+        let filtered: Vec<&ThreadView> = threads
+            .iter()
+            .filter(|t| matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting))
+            .collect();
 
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered[0].id, "a");
@@ -484,7 +453,8 @@ mod tests {
             ));
         }
 
-        let (need_action, autonomous) = partition_threads(&threads);
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
         assert_eq!(need_action.len(), 10);
         assert_eq!(autonomous.len(), 0);
 
