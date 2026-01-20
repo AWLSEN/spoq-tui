@@ -171,6 +171,11 @@ jobs:
           # Trim whitespace from deploy key
           DEPLOY_KEY=$(echo "$DEPLOY_KEY" | tr -d '[:space:]')
 
+          # Debug: show key length (should be 64)
+          echo "Deploy key length: ${#DEPLOY_KEY}"
+          echo "Deploy key first 4 chars: ${DEPLOY_KEY:0:4}"
+          echo "Deploy key last 4 chars: ${DEPLOY_KEY: -4}"
+
           # Platform mapping: build name -> conductor-version name
           declare -A PLATFORMS=(
             ["darwin-arm64"]="darwin-aarch64"
