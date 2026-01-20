@@ -152,9 +152,50 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  upload-to-railway:
+    name: Upload to Railway
+    needs: [build, release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload to download.spoq.dev
+        env:
+          DEPLOY_KEY: ${{ secrets.SPOQ_DEPLOY_KEY }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          # Platform mapping: build name -> conductor-version name
+          declare -A PLATFORMS=(
+            ["darwin-arm64"]="darwin-aarch64"
+            ["darwin-x64"]="darwin-x86_64"
+            ["linux-arm64"]="linux-aarch64"
+            ["linux-x64"]="linux-x86_64"
+          )
+
+          for build_name in "${!PLATFORMS[@]}"; do
+            platform="${PLATFORMS[$build_name]}"
+            binary_path="artifacts/${build_name}/artifact/spoq"
+
+            echo "Uploading $platform..."
+            curl -X POST "https://download.spoq.dev/cli/release" \
+              -H "Authorization: Bearer $DEPLOY_KEY" \
+              -F "binary=@${binary_path}" \
+              -F "version=${VERSION}" \
+              -F "platform=${platform}" \
+              --fail --show-error
+          done
+
+      - name: Verify upload
+        run: |
+          curl -sS "https://download.spoq.dev/cli/version" | jq .
+
   publish-npm:
     name: Publish npm packages
-    needs: [build, release]
+    needs: [build, release, upload-to-railway]
     runs-on: ubuntu-latest
 
     steps:

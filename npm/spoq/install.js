@@ -7,7 +7,8 @@
  * dependency fails to install (e.g., on unsupported platforms or when npm
  * can't resolve the optional dependency).
  *
- * It downloads the appropriate binary from GitHub releases.
+ * It downloads the appropriate binary from download.spoq.dev (Railway)
+ * for Unix platforms, or GitHub releases for Windows.
  */
 
 const https = require("https");
@@ -16,15 +17,19 @@ const path = require("path");
 const { execSync } = require("child_process");
 
 const PACKAGE_VERSION = require("./package.json").version;
+const DOWNLOAD_URL = "https://download.spoq.dev";
 const GITHUB_REPO = "AWLSEN/spoq-tui";
 
-const PLATFORMS = {
-  "darwin-arm64": "spoq-darwin-arm64.tar.gz",
-  "darwin-x64": "spoq-darwin-x64.tar.gz",
-  "linux-arm64": "spoq-linux-arm64.tar.gz",
-  "linux-x64": "spoq-linux-x64.tar.gz",
-  "win32-x64": "spoq-win32-x64.zip",
+// Platform mapping: Node.js platform key -> conductor-version platform name
+const PLATFORM_MAP = {
+  "darwin-arm64": "darwin-aarch64",
+  "darwin-x64": "darwin-x86_64",
+  "linux-arm64": "linux-aarch64",
+  "linux-x64": "linux-x86_64",
 };
+
+// Windows still uses GitHub releases (not supported by conductor-version)
+const WINDOWS_ARCHIVE = "spoq-win32-x64.zip";
 
 function getPlatformKey() {
   return `${process.platform}-${process.arch}`;
@@ -77,16 +82,6 @@ function downloadFile(url) {
   });
 }
 
-async function extractTarGz(buffer, destDir) {
-  const tempFile = path.join(destDir, "temp.tar.gz");
-  fs.writeFileSync(tempFile, buffer);
-  try {
-    execSync(`tar -xzf "${tempFile}" -C "${destDir}"`, { stdio: "pipe" });
-  } finally {
-    fs.unlinkSync(tempFile);
-  }
-}
-
 async function extractZip(buffer, destDir) {
   const tempFile = path.join(destDir, "temp.zip");
   fs.writeFileSync(tempFile, buffer);
@@ -104,9 +99,29 @@ async function main() {
   }
 
   const platformKey = getPlatformKey();
-  const archiveFile = PLATFORMS[platformKey];
+  const binDir = path.join(__dirname, "bin");
+  fs.mkdirSync(binDir, { recursive: true });
 
-  if (!archiveFile) {
+  // Handle Windows separately (still uses GitHub releases)
+  if (platformKey === "win32-x64") {
+    console.log(`Platform package not found, downloading binary for ${platformKey} from GitHub...`);
+    const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${PACKAGE_VERSION}/${WINDOWS_ARCHIVE}`;
+
+    try {
+      const buffer = await downloadFile(downloadUrl);
+      await extractZip(buffer, binDir);
+      console.log("Binary downloaded successfully.");
+    } catch (err) {
+      console.warn(`Warning: Failed to download binary: ${err.message}`);
+      console.warn("You may need to build spoq from source or install manually.");
+    }
+    return;
+  }
+
+  // Unix platforms use Railway (download.spoq.dev)
+  const servicePlatform = PLATFORM_MAP[platformKey];
+
+  if (!servicePlatform) {
     console.warn(`Warning: No prebuilt binary available for ${platformKey}`);
     console.warn("You may need to build spoq from source.");
     return;
@@ -114,25 +129,16 @@ async function main() {
 
   console.log(`Platform package not found, downloading binary for ${platformKey}...`);
 
-  const binDir = path.join(__dirname, "bin");
-  fs.mkdirSync(binDir, { recursive: true });
-
-  const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/v${PACKAGE_VERSION}/${archiveFile}`;
+  const downloadUrl = `${DOWNLOAD_URL}/cli/download/${servicePlatform}`;
+  console.log(`Downloading from: ${downloadUrl}`);
 
   try {
     const buffer = await downloadFile(downloadUrl);
 
-    if (archiveFile.endsWith(".tar.gz")) {
-      await extractTarGz(buffer, binDir);
-    } else if (archiveFile.endsWith(".zip")) {
-      await extractZip(buffer, binDir);
-    }
-
-    // Make binary executable on Unix
-    if (process.platform !== "win32") {
-      const binaryPath = path.join(binDir, "spoq");
-      fs.chmodSync(binaryPath, 0o755);
-    }
+    // Write raw binary directly (no extraction needed)
+    const binaryPath = path.join(binDir, "spoq");
+    fs.writeFileSync(binaryPath, buffer);
+    fs.chmodSync(binaryPath, 0o755);
 
     console.log("Binary downloaded successfully.");
   } catch (err) {

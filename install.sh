@@ -1,10 +1,10 @@
 #!/bin/sh
 # Install script for spoq - POSIX-compliant
-# Usage: curl -fsSL https://raw.githubusercontent.com/AWLSEN/spoq-tui/main/install.sh | sh
+# Usage: curl -fsSL https://download.spoq.dev/cli | sh
 
 set -e
 
-REPO="AWLSEN/spoq-tui"
+DOWNLOAD_URL="https://download.spoq.dev"
 BINARY_NAME="spoq"
 
 # Colors (if terminal supports them)
@@ -60,10 +60,10 @@ detect_arch() {
     arch=$(uname -m)
     case "$arch" in
         x86_64|amd64)
-            echo "x64"
+            echo "x86_64"
             ;;
         aarch64|arm64)
-            echo "arm64"
+            echo "aarch64"
             ;;
         *)
             error "Unsupported architecture: $arch"
@@ -102,7 +102,8 @@ main() {
     # Detect platform
     os=$(detect_os)
     arch=$(detect_arch)
-    info "Detected platform: $os-$arch"
+    platform="${os}-${arch}"
+    info "Detected platform: $platform"
 
     # Determine install directory
     if [ -n "$INSTALL_DIR" ]; then
@@ -122,8 +123,7 @@ main() {
     fi
 
     # Construct download URL
-    tarball="${BINARY_NAME}-${os}-${arch}.tar.gz"
-    url="https://github.com/${REPO}/releases/latest/download/${tarball}"
+    url="${DOWNLOAD_URL}/cli/download/${platform}"
 
     info "Downloading from: $url"
 
@@ -131,20 +131,12 @@ main() {
     tmp_dir=$(mktemp -d)
     trap 'rm -rf "$tmp_dir"' EXIT
 
-    # Download tarball
-    download "$url" "$tmp_dir/$tarball" || error "Failed to download $tarball"
+    # Download binary directly (raw binary, no tarball)
+    download "$url" "$tmp_dir/$BINARY_NAME" || error "Failed to download binary"
 
-    # Extract binary
-    info "Extracting..."
-    tar -xzf "$tmp_dir/$tarball" -C "$tmp_dir" || error "Failed to extract $tarball"
-
-    # Install binary
-    if [ -f "$tmp_dir/$BINARY_NAME" ]; then
-        mv "$tmp_dir/$BINARY_NAME" "$install_dir/$BINARY_NAME"
-        chmod +x "$install_dir/$BINARY_NAME"
-    else
-        error "Binary not found in archive"
-    fi
+    # Make executable and install
+    chmod +x "$tmp_dir/$BINARY_NAME"
+    mv "$tmp_dir/$BINARY_NAME" "$install_dir/$BINARY_NAME"
 
     # Verify installation
     if "$install_dir/$BINARY_NAME" --version >/dev/null 2>&1; then
