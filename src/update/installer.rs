@@ -5,9 +5,22 @@
 //! - Replacing the current binary with the downloaded update
 //! - Setting correct permissions (chmod +x)
 //! - Providing rollback capability in case of failures
+//!
+//! # Error Handling
+//!
+//! The installer provides comprehensive error handling for:
+//! - Permission errors (insufficient privileges, file in use)
+//! - Disk space errors
+//! - File system errors (missing files, failed operations)
+//! - Rollback failures (with critical error reporting)
+//!
+//! All errors include user-friendly messages suitable for display.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+
+use super::errors::{classify_io_error, UpdateError};
+use super::logger::{log_update_debug, UpdateLogger};
 
 /// Error type for installation operations.
 #[derive(Debug)]
@@ -469,6 +482,242 @@ pub fn has_backup_at_path(target_path: Option<&Path>) -> Result<bool, InstallErr
     Ok(backup.exists())
 }
 
+// ========== Enhanced Installation Functions with Logging ==========
+
+/// Install an update with enhanced error handling and logging.
+///
+/// This function provides:
+/// - Comprehensive error classification
+/// - Detailed logging of installation progress
+/// - User-friendly error messages
+/// - Automatic rollback on failure (with logging)
+///
+/// # Arguments
+///
+/// * `update_path` - Path to the downloaded update binary
+/// * `version` - Optional version string for tracking
+///
+/// # Returns
+///
+/// Returns `Ok(InstallResult)` on success, or `Err(UpdateError)` with
+/// detailed error information on failure.
+///
+/// # Example
+///
+/// ```ignore
+/// match install_update_logged(&update_path, Some("0.2.0")).await {
+///     Ok(result) => {
+///         println!("Installed to: {}", result.binary_path.display());
+///     }
+///     Err(e) => {
+///         eprintln!("{}", e.user_message());
+///     }
+/// }
+/// ```
+pub fn install_update_logged(
+    update_path: &Path,
+    version: Option<&str>,
+) -> Result<InstallResult, UpdateError> {
+    install_update_logged_with_config(update_path, version, InstallConfig::default())
+}
+
+/// Install an update with custom configuration, enhanced error handling, and logging.
+pub fn install_update_logged_with_config(
+    update_path: &Path,
+    version: Option<&str>,
+    config: InstallConfig,
+) -> Result<InstallResult, UpdateError> {
+    let mut logger = UpdateLogger::new();
+    let version_str = version.unwrap_or("unknown");
+
+    // Get the target path
+    let target_path = match &config.target_path {
+        Some(p) => p.clone(),
+        None => std::env::current_exe().map_err(|_| {
+            let err = UpdateError::NoExecutablePath;
+            logger.log_error(&err, "install_update");
+            err
+        })?,
+    };
+
+    logger.log_install_started(version_str, &target_path);
+
+    // Verify the update file exists
+    if !update_path.exists() {
+        let err = UpdateError::UpdateFileNotFound {
+            path: update_path.to_path_buf(),
+        };
+        logger.log_install_failed(version_str, &err, false);
+        return Err(err);
+    }
+
+    log_update_debug(&format!(
+        "Installing update from {} to {}",
+        update_path.display(),
+        target_path.display()
+    ));
+
+    // Determine backup path
+    let backup_path = config
+        .backup_path
+        .clone()
+        .unwrap_or_else(|| get_backup_path(&target_path));
+
+    // Step 1: Create backup with enhanced error handling
+    log_update_debug(&format!("Creating backup at {}", backup_path.display()));
+
+    if let Err(e) = create_backup(&target_path, &backup_path) {
+        let err = convert_install_error(e);
+        logger.log_install_failed(version_str, &err, false);
+        return Err(err);
+    }
+
+    logger.log_backup_created(&backup_path);
+
+    // Step 2: Perform installation
+    let install_result = perform_installation(update_path, &target_path, &config);
+
+    match install_result {
+        Ok(()) => {
+            log_update_debug("Installation successful");
+
+            let result = InstallResult {
+                binary_path: target_path.clone(),
+                backup_path: backup_path.clone(),
+                version: version.map(String::from),
+            };
+
+            logger.log_install_completed(version_str, &target_path, &backup_path);
+
+            Ok(result)
+        }
+        Err(e) if config.auto_rollback => {
+            // Installation failed, attempt rollback
+            log_update_debug(&format!("Installation failed: {:?}, attempting rollback", e));
+
+            let install_err = convert_install_error(e);
+
+            match restore_backup(&backup_path, &target_path) {
+                Ok(()) => {
+                    log_update_debug("Rollback successful");
+                    let err = UpdateError::InstallFailedRestored {
+                        cause: install_err.to_string(),
+                        restored_from: backup_path.clone(),
+                    };
+                    logger.log_install_failed(version_str, &err, true);
+                    Err(err)
+                }
+                Err(restore_err) => {
+                    log_update_debug(&format!("Rollback failed: {:?}", restore_err));
+                    let err = UpdateError::InstallFailedNoRestore {
+                        install_error: install_err.to_string(),
+                        restore_error: convert_install_error(restore_err).to_string(),
+                    };
+                    logger.log_install_failed(version_str, &err, false);
+                    Err(err)
+                }
+            }
+        }
+        Err(e) => {
+            let err = convert_install_error(e);
+            logger.log_install_failed(version_str, &err, false);
+            Err(err)
+        }
+    }
+}
+
+/// Rollback to a backup with enhanced error handling and logging.
+pub fn rollback_update_logged() -> Result<InstallResult, UpdateError> {
+    rollback_update_logged_with_paths(None, None)
+}
+
+/// Rollback to a backup with custom paths, enhanced error handling, and logging.
+pub fn rollback_update_logged_with_paths(
+    target_path: Option<&Path>,
+    backup_path: Option<&Path>,
+) -> Result<InstallResult, UpdateError> {
+    let mut logger = UpdateLogger::new();
+
+    let target = match target_path {
+        Some(p) => p.to_path_buf(),
+        None => std::env::current_exe().map_err(|_| {
+            let err = UpdateError::NoExecutablePath;
+            logger.log_error(&err, "rollback");
+            err
+        })?,
+    };
+
+    let backup = match backup_path {
+        Some(p) => p.to_path_buf(),
+        None => get_backup_path(&target),
+    };
+
+    logger.log_rollback_started(&backup);
+
+    if !backup.exists() {
+        let err = UpdateError::BackupNotFound {
+            path: backup.clone(),
+        };
+        logger.log_rollback_failed(&err);
+        return Err(err);
+    }
+
+    log_update_debug(&format!(
+        "Rolling back {} from backup {}",
+        target.display(),
+        backup.display()
+    ));
+
+    // Restore the backup
+    if let Err(e) = restore_backup(&backup, &target) {
+        let err = convert_install_error(e);
+        logger.log_rollback_failed(&err);
+        return Err(err);
+    }
+
+    logger.log_rollback_completed(&backup);
+
+    Ok(InstallResult {
+        binary_path: target,
+        backup_path: backup,
+        version: None,
+    })
+}
+
+/// Convert InstallError to UpdateError for unified error handling.
+fn convert_install_error(err: InstallError) -> UpdateError {
+    match err {
+        InstallError::Io(io_err) => classify_io_error(io_err, None, "install"),
+        InstallError::NoExecutablePath => UpdateError::NoExecutablePath,
+        InstallError::UpdateFileNotFound(path) => UpdateError::UpdateFileNotFound { path },
+        InstallError::PermissionError(msg) => UpdateError::PermissionDenied {
+            path: PathBuf::new(),
+            operation: msg,
+        },
+        InstallError::BackupNotFound(path) => UpdateError::BackupNotFound { path },
+        InstallError::InstallFailedRestored { cause, restored_from } => {
+            UpdateError::InstallFailedRestored {
+                cause: format!("{}", cause),
+                restored_from,
+            }
+        }
+        InstallError::InstallFailedNoRestore {
+            install_error,
+            restore_error,
+        } => UpdateError::InstallFailedNoRestore {
+            install_error: format!("{}", install_error),
+            restore_error: format!("{}", restore_error),
+        },
+    }
+}
+
+/// Convert InstallError to UpdateError (From trait implementation).
+impl From<InstallError> for UpdateError {
+    fn from(err: InstallError) -> Self {
+        convert_install_error(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -828,6 +1077,126 @@ mod tests {
 
         // Verify we can rollback
         rollback_update_with_paths(Some(&target), Some(&backup_path)).unwrap();
+        assert_eq!(fs::read_to_string(&target).unwrap(), "version 0.1.0");
+
+        // Clean up backup
+        cleanup_backup_at_path(Some(&backup_path)).unwrap();
+        assert!(!backup_path.exists());
+    }
+
+    // Tests for enhanced installer functions
+
+    #[test]
+    fn test_install_update_logged_file_not_found() {
+        let fake_path = PathBuf::from("/tmp/nonexistent-spoq-update-12345");
+        let result = install_update_logged(&fake_path, Some("0.2.0"));
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(matches!(err, UpdateError::UpdateFileNotFound { .. }));
+
+        // Should have a user-friendly message
+        let user_msg = err.user_message();
+        assert!(user_msg.contains("not found"));
+    }
+
+    #[test]
+    fn test_install_update_logged_with_config_success() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create initial "installed" binary
+        let target = create_mock_binary(&temp_dir, "spoq", b"version 0.1.0");
+
+        // Create update binary
+        let update = create_mock_binary(&temp_dir, "spoq-update", b"version 0.2.0");
+
+        let config = InstallConfig::new()
+            .with_target_path(target.clone())
+            .with_preserve_update_file(true);
+
+        let result = install_update_logged_with_config(&update, Some("0.2.0"), config);
+        assert!(result.is_ok());
+
+        let install_result = result.unwrap();
+        assert_eq!(install_result.version, Some("0.2.0".to_string()));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "version 0.2.0");
+    }
+
+    #[test]
+    fn test_rollback_update_logged_backup_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = create_mock_binary(&temp_dir, "spoq", b"content");
+        let backup = temp_dir.path().join("nonexistent.backup");
+
+        let result = rollback_update_logged_with_paths(Some(&target), Some(&backup));
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        assert!(matches!(err, UpdateError::BackupNotFound { .. }));
+
+        // Should have a user-friendly message
+        let user_msg = err.user_message();
+        assert!(user_msg.contains("Backup") && user_msg.contains("not found"));
+    }
+
+    #[test]
+    fn test_rollback_update_logged_success() {
+        let temp_dir = TempDir::new().unwrap();
+        let target = create_mock_binary(&temp_dir, "spoq", b"corrupted content");
+        let backup = create_mock_binary(&temp_dir, "spoq.backup", b"original content");
+
+        let result = rollback_update_logged_with_paths(Some(&target), Some(&backup));
+        assert!(result.is_ok());
+
+        let content = fs::read_to_string(&target).unwrap();
+        assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn test_install_error_to_update_error_conversion() {
+        // Test NoExecutablePath conversion
+        let install_err = InstallError::NoExecutablePath;
+        let update_err: UpdateError = install_err.into();
+        assert!(matches!(update_err, UpdateError::NoExecutablePath));
+
+        // Test UpdateFileNotFound conversion
+        let install_err = InstallError::UpdateFileNotFound(PathBuf::from("/tmp/update"));
+        let update_err: UpdateError = install_err.into();
+        assert!(matches!(update_err, UpdateError::UpdateFileNotFound { .. }));
+
+        // Test BackupNotFound conversion
+        let install_err = InstallError::BackupNotFound(PathBuf::from("/tmp/backup"));
+        let update_err: UpdateError = install_err.into();
+        assert!(matches!(update_err, UpdateError::BackupNotFound { .. }));
+
+        // Test PermissionError conversion
+        let install_err = InstallError::PermissionError("write failed".to_string());
+        let update_err: UpdateError = install_err.into();
+        assert!(matches!(update_err, UpdateError::PermissionDenied { .. }));
+    }
+
+    #[test]
+    fn test_full_update_cycle_with_logging() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create initial "installed" binary
+        let target = create_mock_binary(&temp_dir, "spoq", b"version 0.1.0");
+
+        // Create update binary
+        let update = create_mock_binary(&temp_dir, "spoq-update", b"version 0.2.0");
+
+        let backup_path = get_backup_path(&target);
+
+        // Install using the logged function
+        let config = InstallConfig::new().with_target_path(target.clone());
+        let result = install_update_logged_with_config(&update, Some("0.2.0"), config).unwrap();
+
+        assert_eq!(result.version, Some("0.2.0".to_string()));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "version 0.2.0");
+        assert!(backup_path.exists());
+
+        // Rollback using the logged function
+        rollback_update_logged_with_paths(Some(&target), Some(&backup_path)).unwrap();
         assert_eq!(fs::read_to_string(&target).unwrap(), "version 0.1.0");
 
         // Clean up backup

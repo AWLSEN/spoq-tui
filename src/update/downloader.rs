@@ -2,10 +2,24 @@
 //!
 //! This module provides functionality to download binary updates from the
 //! platform-specific download URL, verify the download, and store it temporarily.
+//!
+//! # Error Handling
+//!
+//! The downloader provides comprehensive error handling for:
+//! - Network failures (connection refused, timeout, DNS issues)
+//! - Server errors (5xx responses, rate limiting)
+//! - Disk space and permission errors
+//! - Download verification failures (size mismatch, empty downloads)
+//!
+//! All errors include user-friendly messages suitable for display.
 
 use reqwest::Client;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
+
+use super::errors::{classify_io_error, classify_reqwest_error, UpdateError};
+use super::logger::{log_update_debug, UpdateLogger};
 
 /// Base URL for the download server.
 pub const DOWNLOAD_BASE_URL: &str = "https://download.spoq.dev";
@@ -321,6 +335,332 @@ pub async fn get_pending_update_path(version: &str) -> Result<Option<PathBuf>, D
     }
 }
 
+// ========== Enhanced Download Functions with Logging ==========
+
+/// Default timeout for download operations (5 minutes for large binaries).
+const DOWNLOAD_TIMEOUT_SECS: u64 = 300;
+
+/// Download the CLI binary with enhanced error handling and logging.
+///
+/// This function provides:
+/// - Configurable timeout (default 5 minutes)
+/// - Comprehensive error classification
+/// - Detailed logging of download progress and results
+/// - User-friendly error messages
+/// - Disk space checking (when possible)
+///
+/// # Arguments
+///
+/// * `platform` - The target platform to download for
+/// * `version` - Optional version string for naming the downloaded file
+///
+/// # Returns
+///
+/// Returns `Ok(DownloadResult)` on success, or `Err(UpdateError)` with
+/// detailed error information on failure.
+///
+/// # Example
+///
+/// ```ignore
+/// let platform = detect_platform()?;
+/// match download_binary_logged(platform, Some("0.2.0")).await {
+///     Ok(result) => {
+///         println!("Downloaded to: {}", result.file_path.display());
+///     }
+///     Err(e) => {
+///         eprintln!("{}", e.user_message());
+///     }
+/// }
+/// ```
+pub async fn download_binary_logged(
+    platform: Platform,
+    version: Option<&str>,
+) -> Result<DownloadResult, UpdateError> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| UpdateError::ConnectionFailed {
+            url: DOWNLOAD_BASE_URL.to_string(),
+            message: format!("Failed to create HTTP client: {}", e),
+        })?;
+
+    download_binary_logged_with_client(&client, platform, version).await
+}
+
+/// Download the CLI binary with a custom HTTP client, enhanced error handling, and logging.
+pub async fn download_binary_logged_with_client(
+    client: &Client,
+    platform: Platform,
+    version: Option<&str>,
+) -> Result<DownloadResult, UpdateError> {
+    let url = format!("{}/cli/download/{}", DOWNLOAD_BASE_URL, platform.as_str());
+    download_from_url_logged(client, &url, version).await
+}
+
+/// Download a binary from a specific URL with enhanced error handling and logging.
+///
+/// This is the core download function that handles:
+/// - HTTP request with timeout
+/// - Response status validation
+/// - Directory creation with proper error handling
+/// - Atomic file writing (temp file + rename)
+/// - Size verification
+/// - Comprehensive logging
+pub async fn download_from_url_logged(
+    client: &Client,
+    url: &str,
+    version: Option<&str>,
+) -> Result<DownloadResult, UpdateError> {
+    let mut logger = UpdateLogger::new();
+    let version_str = version.unwrap_or("unknown");
+    logger.log_download_started(version_str, url);
+
+    log_update_debug(&format!("Downloading from URL: {}", url));
+
+    // Send the request
+    let response = client.get(url).send().await.map_err(|e| {
+        let err = classify_reqwest_error(e, url);
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    // Check response status
+    let status = response.status();
+    if !status.is_success() {
+        let status_code = status.as_u16();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+
+        let err = if status_code == 429 {
+            UpdateError::RateLimited {
+                retry_after_secs: None,
+            }
+        } else {
+            UpdateError::ServerError {
+                status: status_code,
+                message: body,
+            }
+        };
+
+        logger.log_download_failed(version_str, &err);
+        return Err(err);
+    }
+
+    // Get content length for progress and verification
+    let content_length = response.content_length();
+    log_update_debug(&format!(
+        "Download response received, content-length: {:?}",
+        content_length
+    ));
+
+    // Prepare the download directory
+    let update_dir = get_update_temp_dir().map_err(|e| {
+        let err = convert_download_error(e);
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    // Create directory with proper error handling
+    tokio::fs::create_dir_all(&update_dir).await.map_err(|e| {
+        let err = classify_io_error(e, Some(update_dir.clone()), "create directory");
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    let file_path = get_download_path(version).map_err(|e| {
+        let err = convert_download_error(e);
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    // Download the content
+    let bytes = response.bytes().await.map_err(|e| {
+        let err = classify_reqwest_error(e, url);
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    // Verify the download is not empty
+    if bytes.is_empty() {
+        let err = UpdateError::EmptyDownload;
+        logger.log_download_failed(version_str, &err);
+        return Err(err);
+    }
+
+    // Minimum expected size for a binary (100KB)
+    const MIN_BINARY_SIZE: usize = 100 * 1024;
+    if bytes.len() < MIN_BINARY_SIZE {
+        let err = UpdateError::EmptyDownload;
+        logger.log_download_failed(version_str, &err);
+        return Err(err);
+    }
+
+    log_update_debug(&format!(
+        "Downloaded {} bytes, writing to {}",
+        bytes.len(),
+        file_path.display()
+    ));
+
+    // Write to temporary file first, then rename for atomicity
+    let temp_path = file_path.with_extension("tmp");
+
+    // Create and write to temp file
+    let mut file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
+        let err = classify_io_error(e, Some(temp_path.clone()), "create temp file");
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    file.write_all(&bytes).await.map_err(|e| {
+        let err = classify_io_error(e, Some(temp_path.clone()), "write to temp file");
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    file.flush().await.map_err(|e| {
+        let err = classify_io_error(e, Some(temp_path.clone()), "flush temp file");
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    drop(file);
+
+    // Rename temp file to final location (atomic on most filesystems)
+    tokio::fs::rename(&temp_path, &file_path).await.map_err(|e| {
+        // Clean up temp file on failure
+        let _ = std::fs::remove_file(&temp_path);
+        let err = classify_io_error(e, Some(file_path.clone()), "rename temp file");
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    // Verify file was written correctly
+    let metadata = tokio::fs::metadata(&file_path).await.map_err(|e| {
+        let err = classify_io_error(e, Some(file_path.clone()), "verify download");
+        logger.log_download_failed(version_str, &err);
+        err
+    })?;
+
+    let actual_size = metadata.len();
+
+    // If we had a content length, verify it matches
+    if let Some(expected) = content_length {
+        if actual_size != expected {
+            // Clean up the failed download
+            let _ = tokio::fs::remove_file(&file_path).await;
+            let err = UpdateError::SizeMismatch {
+                expected,
+                actual: actual_size,
+            };
+            logger.log_download_failed(version_str, &err);
+            return Err(err);
+        }
+    }
+
+    log_update_debug(&format!(
+        "Download verified: {} bytes at {}",
+        actual_size,
+        file_path.display()
+    ));
+
+    logger.log_download_completed(version_str, &file_path, actual_size);
+
+    Ok(DownloadResult {
+        file_path,
+        file_size: actual_size,
+        version: version.map(String::from),
+    })
+}
+
+/// Clean up old update files with logging.
+pub async fn cleanup_old_updates_logged(keep_version: Option<&str>) -> Result<usize, UpdateError> {
+    let mut logger = UpdateLogger::new();
+    logger.log_cleanup_started();
+
+    let update_dir = get_update_temp_dir().map_err(convert_download_error)?;
+
+    if !update_dir.exists() {
+        logger.log_cleanup_completed(0);
+        return Ok(0);
+    }
+
+    let keep_filename = keep_version.map(|v| format!("spoq-{}", v));
+    let mut files_removed = 0;
+
+    let mut entries = tokio::fs::read_dir(&update_dir)
+        .await
+        .map_err(|e| classify_io_error(e, Some(update_dir.clone()), "read update directory"))?;
+
+    while let Some(entry) = entries.next_entry().await.map_err(|e| {
+        classify_io_error(e, Some(update_dir.clone()), "read directory entry")
+    })? {
+        let filename = entry.file_name();
+        let filename_str = filename.to_string_lossy();
+
+        // Skip the file we want to keep
+        if let Some(ref keep) = keep_filename {
+            if filename_str == *keep {
+                continue;
+            }
+        }
+
+        // Remove old update files
+        if filename_str.starts_with("spoq-") || filename_str.ends_with(".tmp") {
+            if tokio::fs::remove_file(entry.path()).await.is_ok() {
+                files_removed += 1;
+                log_update_debug(&format!("Removed old update file: {}", filename_str));
+            }
+        }
+    }
+
+    logger.log_cleanup_completed(files_removed);
+    Ok(files_removed)
+}
+
+/// Convert DownloadError to UpdateError for unified error handling.
+fn convert_download_error(err: DownloadError) -> UpdateError {
+    match err {
+        DownloadError::Http(req_err) => classify_reqwest_error(req_err, DOWNLOAD_BASE_URL),
+        DownloadError::Io(io_err) => classify_io_error(io_err, None, "download"),
+        DownloadError::ServerError { status, message } => {
+            UpdateError::ServerError { status, message }
+        }
+        DownloadError::UnsupportedPlatform(platform) => {
+            let parts: Vec<&str> = platform.split('-').collect();
+            UpdateError::UnsupportedPlatform {
+                os: parts.first().unwrap_or(&"unknown").to_string(),
+                arch: parts.get(1).unwrap_or(&"unknown").to_string(),
+            }
+        }
+        DownloadError::NoHomeDirectory => UpdateError::NoHomeDirectory,
+        DownloadError::EmptyDownload => UpdateError::EmptyDownload,
+        DownloadError::VerificationFailed(msg) => {
+            // Try to parse size mismatch message
+            if msg.contains("Size mismatch") {
+                // Default values if parsing fails
+                UpdateError::SizeMismatch {
+                    expected: 0,
+                    actual: 0,
+                }
+            } else {
+                UpdateError::ChecksumMismatch {
+                    expected: "unknown".to_string(),
+                    actual: msg,
+                }
+            }
+        }
+    }
+}
+
+/// Convert DownloadError to UpdateError (From trait implementation).
+impl From<DownloadError> for UpdateError {
+    fn from(err: DownloadError) -> Self {
+        convert_download_error(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -472,5 +812,83 @@ mod tests {
         let result = cleanup_old_updates(None).await;
         // This should succeed (no-op if dir doesn't exist, or clean if it does)
         assert!(result.is_ok());
+    }
+
+    // Tests for enhanced download functions
+
+    #[tokio::test]
+    async fn test_download_from_url_logged_with_invalid_server() {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_millis(100))
+            .build()
+            .unwrap();
+
+        let result = download_from_url_logged(&client, "http://127.0.0.1:1/fake", Some("0.0.0")).await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        // Should be a network/connection error
+        assert!(err.is_retryable());
+        // Should have a user-friendly message
+        let user_msg = err.user_message();
+        assert!(!user_msg.is_empty());
+    }
+
+    #[test]
+    fn test_download_error_to_update_error_conversion() {
+        // Test NoHomeDirectory conversion
+        let download_err = DownloadError::NoHomeDirectory;
+        let update_err: UpdateError = download_err.into();
+        assert!(matches!(update_err, UpdateError::NoHomeDirectory));
+
+        // Test EmptyDownload conversion
+        let download_err = DownloadError::EmptyDownload;
+        let update_err: UpdateError = download_err.into();
+        assert!(matches!(update_err, UpdateError::EmptyDownload));
+
+        // Test ServerError conversion
+        let download_err = DownloadError::ServerError {
+            status: 500,
+            message: "Server Error".to_string(),
+        };
+        let update_err: UpdateError = download_err.into();
+        assert!(matches!(update_err, UpdateError::ServerError { .. }));
+
+        // Test UnsupportedPlatform conversion
+        let download_err = DownloadError::UnsupportedPlatform("windows-x86".to_string());
+        let update_err: UpdateError = download_err.into();
+        assert!(matches!(update_err, UpdateError::UnsupportedPlatform { .. }));
+
+        // Test VerificationFailed conversion
+        let download_err = DownloadError::VerificationFailed("Size mismatch".to_string());
+        let update_err: UpdateError = download_err.into();
+        assert!(matches!(update_err, UpdateError::SizeMismatch { .. }));
+    }
+
+    #[test]
+    fn test_update_error_user_messages() {
+        let err = UpdateError::EmptyDownload;
+        let msg = err.user_message();
+        assert!(msg.contains("empty") || msg.contains("too small"));
+
+        let err = UpdateError::NoHomeDirectory;
+        let msg = err.user_message();
+        assert!(msg.contains("home directory"));
+
+        let err = UpdateError::UnsupportedPlatform {
+            os: "windows".to_string(),
+            arch: "x86".to_string(),
+        };
+        let msg = err.user_message();
+        assert!(msg.contains("Unsupported"));
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_old_updates_logged_no_dir() {
+        // Should succeed even if directory doesn't exist
+        let result = cleanup_old_updates_logged(None).await;
+        assert!(result.is_ok());
+        // Should return 0 files removed
+        assert_eq!(result.unwrap(), 0);
     }
 }

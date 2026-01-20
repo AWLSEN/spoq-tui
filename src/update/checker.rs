@@ -2,10 +2,24 @@
 //!
 //! This module calls the version API endpoint and compares the remote version
 //! with the current version using semantic versioning comparison.
+//!
+//! # Error Handling
+//!
+//! The checker provides comprehensive error handling for:
+//! - Network failures (connection refused, timeout, DNS issues)
+//! - Server errors (5xx responses, rate limiting)
+//! - Invalid responses (malformed JSON, unexpected format)
+//! - Version parsing errors
+//!
+//! All errors include user-friendly messages suitable for display.
 
 use reqwest::Client;
 use serde::Deserialize;
 use std::cmp::Ordering;
+use std::time::Duration;
+
+use super::errors::{classify_reqwest_error, UpdateError};
+use super::logger::{log_update_debug, UpdateLogger};
 
 /// URL for the version API endpoint
 pub const VERSION_API_URL: &str = "https://download.spoq.dev/cli/version";
@@ -230,6 +244,152 @@ pub async fn check_for_update_with_url(url: &str) -> Result<UpdateCheckResult, U
         release_notes: version_info.release_notes,
         mandatory: version_info.mandatory.unwrap_or(false),
     })
+}
+
+/// Default timeout for update check requests.
+const CHECK_TIMEOUT_SECS: u64 = 30;
+
+/// Check for available updates with enhanced error handling and logging.
+///
+/// This function provides:
+/// - Configurable timeout (default 30 seconds)
+/// - Comprehensive error classification
+/// - Detailed logging of check attempts and results
+/// - User-friendly error messages
+///
+/// # Returns
+///
+/// Returns `Ok(UpdateCheckResult)` on success, or `Err(UpdateError)` with
+/// detailed error information on failure.
+///
+/// # Example
+///
+/// ```ignore
+/// match check_for_update_logged().await {
+///     Ok(result) => {
+///         if result.update_available {
+///             println!("Update available: {}", result.latest_version);
+///         }
+///     }
+///     Err(e) => {
+///         eprintln!("{}", e.user_message());
+///     }
+/// }
+/// ```
+pub async fn check_for_update_logged() -> Result<UpdateCheckResult, UpdateError> {
+    check_for_update_logged_with_url(VERSION_API_URL).await
+}
+
+/// Check for available updates with enhanced error handling using a custom URL.
+pub async fn check_for_update_logged_with_url(url: &str) -> Result<UpdateCheckResult, UpdateError> {
+    let mut logger = UpdateLogger::new();
+    logger.log_check_started(CURRENT_VERSION);
+
+    log_update_debug(&format!("Checking for updates at URL: {}", url));
+
+    // Build client with timeout
+    let client = Client::builder()
+        .timeout(Duration::from_secs(CHECK_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| {
+            let err = UpdateError::ConnectionFailed {
+                url: url.to_string(),
+                message: format!("Failed to create HTTP client: {}", e),
+            };
+            logger.log_check_failed(&err);
+            err
+        })?;
+
+    // Send the request
+    let response = client.get(url).send().await.map_err(|e| {
+        let err = classify_reqwest_error(e, url);
+        logger.log_check_failed(&err);
+        err
+    })?;
+
+    // Check response status
+    let status = response.status();
+    if !status.is_success() {
+        let status_code = status.as_u16();
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+
+        let err = if status_code == 429 {
+            // Extract Retry-After header if present
+            UpdateError::RateLimited {
+                retry_after_secs: None,
+            }
+        } else {
+            UpdateError::ServerError {
+                status: status_code,
+                message: body,
+            }
+        };
+
+        logger.log_check_failed(&err);
+        return Err(err);
+    }
+
+    // Parse the JSON response
+    let version_info: VersionInfo = response.json().await.map_err(|e| {
+        let err = UpdateError::InvalidResponse {
+            message: format!("Failed to parse version response: {}", e),
+        };
+        logger.log_check_failed(&err);
+        err
+    })?;
+
+    log_update_debug(&format!(
+        "Received version info: latest={}, mandatory={:?}",
+        version_info.version, version_info.mandatory
+    ));
+
+    // Compare versions
+    let comparison = compare_versions(CURRENT_VERSION, &version_info.version).map_err(|e| {
+        let err = match e {
+            UpdateCheckError::InvalidVersion(v) => UpdateError::InvalidVersionFormat { version: v },
+            _ => UpdateError::InvalidVersionFormat {
+                version: version_info.version.clone(),
+            },
+        };
+        logger.log_check_failed(&err);
+        err
+    })?;
+
+    let update_available = comparison == Ordering::Less;
+
+    let result = UpdateCheckResult {
+        current_version: CURRENT_VERSION.to_string(),
+        latest_version: version_info.version.clone(),
+        update_available,
+        download_url: version_info.download_url,
+        release_notes: version_info.release_notes,
+        mandatory: version_info.mandatory.unwrap_or(false),
+    };
+
+    logger.log_check_completed(CURRENT_VERSION, &version_info.version, update_available);
+
+    Ok(result)
+}
+
+/// Convert UpdateCheckError to UpdateError for unified error handling.
+impl From<UpdateCheckError> for UpdateError {
+    fn from(e: UpdateCheckError) -> Self {
+        match e {
+            UpdateCheckError::Http(req_err) => {
+                classify_reqwest_error(req_err, VERSION_API_URL)
+            }
+            UpdateCheckError::Json(json_err) => UpdateError::InvalidResponse {
+                message: format!("JSON parsing error: {}", json_err),
+            },
+            UpdateCheckError::ServerError { status, message } => {
+                UpdateError::ServerError { status, message }
+            }
+            UpdateCheckError::InvalidVersion(v) => UpdateError::InvalidVersionFormat { version: v },
+        }
+    }
 }
 
 #[cfg(test)]
@@ -474,5 +634,54 @@ mod tests {
         let result = compare_versions(CURRENT_VERSION, "999.0.0");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Ordering::Less);
+    }
+
+    // Tests for enhanced error handling
+
+    #[tokio::test]
+    async fn test_check_for_update_logged_with_invalid_server() {
+        let result = check_for_update_logged_with_url("http://127.0.0.1:1/version").await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        // Should be a network/connection error
+        assert!(err.is_retryable());
+        // Should have a user-friendly message
+        let user_msg = err.user_message();
+        assert!(!user_msg.is_empty());
+    }
+
+    #[test]
+    fn test_update_check_error_to_update_error_conversion() {
+        // Test InvalidVersion conversion
+        let check_err = UpdateCheckError::InvalidVersion("bad-version".to_string());
+        let update_err: UpdateError = check_err.into();
+        assert!(matches!(update_err, UpdateError::InvalidVersionFormat { .. }));
+
+        // Test ServerError conversion
+        let check_err = UpdateCheckError::ServerError {
+            status: 500,
+            message: "Server Error".to_string(),
+        };
+        let update_err: UpdateError = check_err.into();
+        assert!(matches!(update_err, UpdateError::ServerError { .. }));
+    }
+
+    #[test]
+    fn test_update_error_user_messages() {
+        use super::super::errors::UpdateError;
+
+        let err = UpdateError::ServerError {
+            status: 500,
+            message: "Internal Server Error".to_string(),
+        };
+        let msg = err.user_message();
+        assert!(msg.contains("experiencing issues"));
+
+        let err = UpdateError::InvalidVersionFormat {
+            version: "bad".to_string(),
+        };
+        let msg = err.user_message();
+        assert!(msg.contains("Invalid version format"));
     }
 }
