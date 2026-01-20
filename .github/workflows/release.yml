@@ -189,12 +189,26 @@ jobs:
             binary_path="artifacts/${build_name}/artifact/spoq"
 
             echo "Uploading $platform..."
-            curl -X POST "https://download.spoq.dev/cli/release" \
+            echo "Binary path: $binary_path"
+            ls -la "$binary_path" || echo "Binary not found!"
+
+            # Capture full response for debugging
+            response=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "https://download.spoq.dev/cli/release" \
               -H "Authorization: Bearer $DEPLOY_KEY" \
               -F "binary=@${binary_path}" \
               -F "version=${VERSION}" \
-              -F "platform=${platform}" \
-              --fail --show-error
+              -F "platform=${platform}")
+
+            http_code=$(echo "$response" | grep "HTTP_CODE:" | cut -d: -f2)
+            body=$(echo "$response" | sed '/HTTP_CODE:/d')
+
+            echo "Response: $body"
+            echo "HTTP Code: $http_code"
+
+            if [ "$http_code" != "200" ]; then
+              echo "Upload failed with HTTP $http_code"
+              exit 1
+            fi
           done
 
       - name: Verify upload
