@@ -4,6 +4,8 @@
 //! It uses the Tokio runtime to call existing async methods on CentralApiClient.
 
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -15,6 +17,28 @@ const POLL_INTERVAL_SECS: u64 = 5;
 
 /// Maximum number of poll attempts before timing out.
 const MAX_POLL_ATTEMPTS: u32 = 60; // 5 minutes at 5 second intervals
+
+/// Set up Ctrl+C handler that sets the interrupted flag.
+/// Returns the Arc<AtomicBool> that will be set to true on interrupt.
+fn setup_interrupt_handler() -> Arc<AtomicBool> {
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let interrupted_clone = Arc::clone(&interrupted);
+
+    // Install the handler - ignore errors if already set
+    let _ = ctrlc::set_handler(move || {
+        interrupted_clone.store(true, Ordering::SeqCst);
+    });
+
+    interrupted
+}
+
+/// Check if the user has pressed Ctrl+C and exit gracefully if so.
+fn check_interrupt(interrupted: &Arc<AtomicBool>) {
+    if interrupted.load(Ordering::SeqCst) {
+        println!("\nProvisioning cancelled.");
+        std::process::exit(0);
+    }
+}
 
 /// Run the provisioning flow to set up VPS for the user.
 ///
@@ -31,6 +55,11 @@ pub fn run_provisioning_flow(
     runtime: &tokio::runtime::Runtime,
     credentials: &mut Credentials,
 ) -> Result<(), CentralApiError> {
+    println!("\nPress Ctrl+C to cancel.\n");
+
+    // Set up interrupt handler
+    let interrupted = setup_interrupt_handler();
+
     // Create API client with authentication
     let access_token = credentials.access_token.as_ref().ok_or_else(|| {
         CentralApiError::ServerError {
@@ -42,7 +71,8 @@ pub fn run_provisioning_flow(
     let client = CentralApiClient::new().with_auth(access_token);
 
     // Step 1: Fetch available plans
-    println!("\nFetching available VPS plans...");
+    println!("Fetching available VPS plans...");
+    check_interrupt(&interrupted);
     let plans = runtime.block_on(client.fetch_vps_plans())?;
 
     if plans.is_empty() {
@@ -53,19 +83,22 @@ pub fn run_provisioning_flow(
     }
 
     // Step 2: Display plans and get user selection
+    check_interrupt(&interrupted);
     display_plans(&plans);
-    let selected_index = prompt_plan_selection(plans.len())?;
+    let selected_index = prompt_plan_selection_with_interrupt(plans.len(), &interrupted)?;
     let selected_plan = &plans[selected_index];
 
     println!("\nYou selected: {} (${:.2}/month)", selected_plan.name, selected_plan.price_cents as f64 / 100.0);
 
     // Step 3: Confirm provisioning
-    if !prompt_confirmation()? {
+    check_interrupt(&interrupted);
+    if !prompt_confirmation_with_interrupt(&interrupted)? {
         println!("Provisioning cancelled.");
         return Ok(());
     }
 
     // Step 4: Provision the VPS
+    check_interrupt(&interrupted);
     println!("\nProvisioning your VPS...");
     let provision_response = runtime.block_on(client.provision_vps(&selected_plan.id))?;
 
@@ -83,7 +116,7 @@ pub fn run_provisioning_flow(
 
     // Step 5: Poll for VPS to be ready
     println!("\nWaiting for VPS to be ready...");
-    let status = poll_vps_status(runtime, &client)?;
+    let status = poll_vps_status_with_interrupt(runtime, &client, &interrupted)?;
 
     // Update credentials with final status
     credentials.vps_id = Some(status.vps_id.clone());
@@ -180,29 +213,6 @@ pub fn prompt_plan_selection(max: usize) -> Result<usize, CentralApiError> {
     }
 }
 
-/// Prompt the user for confirmation before provisioning.
-///
-/// # Returns
-/// * `Ok(true)` - User confirmed
-/// * `Ok(false)` - User cancelled
-/// * `Err(CentralApiError)` - Input error occurred
-fn prompt_confirmation() -> Result<bool, CentralApiError> {
-    print!("\nProceed with provisioning? (y/n): ");
-    io::stdout().flush().map_err(|e| CentralApiError::ServerError {
-        status: 0,
-        message: format!("Failed to flush stdout: {}", e),
-    })?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).map_err(|e| CentralApiError::ServerError {
-        status: 0,
-        message: format!("Failed to read input: {}", e),
-    })?;
-
-    let trimmed = input.trim().to_lowercase();
-    Ok(trimmed == "y" || trimmed == "yes")
-}
-
 /// Prompt the user for a password (input hidden).
 ///
 /// Uses rpassword crate for secure password input.
@@ -271,6 +281,108 @@ pub fn poll_vps_status(
             });
         }
 
+        thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
+    }
+}
+
+/// Prompt the user to select a plan by number with interrupt support.
+fn prompt_plan_selection_with_interrupt(
+    max: usize,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<usize, CentralApiError> {
+    loop {
+        check_interrupt(interrupted);
+
+        print!("\nEnter plan number (1-{}): ", max);
+        io::stdout().flush().map_err(|e| CentralApiError::ServerError {
+            status: 0,
+            message: format!("Failed to flush stdout: {}", e),
+        })?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).map_err(|e| CentralApiError::ServerError {
+            status: 0,
+            message: format!("Failed to read input: {}", e),
+        })?;
+
+        check_interrupt(interrupted);
+
+        let trimmed = input.trim();
+        match trimmed.parse::<usize>() {
+            Ok(n) if n >= 1 && n <= max => return Ok(n - 1),
+            Ok(_) => println!("Please enter a number between 1 and {}.", max),
+            Err(_) => println!("Please enter a valid number."),
+        }
+    }
+}
+
+/// Prompt the user for confirmation with interrupt support.
+fn prompt_confirmation_with_interrupt(interrupted: &Arc<AtomicBool>) -> Result<bool, CentralApiError> {
+    check_interrupt(interrupted);
+
+    print!("\nProceed with provisioning? (y/n): ");
+    io::stdout().flush().map_err(|e| CentralApiError::ServerError {
+        status: 0,
+        message: format!("Failed to flush stdout: {}", e),
+    })?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).map_err(|e| CentralApiError::ServerError {
+        status: 0,
+        message: format!("Failed to read input: {}", e),
+    })?;
+
+    check_interrupt(interrupted);
+
+    let trimmed = input.trim().to_lowercase();
+    Ok(trimmed == "y" || trimmed == "yes")
+}
+
+/// Poll the VPS status with interrupt support.
+fn poll_vps_status_with_interrupt(
+    runtime: &tokio::runtime::Runtime,
+    client: &CentralApiClient,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<VpsStatusResponse, CentralApiError> {
+    let mut attempts = 0;
+    let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+    loop {
+        check_interrupt(interrupted);
+
+        let status = runtime.block_on(client.fetch_vps_status())?;
+
+        // Check if VPS is ready
+        match status.status.to_lowercase().as_str() {
+            "ready" | "running" | "active" => {
+                print!("\r"); // Clear the spinner line
+                io::stdout().flush().ok();
+                return Ok(status);
+            }
+            "failed" | "error" => {
+                return Err(CentralApiError::ServerError {
+                    status: 500,
+                    message: format!("VPS provisioning failed with status: {}", status.status),
+                });
+            }
+            _ => {
+                // Still provisioning, show progress
+                let spinner = spinner_chars[attempts as usize % spinner_chars.len()];
+                print!("\r{} Status: {} (attempt {}/{})", spinner, status.status, attempts + 1, MAX_POLL_ATTEMPTS);
+                io::stdout().flush().ok();
+            }
+        }
+
+        attempts += 1;
+        if attempts >= MAX_POLL_ATTEMPTS {
+            return Err(CentralApiError::ServerError {
+                status: 408,
+                message: "VPS provisioning timed out".to_string(),
+            });
+        }
+
+        // Check interrupt before sleeping
+        check_interrupt(interrupted);
         thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
     }
 }
