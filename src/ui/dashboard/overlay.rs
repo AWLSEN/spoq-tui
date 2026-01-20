@@ -15,13 +15,14 @@
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
-    text::Line,
     widgets::{Block, Borders, Clear},
     Frame,
 };
 
 use crate::models::dashboard::PlanSummary;
 use crate::ui::dashboard::context::{OverlayState, RenderContext};
+use crate::ui::dashboard::plan_card;
+use crate::ui::dashboard::question_card;
 use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
 /// Render an overlay card on top of the thread list.
@@ -115,7 +116,8 @@ pub fn render(
             options,
             ..
         } => {
-            render_question_content(
+            // Question mode: pass None for input to render option buttons
+            question_card::render(
                 frame,
                 inner_area,
                 thread_id,
@@ -123,6 +125,7 @@ pub fn render(
                 repository,
                 question,
                 options,
+                None,
                 registry,
             );
         }
@@ -135,15 +138,16 @@ pub fn render(
             cursor_pos,
             ..
         } => {
-            render_free_form_content(
+            // FreeForm mode: pass Some((input, cursor_pos)) to render text input
+            question_card::render(
                 frame,
                 inner_area,
                 thread_id,
                 thread_title,
                 repository,
                 question,
-                input,
-                *cursor_pos,
+                &[], // No options in FreeForm mode
+                Some((input.as_str(), *cursor_pos)),
                 registry,
             );
         }
@@ -171,66 +175,31 @@ pub fn render(
     }
 }
 
-/// Stub content renderer for question overlays.
+/// Content renderer for plan approval overlays.
 ///
-/// Phase 8 will implement the full question_card::render() function.
-/// For now, renders a placeholder with thread title and repository.
-#[allow(clippy::too_many_arguments)]
-fn render_question_content(
-    frame: &mut Frame,
-    area: Rect,
-    _thread_id: &str,
-    title: &str,
-    repo: &str,
-    _question: &str,
-    _options: &[String],
-    _registry: &mut HitAreaRegistry,
-) {
-    // Phase 8 will implement question_card::render()
-    // For now, just render a placeholder
-    frame.render_widget(Line::raw(format!("{} \u{00b7} {}", title, repo)), area);
-}
-
-/// Stub content renderer for free-form input overlays.
-///
-/// Phase 8 will implement this in question_card.
-/// For now, renders a placeholder with thread title and repository.
-#[allow(clippy::too_many_arguments)]
-fn render_free_form_content(
-    frame: &mut Frame,
-    area: Rect,
-    _thread_id: &str,
-    title: &str,
-    repo: &str,
-    _question: &str,
-    _input: &str,
-    _cursor_pos: usize,
-    _registry: &mut HitAreaRegistry,
-) {
-    // Phase 8 will implement this in question_card
-    frame.render_widget(Line::raw(format!("{} \u{00b7} {}", title, repo)), area);
-}
-
-/// Stub content renderer for plan approval overlays.
-///
-/// Phase 9 will implement the full plan_card::render() function.
-/// For now, renders a placeholder with thread title and phase count.
+/// Delegates to plan_card::render() for the full plan approval preview.
 #[allow(clippy::too_many_arguments)]
 fn render_plan_content(
     frame: &mut Frame,
     area: Rect,
-    _thread_id: &str,
+    thread_id: &str,
     title: &str,
-    _repo: &str,
-    _request_id: &str,
+    repo: &str,
+    request_id: &str,
     summary: &PlanSummary,
-    _scroll_offset: usize,
-    _registry: &mut HitAreaRegistry,
+    scroll_offset: usize,
+    registry: &mut HitAreaRegistry,
 ) {
-    // Phase 9 will implement plan_card::render()
-    frame.render_widget(
-        Line::raw(format!("{} \u{00b7} {} phases", title, summary.phases.len())),
+    plan_card::render(
+        frame,
         area,
+        thread_id,
+        title,
+        repo,
+        request_id,
+        summary,
+        scroll_offset,
+        registry,
     );
 }
 
