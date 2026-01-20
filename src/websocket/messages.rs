@@ -1,4 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+
+use crate::models::{PlanSummary, ThreadStatus, WaitingFor};
 
 /// Incoming WebSocket messages from the client
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -12,6 +15,12 @@ pub enum WsIncomingMessage {
     /// Connection confirmation from server
     #[serde(rename = "connected")]
     Connected(WsConnected),
+    /// Thread status update for dashboard view
+    #[serde(rename = "thread_status_update")]
+    ThreadStatusUpdate(WsThreadStatusUpdate),
+    /// Plan approval request from agent
+    #[serde(rename = "plan_approval_request")]
+    PlanApprovalRequest(WsPlanApprovalRequest),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -46,6 +55,33 @@ pub struct WsPermissionRequest {
     pub tool_input: serde_json::Value,
     pub description: String,
     pub timestamp: u64,
+}
+
+/// Thread status update for dashboard view
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsThreadStatusUpdate {
+    /// Thread ID being updated
+    pub thread_id: String,
+    /// New status
+    pub status: ThreadStatus,
+    /// What the thread is waiting for (if status is Waiting)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_for: Option<WaitingFor>,
+    /// When this update occurred
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Plan approval request from agent
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsPlanApprovalRequest {
+    /// Thread ID requesting approval
+    pub thread_id: String,
+    /// Request ID for tracking the response
+    pub request_id: String,
+    /// Summary of the plan
+    pub plan_summary: PlanSummary,
+    /// When this request was created
+    pub timestamp: DateTime<Utc>,
 }
 
 /// Command response sent to client
@@ -89,12 +125,34 @@ impl WsCancelPermission {
     }
 }
 
+/// Plan approval response (user approved or rejected plan)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsPlanApprovalResponse {
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// Request ID from the original plan approval request
+    pub request_id: String,
+    /// Whether the plan was approved
+    pub approved: bool,
+}
+
+impl WsPlanApprovalResponse {
+    pub fn new(request_id: String, approved: bool) -> Self {
+        Self {
+            type_: "plan_approval_response".to_string(),
+            request_id,
+            approved,
+        }
+    }
+}
+
 /// Outgoing WebSocket messages (sent to server)
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum WsOutgoingMessage {
     CommandResponse(WsCommandResponse),
     CancelPermission(WsCancelPermission),
+    PlanApprovalResponse(WsPlanApprovalResponse),
 }
 
 #[cfg(test)]
@@ -488,5 +546,177 @@ mod tests {
             }
             _ => panic!("Unexpected message type"),
         }
+    }
+
+    // -------------------- Thread Status Update Tests --------------------
+
+    #[test]
+    fn test_deserialize_thread_status_update() {
+        let json = r#"{
+            "type": "thread_status_update",
+            "thread_id": "thread-123",
+            "status": "running",
+            "timestamp": "2024-01-15T10:30:00Z"
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadStatusUpdate(update) => {
+                assert_eq!(update.thread_id, "thread-123");
+                assert_eq!(update.status, ThreadStatus::Running);
+                assert!(update.waiting_for.is_none());
+            }
+            _ => panic!("Expected ThreadStatusUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_thread_status_update_with_waiting_for() {
+        let json = r#"{
+            "type": "thread_status_update",
+            "thread_id": "thread-456",
+            "status": "waiting",
+            "waiting_for": {
+                "type": "permission",
+                "request_id": "req-789",
+                "tool_name": "Bash"
+            },
+            "timestamp": "2024-01-15T10:30:00Z"
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadStatusUpdate(update) => {
+                assert_eq!(update.thread_id, "thread-456");
+                assert_eq!(update.status, ThreadStatus::Waiting);
+                assert!(update.waiting_for.is_some());
+                match update.waiting_for.unwrap() {
+                    WaitingFor::Permission { request_id, tool_name } => {
+                        assert_eq!(request_id, "req-789");
+                        assert_eq!(tool_name, "Bash");
+                    }
+                    _ => panic!("Expected Permission variant"),
+                }
+            }
+            _ => panic!("Expected ThreadStatusUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_thread_status_update() {
+        let update = WsThreadStatusUpdate {
+            thread_id: "thread-serialize".to_string(),
+            status: ThreadStatus::Done,
+            waiting_for: None,
+            timestamp: Utc::now(),
+        };
+
+        let json = serde_json::to_string(&update).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-serialize");
+        assert_eq!(parsed["status"], "done");
+        assert!(parsed.get("waiting_for").is_none() || parsed["waiting_for"].is_null());
+    }
+
+    // -------------------- Plan Approval Request Tests --------------------
+
+    #[test]
+    fn test_deserialize_plan_approval_request() {
+        let json = r#"{
+            "type": "plan_approval_request",
+            "thread_id": "thread-plan-1",
+            "request_id": "plan-req-123",
+            "plan_summary": {
+                "title": "Add dark mode",
+                "phases": ["Setup theme", "Update components", "Test"],
+                "file_count": 15,
+                "estimated_tokens": 50000
+            },
+            "timestamp": "2024-01-15T10:30:00Z"
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PlanApprovalRequest(req) => {
+                assert_eq!(req.thread_id, "thread-plan-1");
+                assert_eq!(req.request_id, "plan-req-123");
+                assert_eq!(req.plan_summary.title, "Add dark mode");
+                assert_eq!(req.plan_summary.phases.len(), 3);
+                assert_eq!(req.plan_summary.file_count, 15);
+                assert_eq!(req.plan_summary.estimated_tokens, 50000);
+            }
+            _ => panic!("Expected PlanApprovalRequest"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_plan_approval_request() {
+        use crate::models::PlanSummary;
+
+        let req = WsPlanApprovalRequest {
+            thread_id: "thread-plan-serialize".to_string(),
+            request_id: "plan-req-456".to_string(),
+            plan_summary: PlanSummary::new(
+                "Refactor module".to_string(),
+                vec!["Phase 1".to_string(), "Phase 2".to_string()],
+                5,
+                10000,
+            ),
+            timestamp: Utc::now(),
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-plan-serialize");
+        assert_eq!(parsed["request_id"], "plan-req-456");
+        assert_eq!(parsed["plan_summary"]["title"], "Refactor module");
+        assert_eq!(parsed["plan_summary"]["phases"].as_array().unwrap().len(), 2);
+    }
+
+    // -------------------- Plan Approval Response Tests --------------------
+
+    #[test]
+    fn test_plan_approval_response_new_approved() {
+        let response = WsPlanApprovalResponse::new("req-approve".to_string(), true);
+
+        assert_eq!(response.type_, "plan_approval_response");
+        assert_eq!(response.request_id, "req-approve");
+        assert!(response.approved);
+    }
+
+    #[test]
+    fn test_plan_approval_response_new_rejected() {
+        let response = WsPlanApprovalResponse::new("req-reject".to_string(), false);
+
+        assert_eq!(response.type_, "plan_approval_response");
+        assert_eq!(response.request_id, "req-reject");
+        assert!(!response.approved);
+    }
+
+    #[test]
+    fn test_serialize_plan_approval_response() {
+        let response = WsPlanApprovalResponse::new("req-serialize".to_string(), true);
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["type"], "plan_approval_response");
+        assert_eq!(parsed["request_id"], "req-serialize");
+        assert_eq!(parsed["approved"], true);
+    }
+
+    #[test]
+    fn test_ws_outgoing_message_plan_approval() {
+        let response = WsPlanApprovalResponse::new("req-outgoing".to_string(), false);
+        let outgoing = WsOutgoingMessage::PlanApprovalResponse(response);
+
+        let json = serde_json::to_string(&outgoing).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["type"], "plan_approval_response");
+        assert_eq!(parsed["request_id"], "req-outgoing");
+        assert_eq!(parsed["approved"], false);
     }
 }

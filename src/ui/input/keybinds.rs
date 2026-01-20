@@ -253,6 +253,9 @@ mod tests {
             message_count: 0,
             created_at: chrono::Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("prog-thread".to_string());
 

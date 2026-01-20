@@ -92,6 +92,9 @@ impl ThreadCache {
             message_count: 0,
             created_at: now,
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         self.upsert_thread(thread);
@@ -127,6 +130,9 @@ impl ThreadCache {
             message_count: 0,
             created_at: now,
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         self.upsert_thread(thread);
@@ -208,6 +214,9 @@ impl ThreadCache {
             message_count: 0,
             created_at: now,
             working_directory,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         self.upsert_thread(thread);
@@ -303,6 +312,9 @@ impl ThreadCache {
             message_count: 2,
             created_at: now - Duration::minutes(10),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         let messages1 = vec![
@@ -347,6 +359,9 @@ impl ThreadCache {
             message_count: 2,
             created_at: now - Duration::hours(3),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         let messages2 = vec![
@@ -391,6 +406,9 @@ impl ThreadCache {
             message_count: 2,
             created_at: now - Duration::days(1) - Duration::hours(1),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         let messages3 = vec![
@@ -467,6 +485,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         cache.upsert_thread(thread);
@@ -491,6 +512,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         cache.upsert_thread(updated_thread);
@@ -524,6 +548,9 @@ mod tests {
                 message_count: 0,
                 created_at: Utc::now(),
                 working_directory: None,
+                status: None,
+                verified: None,
+                verified_at: None,
             });
         }
 
@@ -543,6 +570,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         // Thread 1 should now be at front
@@ -988,6 +1018,9 @@ mod tests {
             message_count: 0,
             created_at: now,
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
         cache.upsert_thread(thread);
 
@@ -1049,6 +1082,9 @@ mod tests {
             message_count: 42,
             created_at: now,
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
         cache.upsert_thread(thread);
 

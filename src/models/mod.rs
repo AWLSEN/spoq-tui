@@ -1,9 +1,14 @@
+pub mod dashboard;
 mod folder;
 mod message;
 mod request;
 mod thread;
 mod tools;
 
+pub use dashboard::{
+    compute_duration, compute_local_aggregate, derive_repository, infer_status_from_agent_state,
+    Aggregate, PlanSummary, ThreadStatus, WaitingFor,
+};
 pub use folder::{Folder, FolderListResponse};
 pub use message::*;
 pub use request::PermissionMode;
@@ -128,6 +133,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         assert_eq!(thread.id, "thread-123");
@@ -150,6 +158,9 @@ mod tests {
             message_count: 5,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         assert_eq!(thread.id, "thread-456");
@@ -170,6 +181,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         let json = serde_json::to_string(&thread).expect("Failed to serialize");
@@ -192,6 +206,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
 
         let json = serde_json::to_string(&thread).expect("Failed to serialize");

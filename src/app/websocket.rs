@@ -141,6 +141,16 @@ fn route_ws_message(
             // Connection confirmation is informational - ignore for now
             Ok(())
         }
+        WsIncomingMessage::ThreadStatusUpdate(_update) => {
+            // Thread status updates for dashboard view - will be handled in future phases
+            // when dashboard rendering is implemented
+            Ok(())
+        }
+        WsIncomingMessage::PlanApprovalRequest(_request) => {
+            // Plan approval requests for dashboard view - will be handled in future phases
+            // when plan approval UI is implemented
+            Ok(())
+        }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })
             .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),

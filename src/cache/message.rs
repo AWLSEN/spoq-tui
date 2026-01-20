@@ -899,6 +899,9 @@ mod tests {
             message_count: 2,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
         cache.upsert_thread(thread);
 
@@ -1005,6 +1008,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
         cache.upsert_thread(thread);
 
@@ -1080,6 +1086,9 @@ mod tests {
             message_count: 0,
             created_at: Utc::now(),
             working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
         };
         cache.upsert_thread(thread);
 

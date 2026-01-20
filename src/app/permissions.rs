@@ -691,6 +691,7 @@ mod tests {
         match msg {
             WsOutgoingMessage::CommandResponse(resp) => resp,
             WsOutgoingMessage::CancelPermission(_) => panic!("Expected CommandResponse"),
+            WsOutgoingMessage::PlanApprovalResponse(_) => panic!("Expected CommandResponse"),
         }
     }
 

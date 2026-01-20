@@ -205,6 +205,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("test-thread".to_string());
 
@@ -722,6 +725,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("conv-thread".to_string());
         app.permission_mode = PermissionMode::Plan; // Set mode - should show on all threads now
@@ -762,6 +768,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("prog-thread".to_string());
         app.permission_mode = PermissionMode::Plan;
@@ -801,6 +810,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("prog-thread".to_string());
         app.permission_mode = PermissionMode::BypassPermissions;
@@ -840,6 +852,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("prog-thread".to_string());
         app.permission_mode = PermissionMode::Default;
@@ -967,6 +982,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal
@@ -1005,6 +1023,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal
@@ -1043,6 +1064,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal
@@ -1085,6 +1109,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal
@@ -1123,6 +1150,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         // Add a programming thread
@@ -1138,6 +1168,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         terminal
@@ -1222,6 +1255,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("prog-thread".to_string());
 
@@ -1255,6 +1291,9 @@ mod tests {
             message_count: 0,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
         app.active_thread_id = Some("conv-thread".to_string());
 
@@ -2352,6 +2391,9 @@ mod tests {
             message_count: 5,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         if screen == Screen::Conversation {
@@ -2496,6 +2538,9 @@ mod tests {
             message_count: 4,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         for i in 0..4 {
@@ -2579,6 +2624,9 @@ mod tests {
             message_count: 2,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         app.cache.add_message_simple(
@@ -2680,6 +2728,9 @@ mod tests {
             message_count: 10,
             working_directory: None,
             created_at: chrono::Utc::now(),
+            status: None,
+            verified: None,
+            verified_at: None,
         });
 
         // Add a long message

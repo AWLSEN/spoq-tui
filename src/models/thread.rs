@@ -1,7 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
+use super::dashboard::{compute_duration, derive_repository, infer_status_from_agent_state, ThreadStatus};
 use super::{deserialize_id, deserialize_nullable_string, deserialize_thread_type, ServerMessage};
 
 /// Type of thread - determines UI behavior and available features
@@ -82,6 +84,65 @@ pub struct Thread {
     /// Working directory for this thread (programming threads)
     #[serde(default)]
     pub working_directory: Option<String>,
+
+    // -------------------- Dashboard Extension Fields --------------------
+    // These fields are added for dashboard view support with #[serde(default)]
+    // for backward compatibility with existing API responses.
+
+    /// Dashboard status (optional, for dashboard view)
+    #[serde(default)]
+    pub status: Option<ThreadStatus>,
+
+    /// Whether the thread's work has been verified/tested
+    #[serde(default)]
+    pub verified: Option<bool>,
+
+    /// When the verification occurred
+    #[serde(default)]
+    pub verified_at: Option<DateTime<Utc>>,
+}
+
+impl Thread {
+    /// Get effective status based on agent events or stored status
+    ///
+    /// Priority:
+    /// 1. Agent events (most current)
+    /// 2. Stored status field
+    /// 3. Default to Idle
+    pub fn effective_status(&self, agent_events: &HashMap<String, String>) -> ThreadStatus {
+        // First check agent events for real-time status
+        if let Some(state) = agent_events.get(&self.id) {
+            return infer_status_from_agent_state(state);
+        }
+
+        // Fall back to stored status
+        self.status.unwrap_or(ThreadStatus::Idle)
+    }
+
+    /// Get display-friendly repository name
+    ///
+    /// Uses working_directory if available, otherwise returns empty string
+    pub fn display_repository(&self) -> String {
+        self.working_directory
+            .as_deref()
+            .map(derive_repository)
+            .unwrap_or_default()
+    }
+
+    /// Get display-friendly duration since last update
+    pub fn display_duration(&self) -> String {
+        compute_duration(self.updated_at)
+    }
+
+    /// Check if thread needs user action
+    ///
+    /// A thread needs action if:
+    /// - Its effective status is Waiting or Error
+    /// - There's a permission request pending (via agent_events)
+    pub fn needs_action(&self, agent_events: &HashMap<String, String>) -> bool {
+        let status = self.effective_status(agent_events);
+        status.needs_attention()
+    }
 }
 
 /// Response from the thread list endpoint
