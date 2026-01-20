@@ -63,7 +63,8 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext) {
 /// Render the left section with CPU bar and RAM usage
 fn render_left_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
     let mut x = area.x + 2;
-    let y = area.y;
+    // Vertically center the single-line text within the header area
+    let y = area.y + (area.height.saturating_sub(1)) / 2;
 
     // Connection status circle (far left, before CPU)
     let (conn_char, conn_color) = if ctx.system_stats.connected {
@@ -115,15 +116,18 @@ fn render_left_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
 
 /// Render the centered SPOQ logo
 fn render_logo(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
-    // Calculate center position: area.width/2 - logo_width/2
+    // Calculate horizontal center position: area.width/2 - logo_width/2
     let logo_x = area.x + (area.width / 2).saturating_sub(LOGO_WIDTH / 2);
 
+    // Vertically center the 2-row logo within the header area
+    let logo_y = area.y + (area.height.saturating_sub(2)) / 2;
+
     // Row 0: LOGO_TOP
-    let y0 = area.y;
+    let y0 = logo_y;
     let mut offset = 0u16;
     for ch in LOGO_TOP.chars() {
         let pos_x = logo_x + offset;
-        if pos_x < area.x + area.width {
+        if pos_x < area.x + area.width && y0 < area.y + area.height {
             buf[(pos_x, y0)]
                 .set_char(ch)
                 .set_style(Style::default().fg(ctx.theme.accent));
@@ -132,8 +136,8 @@ fn render_logo(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
     }
 
     // Row 1: LOGO_BOT
-    if area.height >= 2 {
-        let y1 = area.y + 1;
+    let y1 = logo_y + 1;
+    if y1 < area.y + area.height {
         let mut offset = 0u16;
         for ch in LOGO_BOT.chars() {
             let pos_x = logo_x + offset;
@@ -159,7 +163,8 @@ fn render_right_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
     // Right-align: x = area.x + area.width - text.len() - 2
     let text_len = text.chars().count() as u16;
     let x = (area.x + area.width).saturating_sub(text_len + 2);
-    let y = area.y;
+    // Vertically center the single-line text within the header area
+    let y = area.y + (area.height.saturating_sub(1)) / 2;
 
     let mut offset = 0u16;
     for ch in text.chars() {

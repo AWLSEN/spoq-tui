@@ -74,8 +74,8 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
         return;
     }
 
-    // Calculate 70% width, centered
-    let bar_width = (area.width as f32 * 0.70).round() as u16;
+    // Calculate 84% width (8% margin on each side), centered
+    let bar_width = (area.width as f32 * 0.84).round() as u16;
     let left_padding = (area.width - bar_width) / 2;
 
     let bar_area = Rect {
