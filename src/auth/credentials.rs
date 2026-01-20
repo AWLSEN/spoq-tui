@@ -37,6 +37,9 @@ pub struct Credentials {
     pub vps_ip: Option<String>,
     /// The current status of the user's VPS.
     pub vps_status: Option<String>,
+    /// The datacenter ID where the user's VPS is located.
+    #[serde(default)]
+    pub datacenter_id: Option<u32>,
 }
 
 impl Credentials {
@@ -182,6 +185,7 @@ mod tests {
         assert!(creds.vps_hostname.is_none());
         assert!(creds.vps_ip.is_none());
         assert!(creds.vps_status.is_none());
+        assert!(creds.datacenter_id.is_none());
     }
 
     #[test]
@@ -275,6 +279,7 @@ mod tests {
             vps_hostname: Some("vps-456.example.com".to_string()),
             vps_ip: Some("192.168.1.100".to_string()),
             vps_status: Some("running".to_string()),
+            datacenter_id: Some(1),
         };
 
         assert!(manager.save(&creds));
@@ -345,6 +350,7 @@ mod tests {
             vps_hostname: Some("hostname".to_string()),
             vps_ip: Some("192.168.1.1".to_string()),
             vps_status: Some("running".to_string()),
+            datacenter_id: Some(2),
         };
 
         let json = serde_json::to_string(&creds).unwrap();
@@ -364,5 +370,36 @@ mod tests {
         // Should return default credentials
         let loaded = manager.load();
         assert_eq!(loaded, Credentials::default());
+    }
+
+    #[test]
+    fn test_credentials_backward_compatibility() {
+        // Test that old credentials.json without datacenter_id can still be loaded
+        let json_without_datacenter = r#"{
+            "access_token": "old-token",
+            "refresh_token": "old-refresh",
+            "expires_at": 9999999999,
+            "user_id": "old-user",
+            "username": "olduser",
+            "vps_id": "old-vps",
+            "vps_url": "http://old.example.com",
+            "vps_hostname": "old.example.com",
+            "vps_ip": "10.0.0.1",
+            "vps_status": "active"
+        }"#;
+
+        let creds: Credentials = serde_json::from_str(json_without_datacenter).unwrap();
+
+        assert_eq!(creds.access_token, Some("old-token".to_string()));
+        assert_eq!(creds.refresh_token, Some("old-refresh".to_string()));
+        assert_eq!(creds.expires_at, Some(9999999999));
+        assert_eq!(creds.user_id, Some("old-user".to_string()));
+        assert_eq!(creds.username, Some("olduser".to_string()));
+        assert_eq!(creds.vps_id, Some("old-vps".to_string()));
+        assert_eq!(creds.vps_url, Some("http://old.example.com".to_string()));
+        assert_eq!(creds.vps_hostname, Some("old.example.com".to_string()));
+        assert_eq!(creds.vps_ip, Some("10.0.0.1".to_string()));
+        assert_eq!(creds.vps_status, Some("active".to_string()));
+        assert_eq!(creds.datacenter_id, None); // Should default to None
     }
 }
