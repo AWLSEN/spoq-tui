@@ -307,6 +307,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
         app.connection_status = false;
+        app.system_stats.connected = false; // Connection status moved to dashboard header
 
         terminal
             .draw(|f| {
@@ -316,13 +317,10 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
-        assert!(
-            buffer_str.contains("Disconnected"),
-            "CommandDeck should show Disconnected status when connection_status is false"
-        );
+        // Connection status is now in dashboard header, not command_deck text
         assert!(
             buffer_str.contains("○"),
-            "CommandDeck should show empty circle icon when disconnected"
+            "Dashboard header should show empty circle icon when disconnected"
         );
     }
 
@@ -332,6 +330,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
         app.connection_status = true;
+        app.system_stats.connected = true; // Connection status moved to dashboard header
 
         terminal
             .draw(|f| {
@@ -341,13 +340,10 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
-        assert!(
-            buffer_str.contains("Connected"),
-            "CommandDeck should show Connected status when connection_status is true"
-        );
+        // Connection status is now in dashboard header, not command_deck text
         assert!(
             buffer_str.contains("●"),
-            "CommandDeck should show filled circle icon when connected"
+            "Dashboard header should show filled circle icon when connected"
         );
     }
 
