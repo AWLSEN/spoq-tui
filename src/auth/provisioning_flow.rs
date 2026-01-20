@@ -9,7 +9,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use super::central_api::{CentralApiClient, CentralApiError, VpsPlan, VpsStatusResponse};
+use super::central_api::{
+    CentralApiClient, CentralApiError, DataCenter, VpsPlan, VpsStatusResponse,
+};
 use super::credentials::Credentials;
 
 /// Poll interval for VPS status checks (in seconds).
@@ -61,12 +63,14 @@ pub fn run_provisioning_flow(
     let interrupted = setup_interrupt_handler();
 
     // Create API client with authentication
-    let access_token = credentials.access_token.as_ref().ok_or_else(|| {
-        CentralApiError::ServerError {
-            status: 401,
-            message: "No access token available".to_string(),
-        }
-    })?;
+    let access_token =
+        credentials
+            .access_token
+            .as_ref()
+            .ok_or_else(|| CentralApiError::ServerError {
+                status: 401,
+                message: "No access token available".to_string(),
+            })?;
 
     let client = CentralApiClient::new().with_auth(access_token);
 
@@ -88,7 +92,11 @@ pub fn run_provisioning_flow(
     let selected_index = prompt_plan_selection_with_interrupt(plans.len(), &interrupted)?;
     let selected_plan = &plans[selected_index];
 
-    println!("\nYou selected: {} (${:.2}/month)", selected_plan.name, selected_plan.price_cents as f64 / 100.0);
+    println!(
+        "\nYou selected: {} (${:.2}/month)",
+        selected_plan.name,
+        selected_plan.price_cents as f64 / 100.0
+    );
 
     // Step 3: Get SSH password from user
     check_interrupt(&interrupted);
@@ -101,13 +109,31 @@ pub fn run_provisioning_flow(
         return Ok(());
     }
 
-    // Step 5: Provision the VPS
+    // Step 5: Fetch and select datacenter
+    check_interrupt(&interrupted);
+    println!("\nFetching available data centers...");
+    let datacenters = runtime.block_on(client.fetch_datacenters())?;
+
+    if datacenters.is_empty() {
+        return Err(CentralApiError::ServerError {
+            status: 404,
+            message: "No data centers available".to_string(),
+        });
+    }
+
+    check_interrupt(&interrupted);
+    let ordered_dcs = display_datacenters(&datacenters);
+    let selected_datacenter_id =
+        prompt_datacenter_selection_with_interrupt(&ordered_dcs, &interrupted)?;
+    credentials.datacenter_id = Some(selected_datacenter_id);
+
+    // Step 6: Provision the VPS
     check_interrupt(&interrupted);
     println!("\nProvisioning your VPS...");
     let provision_response = runtime.block_on(client.provision_vps(
         &ssh_password,
         Some(&selected_plan.id),
-        credentials.datacenter_id,
+        Some(selected_datacenter_id),
     ))?;
 
     println!("VPS provisioning started!");
@@ -122,7 +148,7 @@ pub fn run_provisioning_flow(
         credentials.vps_hostname = Some(hostname.clone());
     }
 
-    // Step 6: Poll for VPS to be ready
+    // Step 7: Poll for VPS to be ready
     println!("\nWaiting for VPS to be ready...");
     let status = poll_vps_status_with_interrupt(runtime, &client, &interrupted)?;
 
@@ -190,6 +216,76 @@ fn display_plans(plans: &[VpsPlan]) {
     println!("{:-<60}", "");
 }
 
+/// Display available data centers grouped by continent.
+/// Returns a mapping of display number (1-indexed) to datacenter.
+fn display_datacenters(datacenters: &[DataCenter]) -> Vec<&DataCenter> {
+    use std::collections::BTreeMap;
+
+    // Group datacenters by continent
+    let mut by_continent: BTreeMap<&str, Vec<&DataCenter>> = BTreeMap::new();
+    for dc in datacenters {
+        by_continent.entry(&dc.continent).or_default().push(dc);
+    }
+
+    // Build ordered list for selection
+    let mut ordered: Vec<&DataCenter> = Vec::new();
+
+    println!("\nAvailable Data Centers:");
+    println!("{:─<40}", "");
+
+    for (continent, dcs) in &by_continent {
+        println!("{}:", continent);
+        for dc in dcs {
+            ordered.push(dc);
+            println!("  [{}] {}, {}", ordered.len(), dc.city, dc.country);
+        }
+    }
+
+    println!("{:─<40}", "");
+
+    ordered
+}
+
+/// Prompt the user to select a datacenter by number with interrupt support.
+fn prompt_datacenter_selection_with_interrupt(
+    datacenters: &[&DataCenter],
+    interrupted: &Arc<AtomicBool>,
+) -> Result<u32, CentralApiError> {
+    let max = datacenters.len();
+
+    loop {
+        check_interrupt(interrupted);
+
+        print!("\nSelect data center (1-{}): ", max);
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to read input: {}", e),
+            })?;
+
+        check_interrupt(interrupted);
+
+        let trimmed = input.trim();
+        match trimmed.parse::<usize>() {
+            Ok(n) if n >= 1 && n <= max => {
+                let selected = datacenters[n - 1];
+                return Ok(selected.id);
+            }
+            Ok(_) => println!("Please enter a number between 1 and {}.", max),
+            Err(_) => println!("Please enter a valid number."),
+        }
+    }
+}
+
 /// Prompt the user to select a plan by number with interrupt support.
 fn prompt_plan_selection_with_interrupt(
     max: usize,
@@ -199,16 +295,20 @@ fn prompt_plan_selection_with_interrupt(
         check_interrupt(interrupted);
 
         print!("\nEnter plan number (1-{}): ", max);
-        io::stdout().flush().map_err(|e| CentralApiError::ServerError {
-            status: 0,
-            message: format!("Failed to flush stdout: {}", e),
-        })?;
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input).map_err(|e| CentralApiError::ServerError {
-            status: 0,
-            message: format!("Failed to read input: {}", e),
-        })?;
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to read input: {}", e),
+            })?;
 
         check_interrupt(interrupted);
 
@@ -222,20 +322,26 @@ fn prompt_plan_selection_with_interrupt(
 }
 
 /// Prompt the user for confirmation with interrupt support.
-fn prompt_confirmation_with_interrupt(interrupted: &Arc<AtomicBool>) -> Result<bool, CentralApiError> {
+fn prompt_confirmation_with_interrupt(
+    interrupted: &Arc<AtomicBool>,
+) -> Result<bool, CentralApiError> {
     check_interrupt(interrupted);
 
     print!("\nProceed with provisioning? (y/n): ");
-    io::stdout().flush().map_err(|e| CentralApiError::ServerError {
-        status: 0,
-        message: format!("Failed to flush stdout: {}", e),
-    })?;
+    io::stdout()
+        .flush()
+        .map_err(|e| CentralApiError::ServerError {
+            status: 0,
+            message: format!("Failed to flush stdout: {}", e),
+        })?;
 
     let mut input = String::new();
-    io::stdin().read_line(&mut input).map_err(|e| CentralApiError::ServerError {
-        status: 0,
-        message: format!("Failed to read input: {}", e),
-    })?;
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| CentralApiError::ServerError {
+            status: 0,
+            message: format!("Failed to read input: {}", e),
+        })?;
 
     check_interrupt(interrupted);
 
@@ -244,31 +350,114 @@ fn prompt_confirmation_with_interrupt(interrupted: &Arc<AtomicBool>) -> Result<b
 }
 
 /// Prompt the user for SSH password with interrupt support.
-fn prompt_ssh_password_with_interrupt(interrupted: &Arc<AtomicBool>) -> Result<String, CentralApiError> {
+/// Uses rpassword for hidden input and validates minimum 12 characters.
+fn prompt_ssh_password_with_interrupt(
+    interrupted: &Arc<AtomicBool>,
+) -> Result<String, CentralApiError> {
     loop {
         check_interrupt(interrupted);
 
-        print!("\nEnter SSH password for your VPS (min 8 characters): ");
-        io::stdout().flush().map_err(|e| CentralApiError::ServerError {
-            status: 0,
-            message: format!("Failed to flush stdout: {}", e),
-        })?;
+        print!("Enter SSH password (min 12 characters): ");
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).map_err(|e| CentralApiError::ServerError {
+        let password = rpassword::read_password().map_err(|e| CentralApiError::ServerError {
             status: 0,
-            message: format!("Failed to read input: {}", e),
+            message: format!("Failed to read password: {}", e),
         })?;
 
         check_interrupt(interrupted);
 
-        let password = input.trim().to_string();
-        if password.len() >= 8 {
+        if password.len() >= 12 {
             return Ok(password);
         }
 
-        println!("Password must be at least 8 characters.");
+        println!("Password must be at least 12 characters. Try again.");
     }
+}
+
+/// Poll VPS status until ready (without interrupt support).
+/// This is a simpler version for programmatic use.
+///
+/// # Arguments
+/// * `runtime` - The Tokio runtime to use for async operations
+/// * `client` - The CentralApiClient to use for polling
+///
+/// # Returns
+/// * `Ok(VpsStatusResponse)` - VPS is ready
+/// * `Err(CentralApiError)` - VPS failed or timed out
+pub fn poll_vps_until_ready(
+    runtime: &tokio::runtime::Runtime,
+    client: &CentralApiClient,
+) -> Result<VpsStatusResponse, CentralApiError> {
+    let mut attempts = 0;
+
+    loop {
+        let status = runtime.block_on(client.fetch_vps_status())?;
+
+        // Check if VPS is ready
+        match status.status.to_lowercase().as_str() {
+            "ready" | "running" | "active" => {
+                return Ok(status);
+            }
+            "failed" | "error" => {
+                return Err(CentralApiError::ServerError {
+                    status: 500,
+                    message: format!("VPS failed with status: {}", status.status),
+                });
+            }
+            _ => {
+                // Still starting/provisioning, continue polling
+            }
+        }
+
+        attempts += 1;
+        if attempts >= MAX_POLL_ATTEMPTS {
+            return Err(CentralApiError::ServerError {
+                status: 408,
+                message: "VPS start timed out".to_string(),
+            });
+        }
+
+        thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
+    }
+}
+
+/// Start a stopped VPS and wait for it to be ready.
+///
+/// Returns updated VpsStatusResponse or error.
+///
+/// # Arguments
+/// * `runtime` - The Tokio runtime to use for async operations
+/// * `credentials` - The credentials containing the access token
+///
+/// # Returns
+/// * `Ok(VpsStatusResponse)` - VPS started and is ready
+/// * `Err(CentralApiError)` - Failed to start VPS or timed out
+pub fn start_stopped_vps(
+    runtime: &tokio::runtime::Runtime,
+    credentials: &Credentials,
+) -> Result<VpsStatusResponse, CentralApiError> {
+    let token = credentials
+        .access_token
+        .as_ref()
+        .ok_or_else(|| CentralApiError::ServerError {
+            status: 401,
+            message: "No access token".to_string(),
+        })?;
+
+    let client = CentralApiClient::new().with_auth(token);
+
+    // Start VPS
+    println!("Starting your VPS...");
+    runtime.block_on(client.start_vps())?;
+
+    // Poll until ready
+    poll_vps_until_ready(runtime, &client)
 }
 
 /// Poll the VPS status with interrupt support.
@@ -301,7 +490,13 @@ fn poll_vps_status_with_interrupt(
             _ => {
                 // Still provisioning, show progress
                 let spinner = spinner_chars[attempts as usize % spinner_chars.len()];
-                print!("\r{} Status: {} (attempt {}/{})", spinner, status.status, attempts + 1, MAX_POLL_ATTEMPTS);
+                print!(
+                    "\r{} Status: {} (attempt {}/{})",
+                    spinner,
+                    status.status,
+                    attempts + 1,
+                    MAX_POLL_ATTEMPTS
+                );
                 io::stdout().flush().ok();
             }
         }
@@ -433,11 +628,99 @@ mod tests {
         let failed_states = ["failed", "error", "Failed", "ERROR"];
 
         for state in &failed_states {
-            let is_failed = matches!(
-                state.to_lowercase().as_str(),
-                "failed" | "error"
+            let is_failed = matches!(state.to_lowercase().as_str(), "failed" | "error");
+            assert!(
+                is_failed,
+                "State '{}' should be recognized as failed",
+                state
             );
-            assert!(is_failed, "State '{}' should be recognized as failed", state);
         }
+    }
+
+    #[test]
+    fn test_display_datacenters_groups_by_continent() {
+        let datacenters = vec![
+            DataCenter {
+                id: 1,
+                name: "PHX1".to_string(),
+                city: "Phoenix".to_string(),
+                country: "USA".to_string(),
+                continent: "North America".to_string(),
+            },
+            DataCenter {
+                id: 2,
+                name: "AMS1".to_string(),
+                city: "Amsterdam".to_string(),
+                country: "Netherlands".to_string(),
+                continent: "Europe".to_string(),
+            },
+            DataCenter {
+                id: 3,
+                name: "LAX1".to_string(),
+                city: "Los Angeles".to_string(),
+                country: "USA".to_string(),
+                continent: "North America".to_string(),
+            },
+        ];
+
+        let ordered = display_datacenters(&datacenters);
+
+        // Should return all datacenters
+        assert_eq!(ordered.len(), 3);
+
+        // Due to BTreeMap ordering, Europe comes before North America
+        assert_eq!(ordered[0].city, "Amsterdam");
+        assert_eq!(ordered[1].city, "Los Angeles");
+        assert_eq!(ordered[2].city, "Phoenix");
+    }
+
+    #[test]
+    fn test_display_datacenters_returns_correct_ids() {
+        let datacenters = vec![
+            DataCenter {
+                id: 5,
+                name: "TYO1".to_string(),
+                city: "Tokyo".to_string(),
+                country: "Japan".to_string(),
+                continent: "Asia".to_string(),
+            },
+            DataCenter {
+                id: 9,
+                name: "SYD1".to_string(),
+                city: "Sydney".to_string(),
+                country: "Australia".to_string(),
+                continent: "Oceania".to_string(),
+            },
+        ];
+
+        let ordered = display_datacenters(&datacenters);
+
+        // Verify IDs are preserved
+        assert_eq!(ordered[0].id, 5); // Asia before Oceania alphabetically
+        assert_eq!(ordered[1].id, 9);
+    }
+
+    #[test]
+    fn test_display_datacenters_empty_list() {
+        let datacenters: Vec<DataCenter> = vec![];
+        let ordered = display_datacenters(&datacenters);
+        assert!(ordered.is_empty());
+    }
+
+    #[test]
+    fn test_display_datacenters_single_datacenter() {
+        let datacenters = vec![DataCenter {
+            id: 42,
+            name: "TEST1".to_string(),
+            city: "Test City".to_string(),
+            country: "Test Country".to_string(),
+            continent: "Test Continent".to_string(),
+        }];
+
+        let ordered = display_datacenters(&datacenters);
+
+        assert_eq!(ordered.len(), 1);
+        assert_eq!(ordered[0].id, 42);
+        assert_eq!(ordered[0].city, "Test City");
     }
 }
