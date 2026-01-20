@@ -26,6 +26,79 @@ use tokio::task::JoinHandle;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Background update check and download on startup.
+///
+/// This function runs non-blocking in the background:
+/// 1. Load update state to check last check time
+/// 2. Check for available updates (respecting rate limiting)
+/// 3. Download the update if available
+/// 4. Store the pending update path in state for next launch
+///
+/// Errors are silently ignored to avoid disrupting the user experience.
+async fn check_and_download_update() {
+    use spoq::update::{
+        check_for_update, detect_platform, download_binary, UpdateStateManager,
+    };
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // Load update state to check when we last checked
+    let state_manager = match UpdateStateManager::new() {
+        Some(mgr) => mgr,
+        None => return, // Can't determine home dir - skip update check
+    };
+
+    let mut state = state_manager.load();
+
+    // Rate limit: only check for updates once per 24 hours
+    const CHECK_INTERVAL_SECONDS: i64 = 24 * 60 * 60;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    if let Some(last_check) = state.last_check {
+        if now - last_check < CHECK_INTERVAL_SECONDS {
+            // Too soon since last check - skip
+            return;
+        }
+    }
+
+    // Update last check time
+    state.last_check = Some(now);
+    let _ = state_manager.save(&state);
+
+    // Step 1: Check for updates
+    let check_result = match check_for_update().await {
+        Ok(result) => result,
+        Err(_) => return, // Network error or API down - silently skip
+    };
+
+    if !check_result.update_available {
+        // Already on latest version
+        return;
+    }
+
+    // Step 2: Download the update
+    let platform = match detect_platform() {
+        Ok(p) => p,
+        Err(_) => return, // Unsupported platform - skip
+    };
+
+    let download_result = match download_binary(platform, Some(&check_result.latest_version)).await
+    {
+        Ok(result) => result,
+        Err(_) => return, // Download failed - silently skip
+    };
+
+    // Step 3: Store the pending update path in state
+    state.pending_update_path = Some(download_result.file_path.to_string_lossy().to_string());
+    state.available_version = Some(check_result.latest_version);
+    let _ = state_manager.save(&state);
+
+    // Update is now ready for installation on next launch
+    // User will see notification in TUI or can run `spoq --update` manually
+}
+
 /// Handle the --update flag for manual update check and installation.
 ///
 /// This function runs the complete update flow:
@@ -200,6 +273,13 @@ fn main() -> Result<()> {
             std::process::exit(1);
         }
     }
+
+    // =========================================================
+    // Update check - run in background, non-blocking
+    // =========================================================
+    runtime.spawn(async {
+        check_and_download_update().await;
+    });
 
     // At this point, user is authenticated AND has a ready VPS
     println!("Starting SPOQ...\n");
