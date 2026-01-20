@@ -4,6 +4,7 @@
 //! multiple concurrent agent threads.
 
 mod context;
+pub mod footer;
 pub mod header;
 pub mod overlay;
 pub mod plan_card;
@@ -19,6 +20,8 @@ pub use context::{
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
+    text::Line,
     Frame,
 };
 
@@ -72,13 +75,14 @@ pub fn render_dashboard(
         return;
     }
 
-    // Layout: header (2 rows) + status bar (2 rows) + thread list (remaining)
+    // Layout: header (2 rows) + status bar (2 rows) + thread list (remaining) + footer (1 row)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(2), // Header
             Constraint::Length(2), // Status bar
             Constraint::Min(5),    // Thread list
+            Constraint::Length(1), // Footer hint
         ])
         .split(area);
 
@@ -90,6 +94,11 @@ pub fn render_dashboard(
 
     // Render thread list (split or filtered view)
     thread_list::render(frame, chunks[2], ctx, registry);
+
+    // Render footer hint
+    let hint = footer::get_footer_hint(ctx);
+    let hint_line = Line::styled(hint, Style::default().fg(Color::DarkGray));
+    frame.render_widget(hint_line, chunks[3]);
 
     // Render overlay if present
     if let Some(overlay_state) = ctx.overlay {
