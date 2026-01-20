@@ -171,7 +171,7 @@ fn test_layout_context_from_rect() {
     use ratatui::layout::Rect;
 
     let rect = Rect::new(10, 20, 100, 50);
-    let ctx = LayoutContext::from_rect(rect);
+    let ctx = LayoutContext::new(rect.width, rect.height);
 
     assert_eq!(ctx.width, 100, "Should take width from rect");
     assert_eq!(ctx.height, 50, "Should take height from rect");

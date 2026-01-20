@@ -151,7 +151,6 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::dashboard::Aggregate;
 
     #[test]
     fn test_calculate_overlay_area_question() {

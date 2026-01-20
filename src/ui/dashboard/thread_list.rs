@@ -236,7 +236,6 @@ fn render_filtered_view(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::models::dashboard::ThreadStatus;
     use crate::ui::dashboard::context::ThreadView;
 

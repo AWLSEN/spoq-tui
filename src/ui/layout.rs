@@ -6,8 +6,6 @@
 //! The `LayoutContext` is passed to all render functions to enable proportional
 //! sizing based on the current terminal dimensions.
 
-use ratatui::layout::Rect;
-
 // ============================================================================
 // Screen Size Breakpoints
 // ============================================================================

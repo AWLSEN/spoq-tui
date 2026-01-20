@@ -1122,7 +1122,7 @@ mod from_rect {
     #[test]
     fn test_from_rect_mobile() {
         let rect = Rect::new(0, 0, MOBILE_WIDTH, MOBILE_HEIGHT);
-        let layout = LayoutContext::from_rect(rect);
+        let layout = LayoutContext::new(rect.width, rect.height);
         assert_eq!(layout.width, MOBILE_WIDTH);
         assert_eq!(layout.height, MOBILE_HEIGHT);
     }
@@ -1130,7 +1130,7 @@ mod from_rect {
     #[test]
     fn test_from_rect_standard() {
         let rect = Rect::new(10, 5, STANDARD_WIDTH, STANDARD_HEIGHT);
-        let layout = LayoutContext::from_rect(rect);
+        let layout = LayoutContext::new(rect.width, rect.height);
         // x and y are ignored, only width and height matter
         assert_eq!(layout.width, STANDARD_WIDTH);
         assert_eq!(layout.height, STANDARD_HEIGHT);
@@ -1139,7 +1139,7 @@ mod from_rect {
     #[test]
     fn test_from_rect_wide() {
         let rect = Rect::new(0, 0, WIDE_WIDTH, WIDE_HEIGHT);
-        let layout = LayoutContext::from_rect(rect);
+        let layout = LayoutContext::new(rect.width, rect.height);
         assert_eq!(layout.width, WIDE_WIDTH);
         assert_eq!(layout.height, WIDE_HEIGHT);
     }
@@ -1147,7 +1147,7 @@ mod from_rect {
     #[test]
     fn test_from_rect_ultra_wide() {
         let rect = Rect::new(0, 0, ULTRA_WIDE_WIDTH, ULTRA_WIDE_HEIGHT);
-        let layout = LayoutContext::from_rect(rect);
+        let layout = LayoutContext::new(rect.width, rect.height);
         assert_eq!(layout.width, ULTRA_WIDE_WIDTH);
         assert_eq!(layout.height, ULTRA_WIDE_HEIGHT);
     }
@@ -1155,7 +1155,7 @@ mod from_rect {
     #[test]
     fn test_from_rect_zero_size() {
         let rect = Rect::new(0, 0, 0, 0);
-        let layout = LayoutContext::from_rect(rect);
+        let layout = LayoutContext::new(rect.width, rect.height);
         assert_eq!(layout.width, 0);
         assert_eq!(layout.height, 0);
     }
