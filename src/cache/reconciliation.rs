@@ -24,12 +24,7 @@ impl ThreadCache {
     /// * `pending_id` - The local UUID we generated before the backend responded
     /// * `real_id` - The actual thread ID from the backend
     /// * `title` - Optional title to update the thread with
-    pub fn reconcile_thread_id(
-        &mut self,
-        pending_id: &str,
-        real_id: &str,
-        title: Option<String>,
-    ) {
+    pub fn reconcile_thread_id(&mut self, pending_id: &str, real_id: &str, title: Option<String>) {
         // If pending_id equals real_id, nothing to do (this can happen in some flows)
         if pending_id == real_id {
             // Just update title if provided
@@ -171,7 +166,11 @@ mod tests {
         let pending_id = cache.create_streaming_thread("Original title".to_string());
 
         // Reconcile with a new title
-        cache.reconcile_thread_id(&pending_id, "real-backend-id", Some("New Title".to_string()));
+        cache.reconcile_thread_id(
+            &pending_id,
+            "real-backend-id",
+            Some("New Title".to_string()),
+        );
 
         let thread = cache.get_thread("real-backend-id").unwrap();
         assert_eq!(thread.title, "New Title");
@@ -222,8 +221,11 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Create thread with client-generated UUID
-        let thread_id =
-            cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Conversation, None);
+        let thread_id = cache.create_pending_thread(
+            "What is Rust?".to_string(),
+            ThreadType::Conversation,
+            None,
+        );
         assert!(uuid::Uuid::parse_str(&thread_id).is_ok());
 
         // Stream some tokens

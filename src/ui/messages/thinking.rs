@@ -62,55 +62,46 @@ pub fn render_thinking_block(
     if collapsed {
         // Collapsed: arrow Thinking... (847 tokens)
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("{} ", arrow),
-                Style::default().fg(header_color),
-            ),
+            Span::styled(format!("{} ", arrow), Style::default().fg(header_color)),
             Span::styled(
                 "Thinking...",
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::ITALIC),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::ITALIC),
             ),
             Span::styled(
                 format!(" ({} tokens)", token_count),
                 Style::default().fg(COLOR_DIM),
             ),
-            Span::styled(
-                toggle_hint,
-                Style::default().fg(COLOR_DIM),
-            ),
+            Span::styled(toggle_hint, Style::default().fg(COLOR_DIM)),
         ]));
     } else {
         // Expanded header: arrow Thinking
         lines.push(Line::from(vec![
-            Span::styled(
-                format!("{} ", arrow),
-                Style::default().fg(header_color),
-            ),
+            Span::styled(format!("{} ", arrow), Style::default().fg(header_color)),
             Span::styled(
                 "Thinking",
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 format!(" ({} tokens)", token_count),
                 Style::default().fg(COLOR_DIM),
             ),
-            Span::styled(
-                toggle_hint,
-                Style::default().fg(COLOR_DIM),
-            ),
+            Span::styled(toggle_hint, Style::default().fg(COLOR_DIM)),
         ]));
 
         // Render the reasoning content with box-drawing border
         let content = &message.reasoning_content;
         for line in content.lines() {
             lines.push(Line::from(vec![
-                Span::styled(
-                    "\u{2502} ",
-                    Style::default().fg(Color::DarkGray),
-                ),
+                Span::styled("\u{2502} ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     line.to_string(),
-                    Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC),
+                    Style::default()
+                        .fg(Color::Gray)
+                        .add_modifier(Modifier::ITALIC),
                 ),
             ]));
         }
@@ -119,22 +110,21 @@ pub fn render_thinking_block(
         if message.is_streaming {
             let show_cursor = (tick_count / 5).is_multiple_of(2);
             if show_cursor {
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        "\u{2502} \u{2588}",
-                        Style::default().fg(Color::Magenta),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    "\u{2502} \u{2588}",
+                    Style::default().fg(Color::Magenta),
+                )]));
             }
         }
 
         // Bottom border - responsive width
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("\u{2514}{}", "\u{2500}".repeat(border_width.saturating_sub(1))),
-                Style::default().fg(Color::DarkGray),
+        lines.push(Line::from(vec![Span::styled(
+            format!(
+                "\u{2514}{}",
+                "\u{2500}".repeat(border_width.saturating_sub(1))
             ),
-        ]));
+            Style::default().fg(Color::DarkGray),
+        )]));
     }
 
     lines.push(Line::from("")); // Add spacing after thinking block

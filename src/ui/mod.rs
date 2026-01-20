@@ -32,28 +32,30 @@ mod thread_switcher;
 
 // Re-export theme colors for external use
 pub use theme::{
-    COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER,
-    COLOR_INPUT_BG, COLOR_PROGRESS, COLOR_PROGRESS_BG, COLOR_QUEUED,
-    COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
+    COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_INPUT_BG,
+    COLOR_PROGRESS, COLOR_PROGRESS_BG, COLOR_QUEUED, COLOR_TOOL_ERROR, COLOR_TOOL_ICON,
+    COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
 };
 
 // Re-export layout system for external use
 pub use layout::{
-    calculate_stacked_heights, calculate_two_column_widths, LayoutContext, SizeCategory,
-    breakpoints,
+    breakpoints, calculate_stacked_heights, calculate_two_column_widths, LayoutContext,
+    SizeCategory,
 };
 
 // Re-export helper functions for external use
-pub use helpers::{format_tool_args, is_terminal_too_small, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH};
+pub use helpers::{
+    format_tool_args, is_terminal_too_small, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+};
 
 // Re-export rendering functions for external use
 pub use messages::{estimate_wrapped_line_count, truncate_preview};
 
 use ratatui::{
-    Frame,
     layout::{Alignment, Rect},
     style::{Color, Style},
     widgets::Paragraph,
+    Frame,
 };
 
 use crate::app::{App, Screen};
@@ -90,7 +92,11 @@ fn render_terminal_too_small(frame: &mut Frame, area: Rect) {
         "Terminal Too Small".to_string(),
         String::new(),
         format!("Current size: {}x{}", area.width, area.height),
-        format!("Minimum required: {}x{}", helpers::MIN_TERMINAL_WIDTH, helpers::MIN_TERMINAL_HEIGHT),
+        format!(
+            "Minimum required: {}x{}",
+            helpers::MIN_TERMINAL_WIDTH,
+            helpers::MIN_TERMINAL_HEIGHT
+        ),
         String::new(),
         "Please resize your terminal".to_string(),
     ];
@@ -109,7 +115,10 @@ mod tests {
     use super::*;
     use crate::models::PermissionMode;
     use conversation::create_mode_indicator_line;
-    use helpers::{extract_short_model_name, format_tokens, get_tool_icon, truncate_string, is_terminal_too_small, MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT};
+    use helpers::{
+        extract_short_model_name, format_tokens, get_tool_icon, is_terminal_too_small,
+        truncate_string, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    };
     use input::{build_contextual_keybinds, get_permission_preview};
     use messages::{render_tool_event, truncate_preview};
     use ratatui::{backend::TestBackend, Terminal};
@@ -148,10 +157,7 @@ mod tests {
         // Check that the terminal rendered without panic
         let buffer = terminal.backend().buffer();
         // Verify the buffer contains some content (not all spaces)
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
         assert!(has_content, "CommandDeck screen should render content");
     }
 
@@ -171,10 +177,7 @@ mod tests {
         // Check that the terminal rendered without panic
         let buffer = terminal.backend().buffer();
         // Verify the buffer contains some content
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
         assert!(has_content, "Conversation screen should render content");
     }
 
@@ -208,11 +211,7 @@ mod tests {
 
         // Check that the buffer contains the thread title
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("Test Thread"),
             "Conversation screen should show thread title"
@@ -235,11 +234,7 @@ mod tests {
 
         // Check that the buffer contains the default title
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("New Conversation"),
             "Conversation screen should show default title when no active thread"
@@ -266,11 +261,11 @@ mod tests {
 
         // Check that the screen renders without panic when there's input
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "Conversation screen should render content with user input");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "Conversation screen should render content with user input"
+        );
     }
 
     #[test]
@@ -288,11 +283,7 @@ mod tests {
 
         // Check that the buffer shows placeholder response with vertical bar
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         // Messages now use vertical bar prefix instead of role labels
         assert!(
             buffer_str.contains("│"),
@@ -318,11 +309,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("Disconnected"),
             "CommandDeck should show Disconnected status when connection_status is false"
@@ -347,11 +334,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("Connected"),
             "CommandDeck should show Connected status when connection_status is true"
@@ -377,11 +360,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("○"),
             "Conversation screen should show disconnected status icon (○)"
@@ -403,11 +382,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("●"),
             "Conversation screen should show connected status icon (●)"
@@ -429,11 +404,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("ERROR"),
             "Conversation screen should show ERROR label when stream_error is set"
@@ -459,11 +430,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             !buffer_str.contains("ERROR"),
             "Conversation screen should not show ERROR label when stream_error is None"
@@ -478,7 +445,9 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a streaming thread with a streaming message
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
         app.active_thread_id = Some(thread_id);
 
         terminal
@@ -488,11 +457,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("Responding"),
             "Conversation screen should show spinner with 'Responding...' when a message is streaming"
@@ -507,7 +472,9 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a streaming thread and append some tokens
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
         app.cache.append_to_message(&thread_id, "Hello from ");
         app.cache.append_to_message(&thread_id, "the AI");
         app.active_thread_id = Some(thread_id);
@@ -519,11 +486,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("Hello from the AI"),
             "Conversation screen should show partial_content during streaming"
@@ -550,11 +513,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         // The cursor character █ should be present when tick_count makes it visible
         assert!(
             buffer_str.contains("█"),
@@ -583,11 +542,8 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str_visible: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str_visible: String =
+            buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Test cursor hidden (tick_count = 5, 5/5 % 2 == 1)
         app.tick_count = 5;
@@ -600,11 +556,8 @@ mod tests {
             .unwrap();
 
         let buffer2 = terminal2.backend().buffer();
-        let buffer_str_hidden: String = buffer2
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str_hidden: String =
+            buffer2.content().iter().map(|cell| cell.symbol()).collect();
 
         // When visible, should have █; when hidden, the cursor position should have space
         assert!(
@@ -627,8 +580,11 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a streaming thread and finalize it
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
-        app.cache.append_to_message(&thread_id, "Completed response");
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
+        app.cache
+            .append_to_message(&thread_id, "Completed response");
         app.cache.finalize_message(&thread_id, 123);
         app.active_thread_id = Some(thread_id);
 
@@ -639,11 +595,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             !buffer_str.contains("Responding..."),
             "Conversation screen should NOT show 'Responding...' spinner for completed messages"
@@ -658,8 +610,11 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a streaming thread and finalize it
-        let thread_id = app.cache.create_streaming_thread("User question".to_string());
-        app.cache.append_to_message(&thread_id, "Final answer from AI");
+        let thread_id = app
+            .cache
+            .create_streaming_thread("User question".to_string());
+        app.cache
+            .append_to_message(&thread_id, "Final answer from AI");
         app.cache.finalize_message(&thread_id, 456);
         app.active_thread_id = Some(thread_id);
 
@@ -670,11 +625,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("Final answer from AI"),
             "Conversation screen should show completed message content"
@@ -694,7 +645,9 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a streaming thread (which includes a user message)
-        let thread_id = app.cache.create_streaming_thread("Hello from user".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Hello from user".to_string());
         app.active_thread_id = Some(thread_id);
 
         terminal
@@ -704,11 +657,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
         assert!(
             buffer_str.contains("Hello from user"),
             "Conversation screen should show user message content"
@@ -779,11 +728,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Mode indicator should now be shown for all threads
         assert!(
@@ -823,11 +768,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             buffer_str.contains("[PLAN]"),
@@ -866,11 +807,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             buffer_str.contains("[EXECUTE]"),
@@ -909,11 +846,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // When mode is Default, no indicator should be shown
         assert!(
@@ -941,11 +874,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Mode indicator should not be shown on CommandDeck
         assert!(
@@ -970,11 +899,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Mode indicator should not be shown when there's no active thread
         assert!(
@@ -996,7 +921,10 @@ mod tests {
 
     #[test]
     fn test_extract_short_model_name_sonnet() {
-        assert_eq!(extract_short_model_name("claude-sonnet-4-5-20250514"), "sonnet");
+        assert_eq!(
+            extract_short_model_name("claude-sonnet-4-5-20250514"),
+            "sonnet"
+        );
         assert_eq!(extract_short_model_name("claude-sonnet-3-5"), "sonnet");
         assert_eq!(extract_short_model_name("sonnet-anything"), "sonnet");
     }
@@ -1043,11 +971,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show [C] indicator for Conversation thread
         assert!(
@@ -1085,11 +1009,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show [P] indicator for Programming thread
         assert!(
@@ -1127,11 +1047,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show [C] and "sonnet" model name
         assert!(
@@ -1173,11 +1089,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show [P] indicator even without model
         assert!(
@@ -1230,11 +1142,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Both indicators should be present
         assert!(
@@ -1249,10 +1157,7 @@ mod tests {
             buffer_str.contains("sonnet"),
             "Should show sonnet model name"
         );
-        assert!(
-            buffer_str.contains("opus"),
-            "Should show opus model name"
-        );
+        assert!(buffer_str.contains("opus"), "Should show opus model name");
     }
 
     // ============= Phase 10: Contextual Keybinds Tests =============
@@ -1263,7 +1168,11 @@ mod tests {
         // app.screen defaults to CommandDeck
 
         let keybinds = build_contextual_keybinds(&app);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+        let content: String = keybinds
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
 
         // Should show basic CommandDeck hints
         assert!(content.contains("Tab"));
@@ -1279,7 +1188,11 @@ mod tests {
         app.stream_error = Some("Test error".to_string());
 
         let keybinds = build_contextual_keybinds(&app);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+        let content: String = keybinds
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
 
         // Should show dismiss error hint
         assert!(content.contains("d"));
@@ -1308,7 +1221,11 @@ mod tests {
         app.active_thread_id = Some("prog-thread".to_string());
 
         let keybinds = build_contextual_keybinds(&app);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+        let content: String = keybinds
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
 
         // Should show mode cycling hint for programming thread
         assert!(content.contains("Shift+Tab"));
@@ -1337,7 +1254,11 @@ mod tests {
         app.active_thread_id = Some("conv-thread".to_string());
 
         let keybinds = build_contextual_keybinds(&app);
-        let content: String = keybinds.spans.iter().map(|s| s.content.to_string()).collect();
+        let content: String = keybinds
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
 
         // Round 2: Mode cycling is now shown for ALL threads (Conversation and Programming)
         assert!(content.contains("Shift+Tab") || content.contains("S+Tab"));
@@ -1366,11 +1287,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should have solid border characters (─)
         assert!(
@@ -1404,11 +1321,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should have solid border characters (─), not dashed
         assert!(
@@ -1531,11 +1444,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Check that permission prompt elements are rendered (inline style)
         assert!(
@@ -1581,7 +1490,10 @@ mod tests {
     #[test]
     fn test_truncate_string_with_truncation() {
         assert_eq!(truncate_string("hello world", 8), "hello...");
-        assert_eq!(truncate_string("very long string that needs truncation", 15), "very long st...");
+        assert_eq!(
+            truncate_string("very long string that needs truncation", 15),
+            "very long st..."
+        );
     }
 
     #[test]
@@ -1618,31 +1530,46 @@ mod tests {
     #[test]
     fn test_format_tool_args_read() {
         let args = r#"{"file_path": "/src/main.rs"}"#;
-        assert_eq!(helpers::format_tool_args("Read", args), "Reading /src/main.rs");
+        assert_eq!(
+            helpers::format_tool_args("Read", args),
+            "Reading /src/main.rs"
+        );
     }
 
     #[test]
     fn test_format_tool_args_write() {
         let args = r#"{"file_path": "/src/models.rs"}"#;
-        assert_eq!(helpers::format_tool_args("Write", args), "Writing /src/models.rs");
+        assert_eq!(
+            helpers::format_tool_args("Write", args),
+            "Writing /src/models.rs"
+        );
     }
 
     #[test]
     fn test_format_tool_args_edit() {
         let args = r#"{"file_path": "/tests/integration.rs"}"#;
-        assert_eq!(helpers::format_tool_args("Edit", args), "Editing /tests/integration.rs");
+        assert_eq!(
+            helpers::format_tool_args("Edit", args),
+            "Editing /tests/integration.rs"
+        );
     }
 
     #[test]
     fn test_format_tool_args_bash() {
         let args = r#"{"command": "npm install"}"#;
-        assert_eq!(helpers::format_tool_args("Bash", args), "Running: npm install");
+        assert_eq!(
+            helpers::format_tool_args("Bash", args),
+            "Running: npm install"
+        );
     }
 
     #[test]
     fn test_format_tool_args_grep_with_path() {
         let args = r#"{"pattern": "TODO", "path": "src/"}"#;
-        assert_eq!(helpers::format_tool_args("Grep", args), "Searching 'TODO' in src/");
+        assert_eq!(
+            helpers::format_tool_args("Grep", args),
+            "Searching 'TODO' in src/"
+        );
     }
 
     #[test]
@@ -1660,31 +1587,46 @@ mod tests {
     #[test]
     fn test_format_tool_args_task() {
         let args = r#"{"description": "Run all tests"}"#;
-        assert_eq!(helpers::format_tool_args("Task", args), "Spawning: Run all tests");
+        assert_eq!(
+            helpers::format_tool_args("Task", args),
+            "Spawning: Run all tests"
+        );
     }
 
     #[test]
     fn test_format_tool_args_webfetch() {
         let args = r#"{"url": "https://example.com"}"#;
-        assert_eq!(helpers::format_tool_args("WebFetch", args), "Fetching https://example.com");
+        assert_eq!(
+            helpers::format_tool_args("WebFetch", args),
+            "Fetching https://example.com"
+        );
     }
 
     #[test]
     fn test_format_tool_args_websearch() {
         let args = r#"{"query": "rust async"}"#;
-        assert_eq!(helpers::format_tool_args("WebSearch", args), "Searching: rust async");
+        assert_eq!(
+            helpers::format_tool_args("WebSearch", args),
+            "Searching: rust async"
+        );
     }
 
     #[test]
     fn test_format_tool_args_todowrite() {
         let args = r#"{}"#;
-        assert_eq!(helpers::format_tool_args("TodoWrite", args), "Updating todos");
+        assert_eq!(
+            helpers::format_tool_args("TodoWrite", args),
+            "Updating todos"
+        );
     }
 
     #[test]
     fn test_format_tool_args_notebookedit() {
         let args = r#"{"notebook_path": "/notebooks/analysis.ipynb"}"#;
-        assert_eq!(helpers::format_tool_args("NotebookEdit", args), "Editing notebook /notebooks/analysis.ipynb");
+        assert_eq!(
+            helpers::format_tool_args("NotebookEdit", args),
+            "Editing notebook /notebooks/analysis.ipynb"
+        );
     }
 
     #[test]
@@ -1837,7 +1779,8 @@ mod tests {
 
     #[test]
     fn test_render_tool_event_streaming_state() {
-        let mut tool = crate::models::ToolEvent::new("tool_streaming".to_string(), "Grep".to_string());
+        let mut tool =
+            crate::models::ToolEvent::new("tool_streaming".to_string(), "Grep".to_string());
 
         // Set args but don't finish
         tool.args_json = r#"{"pattern": "test"}"#.to_string();
@@ -1862,7 +1805,8 @@ mod tests {
         // Test the full flow: tool starts, args stream in, result comes back
 
         // Step 1: Tool starts with no args yet
-        let mut tool = crate::models::ToolEvent::new("tool_lifecycle".to_string(), "Write".to_string());
+        let mut tool =
+            crate::models::ToolEvent::new("tool_lifecycle".to_string(), "Write".to_string());
         let ctx = LayoutContext::new(120, 40);
         let line1 = render_tool_event(&tool, 0, &ctx);
         let text1: String = line1.spans.iter().map(|s| s.content.as_ref()).collect();
@@ -2084,7 +2028,8 @@ mod tests {
         assert!(lines.len() >= 3);
 
         // Collect all text
-        let all_text: String = lines.iter()
+        let all_text: String = lines
+            .iter()
             .flat_map(|line| line.spans.iter())
             .map(|s| s.content.as_ref())
             .collect();
@@ -2148,8 +2093,16 @@ mod tests {
         let lines_tick_0 = render_subagent_event(&event, 0, TreeConnector::Single, &ctx);
         let lines_tick_5 = render_subagent_event(&event, 5, TreeConnector::Single, &ctx);
 
-        let text_0: String = lines_tick_0[0].spans.iter().map(|s| s.content.as_ref()).collect();
-        let text_5: String = lines_tick_5[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        let text_0: String = lines_tick_0[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        let text_5: String = lines_tick_5[0]
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
 
         // Spinner frame should change between tick 0 and tick 5
         // (frames are at indices 0 and 5 in SPINNER_FRAMES)
@@ -2164,7 +2117,9 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a streaming thread with a subagent event
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
 
         // Get the streaming message and add a subagent event
         if let Some(messages) = app.cache.get_messages_mut(&thread_id) {
@@ -2186,11 +2141,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show the subagent event
         assert!(
@@ -2211,7 +2162,9 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a thread with completed subagent
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
 
         if let Some(messages) = app.cache.get_messages_mut(&thread_id) {
             if let Some(msg) = messages.iter_mut().find(|m| m.is_streaming) {
@@ -2220,11 +2173,7 @@ mod tests {
                     "Analysis task".to_string(),
                     "general-purpose".to_string(),
                 );
-                msg.complete_subagent_event(
-                    "task-complete",
-                    Some("Found 5 issues".to_string()),
-                    3,
-                );
+                msg.complete_subagent_event("task-complete", Some("Found 5 issues".to_string()), 3);
             }
         }
 
@@ -2238,25 +2187,15 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show completed status
         assert!(
             buffer_str.contains("Done"),
             "Should show 'Done' for completed subagent"
         );
-        assert!(
-            buffer_str.contains("3 tool uses"),
-            "Should show tool count"
-        );
-        assert!(
-            buffer_str.contains("Found 5 issues"),
-            "Should show summary"
-        );
+        assert!(buffer_str.contains("3 tool uses"), "Should show tool count");
+        assert!(buffer_str.contains("Found 5 issues"), "Should show summary");
     }
 
     #[test]
@@ -2267,7 +2206,9 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Create a thread with multiple parallel subagents
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
 
         if let Some(messages) = app.cache.get_messages_mut(&thread_id) {
             if let Some(msg) = messages.iter_mut().find(|m| m.is_streaming) {
@@ -2294,11 +2235,7 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show tree connectors for parallel tasks
         assert!(
@@ -2327,7 +2264,10 @@ mod tests {
 
     #[test]
     fn test_is_terminal_too_small_at_minimum() {
-        assert!(!is_terminal_too_small(MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT));
+        assert!(!is_terminal_too_small(
+            MIN_TERMINAL_WIDTH,
+            MIN_TERMINAL_HEIGHT
+        ));
     }
 
     #[test]
@@ -2346,9 +2286,18 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
-        assert!(buffer_str.contains("Terminal Too Small"), "Should show 'Terminal Too Small' message");
-        assert!(buffer_str.contains("20") && buffer_str.contains("8"), "Should show current terminal size");
-        assert!(buffer_str.contains("30"), "Should show minimum required width");
+        assert!(
+            buffer_str.contains("Terminal Too Small"),
+            "Should show 'Terminal Too Small' message"
+        );
+        assert!(
+            buffer_str.contains("20") && buffer_str.contains("8"),
+            "Should show current terminal size"
+        );
+        assert!(
+            buffer_str.contains("30"),
+            "Should show minimum required width"
+        );
     }
 
     #[test]
@@ -2362,7 +2311,10 @@ mod tests {
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
-        assert!(!buffer_str.contains("Terminal Too Small"), "Should not show 'Terminal Too Small' message");
+        assert!(
+            !buffer_str.contains("Terminal Too Small"),
+            "Should not show 'Terminal Too Small' message"
+        );
     }
 
     // ========================================================================
@@ -2412,11 +2364,20 @@ mod tests {
         }
 
         let result = terminal.draw(|f| render(f, &mut app));
-        assert!(result.is_ok(), "Render should succeed at {}x{}", width, height);
+        assert!(
+            result.is_ok(),
+            "Render should succeed at {}x{}",
+            width,
+            height
+        );
 
         let buffer = terminal.backend().buffer();
         let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
-        assert!(has_content, "Should render some content at {}x{}", width, height);
+        assert!(
+            has_content,
+            "Should render some content at {}x{}",
+            width, height
+        );
     }
 
     // ========================================================================
@@ -2441,8 +2402,14 @@ mod tests {
         assert!(ctx.is_narrow(), "40 cols should be narrow");
         assert!(ctx.is_short(), "20 rows should be short");
         assert!(ctx.is_compact(), "40x20 should be compact");
-        assert!(ctx.should_stack_panels(), "40 cols should trigger panel stacking");
-        assert!(ctx.should_collapse_sidebar(), "40 cols should collapse sidebar");
+        assert!(
+            ctx.should_stack_panels(),
+            "40 cols should trigger panel stacking"
+        );
+        assert!(
+            ctx.should_collapse_sidebar(),
+            "40 cols should collapse sidebar"
+        );
 
         // Verify panel widths are reasonable (equal split for narrow)
         let (left, right) = ctx.two_column_widths();
@@ -2451,7 +2418,11 @@ mod tests {
 
         // Verify header/input heights are reduced
         assert_eq!(ctx.header_height(), 3, "Header should be compact at 40x20");
-        assert_eq!(ctx.input_area_height(), 4, "Input area should be compact at 40x20");
+        assert_eq!(
+            ctx.input_area_height(),
+            4,
+            "Input area should be compact at 40x20"
+        );
     }
 
     // ========================================================================
@@ -2476,8 +2447,14 @@ mod tests {
         assert!(!ctx.is_narrow(), "80 cols should not be narrow");
         assert!(!ctx.is_short(), "24 rows should not be short");
         assert!(!ctx.is_compact(), "80x24 should not be compact");
-        assert!(!ctx.should_stack_panels(), "80 cols should not stack panels");
-        assert!(!ctx.should_collapse_sidebar(), "80 cols should not collapse sidebar");
+        assert!(
+            !ctx.should_stack_panels(),
+            "80 cols should not stack panels"
+        );
+        assert!(
+            !ctx.should_collapse_sidebar(),
+            "80 cols should not collapse sidebar"
+        );
 
         // Verify panel widths (40/60 split for medium)
         let (left, right) = ctx.two_column_widths();
@@ -2486,7 +2463,11 @@ mod tests {
 
         // Verify header/input heights are normal
         assert_eq!(ctx.header_height(), 9, "Header should be normal at 80x24");
-        assert_eq!(ctx.input_area_height(), 6, "Input area should be normal at 80x24");
+        assert_eq!(
+            ctx.input_area_height(),
+            6,
+            "Input area should be normal at 80x24"
+        );
     }
 
     #[test]
@@ -2513,8 +2494,13 @@ mod tests {
         });
 
         for i in 0..4 {
-            let role = if i % 2 == 0 { crate::models::MessageRole::User } else { crate::models::MessageRole::Assistant };
-            app.cache.add_message_simple("test-thread", role, format!("Message {}", i));
+            let role = if i % 2 == 0 {
+                crate::models::MessageRole::User
+            } else {
+                crate::models::MessageRole::Assistant
+            };
+            app.cache
+                .add_message_simple("test-thread", role, format!("Message {}", i));
         }
 
         terminal.draw(|f| render(f, &mut app)).unwrap();
@@ -2523,7 +2509,10 @@ mod tests {
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Verify messages are rendered
-        assert!(buffer_str.contains("Message"), "Messages should be visible at 80x24");
+        assert!(
+            buffer_str.contains("Message"),
+            "Messages should be visible at 80x24"
+        );
     }
 
     // ========================================================================
@@ -2548,7 +2537,10 @@ mod tests {
         assert!(!ctx.is_narrow(), "120 cols should not be narrow");
         assert!(!ctx.is_short(), "40 rows should not be short");
         assert!(!ctx.is_compact(), "120x40 should not be compact");
-        assert!(!ctx.should_stack_panels(), "120 cols should not stack panels");
+        assert!(
+            !ctx.should_stack_panels(),
+            "120 cols should not stack panels"
+        );
 
         // At 120 cols, we're at the boundary for wide layout
         let (left, right) = ctx.two_column_widths();
@@ -2584,8 +2576,16 @@ mod tests {
             created_at: chrono::Utc::now(),
         });
 
-        app.cache.add_message_simple("prog-thread", crate::models::MessageRole::User, "Write some code".to_string());
-        app.cache.add_message_simple("prog-thread", crate::models::MessageRole::Assistant, "Here is the code...".to_string());
+        app.cache.add_message_simple(
+            "prog-thread",
+            crate::models::MessageRole::User,
+            "Write some code".to_string(),
+        );
+        app.cache.add_message_simple(
+            "prog-thread",
+            crate::models::MessageRole::Assistant,
+            "Here is the code...".to_string(),
+        );
 
         terminal.draw(|f| render(f, &mut app)).unwrap();
 
@@ -2593,8 +2593,10 @@ mod tests {
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Verify programming indicator is visible
-        assert!(buffer_str.contains("Programming") || buffer_str.contains("PROGRAMMING"),
-            "Programming indicator should be visible at 120x40");
+        assert!(
+            buffer_str.contains("Programming") || buffer_str.contains("PROGRAMMING"),
+            "Programming indicator should be visible at 120x40"
+        );
     }
 
     // ========================================================================
@@ -2619,11 +2621,17 @@ mod tests {
         assert!(!ctx.is_narrow(), "200 cols should not be narrow");
         assert!(!ctx.is_short(), "50 rows should not be short");
         assert!(!ctx.is_compact(), "200x50 should not be compact");
-        assert!(!ctx.should_stack_panels(), "200 cols should not stack panels");
+        assert!(
+            !ctx.should_stack_panels(),
+            "200 cols should not stack panels"
+        );
 
         // At 200 cols, left panel should be capped at 60
         let (left, right) = ctx.two_column_widths();
-        assert_eq!(left, 60, "Left panel should be capped at 60 for wide terminals");
+        assert_eq!(
+            left, 60,
+            "Left panel should be capped at 60 for wide terminals"
+        );
         assert_eq!(right, 140, "Right panel gets remaining space");
 
         // Verify size category
@@ -2631,9 +2639,18 @@ mod tests {
         assert_eq!(ctx.height_category(), layout::SizeCategory::Large);
 
         // Verify full features are enabled
-        assert!(ctx.should_show_scrollbar(), "Scrollbar should be shown at 200x50");
-        assert!(ctx.should_show_full_badges(), "Full badges should be shown at 200x50");
-        assert!(ctx.should_show_tool_previews(), "Tool previews should be shown at 200x50");
+        assert!(
+            ctx.should_show_scrollbar(),
+            "Scrollbar should be shown at 200x50"
+        );
+        assert!(
+            ctx.should_show_full_badges(),
+            "Full badges should be shown at 200x50"
+        );
+        assert!(
+            ctx.should_show_tool_previews(),
+            "Tool previews should be shown at 200x50"
+        );
     }
 
     #[test]
@@ -2647,7 +2664,8 @@ mod tests {
         // Add thread with long content
         app.cache.upsert_thread(crate::models::Thread {
             id: "long-thread".to_string(),
-            title: "A thread with a very long title that should be fully visible on wide terminals".to_string(),
+            title: "A thread with a very long title that should be fully visible on wide terminals"
+                .to_string(),
             description: Some("A detailed description that provides more context".to_string()),
             preview: "Preview text".to_string(),
             updated_at: chrono::Utc::now(),
@@ -2660,9 +2678,19 @@ mod tests {
         });
 
         // Add a long message
-        let long_message = "This is a very long message that would typically wrap on smaller terminals. ".repeat(10);
-        app.cache.add_message_simple("long-thread", crate::models::MessageRole::User, long_message.clone());
-        app.cache.add_message_simple("long-thread", crate::models::MessageRole::Assistant, "Response to the long message".to_string());
+        let long_message =
+            "This is a very long message that would typically wrap on smaller terminals. "
+                .repeat(10);
+        app.cache.add_message_simple(
+            "long-thread",
+            crate::models::MessageRole::User,
+            long_message.clone(),
+        );
+        app.cache.add_message_simple(
+            "long-thread",
+            crate::models::MessageRole::Assistant,
+            "Response to the long message".to_string(),
+        );
 
         terminal.draw(|f| render(f, &mut app)).unwrap();
 
@@ -2670,8 +2698,10 @@ mod tests {
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Verify thread title is visible
-        assert!(buffer_str.contains("long title") || buffer_str.contains("long-thread"),
-            "Thread title should be visible at 200x50");
+        assert!(
+            buffer_str.contains("long title") || buffer_str.contains("long-thread"),
+            "Thread title should be visible at 200x50"
+        );
     }
 
     // ========================================================================
@@ -2742,8 +2772,10 @@ mod tests {
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show "too small" message for height below MIN_TERMINAL_HEIGHT (10)
-        assert!(buffer_str.contains("Terminal Too Small"),
-            "Terminal below minimum height should show 'Terminal Too Small' message");
+        assert!(
+            buffer_str.contains("Terminal Too Small"),
+            "Terminal below minimum height should show 'Terminal Too Small' message"
+        );
     }
 
     #[test]
@@ -2761,7 +2793,10 @@ mod tests {
         let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
 
         // At minimum size, it should render normally (not show "too small")
-        assert!(has_content, "Terminal at minimum size should render content");
+        assert!(
+            has_content,
+            "Terminal at minimum size should render content"
+        );
     }
 
     #[test]
@@ -2793,7 +2828,13 @@ mod tests {
             for screen in [Screen::CommandDeck, Screen::Conversation] {
                 app.screen = screen;
                 let result = terminal.draw(|f| render(f, &mut app));
-                assert!(result.is_ok(), "Render should not panic at {}x{} on {:?}", width, height, screen);
+                assert!(
+                    result.is_ok(),
+                    "Render should not panic at {}x{} on {:?}",
+                    width,
+                    height,
+                    screen
+                );
             }
         }
     }
@@ -2802,7 +2843,7 @@ mod tests {
     fn test_responsive_layout_consistency() {
         // Verify that layout calculations are consistent
         let sizes = [
-            (40, 20, true, true),    // (width, height, expect_narrow, expect_short)
+            (40, 20, true, true), // (width, height, expect_narrow, expect_short)
             (60, 16, true, true),
             (80, 24, false, false),
             (120, 40, false, false),
@@ -2811,15 +2852,30 @@ mod tests {
 
         for (width, height, expect_narrow, expect_short) in sizes.iter() {
             let ctx = LayoutContext::new(*width, *height);
-            assert_eq!(ctx.is_narrow(), *expect_narrow,
-                "is_narrow() mismatch at {}x{}", width, height);
-            assert_eq!(ctx.is_short(), *expect_short,
-                "is_short() mismatch at {}x{}", width, height);
+            assert_eq!(
+                ctx.is_narrow(),
+                *expect_narrow,
+                "is_narrow() mismatch at {}x{}",
+                width,
+                height
+            );
+            assert_eq!(
+                ctx.is_short(),
+                *expect_short,
+                "is_short() mismatch at {}x{}",
+                width,
+                height
+            );
 
             // Verify panel widths sum to total width
             let (left, right) = ctx.two_column_widths();
-            assert_eq!(left + right, *width,
-                "Panel widths should sum to total width at {}x{}", width, height);
+            assert_eq!(
+                left + right,
+                *width,
+                "Panel widths should sum to total width at {}x{}",
+                width,
+                height
+            );
         }
     }
 }

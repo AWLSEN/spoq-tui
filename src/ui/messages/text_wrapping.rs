@@ -13,9 +13,7 @@ use unicode_width::UnicodeWidthStr;
 /// Pads with spaces to reach max_width and applies bg to all spans.
 pub fn apply_background_to_line(line: &mut Line<'static>, bg_color: Color, max_width: usize) {
     // Calculate current visual width using unicode width
-    let current_width: usize = line.spans.iter()
-        .map(|s| s.content.width())
-        .sum();
+    let current_width: usize = line.spans.iter().map(|s| s.content.width()).sum();
 
     // Apply background to all existing spans
     for span in line.spans.iter_mut() {
@@ -111,10 +109,10 @@ pub fn wrap_line_with_prefix(
 
     // Helper to flush current word to current line or start new line
     let flush_word = |current_line_spans: &mut Vec<Span<'static>>,
-                          current_line_width: &mut usize,
-                          result: &mut Vec<Line<'static>>,
-                          word: &mut String,
-                          word_style: Style| {
+                      current_line_width: &mut usize,
+                      result: &mut Vec<Line<'static>>,
+                      word: &mut String,
+                      word_style: Style| {
         if word.is_empty() {
             return;
         }
@@ -178,7 +176,13 @@ pub fn wrap_line_with_prefix(
             if c == ' ' || c == '\t' {
                 // Flush current word
                 if let Some(ws) = current_word_style {
-                    flush_word(&mut current_line_spans, &mut current_line_width, &mut result, &mut current_word, ws);
+                    flush_word(
+                        &mut current_line_spans,
+                        &mut current_line_width,
+                        &mut result,
+                        &mut current_word,
+                        ws,
+                    );
                 }
                 current_word_style = None;
 
@@ -197,7 +201,13 @@ pub fn wrap_line_with_prefix(
                 // If style changed mid-word, flush and start new word segment
                 if current_word_style != Some(style) {
                     if let Some(ws) = current_word_style {
-                        flush_word(&mut current_line_spans, &mut current_line_width, &mut result, &mut current_word, ws);
+                        flush_word(
+                            &mut current_line_spans,
+                            &mut current_line_width,
+                            &mut result,
+                            &mut current_word,
+                            ws,
+                        );
                     }
                     current_word_style = Some(style);
                 }
@@ -208,7 +218,13 @@ pub fn wrap_line_with_prefix(
 
     // Flush any remaining word
     if let Some(ws) = current_word_style {
-        flush_word(&mut current_line_spans, &mut current_line_width, &mut result, &mut current_word, ws);
+        flush_word(
+            &mut current_line_spans,
+            &mut current_line_width,
+            &mut result,
+            &mut current_word,
+            ws,
+        );
     }
 
     // Add final line if it has content
@@ -239,7 +255,13 @@ pub fn wrap_lines_with_prefix(
 ) -> Vec<Line<'static>> {
     let mut result = Vec::new();
     for line in lines {
-        result.extend(wrap_line_with_prefix(line, prefix, prefix_style, max_width, bg_color));
+        result.extend(wrap_line_with_prefix(
+            line,
+            prefix,
+            prefix_style,
+            max_width,
+            bg_color,
+        ));
     }
     result
 }
@@ -263,17 +285,18 @@ pub fn estimate_wrapped_line_count(lines: &[Line], viewport_width: usize) -> usi
         return lines.len();
     }
 
-    lines.iter().map(|line| {
-        let char_count: usize = line.spans.iter()
-            .map(|s| s.content.chars().count())
-            .sum();
-        if char_count == 0 {
-            1 // Empty line still takes 1 row
-        } else {
-            // Ceiling division: (char_count + viewport_width - 1) / viewport_width
-            char_count.div_ceil(viewport_width)
-        }
-    }).sum()
+    lines
+        .iter()
+        .map(|line| {
+            let char_count: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
+            if char_count == 0 {
+                1 // Empty line still takes 1 row
+            } else {
+                // Ceiling division: (char_count + viewport_width - 1) / viewport_width
+                char_count.div_ceil(viewport_width)
+            }
+        })
+        .sum()
 }
 
 // ============================================================================
@@ -337,11 +360,7 @@ mod tests {
     #[test]
     fn test_estimate_wrapped_line_count_multiple_lines() {
         // 3 short lines
-        let lines = vec![
-            Line::from("Hello"),
-            Line::from("World"),
-            Line::from("Test"),
-        ];
+        let lines = vec![Line::from("Hello"), Line::from("World"), Line::from("Test")];
         assert_eq!(estimate_wrapped_line_count(&lines, 80), 3);
     }
 
@@ -349,10 +368,10 @@ mod tests {
     fn test_estimate_wrapped_line_count_mixed_lengths() {
         // Mix of short and long lines
         let lines = vec![
-            Line::from("Short"),           // 1 line
-            Line::from("a".repeat(100)),   // 2 lines (in 80-char viewport)
-            Line::from(""),                // 1 line (empty)
-            Line::from("Another short"),   // 1 line
+            Line::from("Short"),         // 1 line
+            Line::from("a".repeat(100)), // 2 lines (in 80-char viewport)
+            Line::from(""),              // 1 line (empty)
+            Line::from("Another short"), // 1 line
         ];
         assert_eq!(estimate_wrapped_line_count(&lines, 80), 5);
     }
@@ -360,22 +379,14 @@ mod tests {
     #[test]
     fn test_estimate_wrapped_line_count_zero_width() {
         // Zero width should return raw line count
-        let lines = vec![
-            Line::from("Hello"),
-            Line::from("World"),
-        ];
+        let lines = vec![Line::from("Hello"), Line::from("World")];
         assert_eq!(estimate_wrapped_line_count(&lines, 0), 2);
     }
 
     #[test]
     fn test_estimate_wrapped_line_count_with_spans() {
         // Line with multiple spans
-        let lines = vec![
-            Line::from(vec![
-                Span::raw("Hello "),
-                Span::raw("World"),
-            ]),
-        ];
+        let lines = vec![Line::from(vec![Span::raw("Hello "), Span::raw("World")])];
         // "Hello World" = 11 chars, fits in 80-char line
         assert_eq!(estimate_wrapped_line_count(&lines, 80), 1);
     }
@@ -383,12 +394,10 @@ mod tests {
     #[test]
     fn test_estimate_wrapped_line_count_spans_wrap() {
         // Line with multiple spans that together wrap
-        let lines = vec![
-            Line::from(vec![
-                Span::raw("a".repeat(50)),
-                Span::raw("b".repeat(50)),
-            ]),
-        ];
+        let lines = vec![Line::from(vec![
+            Span::raw("a".repeat(50)),
+            Span::raw("b".repeat(50)),
+        ])];
         // 100 chars should wrap to 2 lines in 80-char viewport
         assert_eq!(estimate_wrapped_line_count(&lines, 80), 2);
     }
@@ -397,7 +406,7 @@ mod tests {
     fn test_estimate_wrapped_line_count_narrow_viewport() {
         // Very narrow viewport causes more wrapping
         let lines = vec![Line::from("Hello World")]; // 11 chars
-        // In 5-char viewport: ceil(11/5) = 3 lines
+                                                     // In 5-char viewport: ceil(11/5) = 3 lines
         assert_eq!(estimate_wrapped_line_count(&lines, 5), 3);
     }
 
@@ -425,10 +434,19 @@ mod tests {
         let line = Line::from(long_text);
         let result = wrap_line_with_prefix(line, "| ", Style::default(), 50, None);
         // Should produce multiple lines
-        assert!(result.len() > 1, "Expected multiple lines, got {}", result.len());
+        assert!(
+            result.len() > 1,
+            "Expected multiple lines, got {}",
+            result.len()
+        );
         // Each line should have the prefix
         for (i, l) in result.iter().enumerate() {
-            assert_eq!(l.spans[0].content.as_ref(), "| ", "Line {} missing prefix", i);
+            assert_eq!(
+                l.spans[0].content.as_ref(),
+                "| ",
+                "Line {} missing prefix",
+                i
+            );
         }
     }
 
@@ -446,10 +464,7 @@ mod tests {
 
     #[test]
     fn test_wrap_lines_multiple() {
-        let lines = vec![
-            Line::from("Short line"),
-            Line::from("Another short line"),
-        ];
+        let lines = vec![Line::from("Short line"), Line::from("Another short line")];
         let result = wrap_lines_with_prefix(lines, "| ", Style::default(), 80, None);
         assert_eq!(result.len(), 2);
         // Both should have prefix
@@ -460,10 +475,7 @@ mod tests {
 
     #[test]
     fn test_apply_background_to_line() {
-        let mut line = Line::from(vec![
-            Span::raw("| "),
-            Span::raw("Hello"),
-        ]);
+        let mut line = Line::from(vec![Span::raw("| "), Span::raw("Hello")]);
         apply_background_to_line(&mut line, Color::Rgb(35, 40, 48), 20);
 
         // All spans should have background
@@ -488,7 +500,11 @@ mod tests {
         // All spans in all lines should have background
         for line in &result {
             for span in &line.spans {
-                assert!(span.style.bg.is_some(), "Span '{}' missing background", span.content);
+                assert!(
+                    span.style.bg.is_some(),
+                    "Span '{}' missing background",
+                    span.content
+                );
             }
         }
     }

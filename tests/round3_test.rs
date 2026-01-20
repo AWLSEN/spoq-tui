@@ -4,7 +4,7 @@
 use spoq::app::App;
 use spoq::cache::ThreadCache;
 use spoq::models::{Message, MessageRole, ThreadType};
-use spoq::state::{SubagentTracker, SessionState};
+use spoq::state::{SessionState, SubagentTracker};
 
 // ============================================================================
 // Reasoning/Thinking Block Tests
@@ -147,12 +147,7 @@ fn test_subagent_tracker_basic_workflow() {
     assert_eq!(state.tool_call_count, 1);
 
     // Complete the subagent
-    tracker.complete_subagent(
-        "agent-1",
-        true,
-        "Complete (5 tool calls)".to_string(),
-        100,
-    );
+    tracker.complete_subagent("agent-1", true, "Complete (5 tool calls)".to_string(), 100);
 
     assert!(!tracker.has_active_subagents());
     assert_eq!(tracker.active_count(), 0);
@@ -367,7 +362,8 @@ fn test_message_reasoning_fields_initialization() {
 #[test]
 fn test_reasoning_persistence_through_reconciliation() {
     let mut cache = ThreadCache::new();
-    let pending_id = cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation, None);
+    let pending_id =
+        cache.create_pending_thread("Hello".to_string(), ThreadType::Conversation, None);
 
     // Add reasoning to pending thread
     cache.append_reasoning_to_message(&pending_id, "Initial reasoning");
@@ -401,7 +397,10 @@ fn test_multiple_messages_with_reasoning() {
     assert_eq!(messages.len(), 4); // 2 user + 2 assistant
 
     // Check first assistant message
-    assert_eq!(messages[1].reasoning_content, "Thinking about first question");
+    assert_eq!(
+        messages[1].reasoning_content,
+        "Thinking about first question"
+    );
     assert!(messages[1].reasoning_collapsed);
     assert_eq!(messages[1].content, "First answer");
 

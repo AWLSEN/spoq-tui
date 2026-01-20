@@ -19,7 +19,9 @@ use misc::{
     parse_skills_injected_event, parse_todos_updated_event, parse_usage_event,
 };
 use permissions::parse_permission_request_event;
-use subagent::{parse_subagent_completed_event, parse_subagent_progress_event, parse_subagent_started_event};
+use subagent::{
+    parse_subagent_completed_event, parse_subagent_progress_event, parse_subagent_started_event,
+};
 use thread::{
     parse_done_event, parse_message_info_event, parse_thread_info_event,
     parse_thread_updated_event, parse_user_message_saved_event,

@@ -143,7 +143,10 @@ mod tests {
     fn test_permission_mode_debug() {
         assert_eq!(format!("{:?}", PermissionMode::Default), "Default");
         assert_eq!(format!("{:?}", PermissionMode::Plan), "Plan");
-        assert_eq!(format!("{:?}", PermissionMode::BypassPermissions), "BypassPermissions");
+        assert_eq!(
+            format!("{:?}", PermissionMode::BypassPermissions),
+            "BypassPermissions"
+        );
     }
 
     #[test]
@@ -152,7 +155,8 @@ mod tests {
         let json = serde_json::to_string(&mode).expect("Failed to serialize");
         assert_eq!(json, "\"default\"");
 
-        let deserialized: PermissionMode = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: PermissionMode =
+            serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(mode, deserialized);
     }
 
@@ -162,7 +166,8 @@ mod tests {
         let json = serde_json::to_string(&mode).expect("Failed to serialize");
         assert_eq!(json, "\"plan\"");
 
-        let deserialized: PermissionMode = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: PermissionMode =
+            serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(mode, deserialized);
     }
 
@@ -172,7 +177,8 @@ mod tests {
         let json = serde_json::to_string(&mode).expect("Failed to serialize");
         assert_eq!(json, "\"bypassPermissions\"");
 
-        let deserialized: PermissionMode = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: PermissionMode =
+            serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(mode, deserialized);
     }
 
@@ -200,10 +206,14 @@ mod tests {
             .with_permission_mode(PermissionMode::BypassPermissions);
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
-        let deserialized: StreamRequest = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: StreamRequest =
+            serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(request.permission_mode, deserialized.permission_mode);
-        assert_eq!(deserialized.permission_mode, Some(PermissionMode::BypassPermissions));
+        assert_eq!(
+            deserialized.permission_mode,
+            Some(PermissionMode::BypassPermissions)
+        );
     }
 
     #[test]
@@ -232,13 +242,15 @@ mod tests {
         let request = StreamRequest::new("Test prompt".to_string())
             .with_working_directory(Some("/Users/test/my-project".to_string()));
 
-        assert_eq!(request.working_directory, Some("/Users/test/my-project".to_string()));
+        assert_eq!(
+            request.working_directory,
+            Some("/Users/test/my-project".to_string())
+        );
     }
 
     #[test]
     fn test_stream_request_with_working_directory_none() {
-        let request = StreamRequest::new("Test prompt".to_string())
-            .with_working_directory(None);
+        let request = StreamRequest::new("Test prompt".to_string()).with_working_directory(None);
 
         assert!(request.working_directory.is_none());
     }
@@ -252,7 +264,8 @@ mod tests {
         assert!(json.contains("working_directory"));
         assert!(json.contains("/home/user/project"));
 
-        let deserialized: StreamRequest = serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: StreamRequest =
+            serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(request.working_directory, deserialized.working_directory);
     }
 
@@ -276,6 +289,9 @@ mod tests {
         assert_eq!(request.prompt, "Code task");
         assert_eq!(request.thread_type, Some(ThreadType::Programming));
         assert_eq!(request.permission_mode, Some(PermissionMode::Default));
-        assert_eq!(request.working_directory, Some("/Users/dev/project".to_string()));
+        assert_eq!(
+            request.working_directory,
+            Some("/Users/dev/project".to_string())
+        );
     }
 }

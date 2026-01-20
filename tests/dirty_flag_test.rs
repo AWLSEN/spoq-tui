@@ -12,7 +12,10 @@ use spoq::app::{App, AppMessage, Screen};
 fn test_app_initializes_with_needs_redraw_true() {
     // App should start with dirty flag set to force initial render
     let app = App::new().unwrap();
-    assert!(app.needs_redraw, "App should initialize with needs_redraw=true");
+    assert!(
+        app.needs_redraw,
+        "App should initialize with needs_redraw=true"
+    );
 }
 
 #[test]
@@ -24,7 +27,10 @@ fn test_mark_dirty_sets_flag() {
     // Call mark_dirty
     app.mark_dirty();
 
-    assert!(app.needs_redraw, "mark_dirty() should set needs_redraw=true");
+    assert!(
+        app.needs_redraw,
+        "mark_dirty() should set needs_redraw=true"
+    );
 }
 
 #[test]
@@ -50,7 +56,10 @@ fn test_reset_scroll_marks_dirty() {
 
     assert!(app.needs_redraw, "reset_scroll() should mark dirty");
     assert_eq!(app.unified_scroll, 0, "Scroll should be reset to 0");
-    assert_eq!(app.scroll_position, 0.0, "Scroll position should be reset to 0.0");
+    assert_eq!(
+        app.scroll_position, 0.0,
+        "Scroll position should be reset to 0.0"
+    );
 }
 
 #[test]
@@ -61,7 +70,10 @@ fn test_update_terminal_dimensions_marks_dirty() {
     // Update dimensions to different values
     app.update_terminal_dimensions(100, 50);
 
-    assert!(app.needs_redraw, "update_terminal_dimensions() should mark dirty");
+    assert!(
+        app.needs_redraw,
+        "update_terminal_dimensions() should mark dirty"
+    );
     assert_eq!(app.terminal_width(), 100);
     assert_eq!(app.terminal_height(), 50);
 }
@@ -75,7 +87,10 @@ fn test_update_terminal_dimensions_same_values_does_not_mark_dirty() {
     // Update with same dimensions
     app.update_terminal_dimensions(80, 24);
 
-    assert!(!app.needs_redraw, "Updating with same dimensions should not mark dirty");
+    assert!(
+        !app.needs_redraw,
+        "Updating with same dimensions should not mark dirty"
+    );
 }
 
 #[test]
@@ -86,7 +101,10 @@ fn test_tick_marks_dirty_when_velocity_present() {
 
     app.tick();
 
-    assert!(app.needs_redraw, "tick() should mark dirty when velocity is present");
+    assert!(
+        app.needs_redraw,
+        "tick() should mark dirty when velocity is present"
+    );
 }
 
 #[test]
@@ -98,7 +116,10 @@ fn test_tick_marks_dirty_when_boundary_hit() {
 
     app.tick();
 
-    assert!(app.needs_redraw, "tick() should mark dirty when boundary indicator is present");
+    assert!(
+        app.needs_redraw,
+        "tick() should mark dirty when boundary indicator is present"
+    );
 }
 
 #[test]
@@ -124,7 +145,10 @@ fn test_handle_message_connection_status_marks_dirty() {
     let msg = AppMessage::ConnectionStatus(true);
     app.handle_message(msg);
 
-    assert!(app.needs_redraw, "ConnectionStatus message should mark dirty");
+    assert!(
+        app.needs_redraw,
+        "ConnectionStatus message should mark dirty"
+    );
 }
 
 #[test]
@@ -157,7 +181,10 @@ fn test_boundary_indicator_clears_after_timeout() {
         app.tick();
     }
 
-    assert!(app.scroll_boundary_hit.is_none(), "Boundary indicator should clear after timeout");
+    assert!(
+        app.scroll_boundary_hit.is_none(),
+        "Boundary indicator should clear after timeout"
+    );
 }
 
 #[test]
@@ -221,6 +248,13 @@ fn test_navigate_to_command_deck_marks_dirty() {
 
     app.navigate_to_command_deck();
 
-    assert!(app.needs_redraw, "navigate_to_command_deck() should mark dirty");
-    assert_eq!(app.screen, Screen::CommandDeck, "Should be on CommandDeck screen");
+    assert!(
+        app.needs_redraw,
+        "navigate_to_command_deck() should mark dirty"
+    );
+    assert_eq!(
+        app.screen,
+        Screen::CommandDeck,
+        "Should be on CommandDeck screen"
+    );
 }

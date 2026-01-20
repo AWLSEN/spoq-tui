@@ -64,8 +64,7 @@ pub fn calculate_visible_range(
 
     // Binary search: find the first message that starts after the visible range
     let visible_end = scroll_from_top + viewport_height;
-    let end_index = message_heights
-        .partition_point(|h| h.cumulative_offset < visible_end);
+    let end_index = message_heights.partition_point(|h| h.cumulative_offset < visible_end);
 
     (start_index, end_index, first_message_line_offset)
 }
@@ -97,8 +96,16 @@ pub fn estimate_message_height_fast(message: &Message, viewport_width: usize) ->
     };
 
     let char_count = content.chars().count();
-    let logical_lines = if char_count == 0 { 1 } else { (char_count / 60).max(1) };
-    let wrap_factor = if viewport_width > 0 { 60_usize.div_ceil(viewport_width) } else { 1 };
+    let logical_lines = if char_count == 0 {
+        1
+    } else {
+        (char_count / 60).max(1)
+    };
+    let wrap_factor = if viewport_width > 0 {
+        60_usize.div_ceil(viewport_width)
+    } else {
+        1
+    };
     estimated_lines += logical_lines * wrap_factor;
 
     // Add lines for tool events in segments
@@ -106,7 +113,12 @@ pub fn estimate_message_height_fast(message: &Message, viewport_width: usize) ->
         let tool_count = message
             .segments
             .iter()
-            .filter(|s| matches!(s, MessageSegment::ToolEvent(_) | MessageSegment::SubagentEvent(_)))
+            .filter(|s| {
+                matches!(
+                    s,
+                    MessageSegment::ToolEvent(_) | MessageSegment::SubagentEvent(_)
+                )
+            })
             .count();
         estimated_lines += tool_count * 2;
     }
@@ -203,11 +215,26 @@ mod tests {
     fn test_calculate_visible_range_variable_heights() {
         // 5 messages with different heights: 5, 20, 5, 10, 15 = 55 total
         let heights = vec![
-            MessageHeight { visual_lines: 5, cumulative_offset: 0 },
-            MessageHeight { visual_lines: 20, cumulative_offset: 5 },
-            MessageHeight { visual_lines: 5, cumulative_offset: 25 },
-            MessageHeight { visual_lines: 10, cumulative_offset: 30 },
-            MessageHeight { visual_lines: 15, cumulative_offset: 40 },
+            MessageHeight {
+                visual_lines: 5,
+                cumulative_offset: 0,
+            },
+            MessageHeight {
+                visual_lines: 20,
+                cumulative_offset: 5,
+            },
+            MessageHeight {
+                visual_lines: 5,
+                cumulative_offset: 25,
+            },
+            MessageHeight {
+                visual_lines: 10,
+                cumulative_offset: 30,
+            },
+            MessageHeight {
+                visual_lines: 15,
+                cumulative_offset: 40,
+            },
         ];
 
         // Viewport at offset 10 (middle of message 1) with height 20
@@ -219,9 +246,10 @@ mod tests {
 
     #[test]
     fn test_calculate_visible_range_single_message() {
-        let heights = vec![
-            MessageHeight { visual_lines: 50, cumulative_offset: 0 },
-        ];
+        let heights = vec![MessageHeight {
+            visual_lines: 50,
+            cumulative_offset: 0,
+        }];
 
         let (start, end, offset) = calculate_visible_range(&heights, 0, 30);
         assert_eq!(start, 0);
@@ -246,7 +274,12 @@ mod tests {
 
             // Verify range is valid
             assert!(start <= end, "start ({}) should be <= end ({})", start, end);
-            assert!(end <= heights.len(), "end ({}) should be <= heights.len() ({})", end, heights.len());
+            assert!(
+                end <= heights.len(),
+                "end ({}) should be <= heights.len() ({})",
+                end,
+                heights.len()
+            );
 
             // Verify visible messages are included
             for (i, h) in heights.iter().enumerate() {
@@ -257,9 +290,17 @@ mod tests {
 
                 // If message overlaps with visible area, it should be in range
                 if msg_end > visible_start && msg_start < visible_end {
-                    assert!(i >= start && i < end,
+                    assert!(
+                        i >= start && i < end,
                         "Message {} (lines {}-{}) overlaps viewport {}-{} but not in range {}-{}",
-                        i, msg_start, msg_end, visible_start, visible_end, start, end);
+                        i,
+                        msg_start,
+                        msg_end,
+                        visible_start,
+                        visible_end,
+                        start,
+                        end
+                    );
                 }
             }
         }

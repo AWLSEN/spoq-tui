@@ -53,11 +53,7 @@ fn calculate_dialog_width(ctx: &LayoutContext, area_width: u16) -> u16 {
 }
 
 /// Calculate dialog height based on content and terminal dimensions
-fn calculate_dialog_height(
-    ctx: &LayoutContext,
-    visible_count: usize,
-    area_height: u16,
-) -> u16 {
+fn calculate_dialog_height(ctx: &LayoutContext, visible_count: usize, area_height: u16) -> u16 {
     // Height: 2 (borders) + 1 (padding top) + visible_count + 1 (padding bottom) + 1 (hint line)
     let content_height = visible_count as u16 + 5;
 
@@ -151,7 +147,8 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
     let model_space = if ctx.is_extra_small() { 8 } else { 12 }; // Space for type indicator + model
     let marker_space = 2; // Selection marker
     let padding_space = if ctx.is_extra_small() { 1 } else { 2 }; // Spacing between elements
-    let max_title_width = (inner.width as usize).saturating_sub(model_space + marker_space + padding_space);
+    let max_title_width =
+        (inner.width as usize).saturating_sub(model_space + marker_space + padding_space);
 
     // Show scroll up indicator if there are hidden threads above
     if scroll_offset > 0 {
@@ -160,9 +157,10 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
         } else {
             format!("  ↑ {} more above", scroll_offset)
         };
-        lines.push(Line::from(vec![
-            Span::styled(indicator, Style::default().fg(COLOR_DIM)),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            indicator,
+            Style::default().fg(COLOR_DIM),
+        )]));
     }
 
     // Iterate through visible threads starting from scroll_offset
@@ -179,7 +177,9 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
         // Selection marker
         let marker = if is_selected { "▶ " } else { "  " };
         let marker_style = if is_selected {
-            Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(COLOR_ACCENT)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(COLOR_DIM)
         };
@@ -216,7 +216,8 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
         // Truncate thread title if needed (respecting UTF-8 boundaries)
         let title = if thread.title.len() > max_title_width {
             let end = max_title_width.saturating_sub(3);
-            let boundary = thread.title
+            let boundary = thread
+                .title
                 .char_indices()
                 .take_while(|(i, _)| *i <= end)
                 .last()
@@ -229,7 +230,9 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
 
         // Build the line
         let title_style = if is_selected {
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(COLOR_HEADER)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(COLOR_DIM)
         };
@@ -260,16 +263,19 @@ pub fn render_thread_switcher(frame: &mut Frame, app: &App) {
     }
 
     // Show scroll down indicator if there are hidden threads below
-    let threads_below = threads.len().saturating_sub(scroll_offset + max_visible_threads);
+    let threads_below = threads
+        .len()
+        .saturating_sub(scroll_offset + max_visible_threads);
     if threads_below > 0 {
         let indicator = if ctx.is_extra_small() {
             format!("  v {}", threads_below)
         } else {
             format!("  ↓ {} more below", threads_below)
         };
-        lines.push(Line::from(vec![
-            Span::styled(indicator, Style::default().fg(COLOR_DIM)),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            indicator,
+            Style::default().fg(COLOR_DIM),
+        )]));
     }
 
     // Skip bottom padding on extra-small screens

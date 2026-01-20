@@ -18,4 +18,4 @@ pub mod provisioning_flow;
 pub use central_api::CentralApiClient;
 pub use credentials::{Credentials, CredentialsManager};
 pub use flow::run_auth_flow;
-pub use provisioning_flow::run_provisioning_flow;
+pub use provisioning_flow::{run_provisioning_flow, start_stopped_vps};

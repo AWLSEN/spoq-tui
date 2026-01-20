@@ -4,11 +4,11 @@
 // 2. visual_line_count width calculation
 // 3. set_messages merge logic
 
+use chrono::Utc;
 use spoq::app::{App, Screen, ScrollBoundary};
 use spoq::cache::ThreadCache;
 use spoq::models::{Message, MessageRole};
 use spoq::widgets::textarea_input::TextAreaInput;
-use chrono::Utc;
 
 // =============================================================================
 // Arrow Key Scroll Tests (main.rs lines 559-582, 611-617)
@@ -28,7 +28,10 @@ fn test_arrow_up_scrolls_conversation_when_on_conversation_screen() {
         app.mark_dirty();
     }
 
-    assert_eq!(app.unified_scroll, 51, "Arrow up should increase scroll offset");
+    assert_eq!(
+        app.unified_scroll, 51,
+        "Arrow up should increase scroll offset"
+    );
 }
 
 #[test]
@@ -45,7 +48,10 @@ fn test_arrow_down_scrolls_conversation_when_on_conversation_screen() {
         app.mark_dirty();
     }
 
-    assert_eq!(app.unified_scroll, 49, "Arrow down should decrease scroll offset");
+    assert_eq!(
+        app.unified_scroll, 49,
+        "Arrow down should decrease scroll offset"
+    );
 }
 
 #[test]
@@ -112,13 +118,19 @@ fn test_arrow_keys_work_regardless_of_focus() {
     app.focus = Focus::Input;
     let original_scroll = app.unified_scroll;
     app.unified_scroll += 1;
-    assert!(app.unified_scroll > original_scroll, "Should scroll even when Input focused");
+    assert!(
+        app.unified_scroll > original_scroll,
+        "Should scroll even when Input focused"
+    );
 
     // Focus on Threads - should still scroll
     app.focus = Focus::Threads;
     let original_scroll = app.unified_scroll;
     app.unified_scroll += 1;
-    assert!(app.unified_scroll > original_scroll, "Should scroll even when Threads focused");
+    assert!(
+        app.unified_scroll > original_scroll,
+        "Should scroll even when Threads focused"
+    );
 }
 
 #[test]
@@ -152,7 +164,10 @@ fn test_visual_line_count_with_exact_width_match() {
 
     // Available width is 5 - should fit exactly in 1 line
     let visual_lines = input.visual_line_count(5);
-    assert_eq!(visual_lines, 1, "5 chars should fit in width 5 without wrapping");
+    assert_eq!(
+        visual_lines, 1,
+        "5 chars should fit in width 5 without wrapping"
+    );
 }
 
 #[test]
@@ -176,7 +191,10 @@ fn test_visual_line_count_handles_multiple_wraps() {
 
     // 13 chars at width 5 should wrap to 3 lines (5 + 5 + 3)
     let visual_lines = input.visual_line_count(5);
-    assert_eq!(visual_lines, 3, "13 chars should wrap to 3 lines at width 5");
+    assert_eq!(
+        visual_lines, 3,
+        "13 chars should wrap to 3 lines at width 5"
+    );
 }
 
 #[test]
@@ -201,7 +219,10 @@ fn test_visual_line_count_multiple_logical_lines() {
 
     // 2 logical lines, each 5 chars, at width 10 should be 2 visual lines
     let visual_lines = input.visual_line_count(10);
-    assert_eq!(visual_lines, 2, "2 logical lines should be 2 visual lines when no wrapping");
+    assert_eq!(
+        visual_lines, 2,
+        "2 logical lines should be 2 visual lines when no wrapping"
+    );
 }
 
 #[test]
@@ -219,7 +240,10 @@ fn test_visual_line_count_multiple_lines_with_wrapping() {
     // Line 2: 5 chars at width 5 = 1 visual line
     // Total: 3 visual lines
     let visual_lines = input.visual_line_count(5);
-    assert_eq!(visual_lines, 3, "Wrapped multi-line content should calculate correctly");
+    assert_eq!(
+        visual_lines, 3,
+        "Wrapped multi-line content should calculate correctly"
+    );
 }
 
 #[test]
@@ -235,7 +259,10 @@ fn test_visual_line_count_zero_width_returns_line_count() {
 
     // Zero width should return logical line count as fallback
     let visual_lines = input.visual_line_count(0);
-    assert_eq!(visual_lines, 2, "Zero width should return logical line count");
+    assert_eq!(
+        visual_lines, 2,
+        "Zero width should return logical line count"
+    );
 }
 
 #[test]
@@ -243,15 +270,21 @@ fn test_visual_line_count_unicode_width() {
     let mut input = TextAreaInput::new();
     // Emoji and wide characters
     input.insert_char('😀'); // Width 2
-    input.insert_char('A');  // Width 1
+    input.insert_char('A'); // Width 1
     input.insert_char('😀'); // Width 2
 
     // Total width: 5 (2 + 1 + 2)
     let visual_lines = input.visual_line_count(5);
-    assert_eq!(visual_lines, 1, "5-width content should fit in 5-width area");
+    assert_eq!(
+        visual_lines, 1,
+        "5-width content should fit in 5-width area"
+    );
 
     let visual_lines = input.visual_line_count(4);
-    assert_eq!(visual_lines, 2, "5-width content should wrap in 4-width area");
+    assert_eq!(
+        visual_lines, 2,
+        "5-width content should wrap in 4-width area"
+    );
 }
 
 #[test]
@@ -265,7 +298,10 @@ fn test_visual_line_count_caller_already_subtracts_borders() {
     // If widget width is 10 with borders (2 chars), available_width is 8
     // The caller should pass 8, not 10
     let visual_lines = input.visual_line_count(8);
-    assert_eq!(visual_lines, 1, "8 chars should fit in 8-width area without wrapping");
+    assert_eq!(
+        visual_lines, 1,
+        "8 chars should fit in 8-width area without wrapping"
+    );
 }
 
 // =============================================================================
@@ -326,7 +362,11 @@ fn test_set_messages_preserves_streaming_messages() {
 
     // Verify streaming message is preserved at the end
     let messages = cache.get_messages(&thread_id).unwrap();
-    assert_eq!(messages.len(), 3, "Should have 2 backend + 1 streaming message");
+    assert_eq!(
+        messages.len(),
+        3,
+        "Should have 2 backend + 1 streaming message"
+    );
     assert_eq!(messages[0].id, 1, "First message should be backend msg 1");
     assert_eq!(messages[1].id, 2, "Second message should be backend msg 2");
     assert!(messages[2].is_streaming, "Last message should be streaming");
@@ -437,7 +477,11 @@ fn test_set_messages_preserves_higher_id_messages() {
 
     // Verify higher ID message is preserved
     let messages = cache.get_messages(&thread_id).unwrap();
-    assert_eq!(messages.len(), 3, "Should have 2 backend + 1 recent message");
+    assert_eq!(
+        messages.len(),
+        3,
+        "Should have 2 backend + 1 recent message"
+    );
     assert_eq!(messages[2].id, 5, "Recent message should be preserved");
     assert_eq!(messages[2].content, "Recent message");
 }
@@ -542,21 +586,19 @@ fn test_set_messages_merge_order_backend_then_local() {
     cache.add_message(streaming_msg);
 
     // Backend sends messages
-    let backend_msgs = vec![
-        Message {
-            id: 1,
-            thread_id: thread_id.clone(),
-            role: MessageRole::User,
-            content: "Backend 1".to_string(),
-            created_at: now,
-            is_streaming: false,
-            partial_content: String::new(),
-            reasoning_content: String::new(),
-            reasoning_collapsed: true,
-            segments: Vec::new(),
-            render_version: 0,
-        },
-    ];
+    let backend_msgs = vec![Message {
+        id: 1,
+        thread_id: thread_id.clone(),
+        role: MessageRole::User,
+        content: "Backend 1".to_string(),
+        created_at: now,
+        is_streaming: false,
+        partial_content: String::new(),
+        reasoning_content: String::new(),
+        reasoning_collapsed: true,
+        segments: Vec::new(),
+        render_version: 0,
+    }];
 
     cache.set_messages(thread_id.clone(), backend_msgs);
 

@@ -16,9 +16,8 @@ pub use folder_chip::{
 pub use height::{calculate_input_area_height, calculate_input_box_height, MAX_INPUT_LINES};
 pub use keybinds::{build_contextual_keybinds, build_responsive_keybinds};
 pub use permission::{
-    get_permission_preview, parse_ask_user_question,
-    DEFAULT_PERMISSION_BOX_HEIGHT, DEFAULT_PERMISSION_BOX_WIDTH, MIN_PERMISSION_BOX_HEIGHT,
-    MIN_PERMISSION_BOX_WIDTH,
+    get_permission_preview, parse_ask_user_question, DEFAULT_PERMISSION_BOX_HEIGHT,
+    DEFAULT_PERMISSION_BOX_WIDTH, MIN_PERMISSION_BOX_HEIGHT, MIN_PERMISSION_BOX_WIDTH,
 };
 
 use ratatui::{
@@ -146,7 +145,6 @@ impl Widget for InputWithChipWidget<'_, '_> {
             .render_without_border(textarea_area, buf, self.focused);
     }
 }
-
 
 // ============================================================================
 // Input Section Builder (Unified Scroll)

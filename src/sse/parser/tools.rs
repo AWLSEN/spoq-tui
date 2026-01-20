@@ -3,7 +3,10 @@
 use crate::sse::events::{SseEvent, SseParseError};
 
 /// Parse tool_call_start event
-pub(super) fn parse_tool_call_start_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_tool_call_start_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -25,7 +28,10 @@ pub(super) fn parse_tool_call_start_event(event_type: &str, data: &str) -> Resul
 }
 
 /// Parse tool_call_argument event
-pub(super) fn parse_tool_call_argument_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_tool_call_argument_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -47,7 +53,10 @@ pub(super) fn parse_tool_call_argument_event(event_type: &str, data: &str) -> Re
 }
 
 /// Parse tool_executing event
-pub(super) fn parse_tool_executing_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_tool_executing_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -69,7 +78,10 @@ pub(super) fn parse_tool_executing_event(event_type: &str, data: &str) -> Result
 }
 
 /// Parse tool_result event
-pub(super) fn parse_tool_result_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_tool_result_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -97,8 +109,8 @@ pub(super) fn parse_tool_result_event(event_type: &str, data: &str) -> Result<Ss
 
 #[cfg(test)]
 mod tests {
-    use crate::sse::parser::parse_sse_event;
     use crate::sse::events::SseEvent;
+    use crate::sse::parser::parse_sse_event;
 
     #[test]
     fn test_parse_tool_call_start() {
@@ -178,10 +190,7 @@ mod tests {
 
     #[test]
     fn test_parse_tool_executing_minimal() {
-        let result = parse_sse_event(
-            "tool_executing",
-            r#"{"tool_call_id": "call-456"}"#,
-        );
+        let result = parse_sse_event("tool_executing", r#"{"tool_call_id": "call-456"}"#);
         assert_eq!(
             result.unwrap(),
             SseEvent::ToolExecuting {

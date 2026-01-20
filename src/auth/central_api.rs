@@ -306,23 +306,31 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
         // Get the response text first for better error messages
-        let text = response.text().await.map_err(|e| {
-            CentralApiError::ServerError {
+        let text = response
+            .text()
+            .await
+            .map_err(|e| CentralApiError::ServerError {
                 status: 0,
                 message: format!("Failed to read response: {}", e),
-            }
-        })?;
+            })?;
 
         // Try to parse the JSON
         serde_json::from_str::<DeviceCodeResponse>(&text).map_err(|e| {
             CentralApiError::ServerError {
                 status: 0,
-                message: format!("Invalid response format: {}. Response: {}", e, &text[..text.len().min(200)]),
+                message: format!(
+                    "Invalid response format: {}. Response: {}",
+                    e,
+                    &text[..text.len().min(200)]
+                ),
             }
         })
     }
@@ -332,7 +340,10 @@ impl CentralApiClient {
     /// POST /auth/device/token
     ///
     /// Returns the token response on success, or specific errors for pending/denied states.
-    pub async fn poll_device_token(&self, device_code: &str) -> Result<TokenResponse, CentralApiError> {
+    pub async fn poll_device_token(
+        &self,
+        device_code: &str,
+    ) -> Result<TokenResponse, CentralApiError> {
         let url = format!("{}/auth/device/token", self.base_url);
 
         let body = serde_json::json!({
@@ -361,7 +372,10 @@ impl CentralApiClient {
                     "expired_token" | "expired" => Err(CentralApiError::AuthorizationExpired),
                     "access_denied" => Err(CentralApiError::AccessDenied),
                     "invalid_grant" => Err(CentralApiError::AuthorizationPending), // Treat as pending
-                    _ => Err(CentralApiError::ServerError { status, message: text }),
+                    _ => Err(CentralApiError::ServerError {
+                        status,
+                        message: text,
+                    }),
                 };
             }
         }
@@ -371,7 +385,11 @@ impl CentralApiClient {
             Ok(data) => Ok(data),
             Err(e) => Err(CentralApiError::ServerError {
                 status,
-                message: format!("Failed to parse response: {}. Raw: {}", e, &text[..text.len().min(200)]),
+                message: format!(
+                    "Failed to parse response: {}. Raw: {}",
+                    e,
+                    &text[..text.len().min(200)]
+                ),
             }),
         }
     }
@@ -381,7 +399,10 @@ impl CentralApiClient {
     /// POST /auth/refresh
     ///
     /// Returns a new token response with fresh access and refresh tokens.
-    pub async fn refresh_token(&self, refresh_token: &str) -> Result<TokenResponse, CentralApiError> {
+    pub async fn refresh_token(
+        &self,
+        refresh_token: &str,
+    ) -> Result<TokenResponse, CentralApiError> {
         let url = format!("{}/auth/refresh", self.base_url);
 
         let body = serde_json::json!({
@@ -398,7 +419,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -419,7 +443,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -465,7 +492,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -486,7 +516,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -515,10 +548,7 @@ impl CentralApiClient {
             return Err(parse_error_response(status, &body));
         }
 
-        let data: DataCentersResponse = response
-            .json()
-            .await
-            .map_err(CentralApiError::Http)?;
+        let data: DataCentersResponse = response.json().await.map_err(CentralApiError::Http)?;
 
         Ok(data.data_centers)
     }
@@ -536,7 +566,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -557,7 +590,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -578,7 +614,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -591,7 +630,10 @@ impl CentralApiClient {
     /// POST /api/vps/reset-password
     ///
     /// Requires authentication. Returns the action response.
-    pub async fn reset_vps_password(&self, new_password: &str) -> Result<VpsActionResponse, CentralApiError> {
+    pub async fn reset_vps_password(
+        &self,
+        new_password: &str,
+    ) -> Result<VpsActionResponse, CentralApiError> {
         let url = format!("{}/api/vps/reset-password", self.base_url);
 
         let body = serde_json::json!({
@@ -607,7 +649,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -636,7 +681,10 @@ impl CentralApiClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(parse_error_response(status, &body));
         }
 
@@ -871,7 +919,10 @@ mod tests {
         assert_eq!(response.status, "running");
         assert_eq!(response.hostname, Some("vps-abc123.spoq.io".to_string()));
         assert_eq!(response.ip, Some("192.168.1.100".to_string()));
-        assert_eq!(response.url, Some("https://vps-abc123.spoq.io:8000".to_string()));
+        assert_eq!(
+            response.url,
+            Some("https://vps-abc123.spoq.io:8000".to_string())
+        );
     }
 
     // Async tests for HTTP methods (with invalid server to test error handling)
@@ -907,7 +958,9 @@ mod tests {
     async fn test_provision_vps_with_invalid_server() {
         let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
-        let result = client.provision_vps("test-password", Some("plan-small"), None).await;
+        let result = client
+            .provision_vps("test-password", Some("plan-small"), None)
+            .await;
         assert!(result.is_err());
     }
 
@@ -915,7 +968,9 @@ mod tests {
     async fn test_provision_vps_with_datacenter_id() {
         let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
-        let result = client.provision_vps("test-password", Some("plan-small"), Some(9)).await;
+        let result = client
+            .provision_vps("test-password", Some("plan-small"), Some(9))
+            .await;
         assert!(result.is_err()); // Connection error expected
     }
 
@@ -1014,7 +1069,10 @@ mod tests {
         let json = r#"{"access_token": "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MzY4NzI0MDB9.sig", "refresh_token": "spoq_refresh_token", "token_type": "Bearer"}"#;
         let response: TokenResponse = serde_json::from_str(json).unwrap();
         assert!(response.expires_in.is_none());
-        assert_eq!(response.access_token, "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MzY4NzI0MDB9.sig");
+        assert_eq!(
+            response.access_token,
+            "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MzY4NzI0MDB9.sig"
+        );
         assert_eq!(response.refresh_token, "spoq_refresh_token");
         assert_eq!(response.token_type, "Bearer");
     }
@@ -1084,7 +1142,10 @@ mod tests {
         assert_eq!(response.provider, Some("vultr".to_string()));
         assert_eq!(response.plan_id, Some("plan-small".to_string()));
         assert_eq!(response.data_center_id, Some(1));
-        assert_eq!(response.created_at, Some("2026-01-01T00:00:00Z".to_string()));
+        assert_eq!(
+            response.created_at,
+            Some("2026-01-01T00:00:00Z".to_string())
+        );
         assert_eq!(response.ready_at, Some("2026-01-01T00:05:00Z".to_string()));
     }
 
@@ -1147,7 +1208,10 @@ mod tests {
             CentralApiError::ServerError { status, message } => {
                 assert_eq!(status, 400);
                 // Falls back to raw body
-                assert_eq!(message, r#"{"message": "Something went wrong", "code": 123}"#);
+                assert_eq!(
+                    message,
+                    r#"{"message": "Something went wrong", "code": 123}"#
+                );
             }
             _ => panic!("Expected ServerError"),
         }

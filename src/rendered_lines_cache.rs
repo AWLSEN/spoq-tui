@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use ratatui::text::Line;
+use std::collections::HashMap;
 
 /// Maximum number of cached message renders to keep in memory
 const MAX_RENDER_CACHE_SIZE: usize = 500;
@@ -47,7 +47,12 @@ impl RenderedLinesCache {
         }
     }
 
-    pub fn get(&mut self, thread_id: &str, message_id: i64, render_version: u64) -> Option<&Vec<Line<'static>>> {
+    pub fn get(
+        &mut self,
+        thread_id: &str,
+        message_id: i64,
+        render_version: u64,
+    ) -> Option<&Vec<Line<'static>>> {
         let key = (thread_id.to_string(), message_id, render_version);
         if self.cache.contains_key(&key) {
             self.access_order.retain(|k| *k != key);
@@ -58,7 +63,13 @@ impl RenderedLinesCache {
         }
     }
 
-    pub fn insert(&mut self, thread_id: &str, message_id: i64, render_version: u64, lines: Vec<Line<'static>>) {
+    pub fn insert(
+        &mut self,
+        thread_id: &str,
+        message_id: i64,
+        render_version: u64,
+        lines: Vec<Line<'static>>,
+    ) {
         let key = (thread_id.to_string(), message_id, render_version);
         while self.cache.len() >= MAX_RENDER_CACHE_SIZE {
             if let Some(oldest_key) = self.access_order.first().cloned() {
@@ -69,14 +80,17 @@ impl RenderedLinesCache {
             }
         }
         // Remove old versions of the same message in the same thread
-        self.cache.retain(|k, _| k.0 != thread_id || k.1 != message_id || k.2 == render_version);
-        self.access_order.retain(|k| k.0 != thread_id || k.1 != message_id || k.2 == render_version);
+        self.cache
+            .retain(|k, _| k.0 != thread_id || k.1 != message_id || k.2 == render_version);
+        self.access_order
+            .retain(|k| k.0 != thread_id || k.1 != message_id || k.2 == render_version);
         self.cache.insert(key.clone(), lines);
         self.access_order.push(key);
     }
 
     pub fn contains(&self, thread_id: &str, message_id: i64, render_version: u64) -> bool {
-        self.cache.contains_key(&(thread_id.to_string(), message_id, render_version))
+        self.cache
+            .contains_key(&(thread_id.to_string(), message_id, render_version))
     }
 
     pub fn clear(&mut self) {

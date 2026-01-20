@@ -189,7 +189,10 @@ mod tests {
             interval: 5,
         };
 
-        let display_with_code = device_code_with_code.user_code.as_deref().unwrap_or("(see URL)");
+        let display_with_code = device_code_with_code
+            .user_code
+            .as_deref()
+            .unwrap_or("(see URL)");
         assert_eq!(display_with_code, "ABC-123");
     }
 

@@ -114,18 +114,21 @@ pub fn render_single_message(
             // Wrap and prepend vertical bar to ALL lines, append cursor to last line
             if content_lines.is_empty() {
                 // No content yet, just show vertical bar with cursor
-                let mut empty_line = Line::from(vec![
-                    Span::styled(label, label_style),
-                    cursor_span,
-                ]);
+                let mut empty_line =
+                    Line::from(vec![Span::styled(label, label_style), cursor_span]);
                 if message.role == MessageRole::User {
                     apply_background_to_line(&mut empty_line, COLOR_HUMAN_BG, max_width);
                 }
                 lines.push(empty_line);
             } else {
                 // Wrap lines with prefix, then append cursor to last line
-                let bg = if message.role == MessageRole::User { Some(COLOR_HUMAN_BG) } else { None };
-                let mut wrapped_lines = wrap_lines_with_prefix(content_lines, label, label_style, max_width, bg);
+                let bg = if message.role == MessageRole::User {
+                    Some(COLOR_HUMAN_BG)
+                } else {
+                    None
+                };
+                let mut wrapped_lines =
+                    wrap_lines_with_prefix(content_lines, label, label_style, max_width, bg);
                 if let Some(last_line) = wrapped_lines.last_mut() {
                     last_line.spans.push(cursor_span);
                 }
@@ -134,7 +137,10 @@ pub fn render_single_message(
         }
     } else {
         // Display completed message - try cache first
-        if let Some(cached_lines) = app.rendered_lines_cache.get(thread_id, message.id, message.render_version) {
+        if let Some(cached_lines) =
+            app.rendered_lines_cache
+                .get(thread_id, message.id, message.render_version)
+        {
             // Use iter().cloned() to avoid cloning the entire Vec; we only clone each Line as needed
             lines.extend(cached_lines.iter().cloned());
             // Add trailing line with vertical bar for visual continuity
@@ -179,13 +185,28 @@ pub fn render_single_message(
                 message_lines.push(empty_line);
             } else {
                 // Wrap and prepend vertical bar to ALL lines
-                let bg = if message.role == MessageRole::User { Some(COLOR_HUMAN_BG) } else { None };
-                message_lines.extend(wrap_lines_with_prefix(content_lines, label, label_style, max_width, bg));
+                let bg = if message.role == MessageRole::User {
+                    Some(COLOR_HUMAN_BG)
+                } else {
+                    None
+                };
+                message_lines.extend(wrap_lines_with_prefix(
+                    content_lines,
+                    label,
+                    label_style,
+                    max_width,
+                    bg,
+                ));
             }
         }
 
         // Cache and add to output
-        app.rendered_lines_cache.insert(thread_id, message.id, message.render_version, message_lines.clone());
+        app.rendered_lines_cache.insert(
+            thread_id,
+            message.id,
+            message.render_version,
+            message_lines.clone(),
+        );
         lines.extend(message_lines);
     }
 
@@ -220,7 +241,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
     // Invalidate rendered lines cache if viewport width changed (terminal resize)
     // This ensures wrapped lines are re-rendered with correct width
-    app.rendered_lines_cache.invalidate_if_width_changed(inner.width);
+    app.rendered_lines_cache
+        .invalidate_if_width_changed(inner.width);
 
     // Collect header lines (error banners, stream errors)
     let mut header_lines: Vec<Line> = Vec::new();
@@ -240,14 +262,9 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         header_lines.push(Line::from(vec![
             Span::styled(
                 "  \u{26A0} ERROR: ",
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(
-                display_error,
-                Style::default().fg(Color::Red),
-            ),
+            Span::styled(display_error, Style::default().fg(Color::Red)),
         ]));
         // Responsive divider width
         let divider_width = ctx.text_wrap_width(0).min(80) as usize;
@@ -263,20 +280,18 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     // Only recalculate heights when render_version changes or new messages are added
     let current_thread_id = app.active_thread_id.clone();
     let (message_heights, total_visual_lines, message_count) = {
-        let cached_messages = current_thread_id
-            .as_ref()
-            .and_then(|id| {
-                crate::app::log_thread_update(&format!(
-                    "RENDER: Looking for messages for thread_id: {}",
-                    id
-                ));
-                let msgs = app.cache.get_messages(id);
-                crate::app::log_thread_update(&format!(
-                    "RENDER: Found {} messages",
-                    msgs.map(|m| m.len()).unwrap_or(0)
-                ));
-                msgs
-            });
+        let cached_messages = current_thread_id.as_ref().and_then(|id| {
+            crate::app::log_thread_update(&format!(
+                "RENDER: Looking for messages for thread_id: {}",
+                id
+            ));
+            let msgs = app.cache.get_messages(id);
+            crate::app::log_thread_update(&format!(
+                "RENDER: Found {} messages",
+                msgs.map(|m| m.len()).unwrap_or(0)
+            ));
+            msgs
+        });
 
         match (&current_thread_id, cached_messages) {
             (_, None) => (Vec::new(), header_visual_lines, 0usize),
@@ -295,7 +310,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                 }
 
                 // Check if we can use incremental updates on existing cache
-                let cache_valid = app.height_cache
+                let cache_valid = app
+                    .height_cache
                     .as_ref()
                     .map(|c| c.is_valid_for(thread_id, viewport_width))
                     .unwrap_or(false);
@@ -317,7 +333,9 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     // Update existing entries where render_version changed
                     for (i, message) in messages.iter().enumerate().take(cache.heights.len()) {
                         let cached_entry = &cache.heights[i];
-                        if cached_entry.message_id != message.id || cached_entry.render_version != message.render_version {
+                        if cached_entry.message_id != message.id
+                            || cached_entry.render_version != message.render_version
+                        {
                             // Recalculate height for this message
                             let new_height = estimate_message_height_fast(message, viewport_width);
                             cache.heights[i].message_id = message.id;
@@ -343,12 +361,14 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     }
 
                     // Convert to MessageHeight for the virtualization API
-                    let heights: Vec<MessageHeight> = cache.heights.iter().map(|h| {
-                        MessageHeight {
+                    let heights: Vec<MessageHeight> = cache
+                        .heights
+                        .iter()
+                        .map(|h| MessageHeight {
                             visual_lines: h.visual_lines,
                             cumulative_offset: h.cumulative_offset,
-                        }
-                    }).collect();
+                        })
+                        .collect();
 
                     let count = messages.len();
                     let total = header_visual_lines + cache.total_lines;
@@ -364,12 +384,14 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     }
 
                     // Convert to MessageHeight for the virtualization API
-                    let heights: Vec<MessageHeight> = cache.heights.iter().map(|h| {
-                        MessageHeight {
+                    let heights: Vec<MessageHeight> = cache
+                        .heights
+                        .iter()
+                        .map(|h| MessageHeight {
                             visual_lines: h.visual_lines,
                             cumulative_offset: h.cumulative_offset,
-                        }
-                    }).collect();
+                        })
+                        .collect();
 
                     let count = messages.len();
                     let total = header_visual_lines + cache.total_lines;
@@ -388,18 +410,17 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             Span::styled("\u{2502} ", Style::default().fg(COLOR_DIM)),
-            Span::styled("Waiting for your message...", Style::default().fg(COLOR_DIM)),
+            Span::styled(
+                "Waiting for your message...",
+                Style::default().fg(COLOR_DIM),
+            ),
         ]));
         lines.push(Line::from(""));
 
         // Add permission lines if pending
         if let Some(perm) = app.session_state.pending_permission.as_ref() {
-            let perm_lines = build_permission_lines(
-                perm,
-                &app.question_state,
-                &ctx,
-                app.tick_count,
-            );
+            let perm_lines =
+                build_permission_lines(perm, &app.question_state, &ctx, app.tick_count);
             lines.extend(perm_lines);
         }
 
@@ -544,12 +565,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
     // Add permission lines if pending
     if let Some(perm) = app.session_state.pending_permission.as_ref() {
-        let perm_lines = build_permission_lines(
-            perm,
-            &app.question_state,
-            &ctx,
-            app.tick_count,
-        );
+        let perm_lines = build_permission_lines(perm, &app.question_state, &ctx, app.tick_count);
         lines.extend(perm_lines);
     }
 
@@ -563,8 +579,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     app.total_content_lines = total_content_lines;
 
     // === UNIFIED SCROLL: Use offset within the first visible message ===
-    let unified_scroll_from_top =
-        first_message_line_offset.min(u16::MAX as usize) as u16;
+    let unified_scroll_from_top = first_message_line_offset.min(u16::MAX as usize) as u16;
 
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })

@@ -141,16 +141,12 @@ fn route_ws_message(
             // Connection confirmation is informational - ignore for now
             Ok(())
         }
-        WsIncomingMessage::RawMessage(raw) => {
-            message_tx
-                .send(AppMessage::WsRawMessage { message: raw })
-                .map_err(|e| format!("Failed to send WsRawMessage: {}", e))
-        }
-        WsIncomingMessage::ParseError { error, raw } => {
-            message_tx
-                .send(AppMessage::WsParseError { error, raw })
-                .map_err(|e| format!("Failed to send WsParseError: {}", e))
-        }
+        WsIncomingMessage::RawMessage(raw) => message_tx
+            .send(AppMessage::WsRawMessage { message: raw })
+            .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),
+        WsIncomingMessage::ParseError { error, raw } => message_tx
+            .send(AppMessage::WsParseError { error, raw })
+            .map_err(|e| format!("Failed to send WsParseError: {}", e)),
     }
 }
 

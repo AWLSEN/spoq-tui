@@ -49,7 +49,11 @@ pub struct Thread {
     #[serde(deserialize_with = "deserialize_id")]
     pub id: String,
     /// Title derived from first message (API sends as "name")
-    #[serde(default, deserialize_with = "deserialize_nullable_string", alias = "name")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable_string",
+        alias = "name"
+    )]
     pub title: String,
     /// Description of the thread
     #[serde(default)]

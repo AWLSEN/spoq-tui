@@ -5,10 +5,10 @@
 pub mod app;
 pub mod auth;
 pub mod cache;
-pub mod input_history;
 pub mod conductor;
 pub mod debug;
 pub mod events;
+pub mod input_history;
 pub mod markdown;
 pub mod models;
 pub mod rendered_lines_cache;

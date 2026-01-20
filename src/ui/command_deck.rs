@@ -20,7 +20,9 @@ use super::helpers::{format_tokens, inner_rect};
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
 use super::panels::{render_left_panel, render_right_panel};
-use super::theme::{COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_QUEUED};
+use super::theme::{
+    COLOR_ACCENT, COLOR_ACTIVE, COLOR_BORDER, COLOR_DIM, COLOR_HEADER, COLOR_QUEUED,
+};
 
 // ============================================================================
 // SPOQ ASCII Logo
@@ -68,10 +70,10 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(header_height),  // Header with logo (responsive)
-                Constraint::Min(10),                // Main content area
-                Constraint::Length(1),              // Mode indicator
-                Constraint::Length(input_height),   // Input area (responsive)
+                Constraint::Length(header_height), // Header with logo (responsive)
+                Constraint::Min(10),               // Main content area
+                Constraint::Length(1),             // Mode indicator
+                Constraint::Length(input_height),  // Input area (responsive)
             ])
             .split(inner);
 
@@ -89,9 +91,9 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(header_height),  // Header with logo (responsive)
-                Constraint::Min(10),                // Main content area
-                Constraint::Length(input_height),   // Input area (responsive)
+                Constraint::Length(header_height), // Header with logo (responsive)
+                Constraint::Min(10),               // Main content area
+                Constraint::Length(input_height),  // Input area (responsive)
             ])
             .split(inner);
 
@@ -152,7 +154,11 @@ pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
     if skills_count > 0 {
         badges_spans.push(Span::styled("[", Style::default().fg(COLOR_DIM)));
         badges_spans.push(Span::styled(
-            format!("{} skill{}", skills_count, if skills_count == 1 { "" } else { "s" }),
+            format!(
+                "{} skill{}",
+                skills_count,
+                if skills_count == 1 { "" } else { "s" }
+            ),
             Style::default().fg(COLOR_ACCENT),
         ));
         badges_spans.push(Span::styled("] ", Style::default().fg(COLOR_DIM)));
@@ -179,15 +185,14 @@ pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
     if app.session_state.needs_oauth() {
         if let Some((provider, _)) = &app.session_state.oauth_required {
             badges_spans.push(Span::styled("[OAuth: ", Style::default().fg(COLOR_DIM)));
-            badges_spans.push(Span::styled(
-                provider,
-                Style::default().fg(Color::Yellow),
-            ));
+            badges_spans.push(Span::styled(provider, Style::default().fg(Color::Yellow)));
             badges_spans.push(Span::styled("] ", Style::default().fg(COLOR_DIM)));
             if app.session_state.oauth_url.is_some() {
                 badges_spans.push(Span::styled(
                     "(press 'o') ",
-                    Style::default().fg(COLOR_DIM).add_modifier(Modifier::ITALIC),
+                    Style::default()
+                        .fg(COLOR_DIM)
+                        .add_modifier(Modifier::ITALIC),
                 ));
             }
         }
@@ -198,26 +203,23 @@ pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
     badges_spans.push(Span::raw(" "));
     badges_spans.push(Span::styled(status_text, Style::default().fg(status_color)));
 
-    let mut lines = vec![
-        Line::from(""),
-        Line::from(badges_spans),
-        Line::from(""),
-    ];
+    let mut lines = vec![Line::from(""), Line::from(badges_spans), Line::from("")];
 
     // Show migration progress if it's running
     if let Some(progress) = app.migration_progress {
         lines.push(Line::from(vec![
             Span::styled("[MIGRATING] ", Style::default().fg(COLOR_QUEUED)),
-            Span::styled(
-                format!("{}%", progress),
-                Style::default().fg(COLOR_ACCENT),
-            ),
+            Span::styled(format!("{}%", progress), Style::default().fg(COLOR_ACCENT)),
         ]));
     }
 
     // Thread/task counts
     let thread_count = app.threads.len();
-    let active_tasks = app.tasks.iter().filter(|t| t.status == TaskStatus::InProgress).count();
+    let active_tasks = app
+        .tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::InProgress)
+        .count();
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
@@ -232,8 +234,7 @@ pub fn render_header_info(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]));
 
-    let info = Paragraph::new(lines)
-        .alignment(ratatui::layout::Alignment::Right);
+    let info = Paragraph::new(lines).alignment(ratatui::layout::Alignment::Right);
     frame.render_widget(info, area);
 }
 
@@ -306,32 +307,47 @@ fn render_stacked_panels(frame: &mut Frame, area: Rect, app: &App, _ctx: &Layout
 fn render_panel_switcher(frame: &mut Frame, area: Rect, active_panel: ActivePanel) {
     let (left_style, right_style) = match active_panel {
         ActivePanel::Left => (
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(COLOR_HEADER)
+                .add_modifier(Modifier::BOLD),
             Style::default().fg(COLOR_DIM),
         ),
         ActivePanel::Right => (
             Style::default().fg(COLOR_DIM),
-            Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(COLOR_HEADER)
+                .add_modifier(Modifier::BOLD),
         ),
     };
 
     let indicator = Line::from(vec![
         Span::styled(" [", Style::default().fg(COLOR_DIM)),
-        Span::styled("◀ ", if active_panel == ActivePanel::Left {
-            Style::default().fg(COLOR_ACCENT)
-        } else {
-            Style::default().fg(COLOR_DIM)
-        }),
+        Span::styled(
+            "◀ ",
+            if active_panel == ActivePanel::Left {
+                Style::default().fg(COLOR_ACCENT)
+            } else {
+                Style::default().fg(COLOR_DIM)
+            },
+        ),
         Span::styled("Tasks", left_style),
         Span::styled(" | ", Style::default().fg(COLOR_DIM)),
         Span::styled("Threads", right_style),
-        Span::styled(" ▶", if active_panel == ActivePanel::Right {
-            Style::default().fg(COLOR_ACCENT)
-        } else {
-            Style::default().fg(COLOR_DIM)
-        }),
+        Span::styled(
+            " ▶",
+            if active_panel == ActivePanel::Right {
+                Style::default().fg(COLOR_ACCENT)
+            } else {
+                Style::default().fg(COLOR_DIM)
+            },
+        ),
         Span::styled("] ", Style::default().fg(COLOR_DIM)),
-        Span::styled("(←/→ switch)", Style::default().fg(COLOR_DIM).add_modifier(Modifier::ITALIC)),
+        Span::styled(
+            "(←/→ switch)",
+            Style::default()
+                .fg(COLOR_DIM)
+                .add_modifier(Modifier::ITALIC),
+        ),
     ]);
 
     let paragraph = Paragraph::new(indicator);

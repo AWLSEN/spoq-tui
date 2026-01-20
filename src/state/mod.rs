@@ -17,7 +17,10 @@ pub use session::{
     AskUserQuestionData, AskUserQuestionState, PermissionRequest, Question, QuestionOption,
     SessionState,
 };
-pub use tools::{SubagentDisplayStatus, SubagentState, SubagentTracker, ToolCallState, ToolCallStatus, ToolDisplayStatus, ToolTracker};
+pub use tools::{
+    SubagentDisplayStatus, SubagentState, SubagentTracker, ToolCallState, ToolCallStatus,
+    ToolDisplayStatus, ToolTracker,
+};
 
 /// Represents a conversation thread
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +91,10 @@ impl Todo {
     pub fn from_sse(item: &crate::events::TodoItem) -> Self {
         Self {
             content: item.content.clone(),
-            active_form: item.active_form.clone().unwrap_or_else(|| item.content.clone()),
+            active_form: item
+                .active_form
+                .clone()
+                .unwrap_or_else(|| item.content.clone()),
             status: Self::parse_status(&item.status),
         }
     }

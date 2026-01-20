@@ -20,8 +20,9 @@ pub use messages::AppMessage;
 pub use types::{ActivePanel, Focus, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 
-use crate::auth::{central_api::get_jwt_expires_in, CentralApiClient, Credentials, CredentialsManager};
-use chrono::Utc;
+use crate::auth::{
+    central_api::get_jwt_expires_in, CentralApiClient, Credentials, CredentialsManager,
+};
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
 use crate::debug::DebugEventSender;
@@ -33,6 +34,7 @@ use crate::state::{
 };
 use crate::websocket::WsConnectionState;
 use crate::widgets::textarea_input::TextAreaInput;
+use chrono::Utc;
 use color_eyre::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -111,7 +113,9 @@ impl CachedHeights {
     pub fn truncate(&mut self, new_len: usize) {
         if new_len < self.heights.len() {
             self.heights.truncate(new_len);
-            self.total_lines = self.heights.last()
+            self.total_lines = self
+                .heights
+                .last()
                 .map(|h| h.cumulative_offset + h.visual_lines)
                 .unwrap_or(0);
         }
@@ -418,8 +422,7 @@ impl App {
                     .expires_in
                     .or_else(|| get_jwt_expires_in(&response.access_token))
                     .unwrap_or(900);
-                self.credentials.expires_at =
-                    Some(Utc::now().timestamp() + i64::from(expires_in));
+                self.credentials.expires_at = Some(Utc::now().timestamp() + i64::from(expires_in));
 
                 // Save to disk
                 if let Some(ref manager) = self.credentials_manager {
@@ -524,8 +527,9 @@ impl App {
         // Recreate clients with new token
         // ConductorClient needs the VPS URL
         if let Some(ref vps_url) = self.credentials.vps_url {
-            self.client =
-                Arc::new(ConductorClient::with_url(vps_url).with_auth(&token_response.access_token));
+            self.client = Arc::new(
+                ConductorClient::with_url(vps_url).with_auth(&token_response.access_token),
+            );
         }
 
         // Recreate CentralApiClient with new token
@@ -590,11 +594,7 @@ impl App {
         };
         emit_debug(
             &self.debug_tx,
-            DebugEventKind::StateChange(StateChangeData::new(
-                st,
-                description,
-                current,
-            )),
+            DebugEventKind::StateChange(StateChangeData::new(st, description, current)),
             None,
         );
     }
@@ -883,10 +883,16 @@ mod tests {
             created_at: chrono::Utc::now(),
             working_directory: None,
         });
-        app.cache
-            .add_message_simple(&existing_id, MessageRole::User, "Previous question".to_string());
-        app.cache
-            .add_message_simple(&existing_id, MessageRole::Assistant, "Previous answer".to_string());
+        app.cache.add_message_simple(
+            &existing_id,
+            MessageRole::User,
+            "Previous question".to_string(),
+        );
+        app.cache.add_message_simple(
+            &existing_id,
+            MessageRole::Assistant,
+            "Previous answer".to_string(),
+        );
 
         // Set as active thread
         app.active_thread_id = Some(existing_id.clone());
@@ -981,7 +987,8 @@ mod tests {
         assert_eq!(app.active_thread_id, Some("real-backend-id".to_string()));
 
         // Finalize the first response
-        app.cache.append_to_message("real-backend-id", "First response");
+        app.cache
+            .append_to_message("real-backend-id", "First response");
         app.cache.finalize_message("real-backend-id", 1);
 
         // Now second submit should work
@@ -1113,7 +1120,8 @@ mod tests {
             .find(|m| m.role == MessageRole::Assistant)
             .unwrap();
         assert!(
-            assistant_msg.content.contains("Hello") || assistant_msg.partial_content.contains("Hello")
+            assistant_msg.content.contains("Hello")
+                || assistant_msg.partial_content.contains("Hello")
         );
     }
 
@@ -1381,7 +1389,9 @@ mod tests {
         let mut app = App::default();
 
         // Create a thread and set it as active
-        let thread_id = app.cache.create_streaming_thread("Active thread".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Active thread".to_string());
         app.active_thread_id = Some(thread_id.clone());
 
         // Set unified scroll to a non-zero value
@@ -1428,7 +1438,9 @@ mod tests {
         let mut app = App::default();
 
         // Create a thread and set it as active
-        let thread_id = app.cache.create_streaming_thread("Active thread".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Active thread".to_string());
         app.active_thread_id = Some(thread_id.clone());
 
         // Set unified scroll to a non-zero value
@@ -1461,10 +1473,7 @@ mod tests {
         );
         assert_eq!(PermissionMode::Default, PermissionMode::Default);
         assert_ne!(PermissionMode::Plan, PermissionMode::Default);
-        assert_ne!(
-            PermissionMode::BypassPermissions,
-            PermissionMode::Plan
-        );
+        assert_ne!(PermissionMode::BypassPermissions, PermissionMode::Plan);
     }
 
     #[test]
@@ -1732,8 +1741,11 @@ mod tests {
         app.cache.upsert_thread(thread);
         app.cache
             .add_message_simple("prog-thread-456", MessageRole::User, "Prev".to_string());
-        app.cache
-            .add_message_simple("prog-thread-456", MessageRole::Assistant, "Resp".to_string());
+        app.cache.add_message_simple(
+            "prog-thread-456",
+            MessageRole::Assistant,
+            "Resp".to_string(),
+        );
         app.active_thread_id = Some("prog-thread-456".to_string());
         app.screen = Screen::Conversation;
 
@@ -1777,9 +1789,9 @@ mod tests {
         let mut app = App::default();
 
         // Create a programming pending thread via cache directly
-        let pending_id = app
-            .cache
-            .create_pending_thread("Code task".to_string(), ThreadType::Programming, None);
+        let pending_id =
+            app.cache
+                .create_pending_thread("Code task".to_string(), ThreadType::Programming, None);
 
         // Thread should have programming type
         let thread = app.cache.get_thread(&pending_id).unwrap();
@@ -2050,9 +2062,11 @@ mod tests {
         let mut app = App::default();
 
         // Create a programming thread
-        let pending_id = app
-            .cache
-            .create_pending_thread("Code question".to_string(), ThreadType::Programming, None);
+        let pending_id = app.cache.create_pending_thread(
+            "Code question".to_string(),
+            ThreadType::Programming,
+            None,
+        );
 
         // Verify initial type
         let thread = app.cache.get_thread(&pending_id).unwrap();
@@ -2170,7 +2184,9 @@ mod tests {
         let mut app = App::default();
 
         // Create a streaming thread
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
         app.active_thread_id = Some(thread_id.clone());
 
         // Should detect streaming
@@ -2182,7 +2198,9 @@ mod tests {
         let mut app = App::default();
 
         // Create a streaming thread and finalize it
-        let thread_id = app.cache.create_streaming_thread("Test message".to_string());
+        let thread_id = app
+            .cache
+            .create_streaming_thread("Test message".to_string());
         app.cache.append_to_message(&thread_id, "Response");
         app.cache.finalize_message(&thread_id, 1);
         app.active_thread_id = Some(thread_id.clone());
@@ -2495,15 +2513,14 @@ mod tests {
 
         // Set up a pending permission
         use crate::state::PermissionRequest;
-        app.session_state
-            .set_pending_permission(PermissionRequest {
-                permission_id: "perm-123".to_string(),
-                tool_name: "Bash".to_string(),
-                description: "Run npm install".to_string(),
-                context: None,
-                tool_input: None,
-                received_at: std::time::Instant::now(),
-            });
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-123".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run npm install".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: std::time::Instant::now(),
+        });
         assert!(app.session_state.has_pending_permission());
 
         // Press 'y' to approve
@@ -2522,15 +2539,14 @@ mod tests {
 
         // Set up a pending permission
         use crate::state::PermissionRequest;
-        app.session_state
-            .set_pending_permission(PermissionRequest {
-                permission_id: "perm-456".to_string(),
-                tool_name: "Write".to_string(),
-                description: "Write file".to_string(),
-                context: Some("/home/user/test.rs".to_string()),
-                tool_input: None,
-                received_at: std::time::Instant::now(),
-            });
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-456".to_string(),
+            tool_name: "Write".to_string(),
+            description: "Write file".to_string(),
+            context: Some("/home/user/test.rs".to_string()),
+            tool_input: None,
+            received_at: std::time::Instant::now(),
+        });
         assert!(app.session_state.has_pending_permission());
 
         // Press 'a' to allow always
@@ -2549,15 +2565,14 @@ mod tests {
 
         // Set up a pending permission
         use crate::state::PermissionRequest;
-        app.session_state
-            .set_pending_permission(PermissionRequest {
-                permission_id: "perm-789".to_string(),
-                tool_name: "Edit".to_string(),
-                description: "Edit file".to_string(),
-                context: None,
-                tool_input: None,
-                received_at: std::time::Instant::now(),
-            });
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-789".to_string(),
+            tool_name: "Edit".to_string(),
+            description: "Edit file".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: std::time::Instant::now(),
+        });
         assert!(app.session_state.has_pending_permission());
 
         // Press 'n' to deny
@@ -2575,15 +2590,14 @@ mod tests {
         let mut app = App::default();
 
         use crate::state::PermissionRequest;
-        app.session_state
-            .set_pending_permission(PermissionRequest {
-                permission_id: "perm-abc".to_string(),
-                tool_name: "Bash".to_string(),
-                description: "Run command".to_string(),
-                context: None,
-                tool_input: None,
-                received_at: std::time::Instant::now(),
-            });
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-abc".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: std::time::Instant::now(),
+        });
 
         // Uppercase 'Y' should also work
         let handled = app.handle_permission_key('Y');
@@ -2596,15 +2610,14 @@ mod tests {
         let mut app = App::default();
 
         use crate::state::PermissionRequest;
-        app.session_state
-            .set_pending_permission(PermissionRequest {
-                permission_id: "perm-def".to_string(),
-                tool_name: "Bash".to_string(),
-                description: "Run command".to_string(),
-                context: None,
-                tool_input: None,
-                received_at: std::time::Instant::now(),
-            });
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-def".to_string(),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: std::time::Instant::now(),
+        });
 
         // Invalid keys should return false and NOT clear permission
         assert!(!app.handle_permission_key('x'));
@@ -2667,15 +2680,14 @@ mod tests {
 
         // First request: user presses 'a' to allow always
         use crate::state::PermissionRequest;
-        app.session_state
-            .set_pending_permission(PermissionRequest {
-                permission_id: "perm-first".to_string(),
-                tool_name: "Read".to_string(),
-                description: "Read file".to_string(),
-                context: None,
-                tool_input: None,
-                received_at: std::time::Instant::now(),
-            });
+        app.session_state.set_pending_permission(PermissionRequest {
+            permission_id: "perm-first".to_string(),
+            tool_name: "Read".to_string(),
+            description: "Read file".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: std::time::Instant::now(),
+        });
         app.handle_permission_key('a');
 
         // Verify Read is now allowed
@@ -2829,10 +2841,7 @@ mod tests {
         // Verify title unchanged, description updated
         let thread = app.cache.get_thread(&thread_id).unwrap();
         assert_eq!(thread.title, "Original Title");
-        assert_eq!(
-            thread.description,
-            Some("Just a description".to_string())
-        );
+        assert_eq!(thread.description, Some("Just a description".to_string()));
     }
 
     #[test]
@@ -2923,7 +2932,10 @@ mod tests {
             .unwrap();
 
         let subagent = assistant_msg.get_subagent_event("task-456").unwrap();
-        assert_eq!(subagent.progress_message, Some("Scanning test files".to_string()));
+        assert_eq!(
+            subagent.progress_message,
+            Some("Scanning test files".to_string())
+        );
     }
 
     #[test]
@@ -3090,7 +3102,10 @@ mod tests {
             .unwrap();
         let subagent = assistant_msg.get_subagent_event("lifecycle-task").unwrap();
         assert_eq!(subagent.status, SubagentEventStatus::Complete);
-        assert_eq!(subagent.summary, Some("Task completed successfully".to_string()));
+        assert_eq!(
+            subagent.summary,
+            Some("Task completed successfully".to_string())
+        );
         assert_eq!(subagent.tool_call_count, 5);
     }
 
@@ -3324,7 +3339,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_input_preserves_permission_mode_in_new_thread() {
-        use crate::models::{ThreadType, PermissionMode};
+        use crate::models::{PermissionMode, ThreadType};
         let mut app = App {
             permission_mode: PermissionMode::Plan,
             screen: Screen::CommandDeck, // Always starts at CommandDeck since auth happens before TUI
@@ -3357,7 +3372,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_input_preserves_permission_mode_in_continuing_thread() {
-        use crate::models::{ThreadType, PermissionMode};
+        use crate::models::{PermissionMode, ThreadType};
         let mut app = App {
             permission_mode: PermissionMode::BypassPermissions,
             ..Default::default()
@@ -3384,8 +3399,10 @@ mod tests {
         app.screen = Screen::Conversation;
 
         // Finalize any streaming messages
-        app.cache.add_message_simple(&existing_id, MessageRole::User, "Previous".to_string());
-        app.cache.add_message_simple(&existing_id, MessageRole::Assistant, "Response".to_string());
+        app.cache
+            .add_message_simple(&existing_id, MessageRole::User, "Previous".to_string());
+        app.cache
+            .add_message_simple(&existing_id, MessageRole::Assistant, "Response".to_string());
 
         // Submit follow-up message
         app.textarea.insert_char('F');
@@ -3403,7 +3420,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_submit_input_uses_provided_thread_type() {
-        use crate::models::{ThreadType, PermissionMode};
+        use crate::models::{PermissionMode, ThreadType};
         let mut app = App {
             permission_mode: PermissionMode::Default,
             screen: Screen::CommandDeck, // Always starts at CommandDeck since auth happens before TUI
@@ -3629,7 +3646,10 @@ mod tests {
         // Should fail because there's no refresh token
         assert!(result.is_err());
         match result.unwrap_err() {
-            CentralApiError::ServerError { status: 401, message } => {
+            CentralApiError::ServerError {
+                status: 401,
+                message,
+            } => {
                 assert!(message.contains("No refresh token"));
             }
             _ => panic!("Expected ServerError about missing refresh token"),
@@ -3647,7 +3667,10 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            CentralApiError::ServerError { status: 401, message } => {
+            CentralApiError::ServerError {
+                status: 401,
+                message,
+            } => {
                 assert!(message.contains("No refresh token"));
             }
             _ => panic!("Expected ServerError about missing refresh token"),

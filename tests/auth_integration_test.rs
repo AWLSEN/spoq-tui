@@ -111,12 +111,18 @@ fn test_token_expiration_logic() {
 
     // Token should be valid (not within buffer of expiration)
     let is_expired = expires_at < now + buffer_seconds;
-    assert!(!is_expired, "Token expiring in 1 hour should not be expired");
+    assert!(
+        !is_expired,
+        "Token expiring in 1 hour should not be expired"
+    );
 
     // Token expires in 4 minutes (within buffer)
     let expires_soon = chrono::Utc::now().timestamp() + 240;
     let is_expiring_soon = expires_soon < now + buffer_seconds;
-    assert!(is_expiring_soon, "Token expiring in 4 minutes should be within buffer");
+    assert!(
+        is_expiring_soon,
+        "Token expiring in 4 minutes should be within buffer"
+    );
 }
 
 /// Test credentials default values

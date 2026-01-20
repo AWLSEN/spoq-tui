@@ -28,14 +28,9 @@ pub enum AppMessage {
         messages: Vec<crate::models::Message>,
     },
     /// Error loading messages for a thread
-    MessagesLoadError {
-        thread_id: String,
-        error: String,
-    },
+    MessagesLoadError { thread_id: String, error: String },
     /// Todos updated from the assistant
-    TodosUpdated {
-        todos: Vec<Todo>,
-    },
+    TodosUpdated { todos: Vec<Todo> },
     /// Permission request from the assistant - needs user approval
     PermissionRequested {
         permission_id: String,
@@ -71,9 +66,7 @@ pub enum AppMessage {
         chunk: String,
     },
     /// Skills injected into the session
-    SkillsInjected {
-        skills: Vec<String>,
-    },
+    SkillsInjected { skills: Vec<String> },
     /// OAuth consent required
     OAuthConsentRequired {
         provider: String,
@@ -98,10 +91,7 @@ pub enum AppMessage {
         subagent_type: String,
     },
     /// Subagent progress update
-    SubagentProgress {
-        task_id: String,
-        message: String,
-    },
+    SubagentProgress { task_id: String, message: String },
     /// Subagent task completed
     SubagentCompleted {
         task_id: String,

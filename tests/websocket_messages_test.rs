@@ -72,7 +72,10 @@ fn test_serialize_command_response_without_message() {
     assert_eq!(parsed["result"]["data"]["allowed"], false);
     // When None, the field should be omitted or null
     assert!(
-        !parsed["result"]["data"].as_object().unwrap().contains_key("message")
+        !parsed["result"]["data"]
+            .as_object()
+            .unwrap()
+            .contains_key("message")
             || parsed["result"]["data"]["message"].is_null()
     );
 }

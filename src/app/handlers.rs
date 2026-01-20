@@ -1,8 +1,6 @@
 //! Message handling for the App.
 
-use crate::debug::{
-    DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType,
-};
+use crate::debug::{DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType};
 
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
 
@@ -127,7 +125,10 @@ impl App {
                     self.reset_scroll();
                 }
             }
-            AppMessage::StreamError { thread_id: _, error } => {
+            AppMessage::StreamError {
+                thread_id: _,
+                error,
+            } => {
                 // Reset stream statistics on error
                 self.stream_start_time = None;
                 self.last_event_time = None;
@@ -182,7 +183,10 @@ impl App {
                     self.active_thread_id = Some(real_id);
                 }
             }
-            AppMessage::MessagesLoaded { thread_id, messages } => {
+            AppMessage::MessagesLoaded {
+                thread_id,
+                messages,
+            } => {
                 let count = messages.len();
                 log_thread_update(&format!(
                     "HANDLER: MessagesLoaded received for {}, {} messages",
@@ -352,7 +356,8 @@ impl App {
                 self.cache
                     .set_tool_result(&thread_id, &tool_call_id, &result, !success);
                 if success {
-                    self.cache.complete_tool_in_message(&thread_id, &tool_call_id);
+                    self.cache
+                        .complete_tool_in_message(&thread_id, &tool_call_id);
                 } else {
                     self.cache.fail_tool_in_message(&thread_id, &tool_call_id);
                 }
@@ -438,9 +443,11 @@ impl App {
                     "Updating cache: id={}, title={:?}, description={:?}",
                     thread_id, title, description
                 ));
-                let updated = self
-                    .cache
-                    .update_thread_metadata(&thread_id, title.clone(), description.clone());
+                let updated = self.cache.update_thread_metadata(
+                    &thread_id,
+                    title.clone(),
+                    description.clone(),
+                );
                 log_thread_update(&format!(
                     "Cache update result: id={}, success={}",
                     thread_id, updated

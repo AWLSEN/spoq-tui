@@ -27,11 +27,7 @@ impl RawSseEventData {
     }
 
     /// Create a new raw SSE event with sequence number.
-    pub fn with_seq(
-        event_type: impl Into<String>,
-        payload: impl Into<String>,
-        seq: u64,
-    ) -> Self {
+    pub fn with_seq(event_type: impl Into<String>, payload: impl Into<String>, seq: u64) -> Self {
         Self {
             event_type: event_type.into(),
             payload: payload.into(),

@@ -136,7 +136,11 @@ mod mobile_size {
     fn test_mobile_text_truncation() {
         let layout = ctx();
         assert_eq!(layout.max_title_length(), 20, "Mobile title length limit");
-        assert_eq!(layout.max_preview_length(), 40, "Mobile preview length limit");
+        assert_eq!(
+            layout.max_preview_length(),
+            40,
+            "Mobile preview length limit"
+        );
     }
 
     #[test]
@@ -398,8 +402,16 @@ mod wide_size {
     fn test_wide_text_truncation() {
         let layout = ctx();
         // 120 columns is Large category, so title limit is 80
-        assert_eq!(layout.max_title_length(), 80, "Wide (Large) title length limit");
-        assert_eq!(layout.max_preview_length(), 150, "Wide (Large) preview length limit");
+        assert_eq!(
+            layout.max_title_length(),
+            80,
+            "Wide (Large) title length limit"
+        );
+        assert_eq!(
+            layout.max_preview_length(),
+            150,
+            "Wide (Large) preview length limit"
+        );
     }
 
     #[test]
@@ -463,11 +475,7 @@ mod ultra_wide_size {
         // Wide: 35% of 200 = 70, capped at 60
         assert_eq!(left, 60, "Left panel should be capped at 60");
         assert_eq!(right, 140, "Right panel should be remainder");
-        assert_eq!(
-            left + right,
-            ULTRA_WIDE_WIDTH,
-            "Widths should sum to total"
-        );
+        assert_eq!(left + right, ULTRA_WIDE_WIDTH, "Widths should sum to total");
     }
 
     #[test]
@@ -487,11 +495,7 @@ mod ultra_wide_size {
             "30% of 200 exceeds max"
         );
         // 5% of 200 = 10, clamped to min of 20
-        assert_eq!(
-            layout.bounded_width(5, 20, 50),
-            20,
-            "5% of 200 below min"
-        );
+        assert_eq!(layout.bounded_width(5, 20, 50), 20, "5% of 200 below min");
     }
 
     #[test]
@@ -838,18 +842,9 @@ mod minimum_size_detection {
 
     #[test]
     fn test_terminal_too_small_both() {
-        assert!(
-            is_terminal_too_small(29, 9),
-            "Both dimensions too small"
-        );
-        assert!(
-            is_terminal_too_small(29, 24),
-            "Width too small"
-        );
-        assert!(
-            is_terminal_too_small(80, 9),
-            "Height too small"
-        );
+        assert!(is_terminal_too_small(29, 9), "Both dimensions too small");
+        assert!(is_terminal_too_small(29, 24), "Width too small");
+        assert!(is_terminal_too_small(80, 9), "Height too small");
         assert!(
             !is_terminal_too_small(30, 10),
             "Both at minimum are acceptable"
@@ -1111,7 +1106,7 @@ mod edge_cases {
         let layout = LayoutContext::new(80, 24);
         // Large indent should saturate
         let wrap = layout.text_wrap_width(50); // 100 spaces indent
-        // 80 - 4 - 100 = -24, saturates to 0
+                                               // 80 - 4 - 100 = -24, saturates to 0
         assert_eq!(wrap, 0);
     }
 }
@@ -1238,11 +1233,7 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect()
+        buffer.content().iter().map(|cell| cell.symbol()).collect()
     }
 
     // =========================================================================
@@ -1265,11 +1256,11 @@ mod ui_rendering_integration {
 
         // Verify some content was rendered
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "UI should render content at mobile size (40x20)");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "UI should render content at mobile size (40x20)"
+        );
     }
 
     #[test]
@@ -1301,11 +1292,11 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "UI should render content at standard size (80x24)");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "UI should render content at standard size (80x24)"
+        );
     }
 
     #[test]
@@ -1314,8 +1305,10 @@ mod ui_rendering_integration {
 
         // Should show connection status
         assert!(
-            buffer_str.contains("○") || buffer_str.contains("●") ||
-            buffer_str.contains("Disconnected") || buffer_str.contains("Connected"),
+            buffer_str.contains("○")
+                || buffer_str.contains("●")
+                || buffer_str.contains("Disconnected")
+                || buffer_str.contains("Connected"),
             "Standard size should show connection status"
         );
     }
@@ -1338,11 +1331,11 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "UI should render content at wide size (120x40)");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "UI should render content at wide size (120x40)"
+        );
     }
 
     #[test]
@@ -1374,11 +1367,11 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "UI should render content at ultra-wide size (200x50)");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "UI should render content at ultra-wide size (200x50)"
+        );
     }
 
     #[test]
@@ -1393,7 +1386,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "Ultra-wide terminal should render without errors");
+        assert!(
+            result.is_ok(),
+            "Ultra-wide terminal should render without errors"
+        );
     }
 
     // =========================================================================
@@ -1414,11 +1410,11 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "UI should render at minimum boundary size (30x10)");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "UI should render at minimum boundary size (30x10)"
+        );
     }
 
     // =========================================================================
@@ -1439,11 +1435,7 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             buffer_str.contains("Too Small") || buffer_str.contains("resize"),
@@ -1465,11 +1457,7 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
             buffer_str.contains("Too Small") || buffer_str.contains("resize"),
@@ -1491,14 +1479,12 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         assert!(
-            buffer_str.contains("Too Small") || buffer_str.contains("resize") || buffer_str.contains("Minimum"),
+            buffer_str.contains("Too Small")
+                || buffer_str.contains("resize")
+                || buffer_str.contains("Minimum"),
             "Should show 'too small' message when both dimensions below minimum"
         );
     }
@@ -1522,11 +1508,11 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "Conversation screen should render at mobile size");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "Conversation screen should render at mobile size"
+        );
     }
 
     #[test]
@@ -1544,11 +1530,7 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // Should show the conversation view elements
         assert!(
@@ -1572,11 +1554,11 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "Conversation screen should render at wide size");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "Conversation screen should render at wide size"
+        );
     }
 
     #[test]
@@ -1594,11 +1576,11 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let has_content = buffer
-            .content()
-            .iter()
-            .any(|cell| cell.symbol() != " ");
-        assert!(has_content, "Conversation screen should render at ultra-wide size");
+        let has_content = buffer.content().iter().any(|cell| cell.symbol() != " ");
+        assert!(
+            has_content,
+            "Conversation screen should render at ultra-wide size"
+        );
     }
 
     // =========================================================================
@@ -1629,7 +1611,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should adapt to resize from standard to mobile");
+        assert!(
+            result.is_ok(),
+            "UI should adapt to resize from standard to mobile"
+        );
     }
 
     #[test]
@@ -1655,7 +1640,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should adapt to resize from mobile to wide");
+        assert!(
+            result.is_ok(),
+            "UI should adapt to resize from mobile to wide"
+        );
     }
 
     #[test]
@@ -1681,7 +1669,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should adapt to resize from wide to minimum");
+        assert!(
+            result.is_ok(),
+            "UI should adapt to resize from wide to minimum"
+        );
     }
 
     // =========================================================================
@@ -1700,7 +1691,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should render at 59 columns (stacked mode)");
+        assert!(
+            result.is_ok(),
+            "UI should render at 59 columns (stacked mode)"
+        );
     }
 
     #[test]
@@ -1728,7 +1722,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should render at 79 columns (stacked mode)");
+        assert!(
+            result.is_ok(),
+            "UI should render at 79 columns (stacked mode)"
+        );
     }
 
     #[test]
@@ -1742,7 +1739,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should render at 80 columns (side-by-side mode)");
+        assert!(
+            result.is_ok(),
+            "UI should render at 80 columns (side-by-side mode)"
+        );
     }
 
     #[test]
@@ -1792,11 +1792,7 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // At mobile size, title may be truncated but should still be visible
         assert!(
@@ -1834,11 +1830,7 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // At standard size, full title should be visible
         assert!(
@@ -1876,11 +1868,7 @@ mod ui_rendering_integration {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
         // At wide size, more of the title should be visible
         assert!(
@@ -1932,7 +1920,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should render at exactly both minimum dimensions");
+        assert!(
+            result.is_ok(),
+            "UI should render at exactly both minimum dimensions"
+        );
     }
 
     #[test]
@@ -1946,7 +1937,10 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should render at very wide but minimum height");
+        assert!(
+            result.is_ok(),
+            "UI should render at very wide but minimum height"
+        );
     }
 
     #[test]
@@ -1960,6 +1954,9 @@ mod ui_rendering_integration {
             render(f, &mut app);
         });
 
-        assert!(result.is_ok(), "UI should render at minimum width but very tall");
+        assert!(
+            result.is_ok(),
+            "UI should render at minimum width but very tall"
+        );
     }
 }

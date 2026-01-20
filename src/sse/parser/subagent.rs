@@ -3,7 +3,10 @@
 use crate::sse::events::{SseEvent, SseParseError};
 
 /// Parse subagent_started event
-pub(super) fn parse_subagent_started_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_subagent_started_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -29,7 +32,10 @@ pub(super) fn parse_subagent_started_event(event_type: &str, data: &str) -> Resu
 }
 
 /// Parse subagent_progress event
-pub(super) fn parse_subagent_progress_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_subagent_progress_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -50,7 +56,10 @@ pub(super) fn parse_subagent_progress_event(event_type: &str, data: &str) -> Res
 }
 
 /// Parse subagent_completed event
-pub(super) fn parse_subagent_completed_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_subagent_completed_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -76,8 +85,8 @@ pub(super) fn parse_subagent_completed_event(event_type: &str, data: &str) -> Re
 
 #[cfg(test)]
 mod tests {
-    use crate::sse::parser::{parse_sse_event, SseParser};
     use crate::sse::events::SseEvent;
+    use crate::sse::parser::{parse_sse_event, SseParser};
 
     #[test]
     fn test_parse_subagent_started_event() {

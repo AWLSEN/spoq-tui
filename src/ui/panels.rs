@@ -68,7 +68,13 @@ pub fn render_left_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &A
     // Create layout context from panel area for responsive sizing
     let ctx = LayoutContext::from_rect(inner);
 
-    render_notifications(frame, left_chunks[0], app, app.focus == Focus::Notifications, &ctx);
+    render_notifications(
+        frame,
+        left_chunks[0],
+        app,
+        app.focus == Focus::Notifications,
+        &ctx,
+    );
     render_tasks(frame, left_chunks[1], app, app.focus == Focus::Tasks, &ctx);
 }
 
@@ -81,9 +87,13 @@ pub fn render_notifications(
 ) {
     // Header styling changes based on focus
     let header_style = if focused {
-        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(COLOR_HEADER)
+            .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(COLOR_ACCENT)
+            .add_modifier(Modifier::BOLD)
     };
 
     // Calculate available width for content (area width minus padding)
@@ -91,7 +101,11 @@ pub fn render_notifications(
 
     let mut lines = vec![
         Line::from(Span::styled(
-            if focused { "◈ NOTIFICATIONS ◄" } else { "◈ NOTIFICATIONS" },
+            if focused {
+                "◈ NOTIFICATIONS ◄"
+            } else {
+                "◈ NOTIFICATIONS"
+            },
             header_style,
         )),
         generate_separator(area.width.saturating_sub(1), focused),
@@ -120,7 +134,9 @@ pub fn render_notifications(
     // Calculate max visible items based on available height
     let max_items = area.height.saturating_sub(3) as usize;
     // Use layout context to determine appropriate truncation
-    let max_message_len = ctx.max_preview_length().min(content_width.saturating_sub(12)); // 12 = marker(2) + time(7) + brackets(2) + space(1)
+    let max_message_len = ctx
+        .max_preview_length()
+        .min(content_width.saturating_sub(12)); // 12 = marker(2) + time(7) + brackets(2) + space(1)
 
     for (i, notif) in mock_notifications.iter().take(max_items).enumerate() {
         let time = notif.timestamp.format("%H:%M").to_string();
@@ -141,7 +157,9 @@ pub fn render_notifications(
             Span::styled(
                 display_message,
                 if is_selected {
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 },
@@ -173,21 +191,31 @@ pub fn render_tasks(
     let content_width = inner.width as usize;
 
     let header_style = if focused {
-        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(COLOR_HEADER)
+            .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(COLOR_ACCENT)
+            .add_modifier(Modifier::BOLD)
     };
 
     let mut lines = vec![
         Line::from(Span::styled(
-            if focused { "◈ TODOS ◄" } else { "◈ TODOS" },
+            if focused {
+                "◈ TODOS ◄"
+            } else {
+                "◈ TODOS"
+            },
             header_style,
         )),
         generate_separator(inner.width.saturating_sub(1), focused),
     ];
 
     // Use layout context to determine appropriate truncation for todo items
-    let max_todo_len = ctx.max_preview_length().min(content_width.saturating_sub(5)); // 5 = icon(4) + space(1)
+    let max_todo_len = ctx
+        .max_preview_length()
+        .min(content_width.saturating_sub(5)); // 5 = icon(4) + space(1)
 
     // Render todos from app state
     if app.todos.is_empty() {
@@ -227,16 +255,24 @@ pub fn render_tasks(
     frame.render_widget(todos_widget, inner);
 }
 
-
 // ============================================================================
 // Right Panel: Threads
 // ============================================================================
 
-pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &App, focused: bool) {
+pub fn render_right_panel(
+    frame: &mut Frame,
+    area: ratatui::layout::Rect,
+    app: &App,
+    focused: bool,
+) {
     let border_color = if focused { COLOR_HEADER } else { COLOR_BORDER };
     let right_block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if focused { BorderType::Thick } else { BorderType::Plain })
+        .border_type(if focused {
+            BorderType::Thick
+        } else {
+            BorderType::Plain
+        })
         .border_style(Style::default().fg(border_color));
     frame.render_widget(right_block, area);
 
@@ -265,19 +301,25 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     };
 
     // Helper to create padding span (avoids repeated string cloning)
-    let make_padding = || -> Span<'static> {
-        Span::raw(" ".repeat(left_padding as usize))
-    };
+    let make_padding = || -> Span<'static> { Span::raw(" ".repeat(left_padding as usize)) };
 
     let header_style = if focused {
-        Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(COLOR_HEADER)
+            .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(COLOR_ACCENT)
+            .add_modifier(Modifier::BOLD)
     };
 
     let mut lines = vec![
         Line::from(Span::styled(
-            if focused { "◈ THREADS ◄" } else { "◈ THREADS" },
+            if focused {
+                "◈ THREADS ◄"
+            } else {
+                "◈ THREADS"
+            },
             header_style,
         )),
         Line::from(""),
@@ -290,17 +332,11 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     if cached_threads.is_empty() {
         lines.push(Line::from(vec![
             make_padding(),
-            Span::styled(
-                "No conversations yet",
-                Style::default().fg(COLOR_DIM),
-            ),
+            Span::styled("No conversations yet", Style::default().fg(COLOR_DIM)),
         ]));
         lines.push(Line::from(vec![
             make_padding(),
-            Span::styled(
-                "Type a message to start",
-                Style::default().fg(COLOR_DIM),
-            ),
+            Span::styled("Type a message to start", Style::default().fg(COLOR_DIM)),
         ]));
     }
 
@@ -310,9 +346,17 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
     let max_visible_threads = (inner.height.saturating_sub(4) / lines_per_card as u16) as usize;
 
     // Iterate directly over cached_threads (no intermediate Vec)
-    for (i, thread) in cached_threads.iter().take(max_visible_threads.max(1)).enumerate() {
+    for (i, thread) in cached_threads
+        .iter()
+        .take(max_visible_threads.max(1))
+        .enumerate()
+    {
         let is_selected = focused && i == app.threads_index;
-        let card_border_color = if is_selected { COLOR_HEADER } else { COLOR_BORDER };
+        let card_border_color = if is_selected {
+            COLOR_HEADER
+        } else {
+            COLOR_BORDER
+        };
 
         // Thread card top border (centered) - format directly into Span
         lines.push(Line::from(vec![
@@ -341,7 +385,8 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         // Calculate available width for title using layout context
         // Use responsive max_title_length but constrain to actual available space
         let base_max_title = ctx.max_title_length();
-        let available_for_title = content_width.saturating_sub(10 + if is_streaming { 3 } else { 0 }); // 10 = marker(2) + "Thread: "(8)
+        let available_for_title =
+            content_width.saturating_sub(10 + if is_streaming { 3 } else { 0 }); // 10 = marker(2) + "Thread: "(8)
         let max_title_len = base_max_title.min(available_for_title);
 
         let display_title = truncate_to_width(&thread.title, max_title_len);
@@ -350,24 +395,36 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         let mut title_spans = vec![
             make_padding(),
             Span::styled("│ ", Style::default().fg(card_border_color)),
-            Span::styled(title_marker, Style::default().fg(if is_selected { COLOR_HEADER } else { COLOR_ACCENT })),
+            Span::styled(
+                title_marker,
+                Style::default().fg(if is_selected {
+                    COLOR_HEADER
+                } else {
+                    COLOR_ACCENT
+                }),
+            ),
             Span::styled(
                 format!("Thread: {}", display_title),
                 Style::default()
-                    .fg(if is_selected { Color::White } else { COLOR_HEADER })
+                    .fg(if is_selected {
+                        Color::White
+                    } else {
+                        COLOR_HEADER
+                    })
                     .add_modifier(Modifier::BOLD),
             ),
         ];
 
         if is_streaming {
-            title_spans.push(Span::styled(
-                dots,
-                Style::default().fg(COLOR_ACTIVE),
-            ));
+            title_spans.push(Span::styled(dots, Style::default().fg(COLOR_ACTIVE)));
         }
 
         title_spans.push(Span::styled(
-            format!("{:>width$}│", "", width = content_width.saturating_sub(10 + display_title_chars + dots.len())),
+            format!(
+                "{:>width$}│",
+                "",
+                width = content_width.saturating_sub(10 + display_title_chars + dots.len())
+            ),
             Style::default().fg(card_border_color),
         ));
 
@@ -377,7 +434,9 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         if let Some(description) = &thread.description {
             if !description.is_empty() {
                 // Max description length constrained by content width and layout context
-                let max_desc_len = ctx.max_preview_length().min(content_width.saturating_sub(2));
+                let max_desc_len = ctx
+                    .max_preview_length()
+                    .min(content_width.saturating_sub(2));
                 let display_desc = truncate_to_width(description, max_desc_len);
                 let display_desc_chars = display_desc.chars().count();
 
@@ -386,7 +445,11 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
                     Span::styled("│   ", Style::default().fg(card_border_color)),
                     Span::styled(display_desc, Style::default().fg(COLOR_DIM)),
                     Span::styled(
-                        format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_desc_chars)),
+                        format!(
+                            "{:>width$}│",
+                            "",
+                            width = content_width.saturating_sub(2 + display_desc_chars)
+                        ),
                         Style::default().fg(card_border_color),
                     ),
                 ]));
@@ -419,10 +482,7 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
                 format!(" 📁 {}", name)
             };
             type_info_len += folder_display.chars().count();
-            type_line_spans.push(Span::styled(
-                folder_display,
-                Style::default().fg(COLOR_DIM),
-            ));
+            type_line_spans.push(Span::styled(folder_display, Style::default().fg(COLOR_DIM)));
         }
 
         // Add model name if present - always show short model name (e.g., "sonnet", "opus")
@@ -448,7 +508,11 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
         }
 
         type_line_spans.push(Span::styled(
-            format!("{:>width$}│", "", width = content_width.saturating_sub(2 + type_info_len)),
+            format!(
+                "{:>width$}│",
+                "",
+                width = content_width.saturating_sub(2 + type_info_len)
+            ),
             Style::default().fg(card_border_color),
         ));
 
@@ -456,16 +520,25 @@ pub fn render_right_panel(frame: &mut Frame, area: ratatui::layout::Rect, app: &
 
         // Thread preview (centered)
         // Use layout context to determine max preview length, constrained by content width
-        let max_preview_len = ctx.max_preview_length().min(content_width.saturating_sub(4)); // 4 = 2 for quotes, 2 for indent
+        let max_preview_len = ctx
+            .max_preview_length()
+            .min(content_width.saturating_sub(4)); // 4 = 2 for quotes, 2 for indent
         let display_preview = truncate_to_width(&thread.preview, max_preview_len);
         let display_preview_chars = display_preview.chars().count();
 
         lines.push(Line::from(vec![
             make_padding(),
             Span::styled("│   ", Style::default().fg(card_border_color)),
-            Span::styled(format!("\"{}\"", display_preview), Style::default().fg(COLOR_DIM)),
             Span::styled(
-                format!("{:>width$}│", "", width = content_width.saturating_sub(2 + display_preview_chars + 2)), // +2 for quotes
+                format!("\"{}\"", display_preview),
+                Style::default().fg(COLOR_DIM),
+            ),
+            Span::styled(
+                format!(
+                    "{:>width$}│",
+                    "",
+                    width = content_width.saturating_sub(2 + display_preview_chars + 2)
+                ), // +2 for quotes
                 Style::default().fg(card_border_color),
             ),
         ]));
@@ -520,21 +593,33 @@ mod tests {
     fn test_generate_separator_focused() {
         let separator = generate_separator(20, true);
         // Should contain 20 separator characters
-        let text: String = separator.spans.iter().map(|s| s.content.to_string()).collect();
+        let text: String = separator
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
         assert_eq!(text.chars().count(), 20);
     }
 
     #[test]
     fn test_generate_separator_unfocused() {
         let separator = generate_separator(15, false);
-        let text: String = separator.spans.iter().map(|s| s.content.to_string()).collect();
+        let text: String = separator
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
         assert_eq!(text.chars().count(), 15);
     }
 
     #[test]
     fn test_generate_separator_zero_width() {
         let separator = generate_separator(0, true);
-        let text: String = separator.spans.iter().map(|s| s.content.to_string()).collect();
+        let text: String = separator
+            .spans
+            .iter()
+            .map(|s| s.content.to_string())
+            .collect();
         assert!(text.is_empty());
     }
 

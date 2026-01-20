@@ -323,8 +323,7 @@ impl ThreadCache {
                 id: 2,
                 thread_id: "thread-001".to_string(),
                 role: MessageRole::Assistant,
-                content: "Here's how you can use tokio for async operations in Rust..."
-                    .to_string(),
+                content: "Here's how you can use tokio for async operations in Rust...".to_string(),
                 created_at: now - Duration::minutes(5),
                 is_streaming: false,
                 partial_content: String::new(),
@@ -846,8 +845,7 @@ mod tests {
         let thread_id = cache.create_streaming_thread("Original title".to_string());
 
         // Update only the title
-        let updated =
-            cache.update_thread_metadata(&thread_id, Some("New title".to_string()), None);
+        let updated = cache.update_thread_metadata(&thread_id, Some("New title".to_string()), None);
 
         assert!(updated);
         let thread = cache.get_thread(&thread_id).unwrap();

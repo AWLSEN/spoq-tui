@@ -45,7 +45,11 @@ pub fn render_inline_error_banners(app: &App, ctx: &LayoutContext) -> Vec<Line<'
     // Only show up to MAX_VISIBLE_ERRORS
     for (i, error) in errors.iter().take(MAX_VISIBLE_ERRORS).enumerate() {
         let is_focused = i == focused_index;
-        let border_color = if is_focused { Color::Red } else { Color::DarkGray };
+        let border_color = if is_focused {
+            Color::Red
+        } else {
+            Color::DarkGray
+        };
         let border_char_top = if is_focused { "\u{2550}" } else { "\u{2500}" };
         let border_char_bottom = if is_focused { "\u{2550}" } else { "\u{2500}" };
 
@@ -93,18 +97,12 @@ pub fn render_inline_error_banners(app: &App, ctx: &LayoutContext) -> Vec<Line<'
                 format!("{:>width$}", "", width = dismiss_padding),
                 Style::default().fg(border_color),
             ),
-            Span::styled(
-                dismiss_text,
-                Style::default().fg(COLOR_DIM),
-            ),
+            Span::styled(dismiss_text, Style::default().fg(COLOR_DIM)),
             Span::styled(" \u{2502}", Style::default().fg(border_color)),
         ]));
 
         // Bottom border
-        let bottom_border = format!(
-            "\u{2514}{}\u{2518}",
-            border_char_bottom.repeat(inner_width)
-        );
+        let bottom_border = format!("\u{2514}{}\u{2518}", border_char_bottom.repeat(inner_width));
         lines.push(Line::from(Span::styled(
             bottom_border,
             Style::default().fg(border_color),
@@ -116,12 +114,16 @@ pub fn render_inline_error_banners(app: &App, ctx: &LayoutContext) -> Vec<Line<'
     // Show "+N more" if there are more errors
     if total_errors > MAX_VISIBLE_ERRORS {
         let more_count = total_errors - MAX_VISIBLE_ERRORS;
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("  +{} more error{}", more_count, if more_count > 1 { "s" } else { "" }),
-                Style::default().fg(Color::Red).add_modifier(Modifier::ITALIC),
+        lines.push(Line::from(vec![Span::styled(
+            format!(
+                "  +{} more error{}",
+                more_count,
+                if more_count > 1 { "s" } else { "" }
             ),
-        ]));
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::ITALIC),
+        )]));
         lines.push(Line::from(""));
     }
 

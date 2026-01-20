@@ -55,7 +55,6 @@ async fn test_cached_heights_is_valid_for() {
     assert!(!cache.is_valid_for("test-thread", 100));
 }
 
-
 #[tokio::test]
 async fn test_cached_heights_truncate() {
     let thread_id = Arc::new("test-thread".to_string());
@@ -143,8 +142,16 @@ async fn test_height_cache_invalidation_on_width_change() {
     app.height_cache = Some(cache);
 
     // Verify cache exists
-    assert!(app.height_cache.as_ref().unwrap().is_valid_for("test-thread", 80));
+    assert!(app
+        .height_cache
+        .as_ref()
+        .unwrap()
+        .is_valid_for("test-thread", 80));
 
     // Width change should invalidate
-    assert!(!app.height_cache.as_ref().unwrap().is_valid_for("test-thread", 100));
+    assert!(!app
+        .height_cache
+        .as_ref()
+        .unwrap()
+        .is_valid_for("test-thread", 100));
 }

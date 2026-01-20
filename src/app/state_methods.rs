@@ -586,9 +586,7 @@ mod tests {
     #[test]
     fn test_filtered_folders_case_insensitive() {
         let mut app = create_test_app();
-        app.folders = vec![
-            create_test_folder("MyProject", "/home/user/MyProject"),
-        ];
+        app.folders = vec![create_test_folder("MyProject", "/home/user/MyProject")];
         app.folder_picker_filter = "myproject".to_string();
 
         let filtered = app.filtered_folders();
@@ -686,10 +684,7 @@ mod tests {
     #[test]
     fn test_folder_picker_cursor_down_clamps_at_end() {
         let mut app = create_test_app();
-        app.folders = vec![
-            create_test_folder("a", "/a"),
-            create_test_folder("b", "/b"),
-        ];
+        app.folders = vec![create_test_folder("a", "/a"), create_test_folder("b", "/b")];
         app.folder_picker_cursor = 1; // Already at last item
 
         app.folder_picker_cursor_down();
@@ -887,9 +882,9 @@ mod tests {
     fn test_folder_picker_no_trigger_mid_word_various() {
         let app = create_test_app();
         // Various mid-word positions should NOT trigger
-        assert!(!app.is_folder_picker_trigger("user", 4));     // user@ (email pattern)
-        assert!(!app.is_folder_picker_trigger("test", 2));     // te@st
-        assert!(!app.is_folder_picker_trigger("name123", 4));  // name@123
+        assert!(!app.is_folder_picker_trigger("user", 4)); // user@ (email pattern)
+        assert!(!app.is_folder_picker_trigger("test", 2)); // te@st
+        assert!(!app.is_folder_picker_trigger("name123", 4)); // name@123
     }
 
     #[test]

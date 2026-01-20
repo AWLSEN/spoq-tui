@@ -49,11 +49,7 @@ impl App {
     ///
     /// Constructs a `WsCommandResponse` and sends it through the WebSocket channel.
     /// Returns a result indicating success or failure.
-    fn send_ws_permission_response(
-        &self,
-        request_id: &str,
-        allowed: bool,
-    ) -> Result<(), String> {
+    fn send_ws_permission_response(&self, request_id: &str, allowed: bool) -> Result<(), String> {
         let sender = match &self.ws_sender {
             Some(s) => s,
             None => return Err("WebSocket sender not available".to_string()),
@@ -79,7 +75,10 @@ impl App {
         // Try to send - this is a non-blocking channel send
         match sender.try_send(WsOutgoingMessage::CommandResponse(response)) {
             Ok(()) => {
-                debug!("Sent permission response via WebSocket: {} -> {}", request_id, allowed);
+                debug!(
+                    "Sent permission response via WebSocket: {} -> {}",
+                    request_id, allowed
+                );
                 Ok(())
             }
             Err(e) => Err(format!("Failed to send via WebSocket: {}", e)),
@@ -93,10 +92,17 @@ impl App {
     /// 2. Tries to send via WebSocket
     /// 3. If WS fails, retries once after 500ms
     /// 4. If still fails, falls back to HTTP if available
-    fn send_permission_response(&mut self, permission_id: &str, allowed: bool) -> PermissionResponseResult {
+    fn send_permission_response(
+        &mut self,
+        permission_id: &str,
+        allowed: bool,
+    ) -> PermissionResponseResult {
         // Check if permission has expired
         if self.is_permission_expired(permission_id) {
-            warn!("Permission {} expired before response could be sent", permission_id);
+            warn!(
+                "Permission {} expired before response could be sent",
+                permission_id
+            );
             return PermissionResponseResult::Expired;
         }
 
@@ -148,7 +154,10 @@ impl App {
                 // Fall back to HTTP
                 debug!("Falling back to HTTP for permission response");
                 if let Err(e) = client.respond_to_permission(&perm_id, allowed).await {
-                    error!("Failed to send permission response via HTTP fallback: {:?}", e);
+                    error!(
+                        "Failed to send permission response via HTTP fallback: {:?}",
+                        e
+                    );
                 }
             });
 
@@ -169,7 +178,10 @@ impl App {
                 debug!("Permission {} approved via WebSocket", permission_id);
             }
             PermissionResponseResult::SentViaHttpFallback => {
-                debug!("Permission {} approval sent via HTTP fallback", permission_id);
+                debug!(
+                    "Permission {} approval sent via HTTP fallback",
+                    permission_id
+                );
             }
             PermissionResponseResult::Expired => {
                 warn!("Permission {} expired - could not approve", permission_id);
@@ -240,7 +252,10 @@ impl App {
     pub fn handle_permission_key(&mut self, key: char) -> bool {
         info!("handle_permission_key called with key: '{}'", key);
         if let Some(ref perm) = self.session_state.pending_permission.clone() {
-            info!("Pending permission found: {} for tool {}", perm.permission_id, perm.tool_name);
+            info!(
+                "Pending permission found: {} for tool {}",
+                perm.permission_id, perm.tool_name
+            );
             match key {
                 'y' | 'Y' => {
                     info!("User pressed 'y' - approving permission");
@@ -292,7 +307,10 @@ impl App {
                     if let Some(data) = parse_ask_user_question(tool_input) {
                         self.question_state = AskUserQuestionState::from_data(&data);
                         self.mark_dirty();
-                        debug!("Initialized question state with {} questions", data.questions.len());
+                        debug!(
+                            "Initialized question state with {} questions",
+                            data.questions.len()
+                        );
                     }
                 }
             }
@@ -369,11 +387,15 @@ impl App {
         } else {
             // Currently on "Other", move to last option
             if option_count > 0 {
-                self.question_state.set_current_selection(Some(option_count - 1));
+                self.question_state
+                    .set_current_selection(Some(option_count - 1));
             }
         }
         self.mark_dirty();
-        debug!("Selection now: {:?}", self.question_state.current_selection());
+        debug!(
+            "Selection now: {:?}",
+            self.question_state.current_selection()
+        );
     }
 
     /// Move to the next option in the current question
@@ -392,7 +414,10 @@ impl App {
             self.question_state.set_current_selection(Some(0));
         }
         self.mark_dirty();
-        debug!("Selection now: {:?}", self.question_state.current_selection());
+        debug!(
+            "Selection now: {:?}",
+            self.question_state.current_selection()
+        );
     }
 
     /// Toggle the current option in multi-select mode
@@ -443,7 +468,10 @@ impl App {
 
         // Multiple questions: mark current as answered and advance
         self.question_state.mark_current_answered();
-        debug!("Marked question {} as answered", self.question_state.tab_index);
+        debug!(
+            "Marked question {} as answered",
+            self.question_state.tab_index
+        );
 
         // Check if all questions are now answered
         if self.question_state.all_answered() {
@@ -452,7 +480,10 @@ impl App {
         }
 
         // Advance to next unanswered question
-        if self.question_state.advance_to_next_unanswered(num_questions) {
+        if self
+            .question_state
+            .advance_to_next_unanswered(num_questions)
+        {
             debug!("Advanced to question {}", self.question_state.tab_index);
         }
 
@@ -464,7 +495,11 @@ impl App {
         if self.question_state.other_active {
             self.question_state.other_active = false;
             // Clear the other text
-            if let Some(text) = self.question_state.other_texts.get_mut(self.question_state.tab_index) {
+            if let Some(text) = self
+                .question_state
+                .other_texts
+                .get_mut(self.question_state.tab_index)
+            {
                 text.clear();
             }
             self.mark_dirty();
@@ -510,7 +545,8 @@ impl App {
         };
 
         // Build the answers map
-        let mut answers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut answers: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         for (i, question) in data.questions.iter().enumerate() {
             let answer = if question.multi_select {
@@ -530,7 +566,12 @@ impl App {
                     .collect();
 
                 // Also check if "Other" has text for this question
-                let other_text = self.question_state.other_texts.get(i).cloned().unwrap_or_default();
+                let other_text = self
+                    .question_state
+                    .other_texts
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_default();
                 if !other_text.is_empty() {
                     let mut with_other = selected;
                     with_other.push(other_text);
@@ -551,7 +592,12 @@ impl App {
                     }
                 } else {
                     // "Other" selected - use the text
-                    let other_text = self.question_state.other_texts.get(i).cloned().unwrap_or_default();
+                    let other_text = self
+                        .question_state
+                        .other_texts
+                        .get(i)
+                        .cloned()
+                        .unwrap_or_default();
                     if other_text.is_empty() {
                         continue;
                     }
@@ -914,7 +960,8 @@ mod tests {
     async fn test_ws_response_message_format() {
         let (app, mut rx) = create_test_app_with_ws();
 
-        app.send_ws_permission_response("req-format-test", true).unwrap();
+        app.send_ws_permission_response("req-format-test", true)
+            .unwrap();
 
         let msg = rx.recv().await.unwrap();
 
@@ -927,7 +974,6 @@ mod tests {
         // message should not be present when None due to skip_serializing_if
         assert!(json["result"]["data"]["message"].is_null());
     }
-
 
     #[tokio::test]
     async fn test_cancel_permission_sends_cancel_message() {
@@ -1040,7 +1086,8 @@ mod tests {
     #[test]
     fn test_init_question_state() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-init"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-init"));
 
         app.init_question_state();
 
@@ -1054,7 +1101,8 @@ mod tests {
     #[test]
     fn test_question_next_option() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-next"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-next"));
         app.init_question_state();
 
         // Start at option 0
@@ -1080,7 +1128,8 @@ mod tests {
     #[test]
     fn test_question_prev_option() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-prev"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-prev"));
         app.init_question_state();
 
         // Start at option 0
@@ -1124,7 +1173,8 @@ mod tests {
     #[test]
     fn test_question_next_tab_single_question_no_change() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-single"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-single"));
         app.init_question_state();
 
         // Start at tab 0
@@ -1161,7 +1211,8 @@ mod tests {
     #[test]
     fn test_question_toggle_option_single_select_no_effect() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-no-toggle"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-no-toggle"));
         app.init_question_state();
 
         // First question is single-select
@@ -1175,7 +1226,8 @@ mod tests {
     #[test]
     fn test_question_type_char_and_backspace() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-type"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-type"));
         app.init_question_state();
 
         // Move to "Other"
@@ -1210,7 +1262,8 @@ mod tests {
     #[test]
     fn test_question_cancel_other() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-cancel"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-cancel"));
         app.init_question_state();
 
         // Activate "Other" mode and type
@@ -1227,7 +1280,8 @@ mod tests {
     #[test]
     fn test_question_confirm_activates_other() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-confirm"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-confirm"));
         app.init_question_state();
 
         // Move to "Other"
@@ -1246,7 +1300,8 @@ mod tests {
     #[test]
     fn test_question_confirm_on_option() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-submit"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-submit"));
         app.init_question_state();
 
         // Select option 1
@@ -1278,7 +1333,8 @@ mod tests {
     #[test]
     fn test_question_type_char_not_in_other_mode() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-type-no"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-type-no"));
         app.init_question_state();
 
         // Not in "Other" mode
@@ -1294,7 +1350,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_advances_tab() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-advance"));
+        app.session_state.pending_permission =
+            Some(create_multi_question_permission("perm-multi-advance"));
         app.init_question_state();
 
         // Start at tab 0, select option 0
@@ -1312,7 +1369,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_submits_on_last() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-submit"));
+        app.session_state.pending_permission =
+            Some(create_multi_question_permission("perm-multi-submit"));
         app.init_question_state();
 
         // Answer first question
@@ -1332,7 +1390,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_answered_tracking() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-track"));
+        app.session_state.pending_permission =
+            Some(create_multi_question_permission("perm-multi-track"));
         app.init_question_state();
 
         // Both questions start unanswered
@@ -1353,7 +1412,8 @@ mod tests {
     #[test]
     fn test_question_confirm_single_question_submits_immediately() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-single-submit"));
+        app.session_state.pending_permission =
+            Some(create_ask_user_question_permission("perm-single-submit"));
         app.init_question_state();
 
         // Single question - confirm should submit immediately
@@ -1365,7 +1425,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_update_answered() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_multi_question_permission("perm-multi-update"));
+        app.session_state.pending_permission =
+            Some(create_multi_question_permission("perm-multi-update"));
         app.init_question_state();
 
         // Answer first question and advance

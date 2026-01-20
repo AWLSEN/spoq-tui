@@ -114,22 +114,22 @@ pub fn render_folder_picker(frame: &mut Frame, app: &App, input_area: Rect) {
 
     if app.folders.is_empty() {
         // Loading state
-        lines.push(Line::from(vec![
-            Span::styled("Loading folders...", Style::default().fg(COLOR_DIM)),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "Loading folders...",
+            Style::default().fg(COLOR_DIM),
+        )]));
     } else if filtered_folders.is_empty() {
         // No matches state
         if app.folder_picker_filter.is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled("No folders available", Style::default().fg(COLOR_DIM)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "No folders available",
+                Style::default().fg(COLOR_DIM),
+            )]));
         } else {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("No folders matching \"{}\"", app.folder_picker_filter),
-                    Style::default().fg(COLOR_DIM),
-                ),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                format!("No folders matching \"{}\"", app.folder_picker_filter),
+                Style::default().fg(COLOR_DIM),
+            )]));
         }
     } else {
         // Calculate scroll offset if needed
@@ -142,9 +142,10 @@ pub fn render_folder_picker(frame: &mut Frame, app: &App, input_area: Rect) {
         // Show scroll up indicator if there are hidden folders above
         if scroll_offset > 0 {
             let indicator = format!("  {} more above", scroll_offset);
-            lines.push(Line::from(vec![
-                Span::styled(indicator, Style::default().fg(COLOR_DIM)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                indicator,
+                Style::default().fg(COLOR_DIM),
+            )]));
         }
 
         // Iterate through visible folders
@@ -161,7 +162,9 @@ pub fn render_folder_picker(frame: &mut Frame, app: &App, input_area: Rect) {
             // Selection marker
             let marker = if is_selected { " " } else { "  " };
             let marker_style = if is_selected {
-                Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(COLOR_ACCENT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(COLOR_DIM)
             };
@@ -192,7 +195,9 @@ pub fn render_folder_picker(frame: &mut Frame, app: &App, input_area: Rect) {
 
             // Build the line with styles
             let name_style = if is_selected {
-                Style::default().fg(COLOR_HEADER).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(COLOR_HEADER)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(COLOR_ACCENT)
             };
@@ -210,12 +215,15 @@ pub fn render_folder_picker(frame: &mut Frame, app: &App, input_area: Rect) {
         }
 
         // Show scroll down indicator if there are hidden folders below
-        let folders_below = filtered_folders.len().saturating_sub(scroll_offset + MAX_VISIBLE_ROWS);
+        let folders_below = filtered_folders
+            .len()
+            .saturating_sub(scroll_offset + MAX_VISIBLE_ROWS);
         if folders_below > 0 {
             let indicator = format!("  {} more below", folders_below);
-            lines.push(Line::from(vec![
-                Span::styled(indicator, Style::default().fg(COLOR_DIM)),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                indicator,
+                Style::default().fg(COLOR_DIM),
+            )]));
         }
     }
 

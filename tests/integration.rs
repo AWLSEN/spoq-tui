@@ -59,9 +59,16 @@ async fn test_full_thread_creation_flow() {
 
     // Verify the thread has the correct messages
     let thread_id = app.active_thread_id.as_ref().unwrap();
-    let messages = app.cache.get_messages(thread_id).expect("Messages should exist");
+    let messages = app
+        .cache
+        .get_messages(thread_id)
+        .expect("Messages should exist");
 
-    assert_eq!(messages.len(), 2, "Thread should have 2 messages (user + assistant)");
+    assert_eq!(
+        messages.len(),
+        2,
+        "Thread should have 2 messages (user + assistant)"
+    );
     assert_eq!(messages[0].role, MessageRole::User);
     assert_eq!(messages[0].content, "Hello world");
     assert_eq!(messages[1].role, MessageRole::Assistant);
@@ -121,7 +128,10 @@ async fn test_thread_appears_in_right_panel() {
     app.submit_input(ThreadType::Conversation);
 
     // Get the thread ID that was just created
-    let thread_id = app.active_thread_id.clone().expect("Thread should be created");
+    let thread_id = app
+        .active_thread_id
+        .clone()
+        .expect("Thread should be created");
 
     // 2. Navigate to CommandDeck
     app.navigate_to_command_deck();
@@ -288,7 +298,11 @@ async fn test_new_thread_flow_complete() {
     let mut app = create_test_app();
 
     // 1. Start at command deck with no active thread
-    assert_eq!(app.screen, Screen::CommandDeck, "Should start at CommandDeck");
+    assert_eq!(
+        app.screen,
+        Screen::CommandDeck,
+        "Should start at CommandDeck"
+    );
     assert!(
         app.active_thread_id.is_none(),
         "active_thread_id should be None at start"
@@ -356,10 +370,7 @@ async fn test_continue_thread_flow() {
     }
     app.submit_input(ThreadType::Conversation);
 
-    let thread_id = app
-        .active_thread_id
-        .clone()
-        .expect("Should have thread ID");
+    let thread_id = app.active_thread_id.clone().expect("Should have thread ID");
     assert!(uuid::Uuid::parse_str(&thread_id).is_ok());
 
     // Simulate backend response (echoes back same UUID)
@@ -514,11 +525,7 @@ async fn test_new_thread_after_returning_to_deck() {
     );
 
     // Verify thread count
-    assert_eq!(
-        app.cache.thread_count(),
-        2,
-        "Should have exactly 2 threads"
-    );
+    assert_eq!(app.cache.thread_count(), 2, "Should have exactly 2 threads");
 
     // Verify second thread is at the front (most recent)
     let threads = app.cache.threads();
@@ -549,7 +556,8 @@ async fn test_thread_reconciliation_complete() {
 
     // Add some streaming content
     app.cache.append_to_message(&pending_id, "Rust is ");
-    app.cache.append_to_message(&pending_id, "a systems programming language.");
+    app.cache
+        .append_to_message(&pending_id, "a systems programming language.");
 
     // Verify pending thread exists with content
     let messages_before = app.cache.get_messages(&pending_id).unwrap();
@@ -816,7 +824,8 @@ async fn test_complete_end_to_end_workflow() {
         real_id: "thread-2".to_string(),
         title: Some("Different Topic".to_string()),
     });
-    app.cache.append_to_message("thread-2", "Response to different topic");
+    app.cache
+        .append_to_message("thread-2", "Response to different topic");
     app.cache.finalize_message("thread-2", 4);
 
     assert_eq!(app.active_thread_id, Some("thread-2".to_string()));
@@ -885,7 +894,9 @@ async fn test_thread_updated_full_flow() {
     app.handle_message(AppMessage::ThreadMetadataUpdated {
         thread_id: "thread-123".to_string(),
         title: Some("Rust Programming Language".to_string()),
-        description: Some("A systems programming language focused on safety and performance".to_string()),
+        description: Some(
+            "A systems programming language focused on safety and performance".to_string(),
+        ),
     });
 
     // Verify cache was updated
@@ -974,7 +985,10 @@ async fn test_thread_updated_with_pending_id() {
     // Verify final update was applied
     let final_thread = app.cache.get_thread("real-thread-456").unwrap();
     assert_eq!(final_thread.title, "Final Title");
-    assert_eq!(final_thread.description, Some("Final Description".to_string()));
+    assert_eq!(
+        final_thread.description,
+        Some("Final Description".to_string())
+    );
 }
 
 /// Test Case 3: thread_updated with only title (no description)
@@ -988,7 +1002,9 @@ async fn test_thread_updated_title_only() {
     let mut app = create_test_app();
 
     // Create a thread
-    let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+    let thread_id = app
+        .cache
+        .create_streaming_thread("Original Title".to_string());
 
     // Send thread_updated with only title
     app.handle_message(AppMessage::ThreadMetadataUpdated {
@@ -1014,7 +1030,9 @@ async fn test_thread_updated_description_only() {
     let mut app = create_test_app();
 
     // Create a thread
-    let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+    let thread_id = app
+        .cache
+        .create_streaming_thread("Original Title".to_string());
 
     // Send thread_updated with only description
     app.handle_message(AppMessage::ThreadMetadataUpdated {
@@ -1040,14 +1058,13 @@ async fn test_thread_updated_empty_strings() {
     let mut app = create_test_app();
 
     // Create a thread
-    let thread_id = app.cache.create_streaming_thread("Original Title".to_string());
+    let thread_id = app
+        .cache
+        .create_streaming_thread("Original Title".to_string());
 
     // Set initial description
-    app.cache.update_thread_metadata(
-        &thread_id,
-        None,
-        Some("Initial Description".to_string()),
-    );
+    app.cache
+        .update_thread_metadata(&thread_id, None, Some("Initial Description".to_string()));
 
     // Send thread_updated with empty strings
     app.handle_message(AppMessage::ThreadMetadataUpdated {
@@ -1156,7 +1173,10 @@ async fn test_thread_updated_during_active_conversation() {
 
     // Verify we're in conversation view
     assert_eq!(app.screen, Screen::Conversation);
-    assert_eq!(app.active_thread_id, Some("thread-conversation".to_string()));
+    assert_eq!(
+        app.active_thread_id,
+        Some("thread-conversation".to_string())
+    );
 
     // Send thread_updated while in conversation
     app.handle_message(AppMessage::ThreadMetadataUpdated {
@@ -1175,12 +1195,18 @@ async fn test_thread_updated_during_active_conversation() {
 
     // Verify we're still in conversation view (not disrupted)
     assert_eq!(app.screen, Screen::Conversation);
-    assert_eq!(app.active_thread_id, Some("thread-conversation".to_string()));
+    assert_eq!(
+        app.active_thread_id,
+        Some("thread-conversation".to_string())
+    );
 
     // Navigate back and verify thread list shows updated metadata
     app.navigate_to_command_deck();
     let threads = app.cache.threads();
-    let our_thread = threads.iter().find(|t| t.id == "thread-conversation").unwrap();
+    let our_thread = threads
+        .iter()
+        .find(|t| t.id == "thread-conversation")
+        .unwrap();
     assert_eq!(our_thread.title, "Updated During Conversation");
 }
 
@@ -1234,7 +1260,7 @@ async fn test_thread_description_in_thread_list() {
 #[tokio::test]
 async fn test_thread_updated_sse_to_cache_integration() {
     use spoq::app::AppMessage;
-    use spoq::sse::{SseParser, SseEvent};
+    use spoq::sse::{SseEvent, SseParser};
 
     let mut app = create_test_app();
 
@@ -1254,7 +1280,11 @@ async fn test_thread_updated_sse_to_cache_integration() {
 
     // Verify SSE was parsed correctly
     match event {
-        Some(SseEvent::ThreadUpdated { thread_id: tid, title, description }) => {
+        Some(SseEvent::ThreadUpdated {
+            thread_id: tid,
+            title,
+            description,
+        }) => {
             assert_eq!(tid, thread_id);
             assert_eq!(title, Some("Updated via SSE".to_string()));
             assert_eq!(description, Some("SSE Description".to_string()));
@@ -1331,15 +1361,24 @@ async fn test_single_line_input_submit() {
     }
 
     // Verify content before submit
-    assert_eq!(app.textarea.content(), "Hello, this is a single line message");
+    assert_eq!(
+        app.textarea.content(),
+        "Hello, this is a single line message"
+    );
     assert_eq!(app.textarea.line_count(), 1);
 
     // Submit the message
     app.submit_input(ThreadType::Conversation);
 
     // Verify thread was created with correct content
-    let thread_id = app.active_thread_id.as_ref().expect("Should have thread ID");
-    let messages = app.cache.get_messages(thread_id).expect("Messages should exist");
+    let thread_id = app
+        .active_thread_id
+        .as_ref()
+        .expect("Should have thread ID");
+    let messages = app
+        .cache
+        .get_messages(thread_id)
+        .expect("Messages should exist");
 
     assert_eq!(messages[0].role, MessageRole::User);
     assert_eq!(messages[0].content, "Hello, this is a single line message");
@@ -1379,7 +1418,10 @@ async fn test_multiline_input_newline_insertion() {
     }
 
     assert_eq!(app.textarea.line_count(), 3);
-    assert_eq!(app.textarea.content(), "Line 1: Hello\nLine 2: World\nLine 3: Multiline test");
+    assert_eq!(
+        app.textarea.content(),
+        "Line 1: Hello\nLine 2: World\nLine 3: Multiline test"
+    );
 }
 
 /// Test Case 3: Max 5 lines → verify line count doesn't exceed natural limit
@@ -1390,13 +1432,33 @@ async fn test_multiline_input_max_lines_height_calculation() {
     use spoq::ui::input::calculate_input_box_height;
 
     // Verify height calculation clamping behavior
-    assert_eq!(calculate_input_box_height(1), 3, "1 line: content + 2 borders = 3");
-    assert_eq!(calculate_input_box_height(2), 4, "2 lines: content + 2 borders = 4");
+    assert_eq!(
+        calculate_input_box_height(1),
+        3,
+        "1 line: content + 2 borders = 3"
+    );
+    assert_eq!(
+        calculate_input_box_height(2),
+        4,
+        "2 lines: content + 2 borders = 4"
+    );
     assert_eq!(calculate_input_box_height(3), 5, "3 lines + 2 borders = 5");
     assert_eq!(calculate_input_box_height(4), 6, "4 lines + 2 borders = 6");
-    assert_eq!(calculate_input_box_height(5), 7, "5 lines + 2 borders = 7 (max)");
-    assert_eq!(calculate_input_box_height(6), 7, "6 lines clamped to 5 + 2 = 7");
-    assert_eq!(calculate_input_box_height(10), 7, "10 lines clamped to 5 + 2 = 7");
+    assert_eq!(
+        calculate_input_box_height(5),
+        7,
+        "5 lines + 2 borders = 7 (max)"
+    );
+    assert_eq!(
+        calculate_input_box_height(6),
+        7,
+        "6 lines clamped to 5 + 2 = 7"
+    );
+    assert_eq!(
+        calculate_input_box_height(10),
+        7,
+        "10 lines clamped to 5 + 2 = 7"
+    );
 
     // But textarea should still accept all lines
     let mut app = create_test_app();
@@ -1558,7 +1620,10 @@ async fn test_undo_redo() {
 
     // Undo should revert
     let undone = app.textarea.undo();
-    assert!(undone, "Undo should return true when there's something to undo");
+    assert!(
+        undone,
+        "Undo should return true when there's something to undo"
+    );
     // Note: exact undo behavior depends on tui-textarea's implementation
     // It may undo character by character or by operation
 
@@ -1637,12 +1702,36 @@ async fn test_auto_grow_behavior() {
     use spoq::ui::input::calculate_input_area_height;
 
     // Verify auto-grow behavior (box + keybinds + padding)
-    assert_eq!(calculate_input_area_height(1), 6, "1 line: box(3) + keybinds(1) + padding(2) = 6");
-    assert_eq!(calculate_input_area_height(2), 7, "2 lines: box(4) + keybinds(1) + padding(2) = 7");
-    assert_eq!(calculate_input_area_height(3), 8, "3 lines: box(5) + keybinds(1) + padding(2) = 8");
-    assert_eq!(calculate_input_area_height(4), 9, "4 lines: box(6) + keybinds(1) + padding(2) = 9");
-    assert_eq!(calculate_input_area_height(5), 10, "5 lines: box(7) + keybinds(1) + padding(2) = 10 (max)");
-    assert_eq!(calculate_input_area_height(6), 10, "6 lines: clamped to box(7) + keybinds(1) + padding(2) = 10");
+    assert_eq!(
+        calculate_input_area_height(1),
+        6,
+        "1 line: box(3) + keybinds(1) + padding(2) = 6"
+    );
+    assert_eq!(
+        calculate_input_area_height(2),
+        7,
+        "2 lines: box(4) + keybinds(1) + padding(2) = 7"
+    );
+    assert_eq!(
+        calculate_input_area_height(3),
+        8,
+        "3 lines: box(5) + keybinds(1) + padding(2) = 8"
+    );
+    assert_eq!(
+        calculate_input_area_height(4),
+        9,
+        "4 lines: box(6) + keybinds(1) + padding(2) = 9"
+    );
+    assert_eq!(
+        calculate_input_area_height(5),
+        10,
+        "5 lines: box(7) + keybinds(1) + padding(2) = 10 (max)"
+    );
+    assert_eq!(
+        calculate_input_area_height(6),
+        10,
+        "6 lines: clamped to box(7) + keybinds(1) + padding(2) = 10"
+    );
 
     // Also verify with actual App
     let mut app = create_test_app();
@@ -1697,8 +1786,14 @@ async fn test_multiline_submit_preserves_newlines() {
     app.submit_input(ThreadType::Conversation);
 
     // Verify message content preserves newlines
-    let thread_id = app.active_thread_id.as_ref().expect("Should have thread ID");
-    let messages = app.cache.get_messages(thread_id).expect("Messages should exist");
+    let thread_id = app
+        .active_thread_id
+        .as_ref()
+        .expect("Should have thread ID");
+    let messages = app
+        .cache
+        .get_messages(thread_id)
+        .expect("Messages should exist");
 
     assert_eq!(messages[0].content, expected_content);
 }
@@ -1763,11 +1858,19 @@ async fn test_home_end_per_line() {
 
     // Home moves to start of current line (line 1)
     app.textarea.move_cursor_home();
-    assert_eq!(app.textarea.cursor(), (1, 0), "Home should go to start of line 1");
+    assert_eq!(
+        app.textarea.cursor(),
+        (1, 0),
+        "Home should go to start of line 1"
+    );
 
     // End moves back to end of current line
     app.textarea.move_cursor_end();
-    assert_eq!(app.textarea.cursor(), (1, 5), "End should go to end of line 1");
+    assert_eq!(
+        app.textarea.cursor(),
+        (1, 5),
+        "End should go to end of line 1"
+    );
 
     // Move up to line 0
     app.textarea.move_cursor_up();
@@ -1964,5 +2067,8 @@ async fn test_tab_handling() {
     // Verify content (tab should be converted to spaces based on tab_length setting)
     let content = input.content();
     // The content will contain either a tab or spaces depending on textarea behavior
-    assert!(content.starts_with("def"), "Content should start with 'def'");
+    assert!(
+        content.starts_with("def"),
+        "Content should start with 'def'"
+    );
 }

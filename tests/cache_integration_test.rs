@@ -30,7 +30,10 @@ fn test_complete_streaming_workflow_with_multiple_tokens() {
 
     // Verify streaming content accumulates
     let messages = cache.get_messages(&thread_id).unwrap();
-    assert_eq!(messages[1].partial_content, "Rust is a systems programming language.");
+    assert_eq!(
+        messages[1].partial_content,
+        "Rust is a systems programming language."
+    );
     assert_eq!(messages[1].content, ""); // Final content still empty during streaming
 
     // Finalize the message
@@ -39,7 +42,10 @@ fn test_complete_streaming_workflow_with_multiple_tokens() {
     // Verify message is finalized
     let messages = cache.get_messages(&thread_id).unwrap();
     assert_eq!(messages[1].id, 42);
-    assert_eq!(messages[1].content, "Rust is a systems programming language.");
+    assert_eq!(
+        messages[1].content,
+        "Rust is a systems programming language."
+    );
     assert!(!messages[1].is_streaming);
     assert_eq!(messages[1].partial_content, "");
 }
@@ -78,7 +84,10 @@ fn test_multiple_streaming_threads_simultaneously() {
 
     // Verify all threads are finalized correctly
     assert_eq!(cache.get_messages(&thread1).unwrap()[1].content, "Answer 1");
-    assert_eq!(cache.get_messages(&thread2).unwrap()[1].content, "Response 2");
+    assert_eq!(
+        cache.get_messages(&thread2).unwrap()[1].content,
+        "Response 2"
+    );
     assert_eq!(cache.get_messages(&thread3).unwrap()[1].content, "Reply 3");
 }
 

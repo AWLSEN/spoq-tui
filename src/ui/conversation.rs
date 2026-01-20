@@ -281,17 +281,14 @@ pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App, ctx:
     } else {
         ("\u{25CB}", Color::Red)
     };
-    badges.push(Span::styled(
-        status_icon,
-        Style::default().fg(status_color),
-    ));
+    badges.push(Span::styled(status_icon, Style::default().fg(status_color)));
 
     // Split header area to show title on left and badges on right
     let badges_width = badges.iter().map(|s| s.content.len()).sum::<usize>() + 2;
     let header_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Min(20),                      // Thread title (flexible)
+            Constraint::Min(20),                     // Thread title (flexible)
             Constraint::Length(badges_width as u16), // Badges (dynamic)
         ])
         .split(area);

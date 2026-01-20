@@ -31,7 +31,10 @@ pub(super) fn parse_content_event(event_type: &str, data: &str) -> Result<SseEve
 }
 
 /// Parse reasoning/thinking event
-pub(super) fn parse_reasoning_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_reasoning_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),

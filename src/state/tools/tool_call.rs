@@ -237,8 +237,14 @@ impl ToolTracker {
 
         // Sort: in-progress first, then by recency (for completed)
         tools.sort_by(|(_, a), (_, b)| {
-            let a_in_progress = a.display_status.as_ref().is_some_and(|ds| ds.is_in_progress());
-            let b_in_progress = b.display_status.as_ref().is_some_and(|ds| ds.is_in_progress());
+            let a_in_progress = a
+                .display_status
+                .as_ref()
+                .is_some_and(|ds| ds.is_in_progress());
+            let b_in_progress = b
+                .display_status
+                .as_ref()
+                .is_some_and(|ds| ds.is_in_progress());
 
             match (a_in_progress, b_in_progress) {
                 (true, false) => std::cmp::Ordering::Less,
@@ -251,7 +257,12 @@ impl ToolTracker {
     }
 
     /// Register a tool with display status for started state
-    pub fn register_tool_started(&mut self, tool_call_id: String, tool_name: String, current_tick: u64) {
+    pub fn register_tool_started(
+        &mut self,
+        tool_call_id: String,
+        tool_name: String,
+        current_tick: u64,
+    ) {
         let display_status = ToolDisplayStatus::Started {
             function: tool_name.clone(),
             started_at: current_tick,
@@ -270,7 +281,13 @@ impl ToolTracker {
     }
 
     /// Complete tool with summary for display
-    pub fn complete_tool_with_summary(&mut self, tool_call_id: &str, success: bool, summary: String, current_tick: u64) {
+    pub fn complete_tool_with_summary(
+        &mut self,
+        tool_call_id: &str,
+        success: bool,
+        summary: String,
+        current_tick: u64,
+    ) {
         if let Some(state) = self.active_tools.get_mut(tool_call_id) {
             if success {
                 state.status = ToolCallStatus::Completed;
@@ -642,8 +659,7 @@ mod tests {
         );
 
         let json = serde_json::to_string(&tracker).expect("Failed to serialize");
-        let deserialized: ToolTracker =
-            serde_json::from_str(&json).expect("Failed to deserialize");
+        let deserialized: ToolTracker = serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(tracker.total_count(), deserialized.total_count());
         assert!(deserialized.contains("call-1"));
@@ -755,7 +771,10 @@ mod tests {
         let state = tracker.get_tool("call-1").unwrap();
         assert_eq!(state.status, ToolCallStatus::Running);
         assert!(state.display_status.is_some());
-        assert_eq!(state.display_status.as_ref().unwrap().display_text(), "Installing dependencies");
+        assert_eq!(
+            state.display_status.as_ref().unwrap().display_text(),
+            "Installing dependencies"
+        );
     }
 
     #[test]

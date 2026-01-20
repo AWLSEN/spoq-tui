@@ -7,7 +7,9 @@ use super::tools::{SubagentEvent, SubagentEventStatus, ToolCall, ToolEvent, Tool
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     ToolUse {
         id: String,
         name: String,
@@ -88,7 +90,13 @@ impl ServerMessage {
                                 segments.push(MessageSegment::Text(text));
                             }
                         }
-                        ContentBlock::ToolUse { id, name, input, result, is_error } => {
+                        ContentBlock::ToolUse {
+                            id,
+                            name,
+                            input,
+                            result,
+                            is_error,
+                        } => {
                             let mut event = ToolEvent::new(id, name);
                             event.status = ToolEventStatus::Complete;
                             event.args_json = serde_json::to_string(&input).unwrap_or_default();
@@ -271,9 +279,9 @@ impl Message {
 
     /// Check if there are any running tools
     pub fn has_running_tools(&self) -> bool {
-        self.segments.iter().any(|s| {
-            matches!(s, MessageSegment::ToolEvent(e) if e.status == ToolEventStatus::Running)
-        })
+        self.segments.iter().any(
+            |s| matches!(s, MessageSegment::ToolEvent(e) if e.status == ToolEventStatus::Running),
+        )
     }
 
     /// Set the display_name for a tool event by its tool_call_id
@@ -303,7 +311,12 @@ impl Message {
     }
 
     /// Start a new subagent event
-    pub fn start_subagent_event(&mut self, task_id: String, description: String, subagent_type: String) {
+    pub fn start_subagent_event(
+        &mut self,
+        task_id: String,
+        description: String,
+        subagent_type: String,
+    ) {
         let event = SubagentEvent::new(task_id, description, subagent_type);
         self.segments.push(MessageSegment::SubagentEvent(event));
         self.invalidate_render_cache();
@@ -323,7 +336,12 @@ impl Message {
     }
 
     /// Complete a subagent event by its task_id
-    pub fn complete_subagent_event(&mut self, task_id: &str, summary: Option<String>, tool_call_count: usize) {
+    pub fn complete_subagent_event(
+        &mut self,
+        task_id: &str,
+        summary: Option<String>,
+        tool_call_count: usize,
+    ) {
         for segment in &mut self.segments {
             if let MessageSegment::SubagentEvent(event) = segment {
                 if event.task_id == task_id {
@@ -429,7 +447,11 @@ mod tests {
     fn test_render_version_increments_on_subagent_events() {
         let mut message = create_test_message();
         assert_eq!(message.render_version, 0);
-        message.start_subagent_event("task-1".to_string(), "Exploring".to_string(), "Explore".to_string());
+        message.start_subagent_event(
+            "task-1".to_string(),
+            "Exploring".to_string(),
+            "Explore".to_string(),
+        );
         assert_eq!(message.render_version, 1);
         message.update_subagent_progress("task-1", "Reading files".to_string());
         assert_eq!(message.render_version, 2);
@@ -501,11 +523,7 @@ mod tests {
             "Explore".to_string(),
         );
 
-        message.complete_subagent_event(
-            "task-789",
-            Some("Found 5 files".to_string()),
-            3,
-        );
+        message.complete_subagent_event("task-789", Some("Found 5 files".to_string()), 3);
 
         if let MessageSegment::SubagentEvent(event) = &message.segments[0] {
             assert_eq!(event.status, SubagentEventStatus::Complete);
@@ -633,19 +651,21 @@ mod tests {
         message.update_subagent_progress("workflow-test", "Step 3: Finalizing".to_string());
 
         let event = message.get_subagent_event("workflow-test");
-        assert_eq!(event.unwrap().progress_message, Some("Step 3: Finalizing".to_string()));
+        assert_eq!(
+            event.unwrap().progress_message,
+            Some("Step 3: Finalizing".to_string())
+        );
 
         // Complete the subagent
-        message.complete_subagent_event(
-            "workflow-test",
-            Some("Analysis complete".to_string()),
-            5,
-        );
+        message.complete_subagent_event("workflow-test", Some("Analysis complete".to_string()), 5);
 
         assert!(!message.has_running_subagents());
         let event = message.get_subagent_event("workflow-test");
         assert_eq!(event.unwrap().status, SubagentEventStatus::Complete);
-        assert_eq!(event.unwrap().summary, Some("Analysis complete".to_string()));
+        assert_eq!(
+            event.unwrap().summary,
+            Some("Analysis complete".to_string())
+        );
         assert_eq!(event.unwrap().tool_call_count, 5);
     }
 
@@ -672,7 +692,10 @@ mod tests {
         // Verify segments
         assert_eq!(message.segments.len(), 4);
         assert!(matches!(message.segments[0], MessageSegment::Text(_)));
-        assert!(matches!(message.segments[1], MessageSegment::SubagentEvent(_)));
+        assert!(matches!(
+            message.segments[1],
+            MessageSegment::SubagentEvent(_)
+        ));
         assert!(matches!(message.segments[2], MessageSegment::Text(_)));
         assert!(matches!(message.segments[3], MessageSegment::ToolEvent(_)));
 
@@ -743,7 +766,13 @@ mod tests {
         let block: ContentBlock = serde_json::from_str(json).unwrap();
 
         match block {
-            ContentBlock::ToolUse { id, name, input, result, is_error } => {
+            ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                result,
+                is_error,
+            } => {
                 assert_eq!(id, "tool-456");
                 assert_eq!(name, "bash");
                 assert_eq!(input, serde_json::json!({"command": "ls"}));
@@ -803,7 +832,9 @@ mod tests {
         let server_msg = ServerMessage {
             role: MessageRole::Assistant,
             content: Some(MessageContent::Blocks(vec![
-                ContentBlock::Text { text: "Hello ".to_string() },
+                ContentBlock::Text {
+                    text: "Hello ".to_string(),
+                },
                 ContentBlock::ToolUse {
                     id: "tool-123".to_string(),
                     name: "Read".to_string(),
@@ -811,7 +842,9 @@ mod tests {
                     result: Some("File contents here".to_string()),
                     is_error: false,
                 },
-                ContentBlock::Text { text: "Done!".to_string() },
+                ContentBlock::Text {
+                    text: "Done!".to_string(),
+                },
             ])),
             tool_calls: None,
             tool_call_id: None,
@@ -859,15 +892,13 @@ mod tests {
     fn test_to_client_message_with_tool_error() {
         let server_msg = ServerMessage {
             role: MessageRole::Assistant,
-            content: Some(MessageContent::Blocks(vec![
-                ContentBlock::ToolUse {
-                    id: "tool-err".to_string(),
-                    name: "Bash".to_string(),
-                    input: serde_json::json!({"command": "bad_cmd"}),
-                    result: Some("Command not found".to_string()),
-                    is_error: true,
-                },
-            ])),
+            content: Some(MessageContent::Blocks(vec![ContentBlock::ToolUse {
+                id: "tool-err".to_string(),
+                name: "Bash".to_string(),
+                input: serde_json::json!({"command": "bad_cmd"}),
+                result: Some("Command not found".to_string()),
+                is_error: true,
+            }])),
             tool_calls: None,
             tool_call_id: None,
             name: None,
@@ -988,9 +1019,15 @@ mod tests {
         let server_msg = ServerMessage {
             role: MessageRole::Assistant,
             content: Some(MessageContent::Blocks(vec![
-                ContentBlock::Text { text: "".to_string() },
-                ContentBlock::Text { text: "Hello".to_string() },
-                ContentBlock::Text { text: "".to_string() },
+                ContentBlock::Text {
+                    text: "".to_string(),
+                },
+                ContentBlock::Text {
+                    text: "Hello".to_string(),
+                },
+                ContentBlock::Text {
+                    text: "".to_string(),
+                },
             ])),
             tool_calls: None,
             tool_call_id: None,
@@ -1014,15 +1051,13 @@ mod tests {
     fn test_to_client_message_tool_without_result() {
         let server_msg = ServerMessage {
             role: MessageRole::Assistant,
-            content: Some(MessageContent::Blocks(vec![
-                ContentBlock::ToolUse {
-                    id: "tool-no-result".to_string(),
-                    name: "Write".to_string(),
-                    input: serde_json::json!({"file_path": "/test.txt", "content": "data"}),
-                    result: None,
-                    is_error: false,
-                },
-            ])),
+            content: Some(MessageContent::Blocks(vec![ContentBlock::ToolUse {
+                id: "tool-no-result".to_string(),
+                name: "Write".to_string(),
+                input: serde_json::json!({"file_path": "/test.txt", "content": "data"}),
+                result: None,
+                is_error: false,
+            }])),
             tool_calls: None,
             tool_call_id: None,
             name: None,

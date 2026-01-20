@@ -8,11 +8,9 @@ fn create_test_app_in_conversation() -> App {
     let mut app = App::new().expect("Failed to create app");
 
     // Create a thread and navigate to conversation
-    let thread_id = app.cache.create_pending_thread(
-        "Test Thread".to_string(),
-        ThreadType::Conversation,
-        None,
-    );
+    let thread_id =
+        app.cache
+            .create_pending_thread("Test Thread".to_string(), ThreadType::Conversation, None);
     app.active_thread_id = Some(thread_id);
     app.screen = Screen::Conversation;
 
@@ -65,7 +63,10 @@ fn test_scroll_up_increases_offset() {
     let amount = if near_top { 1 } else { 3 };
 
     let original_scroll = app.unified_scroll;
-    app.unified_scroll = app.unified_scroll.saturating_add(amount).min(app.max_scroll);
+    app.unified_scroll = app
+        .unified_scroll
+        .saturating_add(amount)
+        .min(app.max_scroll);
 
     assert!(
         app.unified_scroll > original_scroll,
@@ -124,10 +125,7 @@ fn test_scroll_clamping_at_bottom() {
     // Scroll down more than current offset
     app.unified_scroll = app.unified_scroll.saturating_sub(5);
 
-    assert_eq!(
-        app.unified_scroll, 0,
-        "Scroll should clamp to 0 at bottom"
-    );
+    assert_eq!(app.unified_scroll, 0, "Scroll should clamp to 0 at bottom");
 }
 
 #[test]
@@ -178,10 +176,7 @@ fn test_scroll_threshold_minimum_of_five() {
     // Threshold should be at least 5
     let threshold = (app.max_scroll / 10).max(5);
 
-    assert!(
-        threshold >= 5,
-        "Threshold should have minimum value of 5"
-    );
+    assert!(threshold >= 5, "Threshold should have minimum value of 5");
 }
 
 #[test]
@@ -315,7 +310,10 @@ fn test_top_boundary_detection() {
     let threshold = (app.max_scroll / 10).max(5);
     let near_top = app.unified_scroll >= app.max_scroll.saturating_sub(threshold);
     let amount = if near_top { 1 } else { 3 };
-    app.unified_scroll = app.unified_scroll.saturating_add(amount).min(app.max_scroll);
+    app.unified_scroll = app
+        .unified_scroll
+        .saturating_add(amount)
+        .min(app.max_scroll);
 
     // Detect top boundary hit
     if app.unified_scroll == app.max_scroll && app.max_scroll > 0 {
@@ -576,8 +574,14 @@ fn test_reset_scroll_clears_all_scroll_state() {
     app.reset_scroll();
 
     assert_eq!(app.unified_scroll, 0, "unified_scroll should reset to 0");
-    assert_eq!(app.scroll_position, 0.0, "scroll_position should reset to 0.0");
-    assert_eq!(app.scroll_velocity, 0.0, "scroll_velocity should reset to 0.0");
+    assert_eq!(
+        app.scroll_position, 0.0,
+        "scroll_position should reset to 0.0"
+    );
+    assert_eq!(
+        app.scroll_velocity, 0.0,
+        "scroll_velocity should reset to 0.0"
+    );
 }
 
 #[test]

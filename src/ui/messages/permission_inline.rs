@@ -270,7 +270,10 @@ fn build_ask_user_question_lines(
                 ));
             } else {
                 // Inactive tab: dark gray
-                tab_spans.push(Span::styled(q.header.clone(), Style::default().fg(Color::DarkGray)));
+                tab_spans.push(Span::styled(
+                    q.header.clone(),
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
         }
         lines.push(Line::from(tab_spans));
@@ -281,7 +284,10 @@ fn build_ask_user_question_lines(
     lines.push(Line::from(vec![
         bar.clone(),
         Span::styled(" ", Style::default()),
-        Span::styled(current_question.question.clone(), Style::default().fg(Color::White)),
+        Span::styled(
+            current_question.question.clone(),
+            Style::default().fg(Color::White),
+        ),
     ]));
     lines.push(Line::from(vec![bar.clone()])); // Empty line after question
 
@@ -343,7 +349,10 @@ fn build_ask_user_question_lines(
             lines.push(Line::from(vec![
                 bar.clone(),
                 Span::styled("       ", Style::default()), // indent
-                Span::styled(opt.description.clone(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    opt.description.clone(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
 
@@ -410,7 +419,11 @@ fn build_ask_user_question_lines(
     lines.push(Line::from(vec![bar.clone()])); // Empty line before help
 
     // Help line with countdown
-    let help_spans = build_ask_user_help_spans(state, current_question.multi_select, data.questions.len() > 1);
+    let help_spans = build_ask_user_help_spans(
+        state,
+        current_question.multi_select,
+        data.questions.len() > 1,
+    );
     let countdown_span = build_countdown_span(remaining_secs);
 
     let mut help_line_spans = vec![bar.clone(), Span::styled("   ", Style::default())];

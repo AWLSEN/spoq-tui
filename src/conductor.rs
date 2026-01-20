@@ -5,7 +5,10 @@
 
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;
-use crate::models::{Folder, FolderListResponse, Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse};
+use crate::models::{
+    Folder, FolderListResponse, Message, StreamRequest, Thread, ThreadDetailResponse,
+    ThreadListResponse,
+};
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
 use futures_util::stream::{self, Stream};
@@ -186,7 +189,10 @@ impl ConductorClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ConductorError::ServerError { status, message });
         }
 
@@ -220,20 +226,27 @@ impl ConductorClient {
                                         sse_event.event_type_name(),
                                         format!("{:?}", sse_event),
                                     );
-                                    let debug_event = DebugEvent::new(DebugEventKind::RawSseEvent(raw_data));
+                                    let debug_event =
+                                        DebugEvent::new(DebugEventKind::RawSseEvent(raw_data));
                                     let _ = tx.send(debug_event);
                                 }
 
                                 // Convert the sse::SseEvent to events::SseEvent
                                 let event = convert_sse_event(sse_event);
-                                return Some((Ok(event), (bytes_stream, parser, byte_buffer, debug_tx)));
+                                return Some((
+                                    Ok(event),
+                                    (bytes_stream, parser, byte_buffer, debug_tx),
+                                ));
                             }
                             Ok(None) => {
                                 // Continue processing buffer
                                 continue;
                             }
                             Err(e) => {
-                                return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, byte_buffer, debug_tx)));
+                                return Some((
+                                    Err(ConductorError::SseParse(e)),
+                                    (bytes_stream, parser, byte_buffer, debug_tx),
+                                ));
                             }
                         }
                     }
@@ -246,7 +259,10 @@ impl ConductorClient {
                             // Loop back to process the buffer
                         }
                         Some(Err(e)) => {
-                            return Some((Err(ConductorError::Http(e)), (bytes_stream, parser, byte_buffer, debug_tx)));
+                            return Some((
+                                Err(ConductorError::Http(e)),
+                                (bytes_stream, parser, byte_buffer, debug_tx),
+                            ));
                         }
                         None => {
                             // Stream ended - process any remaining data in buffer
@@ -263,16 +279,24 @@ impl ConductorClient {
                                                 sse_event.event_type_name(),
                                                 format!("{:?}", sse_event),
                                             );
-                                            let debug_event = DebugEvent::new(DebugEventKind::RawSseEvent(raw_data));
+                                            let debug_event = DebugEvent::new(
+                                                DebugEventKind::RawSseEvent(raw_data),
+                                            );
                                             let _ = tx.send(debug_event);
                                         }
 
                                         let event = convert_sse_event(sse_event);
-                                        return Some((Ok(event), (bytes_stream, parser, byte_buffer, debug_tx)));
+                                        return Some((
+                                            Ok(event),
+                                            (bytes_stream, parser, byte_buffer, debug_tx),
+                                        ));
                                     }
                                     Ok(None) => {}
                                     Err(e) => {
-                                        return Some((Err(ConductorError::SseParse(e)), (bytes_stream, parser, byte_buffer, debug_tx)));
+                                        return Some((
+                                            Err(ConductorError::SseParse(e)),
+                                            (bytes_stream, parser, byte_buffer, debug_tx),
+                                        ));
                                     }
                                 }
                             }
@@ -313,7 +337,10 @@ impl ConductorClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ConductorError::ServerError { status, message });
         }
 
@@ -332,7 +359,10 @@ impl ConductorClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ConductorError::ServerError { status, message });
         }
 
@@ -350,7 +380,10 @@ impl ConductorClient {
         let response = self.add_auth_header(builder).send().await?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ConductorError::ServerError { status, message });
         }
         let data: FolderListResponse = response.json().await?;
@@ -377,7 +410,10 @@ impl ConductorClient {
     ///
     /// # Returns
     /// A vector of messages for the specified thread, or an error if the request fails
-    pub async fn fetch_thread_messages(&self, _thread_id: &str) -> Result<Vec<Message>, ConductorError> {
+    pub async fn fetch_thread_messages(
+        &self,
+        _thread_id: &str,
+    ) -> Result<Vec<Message>, ConductorError> {
         // Stub: return empty vec for now
         Ok(Vec::new())
     }
@@ -399,7 +435,10 @@ impl ConductorClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ConductorError::ServerError { status, message });
         }
 
@@ -447,7 +486,10 @@ impl ConductorClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ConductorError::ServerError { status, message });
         }
 
@@ -478,7 +520,10 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
                 },
             })
         }
-        crate::sse::SseEvent::ThreadInfo { thread_id, title: _ } => {
+        crate::sse::SseEvent::ThreadInfo {
+            thread_id,
+            title: _,
+        } => {
             // Map to UserMessageSaved as a proxy for thread info
             SseEvent::UserMessageSaved(crate::events::UserMessageSavedEvent {
                 message_id: String::new(),
@@ -526,31 +571,36 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
             tokens_used,
             token_limit,
         }),
-        crate::sse::SseEvent::ToolCallStart { tool_name, tool_call_id } => {
-            SseEvent::ToolCallStart(crate::events::ToolCallStartEvent {
-                tool_name,
-                tool_call_id,
-            })
-        }
-        crate::sse::SseEvent::ToolCallArgument { tool_call_id, chunk } => {
-            SseEvent::ToolCallArgument(crate::events::ToolCallArgumentEvent {
-                tool_call_id,
-                chunk,
-            })
-        }
-        crate::sse::SseEvent::ToolExecuting { tool_call_id, display_name, url } => {
-            SseEvent::ToolExecuting(crate::events::ToolExecutingEvent {
-                tool_call_id,
-                display_name,
-                url,
-            })
-        }
-        crate::sse::SseEvent::ToolResult { tool_call_id, result } => {
-            SseEvent::ToolResult(crate::events::ToolResultEvent {
-                tool_call_id,
-                result,
-            })
-        }
+        crate::sse::SseEvent::ToolCallStart {
+            tool_name,
+            tool_call_id,
+        } => SseEvent::ToolCallStart(crate::events::ToolCallStartEvent {
+            tool_name,
+            tool_call_id,
+        }),
+        crate::sse::SseEvent::ToolCallArgument {
+            tool_call_id,
+            chunk,
+        } => SseEvent::ToolCallArgument(crate::events::ToolCallArgumentEvent {
+            tool_call_id,
+            chunk,
+        }),
+        crate::sse::SseEvent::ToolExecuting {
+            tool_call_id,
+            display_name,
+            url,
+        } => SseEvent::ToolExecuting(crate::events::ToolExecutingEvent {
+            tool_call_id,
+            display_name,
+            url,
+        }),
+        crate::sse::SseEvent::ToolResult {
+            tool_call_id,
+            result,
+        } => SseEvent::ToolResult(crate::events::ToolResultEvent {
+            tool_call_id,
+            result,
+        }),
         crate::sse::SseEvent::Reasoning { text } => {
             SseEvent::Reasoning(crate::events::ReasoningEvent { text })
         }
@@ -569,43 +619,47 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
         }),
         crate::sse::SseEvent::TodosUpdated { todos } => {
             // Parse todos from Value to Vec<TodoItem>
-            let todo_items: Vec<crate::events::TodoItem> = serde_json::from_value(todos)
-                .unwrap_or_default();
+            let todo_items: Vec<crate::events::TodoItem> =
+                serde_json::from_value(todos).unwrap_or_default();
             SseEvent::TodosUpdated(crate::events::TodosUpdatedEvent { todos: todo_items })
         }
-        crate::sse::SseEvent::SubagentStarted { task_id, description, subagent_type } => {
-            SseEvent::SubagentStarted(crate::events::SubagentStartedEvent {
-                task_id,
-                description,
-                subagent_type,
-            })
-        }
+        crate::sse::SseEvent::SubagentStarted {
+            task_id,
+            description,
+            subagent_type,
+        } => SseEvent::SubagentStarted(crate::events::SubagentStartedEvent {
+            task_id,
+            description,
+            subagent_type,
+        }),
         crate::sse::SseEvent::SubagentProgress { task_id, message } => {
-            SseEvent::SubagentProgress(crate::events::SubagentProgressEvent {
-                task_id,
-                message,
-            })
+            SseEvent::SubagentProgress(crate::events::SubagentProgressEvent { task_id, message })
         }
-        crate::sse::SseEvent::SubagentCompleted { task_id, summary, tool_call_count } => {
-            SseEvent::SubagentCompleted(crate::events::SubagentCompletedEvent {
-                task_id,
-                summary,
-                tool_call_count,
-            })
-        }
-        crate::sse::SseEvent::ThreadUpdated { thread_id, title, description } => {
-            SseEvent::ThreadUpdated(crate::events::ThreadUpdatedEvent {
-                thread_id,
-                title,
-                description,
-            })
-        }
-        crate::sse::SseEvent::Usage { context_window_used, context_window_limit } => {
-            SseEvent::Usage(crate::events::UsageEvent {
-                context_window_used,
-                context_window_limit,
-            })
-        }
+        crate::sse::SseEvent::SubagentCompleted {
+            task_id,
+            summary,
+            tool_call_count,
+        } => SseEvent::SubagentCompleted(crate::events::SubagentCompletedEvent {
+            task_id,
+            summary,
+            tool_call_count,
+        }),
+        crate::sse::SseEvent::ThreadUpdated {
+            thread_id,
+            title,
+            description,
+        } => SseEvent::ThreadUpdated(crate::events::ThreadUpdatedEvent {
+            thread_id,
+            title,
+            description,
+        }),
+        crate::sse::SseEvent::Usage {
+            context_window_used,
+            context_window_limit,
+        } => SseEvent::Usage(crate::events::UsageEvent {
+            context_window_used,
+            context_window_limit,
+        }),
     }
 }
 
@@ -728,7 +782,10 @@ mod tests {
             SseEvent::ThreadUpdated(thread_updated) => {
                 assert_eq!(thread_updated.thread_id, "thread-123");
                 assert_eq!(thread_updated.title, Some("New Title".to_string()));
-                assert_eq!(thread_updated.description, Some("New Description".to_string()));
+                assert_eq!(
+                    thread_updated.description,
+                    Some("New Description".to_string())
+                );
             }
             _ => panic!("Expected ThreadUpdated event"),
         }
@@ -785,8 +842,7 @@ mod tests {
 
     #[test]
     fn test_conductor_client_with_url_and_auth() {
-        let client = ConductorClient::with_url("http://localhost:3000")
-            .with_auth("test-token");
+        let client = ConductorClient::with_url("http://localhost:3000").with_auth("test-token");
         assert_eq!(client.base_url, "http://localhost:3000");
         assert_eq!(client.auth_token(), Some("test-token"));
     }
@@ -814,5 +870,4 @@ mod tests {
         let client3 = ConductorClient::default();
         assert!(client3.auth_token().is_none());
     }
-
 }

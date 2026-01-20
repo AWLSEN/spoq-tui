@@ -773,7 +773,10 @@ mod tests {
 
         let event: SubagentCompletedEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.task_id, "task-001");
-        assert_eq!(event.summary, "Found 15 relevant files in the authentication module");
+        assert_eq!(
+            event.summary,
+            "Found 15 relevant files in the authentication module"
+        );
         assert_eq!(event.tool_call_count, Some(42));
     }
 
@@ -947,8 +950,14 @@ mod tests {
         }
 
         assert_eq!(event_with_meta.meta.seq, Some(1));
-        assert_eq!(event_with_meta.meta.session_id, Some("sess-123".to_string()));
-        assert_eq!(event_with_meta.meta.thread_id, Some("thread-456".to_string()));
+        assert_eq!(
+            event_with_meta.meta.session_id,
+            Some("sess-123".to_string())
+        );
+        assert_eq!(
+            event_with_meta.meta.thread_id,
+            Some("thread-456".to_string())
+        );
         assert_eq!(event_with_meta.meta.timestamp, Some(1736956800000));
     }
 
@@ -963,7 +972,8 @@ mod tests {
 
     #[test]
     fn test_todo_item_parsing_with_active_form() {
-        let json = r#"{"content": "Run tests", "active_form": "Running tests", "status": "in_progress"}"#;
+        let json =
+            r#"{"content": "Run tests", "active_form": "Running tests", "status": "in_progress"}"#;
         let item: TodoItem = serde_json::from_str(json).unwrap();
         assert_eq!(item.content, "Run tests");
         assert_eq!(item.active_form, Some("Running tests".to_string()));

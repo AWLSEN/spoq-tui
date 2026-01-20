@@ -29,7 +29,6 @@ pub fn parse_ask_user_question(tool_input: &serde_json::Value) -> Option<AskUser
     serde_json::from_value(tool_input.clone()).ok()
 }
 
-
 /// Extract preview content from a PermissionRequest.
 pub fn get_permission_preview(perm: &PermissionRequest) -> String {
     // First try context (human-readable description)
@@ -61,7 +60,6 @@ pub fn get_permission_preview(perm: &PermissionRequest) -> String {
 
     String::new()
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -246,5 +244,4 @@ mod tests {
         let result = parse_ask_user_question(&input);
         assert!(result.is_none());
     }
-
 }

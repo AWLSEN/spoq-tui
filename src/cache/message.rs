@@ -33,11 +33,7 @@ impl ThreadCache {
         let now = Utc::now();
 
         // Generate a simple message ID based on existing count
-        let existing_count = self
-            .messages
-            .get(thread_id)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let existing_count = self.messages.get(thread_id).map(|m| m.len()).unwrap_or(0);
 
         let message = Message {
             id: (existing_count + 1) as i64,
@@ -656,8 +652,11 @@ mod tests {
         let mut cache = ThreadCache::new();
 
         // Start conversation with pending thread
-        let pending_id =
-            cache.create_pending_thread("What is Rust?".to_string(), ThreadType::Conversation, None);
+        let pending_id = cache.create_pending_thread(
+            "What is Rust?".to_string(),
+            ThreadType::Conversation,
+            None,
+        );
 
         // Stream first response
         cache.append_to_message(&pending_id, "Rust is a systems programming language.");

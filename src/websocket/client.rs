@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, watch};
-use tokio_tungstenite::{connect_async, tungstenite::Message, tungstenite::client::IntoClientRequest};
+use tokio_tungstenite::{
+    connect_async, tungstenite::client::IntoClientRequest, tungstenite::Message,
+};
 use tracing::{debug, error, info, warn};
 
 use super::messages::{WsIncomingMessage, WsOutgoingMessage};
@@ -52,8 +54,8 @@ pub struct WsClientConfig {
 impl Default for WsClientConfig {
     fn default() -> Self {
         // Allow WebSocket host to be configured via environment variable
-        let host = std::env::var("SPOQ_WS_HOST")
-            .unwrap_or_else(|_| "100.80.115.93:8000".to_string());
+        let host =
+            std::env::var("SPOQ_WS_HOST").unwrap_or_else(|_| "100.80.115.93:8000".to_string());
         Self {
             host,
             max_retries: 5,
@@ -93,22 +95,24 @@ impl WsClient {
         let url = format!("ws://{}/ws", config.host);
 
         // Build the WebSocket request with optional auth header
-        let mut request = url.clone().into_client_request()
+        let mut request = url
+            .clone()
+            .into_client_request()
             .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
 
         if let Some(ref token) = config.auth_token {
             request.headers_mut().insert(
                 "Authorization",
-                format!("Bearer {}", token).parse()
-                    .map_err(|e: tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue| WsError::ConnectionFailed(e.to_string()))?,
+                format!("Bearer {}", token).parse().map_err(
+                    |e: tokio_tungstenite::tungstenite::http::header::InvalidHeaderValue| {
+                        WsError::ConnectionFailed(e.to_string())
+                    },
+                )?,
             );
         }
 
         // Try initial connection with 5 second timeout
-        let ws_stream = tokio::time::timeout(
-            Duration::from_secs(5),
-            connect_async(request)
-        )
+        let ws_stream = tokio::time::timeout(Duration::from_secs(5), connect_async(request))
             .await
             .map_err(|_| WsError::ConnectionFailed(format!("Connection timeout to {}", url)))?
             .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
@@ -368,10 +372,7 @@ async fn attempt_reconnect(
         let _ = state_tx.send(WsConnectionState::Reconnecting { attempt });
 
         // Calculate backoff: 1s, 2s, 4s, 8s, ... capped at max_backoff_secs
-        let backoff_secs = std::cmp::min(
-            1u64 << (attempt - 1),
-            config.max_backoff_secs,
-        );
+        let backoff_secs = std::cmp::min(1u64 << (attempt - 1), config.max_backoff_secs);
         info!(
             "Reconnection attempt {} of {}, waiting {}s",
             attempt, config.max_retries, backoff_secs
@@ -453,7 +454,10 @@ mod tests {
             WsConnectionState::Disconnected,
             WsConnectionState::Disconnected
         );
-        assert_ne!(WsConnectionState::Connected, WsConnectionState::Disconnected);
+        assert_ne!(
+            WsConnectionState::Connected,
+            WsConnectionState::Disconnected
+        );
     }
 
     #[test]

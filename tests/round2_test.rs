@@ -55,13 +55,17 @@ fn test_append_tool_argument_multiple_tools() {
     let messages = cache.get_messages(&thread_id).unwrap();
     let assistant_msg = &messages[1];
 
-    let tool_events: Vec<&ToolEvent> = assistant_msg.segments.iter().filter_map(|seg| {
-        if let MessageSegment::ToolEvent(event) = seg {
-            Some(event)
-        } else {
-            None
-        }
-    }).collect();
+    let tool_events: Vec<&ToolEvent> = assistant_msg
+        .segments
+        .iter()
+        .filter_map(|seg| {
+            if let MessageSegment::ToolEvent(event) = seg {
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .collect();
 
     assert_eq!(tool_events.len(), 2);
     assert_eq!(tool_events[0].args_json, "{\"file_path\": \"file.txt\"}");
@@ -140,7 +144,10 @@ fn test_set_tool_result_error() {
     let assistant_msg = &messages[1];
 
     if let Some(MessageSegment::ToolEvent(event)) = assistant_msg.segments.first() {
-        assert_eq!(event.result_preview.as_ref().unwrap(), "Command failed: exit code 1");
+        assert_eq!(
+            event.result_preview.as_ref().unwrap(),
+            "Command failed: exit code 1"
+        );
         assert!(event.result_is_error);
     } else {
         panic!("Expected ToolEvent segment");
@@ -264,25 +271,35 @@ fn test_multiple_tools_complete_workflow() {
     let messages = cache.get_messages(&thread_id).unwrap();
     let assistant_msg = &messages[1];
 
-    let tool_events: Vec<&ToolEvent> = assistant_msg.segments.iter().filter_map(|seg| {
-        if let MessageSegment::ToolEvent(event) = seg {
-            Some(event)
-        } else {
-            None
-        }
-    }).collect();
+    let tool_events: Vec<&ToolEvent> = assistant_msg
+        .segments
+        .iter()
+        .filter_map(|seg| {
+            if let MessageSegment::ToolEvent(event) = seg {
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .collect();
 
     assert_eq!(tool_events.len(), 2);
 
     // First tool
     assert_eq!(tool_events[0].tool_call_id, "tool-1");
     assert_eq!(tool_events[0].args_json, "{\"file_path\": \"file1.txt\"}");
-    assert_eq!(tool_events[0].result_preview.as_ref().unwrap(), "File 1 contents");
+    assert_eq!(
+        tool_events[0].result_preview.as_ref().unwrap(),
+        "File 1 contents"
+    );
 
     // Second tool
     assert_eq!(tool_events[1].tool_call_id, "tool-2");
     assert_eq!(tool_events[1].args_json, "{\"command\": \"ls\"}");
-    assert_eq!(tool_events[1].result_preview.as_ref().unwrap(), "file1.txt\nfile2.txt");
+    assert_eq!(
+        tool_events[1].result_preview.as_ref().unwrap(),
+        "file1.txt\nfile2.txt"
+    );
 }
 
 #[test]

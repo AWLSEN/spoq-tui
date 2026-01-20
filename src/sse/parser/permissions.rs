@@ -3,7 +3,10 @@
 use crate::sse::events::{SseEvent, SseParseError};
 
 /// Parse permission_request event
-pub(super) fn parse_permission_request_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_permission_request_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -35,8 +38,8 @@ pub(super) fn parse_permission_request_event(event_type: &str, data: &str) -> Re
 
 #[cfg(test)]
 mod tests {
-    use crate::sse::parser::parse_sse_event;
     use crate::sse::events::SseEvent;
+    use crate::sse::parser::parse_sse_event;
 
     #[test]
     fn test_parse_permission_request() {
@@ -82,14 +85,23 @@ mod tests {
         );
         let event = result.unwrap();
         match event {
-            SseEvent::PermissionRequest { permission_id, tool_name, description, tool_call_id, tool_input } => {
+            SseEvent::PermissionRequest {
+                permission_id,
+                tool_name,
+                description,
+                tool_call_id,
+                tool_input,
+            } => {
                 assert_eq!(permission_id, "perm-abc");
                 assert_eq!(tool_name, "edit_file");
                 assert_eq!(description, "Edit");
                 assert_eq!(tool_call_id, None);
                 assert!(tool_input.is_some());
                 let input = tool_input.unwrap();
-                assert_eq!(input.get("path").and_then(|v| v.as_str()), Some("/tmp/test.txt"));
+                assert_eq!(
+                    input.get("path").and_then(|v| v.as_str()),
+                    Some("/tmp/test.txt")
+                );
             }
             _ => panic!("Expected PermissionRequest event"),
         }

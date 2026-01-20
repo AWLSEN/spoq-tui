@@ -132,7 +132,11 @@ pub fn format_tool_args(function_name: &str, args_json: &str) -> String {
             let pattern = json.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
             let path = json.get("path").and_then(|v| v.as_str());
             if let Some(p) = path {
-                format!("Searching '{}' in {}", truncate_string(pattern, 30), truncate_string(p, 25))
+                format!(
+                    "Searching '{}' in {}",
+                    truncate_string(pattern, 30),
+                    truncate_string(p, 25)
+                )
             } else {
                 format!("Searching '{}'", truncate_string(pattern, 40))
             }
@@ -190,4 +194,3 @@ pub fn format_tool_args(function_name: &str, args_json: &str) -> String {
 pub fn is_terminal_too_small(width: u16, height: u16) -> bool {
     width < MIN_TERMINAL_WIDTH || height < MIN_TERMINAL_HEIGHT
 }
-

@@ -9,14 +9,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ToolDisplayStatus {
     /// Tool call started, showing function name
-    Started {
-        function: String,
-        started_at: u64,
-    },
+    Started { function: String, started_at: u64 },
     /// Tool is executing, showing display name
-    Executing {
-        display_name: String,
-    },
+    Executing { display_name: String },
     /// Tool completed (success or failure)
     Completed {
         success: bool,
@@ -32,7 +27,11 @@ impl ToolDisplayStatus {
         match self {
             ToolDisplayStatus::Started { .. } => true,
             ToolDisplayStatus::Executing { .. } => true,
-            ToolDisplayStatus::Completed { success, completed_at, .. } => {
+            ToolDisplayStatus::Completed {
+                success,
+                completed_at,
+                ..
+            } => {
                 // Failures always persist
                 if !success {
                     return true;
@@ -49,12 +48,8 @@ impl ToolDisplayStatus {
             ToolDisplayStatus::Started { function, .. } => {
                 format!("{function}...")
             }
-            ToolDisplayStatus::Executing { display_name } => {
-                display_name.clone()
-            }
-            ToolDisplayStatus::Completed { summary, .. } => {
-                summary.clone()
-            }
+            ToolDisplayStatus::Executing { display_name } => display_name.clone(),
+            ToolDisplayStatus::Completed { summary, .. } => summary.clone(),
         }
     }
 
@@ -70,7 +65,10 @@ impl ToolDisplayStatus {
 
     /// Check if still in progress (started or executing)
     pub fn is_in_progress(&self) -> bool {
-        matches!(self, ToolDisplayStatus::Started { .. } | ToolDisplayStatus::Executing { .. })
+        matches!(
+            self,
+            ToolDisplayStatus::Started { .. } | ToolDisplayStatus::Executing { .. }
+        )
     }
 }
 
@@ -110,7 +108,11 @@ impl SubagentDisplayStatus {
         match self {
             SubagentDisplayStatus::Started { .. } => true,
             SubagentDisplayStatus::Progress { .. } => true,
-            SubagentDisplayStatus::Completed { success, completed_at, .. } => {
+            SubagentDisplayStatus::Completed {
+                success,
+                completed_at,
+                ..
+            } => {
                 // Failures always persist
                 if !success {
                     return true;
@@ -133,7 +135,9 @@ impl SubagentDisplayStatus {
     /// Get the progress message (if any)
     pub fn progress_message(&self) -> Option<&str> {
         match self {
-            SubagentDisplayStatus::Progress { progress_message, .. } => Some(progress_message),
+            SubagentDisplayStatus::Progress {
+                progress_message, ..
+            } => Some(progress_message),
             _ => None,
         }
     }
@@ -145,12 +149,18 @@ impl SubagentDisplayStatus {
 
     /// Check if this is a completed failure
     pub fn is_failure(&self) -> bool {
-        matches!(self, SubagentDisplayStatus::Completed { success: false, .. })
+        matches!(
+            self,
+            SubagentDisplayStatus::Completed { success: false, .. }
+        )
     }
 
     /// Check if still in progress (started or progress)
     pub fn is_in_progress(&self) -> bool {
-        matches!(self, SubagentDisplayStatus::Started { .. } | SubagentDisplayStatus::Progress { .. })
+        matches!(
+            self,
+            SubagentDisplayStatus::Started { .. } | SubagentDisplayStatus::Progress { .. }
+        )
     }
 }
 
@@ -193,7 +203,7 @@ mod tests {
         assert!(status.should_render(100)); // At completion
         assert!(status.should_render(120)); // 20 ticks later
         assert!(status.should_render(129)); // 29 ticks later
-        // Should not render after 30 ticks
+                                            // Should not render after 30 ticks
         assert!(!status.should_render(130)); // 30 ticks later
         assert!(!status.should_render(150)); // 50 ticks later
     }
@@ -354,7 +364,7 @@ mod tests {
         assert!(status.should_render(100)); // At completion
         assert!(status.should_render(120)); // 20 ticks later
         assert!(status.should_render(129)); // 29 ticks later
-        // Should not render after 30 ticks
+                                            // Should not render after 30 ticks
         assert!(!status.should_render(130)); // 30 ticks later
         assert!(!status.should_render(150)); // 50 ticks later
     }

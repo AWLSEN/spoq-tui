@@ -1,9 +1,7 @@
 // Integration tests for terminal dimension tracking
 
 use spoq::app::App;
-use spoq::ui::{
-    calculate_stacked_heights, calculate_two_column_widths, LayoutContext,
-};
+use spoq::ui::{calculate_stacked_heights, calculate_two_column_widths, LayoutContext};
 
 // =============================================================================
 // App Terminal Dimension Tests
@@ -14,8 +12,16 @@ fn test_terminal_dimensions_default_values() {
     let app = App::new().expect("Failed to create app");
 
     // Default dimensions should be 80x24 (standard terminal size)
-    assert_eq!(app.terminal_width(), 80, "Default terminal width should be 80");
-    assert_eq!(app.terminal_height(), 24, "Default terminal height should be 24");
+    assert_eq!(
+        app.terminal_width(),
+        80,
+        "Default terminal width should be 80"
+    );
+    assert_eq!(
+        app.terminal_height(),
+        24,
+        "Default terminal height should be 24"
+    );
 }
 
 #[test]
@@ -24,8 +30,16 @@ fn test_update_terminal_dimensions() {
 
     app.update_terminal_dimensions(120, 40);
 
-    assert_eq!(app.terminal_width(), 120, "Terminal width should be updated");
-    assert_eq!(app.terminal_height(), 40, "Terminal height should be updated");
+    assert_eq!(
+        app.terminal_width(),
+        120,
+        "Terminal width should be updated"
+    );
+    assert_eq!(
+        app.terminal_height(),
+        40,
+        "Terminal height should be updated"
+    );
 }
 
 #[test]
@@ -55,7 +69,11 @@ fn test_content_width_calculation() {
     app.update_terminal_dimensions(100, 30);
 
     // Content width should subtract 4 (2 for each side border)
-    assert_eq!(app.content_width(), 96, "Content width should account for borders");
+    assert_eq!(
+        app.content_width(),
+        96,
+        "Content width should account for borders"
+    );
 }
 
 #[test]
@@ -65,7 +83,11 @@ fn test_content_width_small_terminal() {
     app.update_terminal_dimensions(10, 10);
 
     // Should handle small terminals gracefully with saturating_sub
-    assert_eq!(app.content_width(), 6, "Content width should not go negative");
+    assert_eq!(
+        app.content_width(),
+        6,
+        "Content width should not go negative"
+    );
 }
 
 #[test]
@@ -75,7 +97,11 @@ fn test_content_width_very_small_terminal() {
     app.update_terminal_dimensions(3, 3);
 
     // saturating_sub prevents underflow
-    assert_eq!(app.content_width(), 0, "Content width should be 0 for tiny terminal");
+    assert_eq!(
+        app.content_width(),
+        0,
+        "Content width should be 0 for tiny terminal"
+    );
 }
 
 #[test]
@@ -85,7 +111,11 @@ fn test_content_height_calculation() {
     app.update_terminal_dimensions(100, 30);
 
     // Content height should subtract 6 (header, footer, borders)
-    assert_eq!(app.content_height(), 24, "Content height should account for chrome");
+    assert_eq!(
+        app.content_height(),
+        24,
+        "Content height should account for chrome"
+    );
 }
 
 #[test]
@@ -95,7 +125,11 @@ fn test_content_height_small_terminal() {
     app.update_terminal_dimensions(80, 8);
 
     // Should handle small terminals gracefully
-    assert_eq!(app.content_height(), 2, "Content height should not go negative");
+    assert_eq!(
+        app.content_height(),
+        2,
+        "Content height should not go negative"
+    );
 }
 
 #[test]
@@ -105,7 +139,11 @@ fn test_content_height_very_small_terminal() {
     app.update_terminal_dimensions(80, 4);
 
     // saturating_sub prevents underflow
-    assert_eq!(app.content_height(), 0, "Content height should be 0 for tiny terminal");
+    assert_eq!(
+        app.content_height(),
+        0,
+        "Content height should be 0 for tiny terminal"
+    );
 }
 
 // =============================================================================
@@ -191,7 +229,11 @@ fn test_bounded_width() {
     assert_eq!(ctx.bounded_width(10, 30, 80), 30, "Should clamp to min");
 
     // 30% of 200 = 60, bounded between 20 and 80
-    assert_eq!(ctx.bounded_width(30, 20, 80), 60, "Should not clamp when in bounds");
+    assert_eq!(
+        ctx.bounded_width(30, 20, 80),
+        60,
+        "Should not clamp when in bounds"
+    );
 }
 
 #[test]
@@ -213,7 +255,10 @@ fn test_is_narrow() {
 
     assert!(!wide_ctx.is_narrow(), "100 columns is not narrow");
     assert!(narrow_ctx.is_narrow(), "60 columns is narrow");
-    assert!(!boundary_ctx.is_narrow(), "80 columns is the boundary (not narrow)");
+    assert!(
+        !boundary_ctx.is_narrow(),
+        "80 columns is the boundary (not narrow)"
+    );
 }
 
 #[test]
@@ -224,7 +269,10 @@ fn test_is_short() {
 
     assert!(!tall_ctx.is_short(), "40 rows is not short");
     assert!(short_ctx.is_short(), "20 rows is short");
-    assert!(!boundary_ctx.is_short(), "24 rows is the boundary (not short)");
+    assert!(
+        !boundary_ctx.is_short(),
+        "24 rows is the boundary (not short)"
+    );
 }
 
 #[test]
@@ -244,8 +292,16 @@ fn test_is_compact() {
 fn test_content_width_with_border() {
     let ctx = LayoutContext::new(100, 50);
 
-    assert_eq!(ctx.available_content_width(4), 96, "Should subtract border width");
-    assert_eq!(ctx.available_content_width(10), 90, "Should subtract custom border width");
+    assert_eq!(
+        ctx.available_content_width(4),
+        96,
+        "Should subtract border width"
+    );
+    assert_eq!(
+        ctx.available_content_width(10),
+        90,
+        "Should subtract custom border width"
+    );
 }
 
 #[test]
@@ -260,8 +316,16 @@ fn test_content_width_handles_overflow() {
 fn test_content_height_with_chrome() {
     let ctx = LayoutContext::new(100, 50);
 
-    assert_eq!(ctx.available_content_height(6), 44, "Should subtract chrome height");
-    assert_eq!(ctx.available_content_height(10), 40, "Should subtract custom chrome height");
+    assert_eq!(
+        ctx.available_content_height(6),
+        44,
+        "Should subtract chrome height"
+    );
+    assert_eq!(
+        ctx.available_content_height(10),
+        40,
+        "Should subtract custom chrome height"
+    );
 }
 
 #[test]
@@ -269,7 +333,11 @@ fn test_content_height_handles_overflow() {
     let ctx = LayoutContext::new(100, 10);
 
     // Chrome larger than height - saturating_sub prevents underflow
-    assert_eq!(ctx.available_content_height(20), 0, "Should not go negative");
+    assert_eq!(
+        ctx.available_content_height(20),
+        0,
+        "Should not go negative"
+    );
 }
 
 // =============================================================================

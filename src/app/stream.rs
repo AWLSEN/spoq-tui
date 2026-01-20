@@ -45,17 +45,16 @@ impl App {
         let is_command_deck = self.screen == Screen::CommandDeck;
 
         // Extract working directory from selected folder (if any)
-        let working_directory = self
-            .selected_folder
-            .as_ref()
-            .map(|f| f.path.clone());
+        let working_directory = self.selected_folder.as_ref().map(|f| f.path.clone());
 
         // Determine thread_id based on screen
         let (thread_id, is_new_thread) = if is_command_deck {
             // NEW thread - create pending, will reconcile when backend responds
-            let pending_id = self
-                .cache
-                .create_pending_thread(content.clone(), new_thread_type, working_directory.clone());
+            let pending_id = self.cache.create_pending_thread(
+                content.clone(),
+                new_thread_type,
+                working_directory.clone(),
+            );
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
             // Reset scroll for new conversation
@@ -75,7 +74,10 @@ impl App {
                 return;
             }
 
-            if !self.cache.add_streaming_message(existing_id, content.clone()) {
+            if !self
+                .cache
+                .add_streaming_message(existing_id, content.clone())
+            {
                 // Thread doesn't exist in cache - might have been deleted
                 self.stream_error = Some("Thread no longer exists.".to_string());
                 return;
@@ -84,9 +86,11 @@ impl App {
         } else {
             // Edge case: on Conversation screen but no active_thread_id (shouldn't happen)
             // Fall back to creating new thread
-            let pending_id = self
-                .cache
-                .create_pending_thread(content.clone(), new_thread_type, working_directory.clone());
+            let pending_id = self.cache.create_pending_thread(
+                content.clone(),
+                new_thread_type,
+                working_directory.clone(),
+            );
             self.active_thread_id = Some(pending_id.clone());
             self.reset_scroll();
             // Clear selected folder after successful thread creation
@@ -184,9 +188,8 @@ impl App {
     pub(super) async fn process_stream(
         stream: &mut std::pin::Pin<
             Box<
-                dyn futures_util::Stream<
-                        Item = Result<SseEvent, crate::conductor::ConductorError>,
-                    > + Send,
+                dyn futures_util::Stream<Item = Result<SseEvent, crate::conductor::ConductorError>>
+                    + Send,
             >,
         >,
         message_tx: &mpsc::UnboundedSender<AppMessage>,
@@ -609,7 +612,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{SubagentStartedEvent, SubagentProgressEvent, SubagentCompletedEvent};
+    use crate::events::{SubagentCompletedEvent, SubagentProgressEvent, SubagentStartedEvent};
     use tokio::sync::mpsc;
 
     // Helper function to create a trait object stream
@@ -617,9 +620,8 @@ mod tests {
         events: Vec<Result<SseEvent, crate::conductor::ConductorError>>,
     ) -> std::pin::Pin<
         Box<
-            dyn futures_util::Stream<
-                    Item = Result<SseEvent, crate::conductor::ConductorError>,
-                > + Send,
+            dyn futures_util::Stream<Item = Result<SseEvent, crate::conductor::ConductorError>>
+                + Send,
         >,
     > {
         Box::pin(futures_util::stream::iter(events))
@@ -647,7 +649,11 @@ mod tests {
         // Verify the message was sent
         let msg = rx.recv().await.expect("Should receive message");
         match msg {
-            AppMessage::SubagentStarted { task_id, description, subagent_type } => {
+            AppMessage::SubagentStarted {
+                task_id,
+                description,
+                subagent_type,
+            } => {
                 assert_eq!(task_id, "task-001");
                 assert_eq!(description, "Test subagent task");
                 assert_eq!(subagent_type, "Explore");
@@ -707,7 +713,11 @@ mod tests {
         // Verify the message was sent
         let msg = rx.recv().await.expect("Should receive message");
         match msg {
-            AppMessage::SubagentCompleted { task_id, summary, tool_call_count } => {
+            AppMessage::SubagentCompleted {
+                task_id,
+                summary,
+                tool_call_count,
+            } => {
                 assert_eq!(task_id, "task-003");
                 assert_eq!(summary, "Successfully analyzed codebase");
                 assert_eq!(tool_call_count, Some(15));
@@ -738,7 +748,11 @@ mod tests {
         // Verify the message was sent
         let msg = rx.recv().await.expect("Should receive message");
         match msg {
-            AppMessage::SubagentCompleted { task_id, summary, tool_call_count } => {
+            AppMessage::SubagentCompleted {
+                task_id,
+                summary,
+                tool_call_count,
+            } => {
                 assert_eq!(task_id, "task-004");
                 assert_eq!(summary, "Task completed");
                 assert_eq!(tool_call_count, None);
@@ -805,7 +819,11 @@ mod tests {
 
         let msg4 = rx.recv().await.expect("Should receive fourth message");
         match msg4 {
-            AppMessage::SubagentCompleted { summary, tool_call_count, .. } => {
+            AppMessage::SubagentCompleted {
+                summary,
+                tool_call_count,
+                ..
+            } => {
                 assert_eq!(summary, "All steps completed");
                 assert_eq!(tool_call_count, Some(20));
             }

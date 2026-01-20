@@ -1650,9 +1650,7 @@ impl<'a> TextArea<'a> {
         let spans: Vec<Span<'static>> = line
             .spans
             .into_iter()
-            .map(|span| {
-                Span::styled(span.content.into_owned(), span.style)
-            })
+            .map(|span| Span::styled(span.content.into_owned(), span.style))
             .collect();
 
         let mut result = Line::from(spans);

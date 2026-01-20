@@ -23,7 +23,9 @@ pub type DebugEventSender = broadcast::Sender<DebugEvent>;
 /// Returns both the sender and receiver. The sender can be cloned
 /// to allow multiple producers, and the receiver can be resubscribed
 /// to allow multiple consumers.
-pub fn create_debug_channel(capacity: usize) -> (DebugEventSender, broadcast::Receiver<DebugEvent>) {
+pub fn create_debug_channel(
+    capacity: usize,
+) -> (DebugEventSender, broadcast::Receiver<DebugEvent>) {
     broadcast::channel(capacity)
 }
 
@@ -294,10 +296,7 @@ mod tests {
 
         // Receive and verify
         let received = rx.try_recv().expect("Failed to receive");
-        assert!(matches!(
-            received.event,
-            DebugEventKind::StreamLifecycle(_)
-        ));
+        assert!(matches!(received.event, DebugEventKind::StreamLifecycle(_)));
     }
 
     #[test]

@@ -3,10 +3,7 @@
 //! Renders message segments (text, tool events, subagent events) with proper
 //! grouping and tree connectors.
 
-use ratatui::{
-    style::Style,
-    text::Line,
-};
+use ratatui::{style::Style, text::Line};
 
 use crate::markdown::MarkdownCache;
 use crate::models::MessageSegment;
@@ -52,7 +49,13 @@ pub fn render_message_segments(
                 let segment_lines = markdown_cache.render(text);
                 // Wrap and prepend vertical bar to ALL text lines
                 // This ensures wrapped continuations also get the prefix
-                lines.extend(wrap_lines_with_prefix((*segment_lines).clone(), label, label_style, max_width, None));
+                lines.extend(wrap_lines_with_prefix(
+                    (*segment_lines).clone(),
+                    label,
+                    label_style,
+                    max_width,
+                    None,
+                ));
                 if !lines.is_empty() {
                     is_first_line = false;
                 }
@@ -61,7 +64,13 @@ pub fn render_message_segments(
             MessageSegment::ToolEvent(event) => {
                 // Tool events are usually short, but wrap if needed
                 let tool_line = render_tool_event(event, tick_count, ctx);
-                lines.extend(wrap_line_with_prefix(tool_line, label, label_style, max_width, None));
+                lines.extend(wrap_line_with_prefix(
+                    tool_line,
+                    label,
+                    label_style,
+                    max_width,
+                    None,
+                ));
                 is_first_line = false;
                 i += 1;
             }
@@ -79,7 +88,13 @@ pub fn render_message_segments(
 
                 // Render the block with tree connectors, wrap if needed
                 for line in render_subagent_events_block(&subagent_events, tick_count, ctx) {
-                    lines.extend(wrap_line_with_prefix(line, label, label_style, max_width, None));
+                    lines.extend(wrap_line_with_prefix(
+                        line,
+                        label,
+                        label_style,
+                        max_width,
+                        None,
+                    ));
                 }
                 is_first_line = false;
             }

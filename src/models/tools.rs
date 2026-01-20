@@ -65,14 +65,16 @@ impl ToolEvent {
     pub fn complete(&mut self) {
         self.status = ToolEventStatus::Complete;
         self.completed_at = Some(Utc::now());
-        self.duration_secs = Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
+        self.duration_secs =
+            Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
     }
 
     /// Mark the tool as failed
     pub fn fail(&mut self) {
         self.status = ToolEventStatus::Failed;
         self.completed_at = Some(Utc::now());
-        self.duration_secs = Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
+        self.duration_secs =
+            Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
     }
 
     /// Append a chunk of JSON arguments from streaming
@@ -204,7 +206,8 @@ impl SubagentEvent {
     pub fn complete(&mut self, summary: Option<String>) {
         self.status = SubagentEventStatus::Complete;
         self.completed_at = Some(Utc::now());
-        self.duration_secs = Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
+        self.duration_secs =
+            Some((Utc::now() - self.started_at).num_milliseconds() as f64 / 1000.0);
         self.summary = summary;
     }
 }

@@ -399,19 +399,26 @@ pub fn poll_vps_until_ready(
     loop {
         let status = runtime.block_on(client.fetch_vps_status())?;
 
-        // Check if VPS is ready
+        // Check VPS status according to state matrix
         match status.status.to_lowercase().as_str() {
+            // Success states - VPS is ready to use
             "ready" | "running" | "active" => {
                 return Ok(status);
             }
-            "failed" | "error" => {
+            // Error states - provisioning failed or VPS in unexpected state
+            "stopped" | "failed" | "terminated" | "error" => {
                 return Err(CentralApiError::ServerError {
                     status: 500,
                     message: format!("VPS failed with status: {}", status.status),
                 });
             }
-            _ => {
+            // Keep polling states - provisioning in progress
+            "pending" | "provisioning" => {
                 // Still starting/provisioning, continue polling
+            }
+            // Unknown states - treat as still provisioning
+            _ => {
+                // Unknown status, continue polling
             }
         }
 
@@ -669,9 +676,10 @@ mod tests {
         assert_eq!(ordered.len(), 3);
 
         // Due to BTreeMap ordering, Europe comes before North America
+        // Within a continent, order matches input order
         assert_eq!(ordered[0].city, "Amsterdam");
-        assert_eq!(ordered[1].city, "Los Angeles");
-        assert_eq!(ordered[2].city, "Phoenix");
+        assert_eq!(ordered[1].city, "Phoenix");
+        assert_eq!(ordered[2].city, "Los Angeles");
     }
 
     #[test]

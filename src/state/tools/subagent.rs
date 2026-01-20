@@ -25,7 +25,12 @@ pub struct SubagentState {
 
 impl SubagentState {
     /// Create a new subagent state in started status
-    pub fn new(subagent_id: String, subagent_type: String, description: String, started_at: u64) -> Self {
+    pub fn new(
+        subagent_id: String,
+        subagent_type: String,
+        description: String,
+        started_at: u64,
+    ) -> Self {
         Self {
             subagent_id,
             subagent_type,
@@ -85,8 +90,19 @@ impl SubagentTracker {
     }
 
     /// Register a new subagent
-    pub fn register_subagent(&mut self, subagent_id: String, subagent_type: String, description: String, current_tick: u64) {
-        let state = SubagentState::new(subagent_id.clone(), subagent_type, description, current_tick);
+    pub fn register_subagent(
+        &mut self,
+        subagent_id: String,
+        subagent_type: String,
+        description: String,
+        current_tick: u64,
+    ) {
+        let state = SubagentState::new(
+            subagent_id.clone(),
+            subagent_type,
+            description,
+            current_tick,
+        );
         self.active_subagents.insert(subagent_id, state);
     }
 
@@ -108,7 +124,13 @@ impl SubagentTracker {
     }
 
     /// Complete a subagent
-    pub fn complete_subagent(&mut self, subagent_id: &str, success: bool, summary: String, current_tick: u64) {
+    pub fn complete_subagent(
+        &mut self,
+        subagent_id: &str,
+        success: bool,
+        summary: String,
+        current_tick: u64,
+    ) {
         if let Some(state) = self.active_subagents.get_mut(subagent_id) {
             state.complete(success, summary, current_tick);
         }
@@ -139,7 +161,9 @@ impl SubagentTracker {
 
     /// Check if there are any active subagents
     pub fn has_active_subagents(&self) -> bool {
-        self.active_subagents.values().any(|state| state.is_active())
+        self.active_subagents
+            .values()
+            .any(|state| state.is_active())
     }
 
     /// Get the count of active subagents
@@ -220,7 +244,10 @@ mod tests {
         assert_eq!(state.tool_call_count, 1);
         assert!(state.is_active());
 
-        if let SubagentDisplayStatus::Progress { progress_message, .. } = &state.display_status {
+        if let SubagentDisplayStatus::Progress {
+            progress_message, ..
+        } = &state.display_status
+        {
             assert_eq!(progress_message, "Found 5 files");
         } else {
             panic!("Expected Progress status");
@@ -336,7 +363,10 @@ mod tests {
 
         let state = tracker.get_subagent("agent-1").unwrap();
         assert_eq!(state.tool_call_count, 1);
-        if let SubagentDisplayStatus::Progress { progress_message, .. } = &state.display_status {
+        if let SubagentDisplayStatus::Progress {
+            progress_message, ..
+        } = &state.display_status
+        {
             assert_eq!(progress_message, "Found 5 files");
         } else {
             panic!("Expected Progress status");

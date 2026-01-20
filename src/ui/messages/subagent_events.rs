@@ -75,19 +75,17 @@ pub fn render_subagent_event(
             let spinner = SPINNER_FRAMES[frame_index];
 
             // Truncate description if needed
-            let description = if event.description.len() > max_description_len && max_description_len > 3 {
-                truncate_string(&event.description, max_description_len)
-            } else {
-                event.description.clone()
-            };
+            let description =
+                if event.description.len() > max_description_len && max_description_len > 3 {
+                    truncate_string(&event.description, max_description_len)
+                } else {
+                    event.description.clone()
+                };
 
             // Main line: connector + spinner + Task(description)
             lines.push(Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(
-                    connector_str,
-                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
-                ),
+                Span::styled(connector_str, Style::default().fg(COLOR_SUBAGENT_RUNNING)),
                 Span::styled(
                     format!("{} ", spinner),
                     Style::default().fg(COLOR_SUBAGENT_RUNNING),
@@ -96,35 +94,29 @@ pub fn render_subagent_event(
                     format!("{} Task(", icon),
                     Style::default().fg(COLOR_SUBAGENT_RUNNING),
                 ),
-                Span::styled(
-                    description,
-                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
-                ),
-                Span::styled(
-                    ")",
-                    Style::default().fg(COLOR_SUBAGENT_RUNNING),
-                ),
+                Span::styled(description, Style::default().fg(COLOR_SUBAGENT_RUNNING)),
+                Span::styled(")", Style::default().fg(COLOR_SUBAGENT_RUNNING)),
             ]));
 
             // Progress line if available
             if let Some(ref progress) = event.progress_message {
-                let indent = if connector == TreeConnector::LastBranch || connector == TreeConnector::Single {
+                let indent = if connector == TreeConnector::LastBranch
+                    || connector == TreeConnector::Single
+                {
                     "      " // No continuation line
                 } else {
                     "  \u{2502}   " // Continuation line for non-last items
                 };
                 // Truncate progress message for narrow terminals
-                let progress_text = if progress.len() > max_description_len && max_description_len > 3 {
-                    truncate_string(progress, max_description_len)
-                } else {
-                    progress.clone()
-                };
+                let progress_text =
+                    if progress.len() > max_description_len && max_description_len > 3 {
+                        truncate_string(progress, max_description_len)
+                    } else {
+                        progress.clone()
+                    };
                 lines.push(Line::from(vec![
                     Span::styled(indent, Style::default().fg(COLOR_SUBAGENT_RUNNING)),
-                    Span::styled(
-                        progress_text,
-                        Style::default().fg(COLOR_DIM),
-                    ),
+                    Span::styled(progress_text, Style::default().fg(COLOR_DIM)),
                 ]));
             }
         }
@@ -150,18 +142,12 @@ pub fn render_subagent_event(
 
             lines.push(Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(
-                    connector_str,
-                    Style::default().fg(COLOR_SUBAGENT_COMPLETE),
-                ),
+                Span::styled(connector_str, Style::default().fg(COLOR_SUBAGENT_COMPLETE)),
                 Span::styled(
                     format!("{} ", icon),
                     Style::default().fg(COLOR_SUBAGENT_COMPLETE),
                 ),
-                Span::styled(
-                    display_text,
-                    Style::default().fg(COLOR_SUBAGENT_COMPLETE),
-                ),
+                Span::styled(display_text, Style::default().fg(COLOR_SUBAGENT_COMPLETE)),
             ]));
         }
     }
@@ -227,8 +213,8 @@ pub fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
     for (_subagent_id, state) in subagents {
         // Render main line with appropriate prefix and spinner/checkmark
         let main_line = match &state.display_status {
-            SubagentDisplayStatus::Started { description, .. } |
-            SubagentDisplayStatus::Progress { description, .. } => {
+            SubagentDisplayStatus::Started { description, .. }
+            | SubagentDisplayStatus::Progress { description, .. } => {
                 // Animate spinner based on tick count
                 let spinner_idx = (app.tick_count % 10) as usize;
                 let spinner = SPINNER_FRAMES[spinner_idx];
@@ -238,13 +224,12 @@ pub fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
                         format!("\u{250C} {} ", spinner),
                         Style::default().fg(Color::DarkGray),
                     ),
-                    Span::styled(
-                        description.clone(),
-                        Style::default().fg(Color::DarkGray),
-                    ),
+                    Span::styled(description.clone(), Style::default().fg(Color::DarkGray)),
                 ])
             }
-            SubagentDisplayStatus::Completed { success, summary, .. } => {
+            SubagentDisplayStatus::Completed {
+                success, summary, ..
+            } => {
                 let (prefix, color) = if *success {
                     ("\u{2514} \u{2713} ", Color::DarkGray)
                 } else {
@@ -260,13 +245,13 @@ pub fn render_subagent_status_lines(app: &App) -> Vec<Line<'static>> {
         lines.push(main_line);
 
         // Render progress line if we have a progress message (only for in-progress subagents)
-        if let SubagentDisplayStatus::Progress { progress_message, .. } = &state.display_status {
+        if let SubagentDisplayStatus::Progress {
+            progress_message, ..
+        } = &state.display_status
+        {
             if !progress_message.is_empty() {
                 lines.push(Line::from(vec![
-                    Span::styled(
-                        "\u{2502}   ",
-                        Style::default().fg(Color::DarkGray),
-                    ),
+                    Span::styled("\u{2502}   ", Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         progress_message.clone(),
                         Style::default().fg(Color::DarkGray),
@@ -301,7 +286,8 @@ mod tests {
         );
         event.tool_call_count = 3;
         // Set a long summary
-        let long_summary = "This is a very long summary that should be truncated on narrow terminals";
+        let long_summary =
+            "This is a very long summary that should be truncated on narrow terminals";
         event.complete(Some(long_summary.to_string()));
 
         // On narrow terminal (60 cols), summary should be truncated more aggressively
@@ -339,7 +325,8 @@ mod tests {
     #[test]
     fn test_render_subagent_event_truncates_description_on_narrow_terminal() {
         // Create event with a very long description
-        let long_desc = "Exploring the entire codebase to find all relevant configuration files and settings";
+        let long_desc =
+            "Exploring the entire codebase to find all relevant configuration files and settings";
         let event = SubagentEvent::new(
             "task-desc".to_string(),
             long_desc.to_string(),

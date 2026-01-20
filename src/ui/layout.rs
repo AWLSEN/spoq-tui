@@ -537,18 +537,42 @@ mod tests {
 
     #[test]
     fn test_width_category() {
-        assert_eq!(LayoutContext::new(50, 24).width_category(), SizeCategory::ExtraSmall);
-        assert_eq!(LayoutContext::new(70, 24).width_category(), SizeCategory::Small);
-        assert_eq!(LayoutContext::new(100, 24).width_category(), SizeCategory::Medium);
-        assert_eq!(LayoutContext::new(160, 24).width_category(), SizeCategory::Large);
+        assert_eq!(
+            LayoutContext::new(50, 24).width_category(),
+            SizeCategory::ExtraSmall
+        );
+        assert_eq!(
+            LayoutContext::new(70, 24).width_category(),
+            SizeCategory::Small
+        );
+        assert_eq!(
+            LayoutContext::new(100, 24).width_category(),
+            SizeCategory::Medium
+        );
+        assert_eq!(
+            LayoutContext::new(160, 24).width_category(),
+            SizeCategory::Large
+        );
     }
 
     #[test]
     fn test_height_category() {
-        assert_eq!(LayoutContext::new(80, 10).height_category(), SizeCategory::ExtraSmall);
-        assert_eq!(LayoutContext::new(80, 20).height_category(), SizeCategory::Small);
-        assert_eq!(LayoutContext::new(80, 35).height_category(), SizeCategory::Medium);
-        assert_eq!(LayoutContext::new(80, 50).height_category(), SizeCategory::Large);
+        assert_eq!(
+            LayoutContext::new(80, 10).height_category(),
+            SizeCategory::ExtraSmall
+        );
+        assert_eq!(
+            LayoutContext::new(80, 20).height_category(),
+            SizeCategory::Small
+        );
+        assert_eq!(
+            LayoutContext::new(80, 35).height_category(),
+            SizeCategory::Medium
+        );
+        assert_eq!(
+            LayoutContext::new(80, 50).height_category(),
+            SizeCategory::Large
+        );
     }
 
     #[test]

@@ -153,7 +153,10 @@ impl App {
         log_thread_update(&format!("open_thread: has_cached_messages={}", has_cached));
 
         if !has_cached {
-            log_thread_update(&format!("open_thread: spawning fetch task for {}", thread_id));
+            log_thread_update(&format!(
+                "open_thread: spawning fetch task for {}",
+                thread_id
+            ));
             // Spawn async fetch task
             let client = Arc::clone(&self.client);
             let message_tx = self.message_tx.clone();

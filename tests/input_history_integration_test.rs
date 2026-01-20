@@ -481,7 +481,10 @@ fn test_submit_flow_adds_to_history_and_resets_navigation() {
 
     // Verify:
     assert_eq!(history.len(), 1);
-    assert!(history.current_index().is_none(), "Navigation should be reset");
+    assert!(
+        history.current_index().is_none(),
+        "Navigation should be reset"
+    );
     assert!(textarea.is_empty(), "Textarea should be cleared");
 }
 
@@ -569,7 +572,11 @@ fn test_submit_flow_navigation_reset_allows_fresh_navigation() {
 
     // Now navigate up again - should start from most recent
     let entry = history.navigate_up("new input");
-    assert_eq!(entry, Some("Command 3"), "Should start from most recent after reset");
+    assert_eq!(
+        entry,
+        Some("Command 3"),
+        "Should start from most recent after reset"
+    );
 
     // And saved input should be the new input
     assert_eq!(history.get_current_input(), "new input");

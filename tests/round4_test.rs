@@ -10,7 +10,10 @@ use std::time::Instant;
 // ============================================================================
 
 /// Helper to create an AskUserQuestion permission with the specified question count
-fn create_ask_user_question_permission(permission_id: &str, question_count: usize) -> PermissionRequest {
+fn create_ask_user_question_permission(
+    permission_id: &str,
+    question_count: usize,
+) -> PermissionRequest {
     let questions: Vec<serde_json::Value> = (0..question_count)
         .map(|i| {
             serde_json::json!({
@@ -60,7 +63,11 @@ fn test_question_state_auto_initialized_on_permission_receipt() {
     app.handle_message(msg);
 
     // After receiving permission - question state should be auto-initialized
-    assert_eq!(app.question_state.selections.len(), 3, "Should have 3 question selections initialized");
+    assert_eq!(
+        app.question_state.selections.len(),
+        3,
+        "Should have 3 question selections initialized"
+    );
     assert_eq!(app.question_state.tab_index, 0, "Should start at tab 0");
 
     // First option of each question should be selected by default
@@ -107,10 +114,20 @@ fn test_question_state_reset_on_deny() {
     app.deny_permission(&perm.permission_id);
 
     // Question state should be reset
-    assert_eq!(app.question_state.selections.len(), 0, "Selections should be cleared after deny");
+    assert_eq!(
+        app.question_state.selections.len(),
+        0,
+        "Selections should be cleared after deny"
+    );
     assert_eq!(app.question_state.tab_index, 0, "Tab index should be reset");
-    assert!(!app.question_state.other_active, "Other mode should be deactivated");
-    assert!(app.session_state.pending_permission.is_none(), "Permission should be cleared");
+    assert!(
+        !app.question_state.other_active,
+        "Other mode should be deactivated"
+    );
+    assert!(
+        app.session_state.pending_permission.is_none(),
+        "Permission should be cleared"
+    );
 }
 
 #[test]
@@ -132,7 +149,11 @@ fn test_question_state_initialized_exactly_once() {
 
     // State should be reinitialized to default (first option selected)
     assert_eq!(app.question_state.selections.len(), 1);
-    assert_eq!(app.question_state.selections[0], Some(0), "Should reset to first option");
+    assert_eq!(
+        app.question_state.selections[0],
+        Some(0),
+        "Should reset to first option"
+    );
 }
 
 #[test]
@@ -159,8 +180,15 @@ fn test_auto_approve_skips_question_initialization() {
     app.handle_message(msg);
 
     // Question state should NOT be initialized (auto-approved, not shown to user)
-    assert_eq!(app.question_state.selections.len(), 0, "Should not initialize for auto-approved permissions");
-    assert!(app.session_state.pending_permission.is_none(), "Permission should be auto-approved and cleared");
+    assert_eq!(
+        app.question_state.selections.len(),
+        0,
+        "Should not initialize for auto-approved permissions"
+    );
+    assert!(
+        app.session_state.pending_permission.is_none(),
+        "Permission should be auto-approved and cleared"
+    );
 }
 
 #[test]
@@ -235,7 +263,10 @@ fn test_is_ask_user_question_pending_after_auto_init() {
     app.handle_message(msg);
 
     // Should detect AskUserQuestion is pending
-    assert!(app.is_ask_user_question_pending(), "Should detect AskUserQuestion after auto-initialization");
+    assert!(
+        app.is_ask_user_question_pending(),
+        "Should detect AskUserQuestion after auto-initialization"
+    );
 }
 
 // ============================================================================

@@ -36,9 +36,7 @@ pub enum SseEvent {
         title: Option<String>,
     },
     /// Message metadata
-    MessageInfo {
-        message_id: i64,
-    },
+    MessageInfo { message_id: i64 },
     /// Stream completed successfully
     Done,
     /// Error from the backend
@@ -50,9 +48,7 @@ pub enum SseEvent {
     /// Heartbeat/keepalive
     Ping,
     /// Skills injected event
-    SkillsInjected {
-        skills: Vec<String>,
-    },
+    SkillsInjected { skills: Vec<String> },
     /// OAuth consent required
     OAuthConsentRequired {
         provider: String,
@@ -72,10 +68,7 @@ pub enum SseEvent {
         tool_call_id: String,
     },
     /// Tool call argument chunk
-    ToolCallArgument {
-        tool_call_id: String,
-        chunk: String,
-    },
+    ToolCallArgument { tool_call_id: String, chunk: String },
     /// Tool executing with display info
     ToolExecuting {
         tool_call_id: String,
@@ -88,9 +81,7 @@ pub enum SseEvent {
         result: String,
     },
     /// Reasoning/thinking content
-    Reasoning {
-        text: String,
-    },
+    Reasoning { text: String },
     /// Permission request
     PermissionRequest {
         permission_id: String,
@@ -100,9 +91,7 @@ pub enum SseEvent {
         tool_input: Option<serde_json::Value>,
     },
     /// Todos updated
-    TodosUpdated {
-        todos: serde_json::Value,
-    },
+    TodosUpdated { todos: serde_json::Value },
     /// Subagent started
     SubagentStarted {
         task_id: String,
@@ -110,10 +99,7 @@ pub enum SseEvent {
         subagent_type: String,
     },
     /// Subagent progress update
-    SubagentProgress {
-        task_id: String,
-        message: String,
-    },
+    SubagentProgress { task_id: String, message: String },
     /// Subagent completed
     SubagentCompleted {
         task_id: String,
@@ -183,14 +169,9 @@ pub enum SseParseError {
     /// Unknown event type received
     UnknownEventType(String),
     /// Invalid JSON in data payload
-    InvalidJson {
-        event_type: String,
-        source: String,
-    },
+    InvalidJson { event_type: String, source: String },
     /// Missing data for event
-    MissingData {
-        event_type: String,
-    },
+    MissingData { event_type: String },
 }
 
 impl std::fmt::Display for SseParseError {

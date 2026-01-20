@@ -50,12 +50,17 @@ fn main() -> Result<()> {
         };
     }
 
-    // VPS check - run interactive provisioning if no ready VPS
+    // VPS check - ensure VPS is in a usable state before launching TUI
+    // State matrix: ready/running/active → Launch TUI, others → provision/re-provision
     let vps_ready = matches!(
         credentials.vps_status.as_deref(),
         Some("ready") | Some("running") | Some("active")
     );
-    if credentials.vps_url.is_none() || !vps_ready {
+
+    // Check if we need to provision or re-provision
+    let needs_provisioning = credentials.vps_url.is_none() || !vps_ready;
+
+    if needs_provisioning {
         if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
             eprintln!("Provisioning failed: {}", e);
             std::process::exit(1);
@@ -99,7 +104,12 @@ fn main() -> Result<()> {
     // Enter alternate screen, enable bracketed paste, and mouse capture for scroll events
     // Note: Mouse capture is enabled but click events are ignored in the handler,
     // allowing scroll wheel to work while terminal handles text selection natively
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste, EnableMouseCapture)?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableBracketedPaste,
+        EnableMouseCapture
+    )?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -152,7 +162,10 @@ fn main() -> Result<()> {
 ///
 /// Returns the debug event sender and server handle if successful.
 /// If the debug server fails to start, returns None for both - the app continues without debug.
-async fn start_debug_system() -> (Option<spoq::debug::DebugEventSender>, Option<JoinHandle<()>>) {
+async fn start_debug_system() -> (
+    Option<spoq::debug::DebugEventSender>,
+    Option<JoinHandle<()>>,
+) {
     // Create debug channel with capacity for 1000 events
     let (debug_tx, _) = create_debug_channel(1000);
 
@@ -180,7 +193,12 @@ fn setup_panic_hook() {
         let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
 
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste, LeaveAlternateScreen);
+        let _ = execute!(
+            io::stdout(),
+            DisableMouseCapture,
+            DisableBracketedPaste,
+            LeaveAlternateScreen
+        );
         let _ = execute!(io::stdout(), Show);
 
         // CRITICAL: Hard reset Kitty keyboard protocol AFTER leaving alternate screen
@@ -195,7 +213,9 @@ fn setup_panic_hook() {
 }
 
 /// Restore terminal to normal mode
-fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(terminal: &mut Terminal<B>) -> Result<()>
+fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(
+    terminal: &mut Terminal<B>,
+) -> Result<()>
 where
     B::Error: Send + Sync + 'static,
 {
@@ -220,7 +240,10 @@ where
     Ok(())
 }
 
-async fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
+async fn run_app<B: ratatui::backend::Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+) -> Result<()>
 where
     B::Error: Send + Sync + 'static,
 {

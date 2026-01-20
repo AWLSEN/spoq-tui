@@ -54,11 +54,7 @@ fn test_alternate_scroll_mode_escape_sequences() {
     // Enable alternate scroll mode (CSI ? 1007 h)
     let enable_result = write!(buffer, "\x1b[?1007h");
     assert!(enable_result.is_ok(), "Enable escape sequence should write");
-    assert_eq!(
-        buffer,
-        b"\x1b[?1007h",
-        "Enable sequence should be correct"
-    );
+    assert_eq!(buffer, b"\x1b[?1007h", "Enable sequence should be correct");
 
     buffer.clear();
 
@@ -68,11 +64,7 @@ fn test_alternate_scroll_mode_escape_sequences() {
         disable_result.is_ok(),
         "Disable escape sequence should write"
     );
-    assert_eq!(
-        buffer,
-        b"\x1b[?1007l",
-        "Disable sequence should be correct"
-    );
+    assert_eq!(buffer, b"\x1b[?1007l", "Disable sequence should be correct");
 }
 
 /// Test that Kitty protocol reset escape sequence is well-formed
@@ -195,9 +187,9 @@ fn test_cleanup_idempotent() {
 fn test_escape_sequences_are_valid_utf8() {
     // All escape sequences used should be valid UTF-8
     let sequences = vec![
-        "\x1b[?1007h",   // Enable alternate scroll
-        "\x1b[?1007l",   // Disable alternate scroll
-        "\x1b[<u",       // Kitty protocol reset
+        "\x1b[?1007h", // Enable alternate scroll
+        "\x1b[?1007l", // Disable alternate scroll
+        "\x1b[<u",     // Kitty protocol reset
     ];
 
     for seq in sequences {

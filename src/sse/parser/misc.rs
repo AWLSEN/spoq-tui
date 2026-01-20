@@ -7,7 +7,10 @@ use crate::sse::payloads::{
 };
 
 /// Parse skills_injected event
-pub(super) fn parse_skills_injected_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_skills_injected_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let payload: SkillsInjectedPayload =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -19,7 +22,10 @@ pub(super) fn parse_skills_injected_event(event_type: &str, data: &str) -> Resul
 }
 
 /// Parse oauth_consent_required event
-pub(super) fn parse_oauth_consent_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_oauth_consent_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let payload: OAuthConsentRequiredPayload =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -33,7 +39,10 @@ pub(super) fn parse_oauth_consent_event(event_type: &str, data: &str) -> Result<
 }
 
 /// Parse context_compacted event
-pub(super) fn parse_context_compacted_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_context_compacted_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let payload: ContextCompactedPayload =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -61,7 +70,10 @@ pub(super) fn parse_error_event(event_type: &str, data: &str) -> Result<SseEvent
 }
 
 /// Parse todos_updated event
-pub(super) fn parse_todos_updated_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_todos_updated_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -89,8 +101,8 @@ pub(super) fn parse_usage_event(event_type: &str, data: &str) -> Result<SseEvent
 
 #[cfg(test)]
 mod tests {
-    use crate::sse::parser::{parse_sse_event, SseParser};
     use crate::sse::events::SseEvent;
+    use crate::sse::parser::{parse_sse_event, SseParser};
 
     #[test]
     fn test_parse_error_event() {
@@ -147,7 +159,11 @@ mod tests {
         assert_eq!(
             result.unwrap(),
             SseEvent::SkillsInjected {
-                skills: vec!["commit".to_string(), "review-pr".to_string(), "pdf".to_string()],
+                skills: vec![
+                    "commit".to_string(),
+                    "review-pr".to_string(),
+                    "pdf".to_string()
+                ],
             }
         );
     }

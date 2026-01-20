@@ -13,7 +13,9 @@ use crate::state::ToolDisplayStatus;
 
 use super::super::helpers::{format_tool_args, get_tool_icon, SPINNER_FRAMES};
 use super::super::layout::LayoutContext;
-use super::super::theme::{COLOR_DIM, COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS};
+use super::super::theme::{
+    COLOR_DIM, COLOR_TOOL_ERROR, COLOR_TOOL_ICON, COLOR_TOOL_RUNNING, COLOR_TOOL_SUCCESS,
+};
 
 /// Render a single tool event as a Line
 ///
@@ -32,9 +34,10 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64, ctx: &LayoutContext
 
     // Format the arguments display
     // Use pre-computed args_display if available, otherwise format from JSON
-    let args_display = event.args_display.clone().unwrap_or_else(|| {
-        format_tool_args(&event.function_name, &event.args_json)
-    });
+    let args_display = event
+        .args_display
+        .clone()
+        .unwrap_or_else(|| format_tool_args(&event.function_name, &event.args_json));
 
     // Calculate responsive max length for args display
     // Account for icon (2), spinner (2), tool name (~15), status (2), and padding
@@ -52,10 +55,7 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64, ctx: &LayoutContext
             let spinner = SPINNER_FRAMES[frame_index];
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled(
-                    format!("{} ", icon),
-                    Style::default().fg(COLOR_TOOL_ICON),
-                ),
+                Span::styled(format!("{} ", icon), Style::default().fg(COLOR_TOOL_ICON)),
                 Span::styled(
                     format!("{} ", spinner),
                     Style::default().fg(COLOR_TOOL_RUNNING),
@@ -64,14 +64,12 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64, ctx: &LayoutContext
                     format!("{}: ", event.function_name),
                     Style::default().fg(COLOR_TOOL_RUNNING),
                 ),
-                Span::styled(
-                    args_display,
-                    Style::default().fg(COLOR_TOOL_RUNNING),
-                ),
+                Span::styled(args_display, Style::default().fg(COLOR_TOOL_RUNNING)),
             ])
         }
         ToolEventStatus::Complete => {
-            let duration_str = event.duration_secs
+            let duration_str = event
+                .duration_secs
                 .map(|d| format!(" ({:.1}s)", d))
                 .unwrap_or_default();
 
@@ -80,74 +78,39 @@ pub fn render_tool_event(event: &ToolEvent, tick_count: u64, ctx: &LayoutContext
             if event.result_is_error {
                 Line::from(vec![
                     Span::styled("  ", Style::default()),
-                    Span::styled(
-                        format!("{} ", icon),
-                        Style::default().fg(COLOR_DIM),
-                    ),
-                    Span::styled(
-                        "\u{2717} ",
-                        Style::default().fg(COLOR_DIM),
-                    ),
+                    Span::styled(format!("{} ", icon), Style::default().fg(COLOR_DIM)),
+                    Span::styled("\u{2717} ", Style::default().fg(COLOR_DIM)),
                     Span::styled(
                         format!("{}: ", event.function_name),
                         Style::default().fg(COLOR_DIM),
                     ),
-                    Span::styled(
-                        args_display,
-                        Style::default().fg(COLOR_DIM),
-                    ),
-                    Span::styled(
-                        duration_str,
-                        Style::default().fg(COLOR_DIM),
-                    ),
+                    Span::styled(args_display, Style::default().fg(COLOR_DIM)),
+                    Span::styled(duration_str, Style::default().fg(COLOR_DIM)),
                 ])
             } else {
                 Line::from(vec![
                     Span::styled("  ", Style::default()),
-                    Span::styled(
-                        format!("{} ", icon),
-                        Style::default().fg(COLOR_TOOL_ICON),
-                    ),
-                    Span::styled(
-                        "\u{2713} ",
-                        Style::default().fg(COLOR_TOOL_SUCCESS),
-                    ),
+                    Span::styled(format!("{} ", icon), Style::default().fg(COLOR_TOOL_ICON)),
+                    Span::styled("\u{2713} ", Style::default().fg(COLOR_TOOL_SUCCESS)),
                     Span::styled(
                         format!("{}: ", event.function_name),
                         Style::default().fg(COLOR_TOOL_SUCCESS),
                     ),
-                    Span::styled(
-                        args_display,
-                        Style::default().fg(COLOR_TOOL_SUCCESS),
-                    ),
-                    Span::styled(
-                        duration_str,
-                        Style::default().fg(COLOR_TOOL_RUNNING),
-                    ),
+                    Span::styled(args_display, Style::default().fg(COLOR_TOOL_SUCCESS)),
+                    Span::styled(duration_str, Style::default().fg(COLOR_TOOL_RUNNING)),
                 ])
             }
         }
-        ToolEventStatus::Failed => {
-            Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(
-                    format!("{} ", icon),
-                    Style::default().fg(COLOR_TOOL_ICON),
-                ),
-                Span::styled(
-                    "\u{2717} ",
-                    Style::default().fg(COLOR_TOOL_ERROR),
-                ),
-                Span::styled(
-                    format!("{}: ", event.function_name),
-                    Style::default().fg(COLOR_TOOL_ERROR),
-                ),
-                Span::styled(
-                    args_display,
-                    Style::default().fg(COLOR_TOOL_ERROR),
-                ),
-            ])
-        }
+        ToolEventStatus::Failed => Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(format!("{} ", icon), Style::default().fg(COLOR_TOOL_ICON)),
+            Span::styled("\u{2717} ", Style::default().fg(COLOR_TOOL_ERROR)),
+            Span::styled(
+                format!("{}: ", event.function_name),
+                Style::default().fg(COLOR_TOOL_ERROR),
+            ),
+            Span::styled(args_display, Style::default().fg(COLOR_TOOL_ERROR)),
+        ]),
     }
 }
 
@@ -231,34 +194,21 @@ pub fn render_tool_status_lines(app: &App) -> Vec<Line<'static>> {
                         format!("  {} ", spinner),
                         Style::default().fg(Color::DarkGray),
                     ),
-                    Span::styled(
-                        text,
-                        Style::default().fg(Color::DarkGray),
-                    ),
+                    Span::styled(text, Style::default().fg(Color::DarkGray)),
                 ])
             }
-            ToolDisplayStatus::Completed { success, summary, .. } => {
+            ToolDisplayStatus::Completed {
+                success, summary, ..
+            } => {
                 if *success {
                     Line::from(vec![
-                        Span::styled(
-                            "  \u{2713} ",
-                            Style::default().fg(Color::DarkGray),
-                        ),
-                        Span::styled(
-                            summary.clone(),
-                            Style::default().fg(Color::DarkGray),
-                        ),
+                        Span::styled("  \u{2713} ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(summary.clone(), Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(
-                            "  \u{2717} ",
-                            Style::default().fg(Color::Red),
-                        ),
-                        Span::styled(
-                            summary.clone(),
-                            Style::default().fg(Color::Red),
-                        ),
+                        Span::styled("  \u{2717} ", Style::default().fg(Color::Red)),
+                        Span::styled(summary.clone(), Style::default().fg(Color::Red)),
                     ])
                 }
             }

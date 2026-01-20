@@ -112,7 +112,10 @@ fn test_parse_subagent_progress_with_long_message() {
 
     parser.feed_line("event: subagent_progress").unwrap();
     parser
-        .feed_line(&format!(r#"data: {{"task_id": "task-long", "message": "{}"}}"#, long_message))
+        .feed_line(&format!(
+            r#"data: {{"task_id": "task-long", "message": "{}"}}"#,
+            long_message
+        ))
         .unwrap();
 
     let event = parser.feed_line("").unwrap();
@@ -156,7 +159,9 @@ fn test_parse_subagent_completed_sse_event_with_tool_count() {
 
     parser.feed_line("event: subagent_completed").unwrap();
     parser
-        .feed_line(r#"data: {"task_id": "task-003", "summary": "Found 15 files", "tool_call_count": 42}"#)
+        .feed_line(
+            r#"data: {"task_id": "task-003", "summary": "Found 15 files", "tool_call_count": 42}"#,
+        )
         .unwrap();
 
     let event = parser.feed_line("").unwrap();
@@ -198,7 +203,9 @@ fn test_parse_subagent_completed_with_zero_tool_count() {
 
     parser.feed_line("event: subagent_completed").unwrap();
     parser
-        .feed_line(r#"data: {"task_id": "task-zero", "summary": "Quick lookup", "tool_call_count": 0}"#)
+        .feed_line(
+            r#"data: {"task_id": "task-zero", "summary": "Quick lookup", "tool_call_count": 0}"#,
+        )
         .unwrap();
 
     let event = parser.feed_line("").unwrap();
@@ -219,7 +226,9 @@ fn test_parse_subagent_completed_with_empty_summary() {
 
     parser.feed_line("event: subagent_completed").unwrap();
     parser
-        .feed_line(r#"data: {"task_id": "task-empty-summary", "summary": "", "tool_call_count": 5}"#)
+        .feed_line(
+            r#"data: {"task_id": "task-empty-summary", "summary": "", "tool_call_count": 5}"#,
+        )
         .unwrap();
 
     let event = parser.feed_line("").unwrap();
@@ -293,12 +302,7 @@ fn test_subagent_event_creates_segment_with_correct_status() {
     assert_eq!(event.progress_message, Some("Working...".to_string()));
 
     // Complete and verify complete status
-    cache.complete_subagent_in_message(
-        &thread_id,
-        "task-status",
-        Some("Done".to_string()),
-        3,
-    );
+    cache.complete_subagent_in_message(&thread_id, "task-status", Some("Done".to_string()), 3);
 
     let messages = cache.get_messages(&thread_id).unwrap();
     let event = messages[1].get_subagent_event("task-status").unwrap();
@@ -421,8 +425,13 @@ fn test_multiple_parallel_subagents_segment_structure() {
     assert_eq!(segments.len(), 3);
 
     // Verify they are all SubagentEvents (consecutive = tree connectors will be applied)
-    let all_subagent_events = segments.iter().all(|s| matches!(s, MessageSegment::SubagentEvent(_)));
-    assert!(all_subagent_events, "All segments should be SubagentEvents for tree connector rendering");
+    let all_subagent_events = segments
+        .iter()
+        .all(|s| matches!(s, MessageSegment::SubagentEvent(_)));
+    assert!(
+        all_subagent_events,
+        "All segments should be SubagentEvents for tree connector rendering"
+    );
 }
 
 #[test]
@@ -602,7 +611,10 @@ fn test_completed_subagent_has_summary_and_tool_count_in_event() {
     // Verify the event data that will be used for rendering
     assert_eq!(event.status, SubagentEventStatus::Complete);
     assert_eq!(event.tool_call_count, 8);
-    assert_eq!(event.summary, Some("Successfully analyzed 25 files".to_string()));
+    assert_eq!(
+        event.summary,
+        Some("Successfully analyzed 25 files".to_string())
+    );
     assert!(event.completed_at.is_some());
     assert!(event.duration_secs.is_some());
 }
@@ -756,8 +768,14 @@ async fn test_full_subagent_flow_sse_to_cache_to_render() {
 
     // Step 4: Verify rendering data is correct (summary, tool count, status)
     // The UI rendering is internal, but we verify the data that will be used for rendering
-    assert!(event.completed_at.is_some(), "Completed event should have completion time");
-    assert!(event.duration_secs.is_some(), "Completed event should have duration");
+    assert!(
+        event.completed_at.is_some(),
+        "Completed event should have completion time"
+    );
+    assert!(
+        event.duration_secs.is_some(),
+        "Completed event should have duration"
+    );
 }
 
 #[tokio::test]

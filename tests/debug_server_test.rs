@@ -127,10 +127,7 @@ async fn test_debug_server_websocket_receives_events() {
     match msg {
         tokio_tungstenite::tungstenite::Message::Text(text) => {
             let received: DebugEvent = serde_json::from_str(&text).expect("Failed to parse event");
-            assert!(matches!(
-                received.event,
-                DebugEventKind::StreamLifecycle(_)
-            ));
+            assert!(matches!(received.event, DebugEventKind::StreamLifecycle(_)));
         }
         _ => panic!("Expected text message"),
     }

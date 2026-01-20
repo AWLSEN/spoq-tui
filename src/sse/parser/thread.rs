@@ -1,10 +1,15 @@
 //! Thread-related event parsers
 
 use crate::sse::events::{SseEvent, SseParseError};
-use crate::sse::payloads::{DonePayload, MessageInfoPayload, ThreadInfoPayload, ThreadUpdatedPayload};
+use crate::sse::payloads::{
+    DonePayload, MessageInfoPayload, ThreadInfoPayload, ThreadUpdatedPayload,
+};
 
 /// Parse thread_info event (legacy format with thread_id field)
-pub(super) fn parse_thread_info_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_thread_info_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let payload: ThreadInfoPayload =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -17,7 +22,10 @@ pub(super) fn parse_thread_info_event(event_type: &str, data: &str) -> Result<Ss
 }
 
 /// Parse user_message_saved event (Conductor sends message_id and optional thread_id)
-pub(super) fn parse_user_message_saved_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_user_message_saved_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     // Parse to Value first to handle potential duplicate fields (serde rejects duplicates)
     let v: serde_json::Value =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
@@ -40,7 +48,10 @@ pub(super) fn parse_user_message_saved_event(event_type: &str, data: &str) -> Re
 }
 
 /// Parse message_info event
-pub(super) fn parse_message_info_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_message_info_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let payload: MessageInfoPayload =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),
@@ -64,7 +75,10 @@ pub(super) fn parse_done_event(data: &str) -> Result<SseEvent, SseParseError> {
 }
 
 /// Parse thread_updated event
-pub(super) fn parse_thread_updated_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
+pub(super) fn parse_thread_updated_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
     let payload: ThreadUpdatedPayload =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
             event_type: event_type.to_string(),

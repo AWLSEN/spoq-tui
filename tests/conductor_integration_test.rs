@@ -3,7 +3,7 @@
 // by testing cross-module integration and real-world scenarios
 
 use spoq::conductor::{ConductorClient, ConductorError};
-use spoq::models::{StreamRequest, ServerMessage, MessageRole, ThreadDetailResponse};
+use spoq::models::{MessageRole, ServerMessage, StreamRequest, ThreadDetailResponse};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -46,7 +46,10 @@ async fn test_stream_request_construction() {
         permission_mode: None,
         working_directory: None,
     };
-    assert_eq!(request_with_thread.thread_id, Some("thread-123".to_string()));
+    assert_eq!(
+        request_with_thread.thread_id,
+        Some("thread-123".to_string())
+    );
 
     // Test with reply_to
     let request_with_reply = StreamRequest {
@@ -64,7 +67,9 @@ async fn test_stream_request_construction() {
 #[tokio::test]
 async fn test_conductor_error_handling() {
     // Test that invalid server URLs produce appropriate errors
-    let client = ConductorClient::with_base_url("http://invalid-server-that-does-not-exist-12345:9999".to_string());
+    let client = ConductorClient::with_base_url(
+        "http://invalid-server-that-does-not-exist-12345:9999".to_string(),
+    );
 
     let request = StreamRequest {
         prompt: "Test message".to_string(),
@@ -238,7 +243,9 @@ fn test_server_message_to_client_message_conversion() {
     // Test conversion from ServerMessage to client Message
     let server_msg = ServerMessage {
         role: MessageRole::User,
-        content: Some(spoq::models::MessageContent::Legacy("Hello, world!".to_string())),
+        content: Some(spoq::models::MessageContent::Legacy(
+            "Hello, world!".to_string(),
+        )),
         tool_calls: None,
         tool_call_id: None,
         name: None,
@@ -328,7 +335,9 @@ fn test_thread_detail_response_with_messages() {
     // Test ThreadDetailResponse with populated messages
     let message1 = ServerMessage {
         role: MessageRole::User,
-        content: Some(spoq::models::MessageContent::Legacy("First message".to_string())),
+        content: Some(spoq::models::MessageContent::Legacy(
+            "First message".to_string(),
+        )),
         tool_calls: None,
         tool_call_id: None,
         name: None,
@@ -336,7 +345,9 @@ fn test_thread_detail_response_with_messages() {
 
     let message2 = ServerMessage {
         role: MessageRole::Assistant,
-        content: Some(spoq::models::MessageContent::Legacy("Second message".to_string())),
+        content: Some(spoq::models::MessageContent::Legacy(
+            "Second message".to_string(),
+        )),
         tool_calls: None,
         tool_call_id: None,
         name: None,
@@ -372,7 +383,10 @@ async fn test_stream_request_with_working_directory() {
         working_directory: Some("/Users/dev/my-project".to_string()),
     };
 
-    assert_eq!(request.working_directory, Some("/Users/dev/my-project".to_string()));
+    assert_eq!(
+        request.working_directory,
+        Some("/Users/dev/my-project".to_string())
+    );
 }
 
 #[tokio::test]
@@ -409,7 +423,10 @@ fn test_stream_request_working_directory_serialization() {
     assert!(json.contains("/home/user/workspace"));
 
     let deserialized: StreamRequest = serde_json::from_str(&json).expect("Failed to deserialize");
-    assert_eq!(deserialized.working_directory, Some("/home/user/workspace".to_string()));
+    assert_eq!(
+        deserialized.working_directory,
+        Some("/home/user/workspace".to_string())
+    );
 }
 
 #[test]
@@ -464,7 +481,10 @@ fn test_stream_request_working_directory_builder_pattern() {
     let request = StreamRequest::new("Builder test".to_string())
         .with_working_directory(Some("/Users/test/project".to_string()));
 
-    assert_eq!(request.working_directory, Some("/Users/test/project".to_string()));
+    assert_eq!(
+        request.working_directory,
+        Some("/Users/test/project".to_string())
+    );
 }
 
 #[test]
@@ -474,5 +494,8 @@ fn test_stream_request_working_directory_with_thread_builder() {
         .with_working_directory(Some("/workspace/app".to_string()));
 
     assert_eq!(request.thread_id, Some("thread-123".to_string()));
-    assert_eq!(request.working_directory, Some("/workspace/app".to_string()));
+    assert_eq!(
+        request.working_directory,
+        Some("/workspace/app".to_string())
+    );
 }
