@@ -4,20 +4,12 @@ A TUI client for spoq.
 
 ## Installation
 
-### npm (recommended for Node.js users)
-
-```bash
-npm install -g @oaftobark/spoq
-```
-
-After installation, run `spoq` from your terminal.
-
-### Shell script
+### Shell script (recommended)
 
 Quick installation via curl:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/AWLSEN/spoq-tui/main/install.sh | sh
+curl -fsSL https://download.spoq.dev/cli | sh
 ```
 
 This script automatically detects your platform and architecture, downloads the appropriate binary, and installs it to `~/.local/bin/spoq`.
@@ -32,14 +24,28 @@ cargo install spoq
 
 ### Manual download
 
-Download pre-built binaries from the [GitHub Releases](https://github.com/AWLSEN/spoq-tui/releases) page.
+Download pre-built binaries directly:
 
-Available platforms:
-- macOS (Intel and Apple Silicon)
-- Linux (x86_64, ARM64, ARMv7)
-- Windows (x86_64)
+```bash
+# macOS Apple Silicon
+curl -fsSL https://download.spoq.dev/cli/download/darwin-aarch64 -o spoq
 
-After downloading, extract the binary and place it in your PATH.
+# macOS Intel
+curl -fsSL https://download.spoq.dev/cli/download/darwin-x86_64 -o spoq
+
+# Linux x86_64
+curl -fsSL https://download.spoq.dev/cli/download/linux-x86_64 -o spoq
+
+# Linux ARM64
+curl -fsSL https://download.spoq.dev/cli/download/linux-aarch64 -o spoq
+```
+
+After downloading, make it executable and move it to your PATH:
+
+```bash
+chmod +x spoq
+sudo mv spoq /usr/local/bin/
+```
 
 ## Building from Source
 
