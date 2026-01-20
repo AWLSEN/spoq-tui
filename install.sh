@@ -13,29 +13,33 @@ if [ -t 1 ]; then
     GREEN='\033[0;32m'
     YELLOW='\033[0;33m'
     BLUE='\033[0;34m'
-    NC='\033[0m' # No Color
+    CYAN='\033[0;36m'
+    BOLD='\033[1m'
+    NC='\033[0m'
 else
     RED=''
     GREEN=''
     YELLOW=''
     BLUE=''
+    CYAN=''
+    BOLD=''
     NC=''
 fi
 
 info() {
-    printf "${BLUE}==>${NC} %s\n" "$1"
+    printf "%b==>%b %s\n" "$BLUE" "$NC" "$1"
 }
 
 success() {
-    printf "${GREEN}==>${NC} %s\n" "$1"
+    printf "%b==>%b %s\n" "$GREEN" "$NC" "$1"
 }
 
 warn() {
-    printf "${YELLOW}Warning:${NC} %s\n" "$1"
+    printf "%bWarning:%b %s\n" "$YELLOW" "$NC" "$1"
 }
 
 error() {
-    printf "${RED}Error:${NC} %s\n" "$1" >&2
+    printf "%bError:%b %s\n" "$RED" "$NC" "$1" >&2
     exit 1
 }
 
