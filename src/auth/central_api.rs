@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 /// Default URL for the Central API
-pub const CENTRAL_API_URL: &str = "https://spoq-api-production.up.railway.app";
+pub const CENTRAL_API_URL: &str = "https://api.spoq.dev";
 
 /// Error type for Central API client operations
 #[derive(Debug)]
@@ -187,6 +187,29 @@ pub struct VpsStatusResponse {
     pub created_at: Option<String>,
     #[serde(default)]
     pub ready_at: Option<String>,
+}
+
+/// Data center information.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DataCenter {
+    pub id: u32,
+    pub name: String,
+    pub city: String,
+    pub country: String,
+    pub continent: String,
+}
+
+/// Response from data centers endpoint (GET /api/data-centers).
+#[derive(Debug, Clone, Deserialize)]
+pub struct DataCentersResponse {
+    pub data_centers: Vec<DataCenter>,
+}
+
+/// Response from VPS action endpoints.
+#[derive(Debug, Clone, Deserialize)]
+pub struct VpsActionResponse {
+    pub success: bool,
+    pub message: String,
 }
 
 /// Client for interacting with the Spoq Central API.
