@@ -44,6 +44,7 @@ fn test_credentials_with_vps_info() {
         vps_hostname: Some("spoq-abc123.spoq.cloud".to_string()),
         vps_ip: Some("192.168.1.100".to_string()),
         vps_status: Some("ready".to_string()),
+        datacenter_id: Some(1),
     };
 
     // Serialize and deserialize
@@ -133,6 +134,7 @@ fn test_credentials_default() {
     assert!(creds.vps_hostname.is_none());
     assert!(creds.vps_ip.is_none());
     assert!(creds.vps_status.is_none());
+    assert!(creds.datacenter_id.is_none());
 }
 
 /// Test VPS ready status detection
