@@ -1,5 +1,7 @@
 use spoq::app::{start_websocket, App, AppMessage, Focus, ProvisioningPhase, Screen, ScrollBoundary};
-use spoq::auth::{DeviceFlowManager, DeviceFlowState};
+use spoq::auth::{
+    run_auth_flow, run_provisioning_flow, CredentialsManager, DeviceFlowManager, DeviceFlowState,
+};
 use spoq::debug::{create_debug_channel, start_debug_server};
 use spoq::models;
 use spoq::ui;
@@ -30,6 +32,44 @@ fn main() -> Result<()> {
     // Create Tokio runtime for the entire application
     // This runtime will be used for auth flows and then for TUI async operations
     let runtime = tokio::runtime::Runtime::new()?;
+
+    // =========================================================
+    // Pre-flight auth checks - run BEFORE TUI starts
+    // =========================================================
+
+    // Load or create credentials
+    let manager = CredentialsManager::new().expect("Failed to initialize credentials manager");
+    let mut credentials = manager.load();
+
+    // Auth check - run interactive flow if not authenticated
+    if credentials.access_token.is_none() {
+        credentials = match run_auth_flow(&runtime) {
+            Ok(creds) => creds,
+            Err(e) => {
+                eprintln!("Authentication failed: {}", e);
+                std::process::exit(1);
+            }
+        };
+    }
+
+    // VPS check - run interactive provisioning if no ready VPS
+    if credentials.vps_url.is_none() || credentials.vps_status.as_deref() != Some("ready") {
+        if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
+            eprintln!("Provisioning failed: {}", e);
+            std::process::exit(1);
+        }
+        // Save updated credentials after provisioning
+        if !manager.save(&credentials) {
+            eprintln!("Warning: Failed to save credentials after provisioning");
+        }
+    }
+
+    // At this point, user is authenticated AND has a ready VPS
+    println!("Starting SPOQ...\n");
+
+    // =========================================================
+    // TUI initialization - user is now authenticated
+    // =========================================================
 
     // Run async initialization using the runtime
     let (debug_tx, debug_server_handle) = runtime.block_on(start_debug_system());
@@ -75,8 +115,8 @@ fn main() -> Result<()> {
     let size = terminal.size()?;
     app.update_terminal_dimensions(size.width, size.height);
 
-    // Only initialize server connection if already authenticated with ready VPS
-    // Login and Provisioning screens don't need server data
+    // Initialize server connection - user is already authenticated with ready VPS
+    // Login and Provisioning screens are handled by pre-flight checks above
     runtime.block_on(async {
         match app.screen {
             Screen::CommandDeck | Screen::Conversation => {
@@ -91,33 +131,26 @@ fn main() -> Result<()> {
                 app.ws_sender = start_websocket(app.message_tx.clone()).await.ok();
             }
             Screen::Provisioning => {
-                // Load VPS plans for provisioning screen
+                // Should not reach here after pre-flight checks, but handle gracefully
+                // This can happen if credentials file was modified externally
                 app.load_vps_plans();
             }
             Screen::Login => {
-                // Initialize device flow for login - start the OAuth flow immediately
-                app.emit_debug_state_change("auth", "Device flow", "Starting...");
+                // Should not reach here after pre-flight checks
+                // If somehow we get here, initialize device flow for fallback
+                app.emit_debug_state_change("auth", "Device flow", "Starting (fallback)...");
                 if let Some(ref central_api) = app.central_api {
                     let mut device_flow = DeviceFlowManager::new(central_api.clone());
-                    // Start the device flow (requests device code from server)
-                    match device_flow.start().await {
-                        Ok(()) => {
-                            // Log the state for debugging
-                            let state_desc = match device_flow.state() {
-                                DeviceFlowState::WaitingForUser { verification_uri, .. } => {
-                                    format!("WaitingForUser: {}", verification_uri)
-                                }
-                                other => format!("{:?}", other),
-                            };
-                            app.emit_debug_state_change("auth", "Device flow started", &state_desc);
-                        }
-                        Err(e) => {
-                            app.emit_debug_state_change("auth", "Device flow error", &e.to_string());
-                        }
+                    if let Ok(()) = device_flow.start().await {
+                        let state_desc = match device_flow.state() {
+                            DeviceFlowState::WaitingForUser { verification_uri, .. } => {
+                                format!("WaitingForUser: {}", verification_uri)
+                            }
+                            other => format!("{:?}", other),
+                        };
+                        app.emit_debug_state_change("auth", "Device flow started", &state_desc);
                     }
                     app.device_flow = Some(device_flow);
-                } else {
-                    app.emit_debug_state_change("auth", "Device flow", "No central API configured");
                 }
             }
         }
