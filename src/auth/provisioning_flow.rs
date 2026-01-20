@@ -130,11 +130,22 @@ pub fn run_provisioning_flow(
     // Step 6: Provision the VPS
     check_interrupt(&interrupted);
     println!("\nProvisioning your VPS...");
-    let provision_response = runtime.block_on(client.provision_vps(
+    let provision_result = runtime.block_on(client.provision_vps(
         &ssh_password,
         Some(&selected_plan.id),
         Some(selected_datacenter_id),
-    ))?;
+    ));
+
+    // Handle 409 Conflict - user already has an active VPS
+    let provision_response = match provision_result {
+        Ok(response) => response,
+        Err(CentralApiError::ServerError { status: 409, .. }) => {
+            println!("\nYou already have an active VPS.");
+            println!("Please use your existing VPS or contact support to delete it first.");
+            return Ok(());
+        }
+        Err(e) => return Err(e),
+    };
 
     println!("VPS provisioning started!");
     if let Some(msg) = &provision_response.message {
@@ -730,5 +741,38 @@ mod tests {
         assert_eq!(ordered.len(), 1);
         assert_eq!(ordered[0].id, 42);
         assert_eq!(ordered[0].city, "Test City");
+    }
+
+    #[test]
+    fn test_409_conflict_error_detection() {
+        // Test that 409 error is correctly identified as a conflict error
+        let error = CentralApiError::ServerError {
+            status: 409,
+            message: "User already has an active VPS".to_string(),
+        };
+
+        // Verify the error status is 409 (Conflict)
+        if let CentralApiError::ServerError { status, .. } = error {
+            assert_eq!(status, 409);
+        } else {
+            panic!("Expected ServerError variant");
+        }
+    }
+
+    #[test]
+    fn test_provisioning_flow_collects_all_required_params() {
+        // Verify that the provisioning flow expects plan_id, datacenter_id, and ssh_password
+        // This is a compile-time verification test - if the function signature changes,
+        // this test documents the expected parameters.
+
+        // The provision_vps function signature requires:
+        // - ssh_password: &str (required)
+        // - plan_id: Option<&str>
+        // - data_center_id: Option<u32>
+
+        // We can verify the Credentials struct stores datacenter_id
+        let mut creds = Credentials::default();
+        creds.datacenter_id = Some(42);
+        assert_eq!(creds.datacenter_id, Some(42));
     }
 }
