@@ -842,11 +842,16 @@ impl App {
                     Some(&thread_id),
                 );
             }
-            AppMessage::AgentStatusUpdate { thread_id, state } => {
+            AppMessage::AgentStatusUpdate {
+                thread_id,
+                state,
+                current_operation,
+            } => {
                 // Log for terminal debugging
                 tracing::info!("WS_AGENT_STATUS: thread={}, state={}", thread_id, state);
                 // Update dashboard state with agent status
-                self.dashboard.update_agent_state(&thread_id, &state);
+                self.dashboard
+                    .update_agent_state(&thread_id, &state, current_operation.as_deref());
                 // Emit StateChange for agent status update
                 emit_debug(
                     &self.debug_tx,

@@ -142,6 +142,7 @@ fn route_ws_message(
                 .send(AppMessage::AgentStatusUpdate {
                     thread_id: status.thread_id,
                     state: status.state,
+                    current_operation: status.current_operation,
                 })
                 .map_err(|e| format!("Failed to send AgentStatusUpdate: {}", e))
         }

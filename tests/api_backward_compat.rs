@@ -418,12 +418,12 @@ fn test_thread_effective_status_uses_agent_events() {
     let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
 
     // Without agent events, should use stored status
-    let agent_events: HashMap<String, String> = HashMap::new();
+    let agent_events: HashMap<String, (String, Option<String>)> = HashMap::new();
     assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Idle);
 
     // With agent events, should use agent event state
     let mut agent_events = HashMap::new();
-    agent_events.insert("thread-1".to_string(), "thinking".to_string());
+    agent_events.insert("thread-1".to_string(), ("thinking".to_string(), None));
     assert_eq!(
         thread.effective_status(&agent_events),
         ThreadStatus::Running
@@ -444,12 +444,15 @@ fn test_thread_effective_status_without_stored_status() {
     let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
 
     // Without agent events, should default to Idle
-    let agent_events: HashMap<String, String> = HashMap::new();
+    let agent_events: HashMap<String, (String, Option<String>)> = HashMap::new();
     assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Idle);
 
     // With waiting agent event
     let mut agent_events = HashMap::new();
-    agent_events.insert("thread-old".to_string(), "awaiting_permission".to_string());
+    agent_events.insert(
+        "thread-old".to_string(),
+        ("awaiting_permission".to_string(), None),
+    );
     assert_eq!(
         thread.effective_status(&agent_events),
         ThreadStatus::Waiting
@@ -469,20 +472,20 @@ fn test_thread_needs_action() {
     let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
 
     // Idle thread doesn't need action
-    let agent_events: HashMap<String, String> = HashMap::new();
+    let agent_events: HashMap<String, (String, Option<String>)> = HashMap::new();
     assert!(!thread.needs_action(&agent_events));
 
     // Waiting thread needs action
     let mut agent_events = HashMap::new();
-    agent_events.insert("thread-action".to_string(), "waiting".to_string());
+    agent_events.insert("thread-action".to_string(), ("waiting".to_string(), None));
     assert!(thread.needs_action(&agent_events));
 
     // Error thread needs action
-    agent_events.insert("thread-action".to_string(), "error".to_string());
+    agent_events.insert("thread-action".to_string(), ("error".to_string(), None));
     assert!(thread.needs_action(&agent_events));
 
     // Running thread doesn't need action
-    agent_events.insert("thread-action".to_string(), "running".to_string());
+    agent_events.insert("thread-action".to_string(), ("running".to_string(), None));
     assert!(!thread.needs_action(&agent_events));
 }
 

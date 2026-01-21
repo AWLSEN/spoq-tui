@@ -176,6 +176,8 @@ pub struct ThreadView {
     pub duration: String,
     /// Whether this thread needs user action
     pub needs_action: bool,
+    /// Current operation description (e.g., "Reading file", "Running tests")
+    pub current_operation: Option<String>,
 }
 
 impl ThreadView {
@@ -191,6 +193,7 @@ impl ThreadView {
             progress: None,
             duration: String::new(),
             needs_action: false,
+            current_operation: None,
         }
     }
 
@@ -228,14 +231,30 @@ impl ThreadView {
         self
     }
 
+    /// Builder-style setter for current_operation
+    pub fn with_current_operation(mut self, current_operation: Option<String>) -> Self {
+        self.current_operation = current_operation;
+        self
+    }
+
     /// Get the status line for display
+    ///
+    /// Priority:
+    /// 1. If waiting_for is set, show the waiting description
+    /// 2. If running and current_operation is set, show current_operation
+    /// 3. Otherwise show the status name
     pub fn status_line(&self) -> String {
         if let Some(ref waiting) = self.waiting_for {
             waiting.description()
+        } else if self.status == ThreadStatus::Running {
+            if let Some(ref op) = self.current_operation {
+                return op.clone();
+            }
+            "Running".to_string()
         } else {
             match self.status {
                 ThreadStatus::Idle => "Idle".to_string(),
-                ThreadStatus::Running => "Running".to_string(),
+                ThreadStatus::Running => "Running".to_string(), // unreachable but complete
                 ThreadStatus::Waiting => "Waiting".to_string(),
                 ThreadStatus::Done => "Done".to_string(),
                 ThreadStatus::Error => "Error".to_string(),
@@ -611,6 +630,37 @@ mod tests {
             tool_name: "Bash".to_string(),
         }));
         assert_eq!(view.status_line(), "Permission: Bash");
+    }
+
+    #[test]
+    fn test_thread_view_current_operation() {
+        // When running without current_operation, show "Running"
+        let view = ThreadView::new("id-7".to_string(), "Op Test".to_string(), "~/repo".to_string())
+            .with_status(ThreadStatus::Running);
+        assert_eq!(view.status_line(), "Running");
+
+        // When running with current_operation, show the operation
+        let view = view.with_current_operation(Some("Reading file".to_string()));
+        assert_eq!(view.status_line(), "Reading file");
+
+        // When waiting_for is set, it takes priority over current_operation
+        let view = view.with_waiting_for(Some(WaitingFor::UserInput));
+        assert_eq!(view.status_line(), "User input");
+    }
+
+    #[test]
+    fn test_thread_view_current_operation_only_when_running() {
+        // current_operation should only show when status is Running
+        let view = ThreadView::new("id-8".to_string(), "Op Test".to_string(), "~/repo".to_string())
+            .with_status(ThreadStatus::Idle)
+            .with_current_operation(Some("Reading file".to_string()));
+        assert_eq!(view.status_line(), "Idle");
+
+        // Done status ignores current_operation
+        let view = ThreadView::new("id-9".to_string(), "Op Test".to_string(), "~/repo".to_string())
+            .with_status(ThreadStatus::Done)
+            .with_current_operation(Some("Reading file".to_string()));
+        assert_eq!(view.status_line(), "Done");
     }
 
     // -------------------- OverlayState Tests --------------------

@@ -71,8 +71,9 @@ impl PhaseProgressData {
 pub struct DashboardState {
     /// Thread data indexed by thread_id
     threads: HashMap<String, Thread>,
-    /// Agent state strings by thread_id (fallback for status inference)
-    agent_states: HashMap<String, String>,
+    /// Agent state data by thread_id: (state, current_operation)
+    /// Used for fallback status inference and current_operation display
+    agent_states: HashMap<String, (String, Option<String>)>,
     /// What each thread is waiting for
     waiting_for: HashMap<String, WaitingFor>,
     /// Plan requests pending approval: thread_id -> (request_id, summary)
@@ -126,12 +127,19 @@ impl DashboardState {
     /// Replace all threads and recompute aggregate
     ///
     /// Called when receiving full thread list from backend.
+    /// Note: agent_states here only contains state strings; current_operation
+    /// will be populated by subsequent WebSocket updates.
     pub fn set_threads(&mut self, threads: Vec<Thread>, agent_states: &HashMap<String, String>) {
         self.threads.clear();
         for thread in threads {
             self.threads.insert(thread.id.clone(), thread);
         }
-        self.agent_states = agent_states.clone();
+        // Convert HashMap<String, String> to HashMap<String, (String, Option<String>)>
+        // with None for current_operation (will be populated by WebSocket updates)
+        self.agent_states = agent_states
+            .iter()
+            .map(|(k, v)| (k.clone(), (v.clone(), None)))
+            .collect();
         self.recompute_aggregate();
         self.thread_views_dirty = true;
     }
@@ -173,9 +181,21 @@ impl DashboardState {
     }
 
     /// Update agent state for a thread (fallback status inference)
-    pub fn update_agent_state(&mut self, thread_id: &str, state: &str) {
-        self.agent_states
-            .insert(thread_id.to_string(), state.to_string());
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread to update
+    /// * `state` - The agent state (e.g., "running", "streaming", "idle")
+    /// * `current_operation` - Optional description of what the agent is doing
+    pub fn update_agent_state(
+        &mut self,
+        thread_id: &str,
+        state: &str,
+        current_operation: Option<&str>,
+    ) {
+        self.agent_states.insert(
+            thread_id.to_string(),
+            (state.to_string(), current_operation.map(|s| s.to_string())),
+        );
         self.recompute_aggregate();
         self.thread_views_dirty = true;
     }
@@ -503,6 +523,11 @@ impl DashboardState {
                     }
                 });
 
+                // Get current_operation from agent state
+                let current_operation = thread
+                    .current_operation(&self.agent_states)
+                    .map(|s| s.to_string());
+
                 ThreadView::new(
                     thread.id.clone(),
                     thread.title.clone(),
@@ -513,6 +538,7 @@ impl DashboardState {
                 .with_waiting_for(waiting_for)
                 .with_progress(progress)
                 .with_duration(thread.display_duration())
+                .with_current_operation(current_operation)
             })
             .collect();
 

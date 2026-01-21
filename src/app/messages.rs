@@ -146,6 +146,7 @@ pub enum AppMessage {
     AgentStatusUpdate {
         thread_id: String,
         state: String,
+        current_operation: Option<String>,
     },
     /// Plan approval request from WebSocket (for dashboard)
     PlanApprovalRequest {

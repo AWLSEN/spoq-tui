@@ -136,14 +136,31 @@ impl Thread {
     /// 1. Agent events (most current)
     /// 2. Stored status field
     /// 3. Default to Idle
-    pub fn effective_status(&self, agent_events: &HashMap<String, String>) -> ThreadStatus {
+    ///
+    /// The agent_events map contains (state, current_operation) tuples.
+    pub fn effective_status(
+        &self,
+        agent_events: &HashMap<String, (String, Option<String>)>,
+    ) -> ThreadStatus {
         // First check agent events for real-time status
-        if let Some(state) = agent_events.get(&self.id) {
+        if let Some((state, _current_operation)) = agent_events.get(&self.id) {
             return infer_status_from_agent_state(state);
         }
 
         // Fall back to stored status
         self.status.unwrap_or(ThreadStatus::Idle)
+    }
+
+    /// Get current operation from agent events (if available)
+    ///
+    /// Returns the current_operation string when the agent is actively doing something.
+    pub fn current_operation<'a>(
+        &self,
+        agent_events: &'a HashMap<String, (String, Option<String>)>,
+    ) -> Option<&'a str> {
+        agent_events
+            .get(&self.id)
+            .and_then(|(_, op)| op.as_deref())
     }
 
     /// Get display-friendly repository name
@@ -166,7 +183,7 @@ impl Thread {
     /// A thread needs action if:
     /// - Its effective status is Waiting or Error
     /// - There's a permission request pending (via agent_events)
-    pub fn needs_action(&self, agent_events: &HashMap<String, String>) -> bool {
+    pub fn needs_action(&self, agent_events: &HashMap<String, (String, Option<String>)>) -> bool {
         let status = self.effective_status(agent_events);
         status.needs_attention()
     }
