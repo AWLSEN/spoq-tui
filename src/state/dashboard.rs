@@ -885,4 +885,188 @@ mod tests {
 
         assert_eq!(state.aggregate().working(), 2);
     }
+
+    // -------------------- Phase Progress Tests --------------------
+
+    #[test]
+    fn test_update_phase_progress() {
+        let mut state = DashboardState::new();
+        let progress = PhaseProgressData::new(
+            1,
+            5,
+            "Add WebSocket handlers".to_string(),
+            PhaseStatus::Running,
+            10,
+            "Edit".to_string(),
+            Some("/src/websocket/handlers.rs".to_string()),
+        );
+
+        state.update_phase_progress("t1", progress);
+
+        let result = state.get_phase_progress("t1");
+        assert!(result.is_some());
+        let p = result.unwrap();
+        assert_eq!(p.phase_index, 1);
+        assert_eq!(p.total_phases, 5);
+        assert_eq!(p.phase_name, "Add WebSocket handlers");
+        assert_eq!(p.status, PhaseStatus::Running);
+        assert_eq!(p.tool_count, 10);
+        assert_eq!(p.last_tool, "Edit");
+        assert_eq!(
+            p.last_file,
+            Some("/src/websocket/handlers.rs".to_string())
+        );
+    }
+
+    #[test]
+    fn test_update_phase_progress_marks_dirty() {
+        let mut state = DashboardState::new();
+        state.thread_views_dirty = false;
+
+        let progress = PhaseProgressData::new(
+            0,
+            3,
+            "Setup".to_string(),
+            PhaseStatus::Starting,
+            0,
+            "".to_string(),
+            None,
+        );
+
+        state.update_phase_progress("t1", progress);
+        assert!(state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_clear_phase_progress() {
+        let mut state = DashboardState::new();
+        let progress = PhaseProgressData::new(
+            2,
+            5,
+            "Test phase".to_string(),
+            PhaseStatus::Completed,
+            15,
+            "Bash".to_string(),
+            None,
+        );
+
+        state.update_phase_progress("t1", progress);
+        assert!(state.get_phase_progress("t1").is_some());
+
+        state.clear_phase_progress("t1");
+        assert!(state.get_phase_progress("t1").is_none());
+    }
+
+    #[test]
+    fn test_clear_phase_progress_marks_dirty() {
+        let mut state = DashboardState::new();
+        let progress = PhaseProgressData::new(
+            0,
+            1,
+            "Single phase".to_string(),
+            PhaseStatus::Running,
+            5,
+            "Read".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", progress);
+        state.thread_views_dirty = false;
+
+        state.clear_phase_progress("t1");
+        assert!(state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_get_phase_progress_nonexistent() {
+        let state = DashboardState::new();
+        assert!(state.get_phase_progress("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_phase_progress_data_new() {
+        let progress = PhaseProgressData::new(
+            3,
+            10,
+            "Implement feature".to_string(),
+            PhaseStatus::Failed,
+            25,
+            "Write".to_string(),
+            Some("/src/feature.rs".to_string()),
+        );
+
+        assert_eq!(progress.phase_index, 3);
+        assert_eq!(progress.total_phases, 10);
+        assert_eq!(progress.phase_name, "Implement feature");
+        assert_eq!(progress.status, PhaseStatus::Failed);
+        assert_eq!(progress.tool_count, 25);
+        assert_eq!(progress.last_tool, "Write");
+        assert_eq!(progress.last_file, Some("/src/feature.rs".to_string()));
+    }
+
+    #[test]
+    fn test_phase_progress_multiple_threads() {
+        let mut state = DashboardState::new();
+
+        let progress1 = PhaseProgressData::new(
+            1,
+            3,
+            "Phase A".to_string(),
+            PhaseStatus::Running,
+            5,
+            "Edit".to_string(),
+            None,
+        );
+        let progress2 = PhaseProgressData::new(
+            2,
+            4,
+            "Phase B".to_string(),
+            PhaseStatus::Completed,
+            10,
+            "Bash".to_string(),
+            Some("/tests/test.rs".to_string()),
+        );
+
+        state.update_phase_progress("t1", progress1);
+        state.update_phase_progress("t2", progress2);
+
+        let p1 = state.get_phase_progress("t1").unwrap();
+        let p2 = state.get_phase_progress("t2").unwrap();
+
+        assert_eq!(p1.phase_name, "Phase A");
+        assert_eq!(p2.phase_name, "Phase B");
+        assert_eq!(p1.phase_index, 1);
+        assert_eq!(p2.phase_index, 2);
+    }
+
+    #[test]
+    fn test_update_phase_progress_replaces_existing() {
+        let mut state = DashboardState::new();
+
+        let progress1 = PhaseProgressData::new(
+            0,
+            3,
+            "Initial".to_string(),
+            PhaseStatus::Starting,
+            0,
+            "".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", progress1);
+
+        let progress2 = PhaseProgressData::new(
+            0,
+            3,
+            "Initial".to_string(),
+            PhaseStatus::Running,
+            5,
+            "Edit".to_string(),
+            Some("/src/main.rs".to_string()),
+        );
+        state.update_phase_progress("t1", progress2);
+
+        let result = state.get_phase_progress("t1").unwrap();
+        assert_eq!(result.status, PhaseStatus::Running);
+        assert_eq!(result.tool_count, 5);
+        assert_eq!(result.last_tool, "Edit");
+    }
 }
