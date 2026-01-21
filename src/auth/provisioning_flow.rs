@@ -342,6 +342,18 @@ fn run_managed_vps_flow(
         Some(selected_datacenter_id),
     ));
 
+    // Check if tokens were refreshed and update credentials
+    let (new_access_token, new_refresh_token) = client.get_tokens();
+    if let Some(access_token) = new_access_token {
+        if credentials.access_token.as_ref() != Some(&access_token) {
+            credentials.access_token = Some(access_token);
+            if let Some(refresh_token) = new_refresh_token {
+                credentials.refresh_token = Some(refresh_token);
+            }
+            save_credentials(credentials);
+        }
+    }
+
     // Handle 409 Conflict - user already has an active VPS
     let provision_response = match provision_result {
         Ok(response) => response,
@@ -368,6 +380,18 @@ fn run_managed_vps_flow(
     // Step 7: Poll for VPS to be ready
     println!("\nWaiting for VPS to be ready...");
     let status = poll_vps_status_with_interrupt(runtime, &mut client, interrupted)?;
+
+    // Check if tokens were refreshed during status polling and update credentials
+    let (new_access_token, new_refresh_token) = client.get_tokens();
+    if let Some(access_token) = new_access_token {
+        if credentials.access_token.as_ref() != Some(&access_token) {
+            credentials.access_token = Some(access_token);
+            if let Some(refresh_token) = new_refresh_token {
+                credentials.refresh_token = Some(refresh_token);
+            }
+            save_credentials(credentials);
+        }
+    }
 
     // Update credentials with final status
     credentials.vps_id = Some(status.vps_id.clone());
@@ -586,6 +610,19 @@ fn run_byovps_flow(
         interrupted,
     )?;
 
+    // Check if tokens were refreshed during the API call and update credentials
+    let (new_access_token, new_refresh_token) = client.get_tokens();
+    if let Some(access_token) = new_access_token {
+        if credentials.access_token.as_ref() != Some(&access_token) {
+            // Token was refreshed, update and save credentials
+            credentials.access_token = Some(access_token);
+            if let Some(refresh_token) = new_refresh_token {
+                credentials.refresh_token = Some(refresh_token);
+            }
+            save_credentials(credentials);
+        }
+    }
+
     // Check initial provision status
     match provision_response.status.to_lowercase().as_str() {
         "failed" | "error" => {
@@ -617,6 +654,18 @@ fn run_byovps_flow(
     // Step 2: Poll VPS status until ready or failed
     check_interrupt(interrupted);
     let final_status = poll_byovps_status_with_interrupt(runtime, &mut client, interrupted)?;
+
+    // Check if tokens were refreshed during status polling and update credentials
+    let (new_access_token, new_refresh_token) = client.get_tokens();
+    if let Some(access_token) = new_access_token {
+        if credentials.access_token.as_ref() != Some(&access_token) {
+            credentials.access_token = Some(access_token);
+            if let Some(refresh_token) = new_refresh_token {
+                credentials.refresh_token = Some(refresh_token);
+            }
+            save_credentials(credentials);
+        }
+    }
 
     // Step 3: Update credentials with final VPS info
     credentials.vps_id = Some(final_status.vps_id.clone());

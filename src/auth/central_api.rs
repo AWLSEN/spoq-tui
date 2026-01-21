@@ -339,6 +339,12 @@ impl CentralApiClient {
         self.refresh_token.as_deref()
     }
 
+    /// Get both current tokens (access_token, refresh_token).
+    /// Useful for updating credentials after potential auto-refresh.
+    pub fn get_tokens(&self) -> (Option<String>, Option<String>) {
+        (self.auth_token.clone(), self.refresh_token.clone())
+    }
+
     /// Helper to add auth header to a request builder if token is set.
     fn add_auth_header(&self, builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if let Some(ref token) = self.auth_token {
