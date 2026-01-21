@@ -597,17 +597,18 @@ fn run_byovps_flow_with_retry(
 /// Run the BYOVPS provisioning flow.
 ///
 /// This flow:
-/// 1. Calls the BYOVPS provision endpoint with spinner animation
-/// 2. Polls VPS status every 5 seconds until ready or failed
-/// 3. Updates and saves credentials with VPS info
+/// 1. Checks if token is expired and proactively refreshes if needed
+/// 2. Calls the BYOVPS provision endpoint with spinner animation
+/// 3. Polls VPS status every 5 seconds until ready or failed
+/// 4. Updates and saves credentials with VPS info
 fn run_byovps_flow(
     runtime: &tokio::runtime::Runtime,
     credentials: &mut Credentials,
     byovps_creds: &ByovpsCredentials,
     interrupted: &Arc<AtomicBool>,
 ) -> Result<(), CentralApiError> {
-    // Create API client with authentication
-    let access_token =
+    // Check if access token is present
+    let _access_token =
         credentials
             .access_token
             .as_ref()
@@ -615,6 +616,71 @@ fn run_byovps_flow(
                 status: 401,
                 message: "No access token available".to_string(),
             })?;
+
+    // Proactive token expiration check
+    if credentials.is_expired() {
+        if let Some(ref refresh_token) = credentials.refresh_token {
+            println!("Token expired, refreshing proactively...");
+
+            // Create temporary client to refresh token
+            let temp_client = CentralApiClient::new();
+
+            // Call refresh endpoint
+            match runtime.block_on(temp_client.refresh_token(refresh_token)) {
+                Ok(token_response) => {
+                    // Update credentials with new tokens
+                    credentials.access_token = Some(token_response.access_token.clone());
+                    credentials.refresh_token = Some(token_response.refresh_token.clone());
+
+                    // Calculate and save new expiration time
+                    if let Some(expires_in) = token_response.expires_in {
+                        let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                        credentials.expires_at = Some(expires_at);
+                    } else {
+                        // Extract expiration from JWT if not provided in response
+                        if let Some(expires_in) = super::central_api::get_jwt_expires_in(&token_response.access_token) {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            credentials.expires_at = Some(expires_at);
+                        }
+                    }
+
+                    // Save updated credentials to disk
+                    save_credentials(credentials);
+                    println!("Token refreshed successfully.");
+                }
+                Err(_) => {
+                    // Refresh failed - clear credentials and return error
+                    println!("Token expired, no valid refresh token available.");
+                    credentials.access_token = None;
+                    credentials.refresh_token = None;
+                    save_credentials(credentials);
+                    return Err(CentralApiError::ServerError {
+                        status: 401,
+                        message: "Your session has expired. Please run the CLI again to re-authenticate.".to_string(),
+                    });
+                }
+            }
+        } else {
+            // No refresh token available - clear credentials and return error
+            println!("Token expired, no valid refresh token available.");
+            credentials.access_token = None;
+            credentials.refresh_token = None;
+            save_credentials(credentials);
+            return Err(CentralApiError::ServerError {
+                status: 401,
+                message: "Your session has expired. Please run the CLI again to re-authenticate.".to_string(),
+            });
+        }
+    }
+
+    // Get the (potentially refreshed) access token
+    let access_token = credentials
+        .access_token
+        .as_ref()
+        .ok_or_else(|| CentralApiError::ServerError {
+            status: 401,
+            message: "No access token available".to_string(),
+        })?;
 
     let mut client = CentralApiClient::new().with_auth(access_token);
 
@@ -2032,5 +2098,103 @@ mod tests {
             // Just verify they don't panic
             display_byovps_error(&error);
         }
+    }
+
+    #[test]
+    fn test_expired_credentials_detection() {
+        // Test that expired credentials are properly detected
+        let mut credentials = Credentials::default();
+
+        // No expiration time - should be considered expired
+        assert!(credentials.is_expired());
+
+        // Set expiration to past - should be expired
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() - 3600);
+        assert!(credentials.is_expired());
+
+        // Set expiration to future - should not be expired
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
+        assert!(!credentials.is_expired());
+    }
+
+    #[test]
+    fn test_byovps_flow_without_access_token() {
+        // Test that run_byovps_flow returns error without access token
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut credentials = Credentials::default();
+        // No access token set
+
+        let byovps_creds = ByovpsCredentials {
+            vps_ip: "192.168.1.1".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "pass".to_string(),
+        };
+
+        let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = run_byovps_flow(&runtime, &mut credentials, &byovps_creds, &interrupted);
+
+        // Should fail because no access token
+        assert!(result.is_err());
+        if let Err(CentralApiError::ServerError { status, message }) = result {
+            assert_eq!(status, 401);
+            assert!(message.contains("access token") || message.contains("expired"));
+        } else {
+            panic!("Expected ServerError with status 401");
+        }
+    }
+
+    #[test]
+    fn test_byovps_flow_with_expired_token_no_refresh() {
+        // Test that run_byovps_flow handles expired token without refresh token
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut credentials = Credentials::default();
+
+        // Set expired access token but no refresh token
+        credentials.access_token = Some("expired_access_token".to_string());
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() - 3600);
+        credentials.refresh_token = None;
+
+        let byovps_creds = ByovpsCredentials {
+            vps_ip: "192.168.1.1".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "pass".to_string(),
+        };
+
+        let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = run_byovps_flow(&runtime, &mut credentials, &byovps_creds, &interrupted);
+
+        // Should fail because token is expired and no refresh token
+        assert!(result.is_err());
+        if let Err(CentralApiError::ServerError { status, message }) = result {
+            assert_eq!(status, 401);
+            assert!(message.contains("expired") || message.contains("re-authenticate"));
+        } else {
+            panic!("Expected ServerError with status 401");
+        }
+
+        // Credentials should be cleared
+        assert!(credentials.access_token.is_none());
+        assert!(credentials.refresh_token.is_none());
+    }
+
+    #[test]
+    fn test_credentials_is_expired_edge_cases() {
+        // Test edge cases for token expiration checking
+        let mut credentials = Credentials::default();
+
+        // Exactly at expiration time (now) - should be expired
+        credentials.expires_at = Some(chrono::Utc::now().timestamp());
+        // This might be flaky due to timing, but >= check should make it expired
+        assert!(credentials.is_expired());
+
+        // One second in the future - should not be expired
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() + 1);
+        assert!(!credentials.is_expired());
+
+        // Far future - should not be expired
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() + 86400); // 1 day
+        assert!(!credentials.is_expired());
     }
 }

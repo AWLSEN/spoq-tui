@@ -579,7 +579,13 @@ impl CentralApiClient {
                             .json(&body);
                         self.add_auth_header(builder).send().await?
                     }
-                    Err(_) => response,
+                    Err(refresh_error) => {
+                        eprintln!("Token refresh failed: {}", refresh_error);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Authentication failed. Token refresh failed: {}. Please sign in again.", refresh_error),
+                        });
+                    }
                 }
             } else {
                 response
@@ -625,7 +631,13 @@ impl CentralApiClient {
                         let builder = self.client.get(&url);
                         self.add_auth_header(builder).send().await?
                     }
-                    Err(_) => response,
+                    Err(refresh_error) => {
+                        eprintln!("Token refresh failed: {}", refresh_error);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Authentication failed. Token refresh failed: {}. Please sign in again.", refresh_error),
+                        });
+                    }
                 }
             } else {
                 response
@@ -863,7 +875,13 @@ impl CentralApiClient {
                             .json(&body);
                         self.add_auth_header(builder).send().await?
                     }
-                    Err(_) => response,
+                    Err(refresh_error) => {
+                        eprintln!("Token refresh failed: {}", refresh_error);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Authentication failed. Token refresh failed: {}. Please sign in again.", refresh_error),
+                        });
+                    }
                 }
             } else {
                 response
@@ -1663,5 +1681,131 @@ mod tests {
             .await;
         // Should fail due to invalid server, but tests that IPv6 is accepted
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_provision_byovps_refresh_error_handling() {
+        // Test that refresh error is properly captured and returned
+        use wiremock::{MockServer, Mock, ResponseTemplate};
+        use wiremock::matchers::{method, path};
+
+        let mock_server = MockServer::start().await;
+
+        // First request returns 401
+        Mock::given(method("POST"))
+            .and(path("/api/byovps/provision"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "Unauthorized"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Refresh token request also fails
+        Mock::given(method("POST"))
+            .and(path("/auth/refresh"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "Invalid refresh token"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = CentralApiClient::with_base_url(mock_server.uri())
+            .with_auth("expired-token")
+            .with_refresh_token("invalid-refresh-token");
+
+        let result = client.provision_byovps("192.168.1.100", "root", "password").await;
+
+        assert!(result.is_err());
+        if let Err(CentralApiError::ServerError { status, message }) = result {
+            assert_eq!(status, 401);
+            assert!(message.contains("Token refresh failed"));
+            assert!(message.contains("Please sign in again"));
+        } else {
+            panic!("Expected ServerError with refresh failure message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_provision_vps_refresh_error_handling() {
+        // Test that refresh error is properly captured and returned
+        use wiremock::{MockServer, Mock, ResponseTemplate};
+        use wiremock::matchers::{method, path};
+
+        let mock_server = MockServer::start().await;
+
+        // First request returns 401
+        Mock::given(method("POST"))
+            .and(path("/api/vps/provision"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "Unauthorized"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Refresh token request also fails
+        Mock::given(method("POST"))
+            .and(path("/auth/refresh"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "Invalid refresh token"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = CentralApiClient::with_base_url(mock_server.uri())
+            .with_auth("expired-token")
+            .with_refresh_token("invalid-refresh-token");
+
+        let result = client.provision_vps("password", Some("plan-small"), None).await;
+
+        assert!(result.is_err());
+        if let Err(CentralApiError::ServerError { status, message }) = result {
+            assert_eq!(status, 401);
+            assert!(message.contains("Token refresh failed"));
+            assert!(message.contains("Please sign in again"));
+        } else {
+            panic!("Expected ServerError with refresh failure message");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_vps_status_refresh_error_handling() {
+        // Test that refresh error is properly captured and returned
+        use wiremock::{MockServer, Mock, ResponseTemplate};
+        use wiremock::matchers::{method, path};
+
+        let mock_server = MockServer::start().await;
+
+        // First request returns 401
+        Mock::given(method("GET"))
+            .and(path("/api/vps/status"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "Unauthorized"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Refresh token request also fails
+        Mock::given(method("POST"))
+            .and(path("/auth/refresh"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "error": "Invalid refresh token"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = CentralApiClient::with_base_url(mock_server.uri())
+            .with_auth("expired-token")
+            .with_refresh_token("invalid-refresh-token");
+
+        let result = client.fetch_vps_status().await;
+
+        assert!(result.is_err());
+        if let Err(CentralApiError::ServerError { status, message }) = result {
+            assert_eq!(status, 401);
+            assert!(message.contains("Token refresh failed"));
+            assert!(message.contains("Please sign in again"));
+        } else {
+            panic!("Expected ServerError with refresh failure message");
+        }
     }
 }
