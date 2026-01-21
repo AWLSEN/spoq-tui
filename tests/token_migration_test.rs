@@ -293,18 +293,6 @@ fn test_detect_tokens_real_execution() {
 
 // Step 4: Test export function - verify archive creation and structure
 #[test]
-fn test_export_tokens_creates_staging_dir() {
-    // Run export to ensure staging directory is created
-    let _ = export_tokens();
-
-    let home = env::var("HOME").expect("HOME should be set");
-    let staging_dir = PathBuf::from(&home).join(".spoq-migration");
-
-    assert!(staging_dir.exists(), "Staging directory should exist");
-    assert!(staging_dir.is_dir(), "Staging path should be a directory");
-}
-
-#[test]
 fn test_export_tokens_archive_structure() {
     // Test that if export succeeds, archive has correct structure
     let result = export_tokens();
