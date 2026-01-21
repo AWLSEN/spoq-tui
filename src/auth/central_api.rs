@@ -229,6 +229,51 @@ pub struct VpsActionResponse {
     pub message: String,
 }
 
+/// Request body for BYOVPS provisioning.
+#[derive(Debug, Clone, Serialize)]
+pub struct ByovpsProvisionRequest {
+    pub vps_ip: String,
+    pub ssh_username: String,
+    pub ssh_password: String,
+}
+
+/// Install script status from BYOVPS provisioning response.
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstallScriptStatus {
+    pub status: String,
+    #[serde(default)]
+    pub output: Option<String>,
+}
+
+/// Credentials returned from BYOVPS provisioning.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ByovpsCredentials {
+    #[serde(default)]
+    pub jwt_token: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+/// Response from BYOVPS provision endpoint (POST /api/byovps/provision).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ByovpsProvisionResponse {
+    #[serde(default)]
+    pub hostname: Option<String>,
+    pub status: String,
+    #[serde(default)]
+    pub install_script: Option<InstallScriptStatus>,
+    #[serde(default)]
+    pub credentials: Option<ByovpsCredentials>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default, alias = "id")]
+    pub vps_id: Option<String>,
+    #[serde(default, alias = "ip_address")]
+    pub ip: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
 /// Client for interacting with the Spoq Central API.
 pub struct CentralApiClient {
     /// Base URL for the Central API
@@ -689,6 +734,54 @@ impl CentralApiClient {
         }
 
         Ok(())
+    }
+
+    /// Provision a BYOVPS (Bring Your Own VPS).
+    ///
+    /// POST /api/byovps/provision
+    ///
+    /// Requires authentication. Initiates provisioning of a user-provided VPS.
+    ///
+    /// # Arguments
+    /// * `vps_ip` - The IP address of the user's VPS (IPv4 or IPv6)
+    /// * `ssh_username` - SSH username for connecting to the VPS
+    /// * `ssh_password` - SSH password for connecting to the VPS
+    ///
+    /// # Returns
+    /// * `Ok(ByovpsProvisionResponse)` - Provisioning initiated successfully
+    /// * `Err(CentralApiError)` - Provisioning failed
+    pub async fn provision_byovps(
+        &self,
+        vps_ip: &str,
+        ssh_username: &str,
+        ssh_password: &str,
+    ) -> Result<ByovpsProvisionResponse, CentralApiError> {
+        let url = format!("{}/api/byovps/provision", self.base_url);
+
+        let body = ByovpsProvisionRequest {
+            vps_ip: vps_ip.to_string(),
+            ssh_username: ssh_username.to_string(),
+            ssh_password: ssh_password.to_string(),
+        };
+
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: ByovpsProvisionResponse = response.json().await?;
+        Ok(data)
     }
 }
 
@@ -1313,6 +1406,161 @@ mod tests {
         let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.revoke_token("refresh-token-123").await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_byovps_provision_request_serialize() {
+        let request = ByovpsProvisionRequest {
+            vps_ip: "192.168.1.100".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "secretpassword".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"vps_ip\":\"192.168.1.100\""));
+        assert!(json.contains("\"ssh_username\":\"root\""));
+        assert!(json.contains("\"ssh_password\":\"secretpassword\""));
+    }
+
+    #[test]
+    fn test_byovps_provision_request_serialize_ipv6() {
+        let request = ByovpsProvisionRequest {
+            vps_ip: "2001:db8::1".to_string(),
+            ssh_username: "admin".to_string(),
+            ssh_password: "pass".to_string(),
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("\"vps_ip\":\"2001:db8::1\""));
+    }
+
+    #[test]
+    fn test_install_script_status_deserialize() {
+        let json = r#"{"status": "running", "output": "Installing packages..."}"#;
+        let status: InstallScriptStatus = serde_json::from_str(json).unwrap();
+        assert_eq!(status.status, "running");
+        assert_eq!(status.output, Some("Installing packages...".to_string()));
+    }
+
+    #[test]
+    fn test_install_script_status_deserialize_minimal() {
+        let json = r#"{"status": "completed"}"#;
+        let status: InstallScriptStatus = serde_json::from_str(json).unwrap();
+        assert_eq!(status.status, "completed");
+        assert!(status.output.is_none());
+    }
+
+    #[test]
+    fn test_byovps_credentials_deserialize() {
+        let json = r#"{"jwt_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", "expires_at": "2026-02-01T00:00:00Z"}"#;
+        let creds: ByovpsCredentials = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            creds.jwt_token,
+            Some("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...".to_string())
+        );
+        assert_eq!(creds.expires_at, Some("2026-02-01T00:00:00Z".to_string()));
+    }
+
+    #[test]
+    fn test_byovps_credentials_deserialize_empty() {
+        let json = r#"{}"#;
+        let creds: ByovpsCredentials = serde_json::from_str(json).unwrap();
+        assert!(creds.jwt_token.is_none());
+        assert!(creds.expires_at.is_none());
+    }
+
+    #[test]
+    fn test_byovps_provision_response_deserialize_full() {
+        let json = r#"{
+            "hostname": "user-byovps.spoq.dev",
+            "status": "provisioning",
+            "install_script": {"status": "running", "output": "Step 1/5..."},
+            "credentials": {"jwt_token": "token123", "expires_at": "2026-02-01T00:00:00Z"},
+            "message": "BYOVPS provisioning started",
+            "id": "byovps-uuid-123",
+            "ip_address": "192.168.1.100",
+            "url": "https://user-byovps.spoq.dev:8000"
+        }"#;
+        let response: ByovpsProvisionResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.hostname, Some("user-byovps.spoq.dev".to_string()));
+        assert_eq!(response.status, "provisioning");
+        assert!(response.install_script.is_some());
+        let install = response.install_script.unwrap();
+        assert_eq!(install.status, "running");
+        assert_eq!(install.output, Some("Step 1/5...".to_string()));
+        assert!(response.credentials.is_some());
+        let creds = response.credentials.unwrap();
+        assert_eq!(creds.jwt_token, Some("token123".to_string()));
+        assert_eq!(response.message, Some("BYOVPS provisioning started".to_string()));
+        assert_eq!(response.vps_id, Some("byovps-uuid-123".to_string()));
+        assert_eq!(response.ip, Some("192.168.1.100".to_string()));
+        assert_eq!(response.url, Some("https://user-byovps.spoq.dev:8000".to_string()));
+    }
+
+    #[test]
+    fn test_byovps_provision_response_deserialize_minimal() {
+        let json = r#"{"status": "pending"}"#;
+        let response: ByovpsProvisionResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.status, "pending");
+        assert!(response.hostname.is_none());
+        assert!(response.install_script.is_none());
+        assert!(response.credentials.is_none());
+        assert!(response.message.is_none());
+        assert!(response.vps_id.is_none());
+        assert!(response.ip.is_none());
+        assert!(response.url.is_none());
+    }
+
+    #[test]
+    fn test_byovps_provision_response_deserialize_ready_state() {
+        let json = r#"{
+            "status": "ready",
+            "hostname": "user.spoq.dev",
+            "url": "https://user.spoq.dev:8000"
+        }"#;
+        let response: ByovpsProvisionResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.status, "ready");
+        assert_eq!(response.hostname, Some("user.spoq.dev".to_string()));
+        assert_eq!(response.url, Some("https://user.spoq.dev:8000".to_string()));
+    }
+
+    #[test]
+    fn test_byovps_provision_response_deserialize_failed_state() {
+        let json = r#"{
+            "status": "failed",
+            "message": "SSH connection failed: Connection refused"
+        }"#;
+        let response: ByovpsProvisionResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.status, "failed");
+        assert_eq!(
+            response.message,
+            Some("SSH connection failed: Connection refused".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_provision_byovps_with_invalid_server() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client
+            .provision_byovps("192.168.1.100", "root", "password123")
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_provision_byovps_with_ipv6() {
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client
+            .provision_byovps("2001:db8::1", "admin", "password123")
+            .await;
+        // Should fail due to invalid server, but tests that IPv6 is accepted
         assert!(result.is_err());
     }
 }

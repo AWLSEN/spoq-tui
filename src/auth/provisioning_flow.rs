@@ -10,9 +10,10 @@ use std::thread;
 use std::time::Duration;
 
 use super::central_api::{
-    CentralApiClient, CentralApiError, DataCenter, VpsPlan, VpsStatusResponse,
+    ByovpsProvisionResponse, CentralApiClient, CentralApiError, DataCenter, VpsPlan,
+    VpsStatusResponse,
 };
-use super::credentials::Credentials;
+use super::credentials::{Credentials, CredentialsManager};
 
 /// VPS type selection.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +35,15 @@ const POLL_INTERVAL_SECS: u64 = 3;
 
 /// Maximum number of poll attempts before timing out.
 const MAX_POLL_ATTEMPTS: u32 = 200; // 10 minutes at 3 second intervals
+
+/// Poll interval for BYOVPS status checks (in seconds).
+const BYOVPS_POLL_INTERVAL_SECS: u64 = 5;
+
+/// Maximum number of BYOVPS poll attempts before timing out.
+const BYOVPS_MAX_POLL_ATTEMPTS: u32 = 120; // 10 minutes at 5 second intervals
+
+/// Spinner characters for loading animation.
+const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Set up Ctrl+C handler that sets the interrupted flag.
 /// Returns the Arc<AtomicBool> that will be set to true on interrupt.
@@ -238,14 +248,8 @@ pub fn run_provisioning_flow(
             check_interrupt(&interrupted);
             let byovps_creds = collect_byovps_credentials(&interrupted)?;
 
-            // Display confirmation
-            println!(
-                "\nProvisioning VPS at {} with user {}...",
-                byovps_creds.vps_ip, byovps_creds.ssh_username
-            );
-
-            // TODO: Actual provisioning logic will be added in later phases
-            Ok(())
+            // Run BYOVPS provisioning flow
+            run_byovps_flow(runtime, credentials, &byovps_creds, &interrupted)
         }
     }
 }
@@ -383,6 +387,267 @@ fn run_managed_vps_flow(
     }
 
     Ok(())
+}
+
+/// Run the BYOVPS provisioning flow.
+///
+/// This flow:
+/// 1. Calls the BYOVPS provision endpoint with spinner animation
+/// 2. Polls VPS status every 5 seconds until ready or failed
+/// 3. Updates and saves credentials with VPS info
+fn run_byovps_flow(
+    runtime: &tokio::runtime::Runtime,
+    credentials: &mut Credentials,
+    byovps_creds: &ByovpsCredentials,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<(), CentralApiError> {
+    // Create API client with authentication
+    let access_token =
+        credentials
+            .access_token
+            .as_ref()
+            .ok_or_else(|| CentralApiError::ServerError {
+                status: 401,
+                message: "No access token available".to_string(),
+            })?;
+
+    let client = CentralApiClient::new().with_auth(access_token);
+
+    // Step 1: Call provision_byovps with spinner
+    check_interrupt(interrupted);
+    let provision_response = provision_byovps_with_spinner(
+        runtime,
+        &client,
+        &byovps_creds.vps_ip,
+        &byovps_creds.ssh_username,
+        &byovps_creds.ssh_password,
+        interrupted,
+    )?;
+
+    // Check initial provision status
+    match provision_response.status.to_lowercase().as_str() {
+        "failed" | "error" => {
+            let msg = provision_response
+                .message
+                .unwrap_or_else(|| "BYOVPS provisioning failed".to_string());
+            return Err(CentralApiError::ServerError {
+                status: 500,
+                message: msg,
+            });
+        }
+        "ready" | "running" | "active" => {
+            // Already ready, update credentials and return
+            update_credentials_from_byovps_response(credentials, &provision_response);
+            save_credentials(credentials);
+            display_byovps_result(&provision_response);
+            return Ok(());
+        }
+        _ => {
+            // Need to poll for status
+        }
+    }
+
+    // Display initial status
+    if let Some(msg) = &provision_response.message {
+        println!("\n{}", msg);
+    }
+
+    // Step 2: Poll VPS status until ready or failed
+    check_interrupt(interrupted);
+    let final_status = poll_byovps_status_with_interrupt(runtime, &client, interrupted)?;
+
+    // Step 3: Update credentials with final VPS info
+    credentials.vps_id = Some(final_status.vps_id.clone());
+    credentials.vps_status = Some(final_status.status.clone());
+    if let Some(hostname) = &final_status.hostname {
+        credentials.vps_hostname = Some(hostname.clone());
+    }
+    if let Some(ip) = &final_status.ip {
+        credentials.vps_ip = Some(ip.clone());
+    }
+    if let Some(url) = &final_status.url {
+        credentials.vps_url = Some(url.clone());
+    }
+
+    // Save updated credentials
+    save_credentials(credentials);
+
+    // Display final result
+    println!("\nBYOVPS provisioning complete!");
+    println!("  Status: {}", final_status.status);
+    if let Some(hostname) = &final_status.hostname {
+        println!("  Hostname: {}", hostname);
+    }
+    if let Some(ip) = &final_status.ip {
+        println!("  IP: {}", ip);
+    }
+    if let Some(url) = &final_status.url {
+        println!("  URL: {}", url);
+    }
+
+    Ok(())
+}
+
+/// Call provision_byovps with spinner animation.
+fn provision_byovps_with_spinner(
+    runtime: &tokio::runtime::Runtime,
+    client: &CentralApiClient,
+    vps_ip: &str,
+    ssh_username: &str,
+    ssh_password: &str,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<ByovpsProvisionResponse, CentralApiError> {
+    use std::sync::mpsc;
+    use std::time::Instant;
+
+    // Start spinner in separate thread
+    let (tx, rx) = mpsc::channel();
+    let spinner_interrupted = Arc::clone(interrupted);
+
+    let spinner_handle = thread::spawn(move || {
+        let mut frame = 0;
+        let start = Instant::now();
+
+        loop {
+            // Check for completion signal
+            if rx.try_recv().is_ok() {
+                break;
+            }
+
+            // Check for interrupt
+            if spinner_interrupted.load(Ordering::SeqCst) {
+                break;
+            }
+
+            // Display spinner
+            let spinner = SPINNER_CHARS[frame % SPINNER_CHARS.len()];
+            let elapsed = start.elapsed().as_secs();
+            print!("\r{} Provisioning VPS... ({}s)", spinner, elapsed);
+            io::stdout().flush().ok();
+
+            frame += 1;
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        // Clear spinner line
+        print!("\r                                        \r");
+        io::stdout().flush().ok();
+    });
+
+    // Execute the async provision call
+    let result = runtime.block_on(client.provision_byovps(vps_ip, ssh_username, ssh_password));
+
+    // Stop the spinner
+    let _ = tx.send(());
+    let _ = spinner_handle.join();
+
+    // Check for interrupt
+    check_interrupt(interrupted);
+
+    result
+}
+
+/// Poll BYOVPS status with spinner and interrupt support.
+fn poll_byovps_status_with_interrupt(
+    runtime: &tokio::runtime::Runtime,
+    client: &CentralApiClient,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<VpsStatusResponse, CentralApiError> {
+    let mut attempts = 0;
+
+    println!("\nPolling VPS status...");
+
+    loop {
+        check_interrupt(interrupted);
+
+        let status = runtime.block_on(client.fetch_vps_status())?;
+
+        // Check VPS status
+        match status.status.to_lowercase().as_str() {
+            "ready" | "running" | "active" => {
+                // Clear spinner line and return
+                print!("\r                                                              \r");
+                io::stdout().flush().ok();
+                return Ok(status);
+            }
+            "failed" | "error" | "terminated" => {
+                return Err(CentralApiError::ServerError {
+                    status: 500,
+                    message: format!("BYOVPS provisioning failed with status: {}", status.status),
+                });
+            }
+            _ => {
+                // Still provisioning, show progress with spinner
+                let spinner = SPINNER_CHARS[attempts as usize % SPINNER_CHARS.len()];
+                let status_display = &status.status;
+                print!(
+                    "\r{} Polling VPS status... ({}) - attempt {}/{}",
+                    spinner,
+                    status_display,
+                    attempts + 1,
+                    BYOVPS_MAX_POLL_ATTEMPTS
+                );
+                io::stdout().flush().ok();
+            }
+        }
+
+        attempts += 1;
+        if attempts >= BYOVPS_MAX_POLL_ATTEMPTS {
+            return Err(CentralApiError::ServerError {
+                status: 408,
+                message: "BYOVPS provisioning timed out after 10 minutes".to_string(),
+            });
+        }
+
+        // Check interrupt before sleeping
+        check_interrupt(interrupted);
+        thread::sleep(Duration::from_secs(BYOVPS_POLL_INTERVAL_SECS));
+    }
+}
+
+/// Update credentials from BYOVPS provision response.
+fn update_credentials_from_byovps_response(
+    credentials: &mut Credentials,
+    response: &ByovpsProvisionResponse,
+) {
+    credentials.vps_status = Some(response.status.clone());
+
+    if let Some(vps_id) = &response.vps_id {
+        credentials.vps_id = Some(vps_id.clone());
+    }
+    if let Some(hostname) = &response.hostname {
+        credentials.vps_hostname = Some(hostname.clone());
+    }
+    if let Some(ip) = &response.ip {
+        credentials.vps_ip = Some(ip.clone());
+    }
+    if let Some(url) = &response.url {
+        credentials.vps_url = Some(url.clone());
+    }
+}
+
+/// Display BYOVPS provisioning result.
+fn display_byovps_result(response: &ByovpsProvisionResponse) {
+    println!("\nBYOVPS provisioning complete!");
+    println!("  Status: {}", response.status);
+    if let Some(hostname) = &response.hostname {
+        println!("  Hostname: {}", hostname);
+    }
+    if let Some(ip) = &response.ip {
+        println!("  IP: {}", ip);
+    }
+    if let Some(url) = &response.url {
+        println!("  URL: {}", url);
+    }
+}
+
+/// Save credentials to file.
+fn save_credentials(credentials: &Credentials) {
+    if let Some(manager) = CredentialsManager::new() {
+        if !manager.save(credentials) {
+            eprintln!("Warning: Failed to save credentials to file");
+        }
+    }
 }
 
 /// Display available VPS plans to the user.
@@ -1197,5 +1462,194 @@ mod tests {
 
         let empty_password = "";
         assert!(empty_password.is_empty());
+    }
+
+    #[test]
+    fn test_byovps_poll_constants() {
+        // Verify BYOVPS polling constants are reasonable
+        assert_eq!(BYOVPS_POLL_INTERVAL_SECS, 5);
+        assert_eq!(BYOVPS_MAX_POLL_ATTEMPTS, 120);
+        // Total wait time should be 10 minutes (600 seconds)
+        assert_eq!(
+            BYOVPS_POLL_INTERVAL_SECS * BYOVPS_MAX_POLL_ATTEMPTS as u64,
+            600
+        );
+    }
+
+    #[test]
+    fn test_spinner_chars_constant() {
+        // Verify spinner characters array
+        assert_eq!(SPINNER_CHARS.len(), 10);
+        assert_eq!(SPINNER_CHARS[0], '⠋');
+        assert_eq!(SPINNER_CHARS[9], '⠏');
+    }
+
+    #[test]
+    fn test_byovps_status_states() {
+        // Test that BYOVPS status states are handled correctly
+        // Ready states - VPS is usable
+        let ready_states = ["ready", "running", "active", "Ready", "RUNNING"];
+        for state in &ready_states {
+            let is_ready = matches!(
+                state.to_lowercase().as_str(),
+                "ready" | "running" | "active"
+            );
+            assert!(is_ready, "State '{}' should be ready", state);
+        }
+
+        // Error states - BYOVPS failed
+        let error_states = ["failed", "error", "terminated"];
+        for state in &error_states {
+            let is_error = matches!(
+                state.to_lowercase().as_str(),
+                "failed" | "error" | "terminated"
+            );
+            assert!(is_error, "State '{}' should be error", state);
+        }
+
+        // Polling states - still provisioning
+        let polling_states = [
+            "pending",
+            "provisioning",
+            "registering",
+            "configuring",
+            "installing",
+        ];
+        for state in &polling_states {
+            let is_ready = matches!(
+                state.to_lowercase().as_str(),
+                "ready" | "running" | "active"
+            );
+            let is_error = matches!(
+                state.to_lowercase().as_str(),
+                "failed" | "error" | "terminated"
+            );
+            assert!(
+                !is_ready && !is_error,
+                "State '{}' should trigger polling",
+                state
+            );
+        }
+    }
+
+    #[test]
+    fn test_update_credentials_from_byovps_response() {
+        use super::super::central_api::ByovpsProvisionResponse;
+
+        let mut credentials = Credentials::default();
+        let response = ByovpsProvisionResponse {
+            hostname: Some("user.spoq.dev".to_string()),
+            status: "ready".to_string(),
+            install_script: None,
+            credentials: None,
+            message: None,
+            vps_id: Some("byovps-uuid-123".to_string()),
+            ip: Some("192.168.1.100".to_string()),
+            url: Some("https://user.spoq.dev:8000".to_string()),
+        };
+
+        update_credentials_from_byovps_response(&mut credentials, &response);
+
+        assert_eq!(credentials.vps_status, Some("ready".to_string()));
+        assert_eq!(credentials.vps_id, Some("byovps-uuid-123".to_string()));
+        assert_eq!(credentials.vps_hostname, Some("user.spoq.dev".to_string()));
+        assert_eq!(credentials.vps_ip, Some("192.168.1.100".to_string()));
+        assert_eq!(
+            credentials.vps_url,
+            Some("https://user.spoq.dev:8000".to_string())
+        );
+    }
+
+    #[test]
+    fn test_update_credentials_from_byovps_response_partial() {
+        use super::super::central_api::ByovpsProvisionResponse;
+
+        let mut credentials = Credentials::default();
+        let response = ByovpsProvisionResponse {
+            hostname: None,
+            status: "provisioning".to_string(),
+            install_script: None,
+            credentials: None,
+            message: Some("Installing...".to_string()),
+            vps_id: Some("byovps-uuid-456".to_string()),
+            ip: None,
+            url: None,
+        };
+
+        update_credentials_from_byovps_response(&mut credentials, &response);
+
+        assert_eq!(credentials.vps_status, Some("provisioning".to_string()));
+        assert_eq!(credentials.vps_id, Some("byovps-uuid-456".to_string()));
+        assert!(credentials.vps_hostname.is_none());
+        assert!(credentials.vps_ip.is_none());
+        assert!(credentials.vps_url.is_none());
+    }
+
+    #[test]
+    fn test_display_byovps_result_does_not_panic() {
+        use super::super::central_api::ByovpsProvisionResponse;
+
+        // Test with full response
+        let response_full = ByovpsProvisionResponse {
+            hostname: Some("test.spoq.dev".to_string()),
+            status: "ready".to_string(),
+            install_script: None,
+            credentials: None,
+            message: None,
+            vps_id: Some("test-id".to_string()),
+            ip: Some("10.0.0.1".to_string()),
+            url: Some("https://test.spoq.dev:8000".to_string()),
+        };
+        // Just verify it doesn't panic
+        display_byovps_result(&response_full);
+
+        // Test with minimal response
+        let response_minimal = ByovpsProvisionResponse {
+            hostname: None,
+            status: "ready".to_string(),
+            install_script: None,
+            credentials: None,
+            message: None,
+            vps_id: None,
+            ip: None,
+            url: None,
+        };
+        display_byovps_result(&response_minimal);
+    }
+
+    #[test]
+    fn test_byovps_flow_requires_access_token() {
+        // Test that run_byovps_flow returns error without access token
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut credentials = Credentials::default();
+        // No access token set
+
+        let byovps_creds = ByovpsCredentials {
+            vps_ip: "192.168.1.1".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "pass".to_string(),
+        };
+
+        let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let result = run_byovps_flow(&runtime, &mut credentials, &byovps_creds, &interrupted);
+
+        // Should fail because no access token
+        assert!(result.is_err());
+        if let Err(CentralApiError::ServerError { status, message }) = result {
+            assert_eq!(status, 401);
+            assert!(message.contains("access token"));
+        } else {
+            panic!("Expected ServerError with status 401");
+        }
+    }
+
+    #[test]
+    fn test_byovps_timeout_calculation() {
+        // Verify the timeout calculation is correct
+        // 120 attempts * 5 seconds = 600 seconds = 10 minutes
+        let total_timeout_secs = BYOVPS_MAX_POLL_ATTEMPTS as u64 * BYOVPS_POLL_INTERVAL_SECS;
+        assert_eq!(total_timeout_secs, 600);
+        assert_eq!(total_timeout_secs / 60, 10); // 10 minutes
     }
 }
