@@ -1,6 +1,7 @@
 //! Message handling for the App.
 
 use crate::debug::{DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType};
+use crate::state::dashboard::PhaseProgressData;
 
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
 
@@ -907,13 +908,14 @@ impl App {
             AppMessage::ThreadModeUpdate { thread_id, mode } => {
                 // Log for terminal debugging
                 tracing::info!("THREAD_MODE_UPDATE: thread_id={}, mode={:?}", thread_id, mode);
-                // TODO: Update dashboard or conversation state with new thread mode
+                // Update thread mode in dashboard state
+                self.dashboard.update_thread_mode(&thread_id, mode);
                 // Emit StateChange for thread mode update
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::WebSocket,
-                        "THREAD_MODE_UPDATE",
+                        StateType::DashboardState,
+                        "Thread mode updated",
                         format!("thread_id: {}, mode: {:?}", thread_id, mode),
                     )),
                     Some(&thread_id),
@@ -938,13 +940,25 @@ impl App {
                     total_phases,
                     status
                 );
-                // TODO: Update dashboard with phase progress
+                // Create phase progress data and update dashboard
+                let progress = PhaseProgressData::new(
+                    phase_index,
+                    total_phases,
+                    phase_name.clone(),
+                    status.clone(),
+                    tool_count,
+                    last_tool.clone(),
+                    last_file.clone(),
+                );
+                // Update phase progress - use thread_id if available, otherwise use plan_id as fallback
+                let progress_key = thread_id.as_deref().unwrap_or(&plan_id);
+                self.dashboard.update_phase_progress(progress_key, progress);
                 // Emit StateChange for phase progress
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::WebSocket,
-                        "PHASE_PROGRESS_UPDATE",
+                        StateType::DashboardState,
+                        "Phase progress updated",
                         format!(
                             "plan_id: {}, phase: {}/{} ({}), status: {:?}, tools: {}, last_tool: {}{}",
                             plan_id,
@@ -966,13 +980,25 @@ impl App {
             } => {
                 // Log for terminal debugging
                 tracing::info!("THREAD_VERIFIED: thread_id={}, verified_at={}", thread_id, verified_at);
-                // TODO: Update dashboard or conversation state with verification status
+                // Parse verified_at string and update dashboard state
+                if let Ok(verified_dt) = chrono::DateTime::parse_from_rfc3339(&verified_at) {
+                    self.dashboard
+                        .update_thread_verified(&thread_id, verified_dt.with_timezone(&chrono::Utc));
+                } else {
+                    // Fallback to current time if parsing fails
+                    self.dashboard
+                        .update_thread_verified(&thread_id, chrono::Utc::now());
+                    tracing::warn!(
+                        "Failed to parse verified_at timestamp '{}', using current time",
+                        verified_at
+                    );
+                }
                 // Emit StateChange for thread verification
                 emit_debug(
                     &self.debug_tx,
                     DebugEventKind::StateChange(StateChangeData::new(
-                        StateType::WebSocket,
-                        "THREAD_VERIFIED",
+                        StateType::DashboardState,
+                        "Thread verified",
                         format!("thread_id: {}, verified_at: {}", thread_id, verified_at),
                     )),
                     Some(&thread_id),

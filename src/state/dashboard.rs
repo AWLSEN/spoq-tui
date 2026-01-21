@@ -197,6 +197,31 @@ impl DashboardState {
         self.thread_views_dirty = true;
     }
 
+    /// Update a thread's mode (normal, plan, exec)
+    ///
+    /// Called when receiving thread mode updates from WebSocket.
+    pub fn update_thread_mode(&mut self, thread_id: &str, mode: crate::models::ThreadMode) {
+        if let Some(thread) = self.threads.get_mut(thread_id) {
+            thread.mode = mode;
+        }
+        self.thread_views_dirty = true;
+    }
+
+    /// Update a thread's verification status
+    ///
+    /// Called when receiving thread verified events from WebSocket.
+    pub fn update_thread_verified(
+        &mut self,
+        thread_id: &str,
+        verified_at: chrono::DateTime<chrono::Utc>,
+    ) {
+        if let Some(thread) = self.threads.get_mut(thread_id) {
+            thread.verified = Some(true);
+            thread.verified_at = Some(verified_at);
+        }
+        self.thread_views_dirty = true;
+    }
+
     /// Update phase progress for a thread during plan execution
     ///
     /// Called when receiving phase progress updates from WebSocket.
