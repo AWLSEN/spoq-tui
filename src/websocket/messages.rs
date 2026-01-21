@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::{PlanSummary, Thread, ThreadStatus, WaitingFor};
+use crate::models::{PlanSummary, Thread, ThreadMode, ThreadStatus, WaitingFor};
 
 /// Incoming WebSocket messages from the client
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -23,6 +23,15 @@ pub enum WsIncomingMessage {
     /// Plan approval request from agent
     #[serde(rename = "plan_approval_request")]
     PlanApprovalRequest(WsPlanApprovalRequest),
+    /// Thread mode update (normal, plan, exec)
+    #[serde(rename = "thread_mode_update")]
+    ThreadModeUpdate(WsThreadModeUpdate),
+    /// Phase progress update during plan execution
+    #[serde(rename = "phase_progress_update")]
+    PhaseProgressUpdate(WsPhaseProgressUpdate),
+    /// Thread verification notification
+    #[serde(rename = "thread_verified")]
+    ThreadVerified(WsThreadVerified),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -95,6 +104,79 @@ pub struct WsPlanApprovalRequest {
     /// Summary of the plan
     pub plan_summary: PlanSummary,
     /// When this request was created (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Thread mode update notification
+///
+/// Sent when a thread's mode changes (normal -> plan -> exec)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsThreadModeUpdate {
+    /// Thread ID being updated
+    pub thread_id: String,
+    /// New mode for the thread
+    pub mode: ThreadMode,
+    /// When this update occurred (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Status of a phase during plan execution
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PhaseStatus {
+    /// Phase is starting
+    Starting,
+    /// Phase is currently running
+    Running,
+    /// Phase completed successfully
+    Completed,
+    /// Phase failed
+    Failed,
+}
+
+/// Phase progress update during plan execution
+///
+/// Sent periodically during Pulsar execution to report phase progress
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsPhaseProgressUpdate {
+    /// Thread ID (optional - may be null for plan-level updates)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    /// Plan ID being executed
+    pub plan_id: String,
+    /// Current phase index (0-based)
+    pub phase_index: u32,
+    /// Total number of phases
+    pub total_phases: u32,
+    /// Name of the current phase
+    pub phase_name: String,
+    /// Status of the phase
+    pub status: PhaseStatus,
+    /// Number of tools used in this phase
+    pub tool_count: u32,
+    /// Name of the last tool used
+    pub last_tool: String,
+    /// Last file modified (optional)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_file: Option<String>,
+    /// When the phase started (Unix milliseconds)
+    pub started_at: u64,
+    /// When this update was generated (Unix milliseconds)
+    pub updated_at: u64,
+    /// Message timestamp (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Thread verification notification
+///
+/// Sent when a thread's work has been verified/tested
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsThreadVerified {
+    /// Thread ID that was verified
+    pub thread_id: String,
+    /// When the verification occurred (Unix milliseconds)
+    pub verified_at: u64,
+    /// When this notification was sent (Unix milliseconds)
     pub timestamp: u64,
 }
 
@@ -736,5 +818,214 @@ mod tests {
         assert_eq!(parsed["type"], "plan_approval_response");
         assert_eq!(parsed["request_id"], "req-outgoing");
         assert_eq!(parsed["approved"], false);
+    }
+
+    // -------------------- Thread Mode Update Tests --------------------
+
+    #[test]
+    fn test_deserialize_thread_mode_update() {
+        let json = r#"{
+            "type": "thread_mode_update",
+            "thread_id": "thread-123",
+            "mode": "plan",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadModeUpdate(update) => {
+                assert_eq!(update.thread_id, "thread-123");
+                assert_eq!(update.mode, crate::models::ThreadMode::Plan);
+                assert_eq!(update.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ThreadModeUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_thread_mode_update_exec() {
+        let json = r#"{
+            "type": "thread_mode_update",
+            "thread_id": "thread-456",
+            "mode": "exec",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadModeUpdate(update) => {
+                assert_eq!(update.thread_id, "thread-456");
+                assert_eq!(update.mode, crate::models::ThreadMode::Exec);
+            }
+            _ => panic!("Expected ThreadModeUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_thread_mode_update() {
+        let update = WsThreadModeUpdate {
+            thread_id: "thread-serialize".to_string(),
+            mode: crate::models::ThreadMode::Plan,
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&update).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-serialize");
+        assert_eq!(parsed["mode"], "plan");
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+    }
+
+    // -------------------- Phase Progress Update Tests --------------------
+
+    #[test]
+    fn test_deserialize_phase_progress_update() {
+        let json = r#"{
+            "type": "phase_progress_update",
+            "thread_id": "thread-123",
+            "plan_id": "plan-456",
+            "phase_index": 2,
+            "total_phases": 5,
+            "phase_name": "Add WebSocket handlers",
+            "status": "running",
+            "tool_count": 15,
+            "last_tool": "Edit",
+            "last_file": "/src/websocket/handlers.rs",
+            "started_at": 1705315700000,
+            "updated_at": 1705315800000,
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PhaseProgressUpdate(progress) => {
+                assert_eq!(progress.thread_id, Some("thread-123".to_string()));
+                assert_eq!(progress.plan_id, "plan-456");
+                assert_eq!(progress.phase_index, 2);
+                assert_eq!(progress.total_phases, 5);
+                assert_eq!(progress.phase_name, "Add WebSocket handlers");
+                assert_eq!(progress.status, PhaseStatus::Running);
+                assert_eq!(progress.tool_count, 15);
+                assert_eq!(progress.last_tool, "Edit");
+                assert_eq!(progress.last_file, Some("/src/websocket/handlers.rs".to_string()));
+                assert_eq!(progress.started_at, 1705315700000);
+                assert_eq!(progress.updated_at, 1705315800000);
+                assert_eq!(progress.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected PhaseProgressUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_phase_progress_update_no_thread_id() {
+        let json = r#"{
+            "type": "phase_progress_update",
+            "plan_id": "plan-789",
+            "phase_index": 0,
+            "total_phases": 3,
+            "phase_name": "Setup",
+            "status": "starting",
+            "tool_count": 0,
+            "last_tool": "",
+            "started_at": 1705315700000,
+            "updated_at": 1705315700000,
+            "timestamp": 1705315700000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PhaseProgressUpdate(progress) => {
+                assert!(progress.thread_id.is_none());
+                assert_eq!(progress.plan_id, "plan-789");
+                assert_eq!(progress.status, PhaseStatus::Starting);
+                assert!(progress.last_file.is_none());
+            }
+            _ => panic!("Expected PhaseProgressUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_phase_status_all_variants() {
+        // Test all PhaseStatus variants deserialize correctly
+        let variants = [
+            ("starting", PhaseStatus::Starting),
+            ("running", PhaseStatus::Running),
+            ("completed", PhaseStatus::Completed),
+            ("failed", PhaseStatus::Failed),
+        ];
+
+        for (json_val, expected) in variants {
+            let json = format!(r#""{json_val}""#);
+            let status: PhaseStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(status, expected);
+        }
+    }
+
+    #[test]
+    fn test_serialize_phase_progress_update() {
+        let progress = WsPhaseProgressUpdate {
+            thread_id: Some("thread-serialize".to_string()),
+            plan_id: "plan-serialize".to_string(),
+            phase_index: 1,
+            total_phases: 4,
+            phase_name: "Test Phase".to_string(),
+            status: PhaseStatus::Completed,
+            tool_count: 10,
+            last_tool: "Bash".to_string(),
+            last_file: None,
+            started_at: 1705315700000,
+            updated_at: 1705315800000,
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&progress).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-serialize");
+        assert_eq!(parsed["plan_id"], "plan-serialize");
+        assert_eq!(parsed["phase_index"], 1);
+        assert_eq!(parsed["total_phases"], 4);
+        assert_eq!(parsed["status"], "completed");
+        // last_file should not be present when None
+        assert!(parsed.get("last_file").is_none() || parsed["last_file"].is_null());
+    }
+
+    // -------------------- Thread Verified Tests --------------------
+
+    #[test]
+    fn test_deserialize_thread_verified() {
+        let json = r#"{
+            "type": "thread_verified",
+            "thread_id": "thread-verified-123",
+            "verified_at": 1705315800000,
+            "timestamp": 1705315800001
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadVerified(verified) => {
+                assert_eq!(verified.thread_id, "thread-verified-123");
+                assert_eq!(verified.verified_at, 1705315800000);
+                assert_eq!(verified.timestamp, 1705315800001);
+            }
+            _ => panic!("Expected ThreadVerified"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_thread_verified() {
+        let verified = WsThreadVerified {
+            thread_id: "thread-serialize".to_string(),
+            verified_at: 1705315800000,
+            timestamp: 1705315800001,
+        };
+
+        let json = serde_json::to_string(&verified).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-serialize");
+        assert_eq!(parsed["verified_at"], 1705315800000_i64);
+        assert_eq!(parsed["timestamp"], 1705315800001_i64);
     }
 }

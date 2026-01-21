@@ -189,6 +189,30 @@ fn route_ws_message(
                 })
                 .map_err(|e| format!("Failed to send WsThreadCreated: {}", e))
         }
+        WsIncomingMessage::ThreadModeUpdate(update) => {
+            // Thread mode updates (normal, plan, exec) - TODO: Route to handler
+            info!(
+                "Received thread mode update: thread={}, mode={:?}",
+                update.thread_id, update.mode
+            );
+            Ok(())
+        }
+        WsIncomingMessage::PhaseProgressUpdate(progress) => {
+            // Phase progress updates during plan execution - TODO: Route to handler
+            info!(
+                "Received phase progress: plan={}, phase={}/{}, status={:?}",
+                progress.plan_id, progress.phase_index + 1, progress.total_phases, progress.status
+            );
+            Ok(())
+        }
+        WsIncomingMessage::ThreadVerified(verified) => {
+            // Thread verification notification - TODO: Route to handler
+            info!(
+                "Received thread verified: thread={}, verified_at={}",
+                verified.thread_id, verified.verified_at
+            );
+            Ok(())
+        }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })
             .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),
