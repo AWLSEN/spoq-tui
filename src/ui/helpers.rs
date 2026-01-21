@@ -40,17 +40,6 @@ pub fn inner_rect(area: Rect, margin: u16) -> Rect {
     }
 }
 
-/// Format token count in a human-readable way (e.g., 45000 -> "45k")
-pub fn format_tokens(tokens: u32) -> String {
-    if tokens >= 1_000_000 {
-        format!("{}M", tokens / 1_000_000)
-    } else if tokens >= 1_000 {
-        format!("{}k", tokens / 1_000)
-    } else {
-        format!("{}", tokens)
-    }
-}
-
 /// Extract a short model name from the full model string
 /// Examples:
 /// - "claude-opus-4-5-20250514" → "opus"

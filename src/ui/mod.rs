@@ -119,7 +119,7 @@ mod tests {
     use crate::models::PermissionMode;
     use conversation::create_mode_indicator_line;
     use helpers::{
-        extract_short_model_name, format_tokens, get_tool_icon, is_terminal_too_small,
+        extract_short_model_name, get_tool_icon, is_terminal_too_small,
         truncate_string, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
     };
     use input::{build_contextual_keybinds, get_permission_preview};
@@ -1531,28 +1531,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_format_tokens_small() {
-        assert_eq!(format_tokens(0), "0");
-        assert_eq!(format_tokens(500), "500");
-        assert_eq!(format_tokens(999), "999");
-    }
-
-    #[test]
-    fn test_format_tokens_thousands() {
-        assert_eq!(format_tokens(1_000), "1k");
-        assert_eq!(format_tokens(5_000), "5k");
-        assert_eq!(format_tokens(45_000), "45k");
-        assert_eq!(format_tokens(100_000), "100k");
-        assert_eq!(format_tokens(999_999), "999k");
-    }
-
-    #[test]
-    fn test_format_tokens_millions() {
-        assert_eq!(format_tokens(1_000_000), "1M");
-        assert_eq!(format_tokens(5_000_000), "5M");
-        assert_eq!(format_tokens(10_000_000), "10M");
-    }
 
     #[test]
     fn test_truncate_string_no_truncation() {
