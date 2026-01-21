@@ -15,7 +15,7 @@ Minimal, essential slash commands for spoq-cli based on architecture and design 
 
 ---
 
-## Slash Commands (29 total)
+## Slash Commands (30 total)
 
 ### 🎯 Core Thread Management (5)
 
@@ -64,13 +64,14 @@ Minimal, essential slash commands for spoq-cli based on architecture and design 
 | `/logs [n]` | Show recent logs | `/logs 50` |
 | `/debug` | Toggle debug mode | `/debug` |
 
-### 🔐 Authentication (3)
+### 🔐 Authentication (4)
 
 | Command | Description | Example |
 |---------|-------------|---------|
 | `/login` | Start device flow authentication | `/login` |
 | `/logout` | Sign out and clear credentials | `/logout` |
 | `/whoami` | Show current user info | `/whoami` |
+| `/sync` | Re-run token migration to VPS | `/sync` |
 
 ### 🖥️ VPS & Infrastructure (3)
 
@@ -491,6 +492,7 @@ Built into the UI:
 /vps               # Info & status
 /ssh-info          # Connection details
 /whoami            # Current user
+/sync              # Sync tokens to VPS
 ```
 
 ### Using Bash Fallback
@@ -506,7 +508,7 @@ Built into the UI:
 
 ## Why This Is Better
 
-**Minimal (29 commands):**
+**Minimal (30 commands):**
 - ✅ Easy to learn
 - ✅ Easy to remember
 - ✅ Each command earns its place
@@ -537,4 +539,70 @@ If users frequently do:
 - Fork threads → add `/fork`
 - Custom commands → add command system like OpenCode/Droid
 
-But for MVP: **29 commands + bash fallback is perfect**.
+But for MVP: **30 commands + bash fallback is perfect**.
+
+---
+
+## Detailed Command Documentation
+
+### /sync - Token Migration to VPS
+
+**Purpose:** Re-run the full token migration process to synchronize credentials with your VPS.
+
+**Usage:**
+```bash
+spoq /sync
+# or
+spoq --sync
+```
+
+**What it does:**
+1. Verifies you are authenticated and have a VPS configured
+2. Detects available tokens (GitHub CLI, Claude Code, Codex)
+3. Checks for Claude Code token with retry loop if missing
+4. Exports all detected tokens to an archive
+5. Transfers the archive to your VPS via SSH
+6. Extracts the archive on the VPS
+
+**When to use:**
+- After logging into a new service (GitHub CLI, Claude Code, etc.)
+- When tokens have been refreshed or updated
+- After re-authenticating to any integrated service
+- When setting up a new VPS and need to sync credentials
+
+**Requirements:**
+- Must be authenticated (`spoq` must have been run at least once)
+- Must have a VPS provisioned
+- SSH access to VPS (usually automatic)
+- Claude Code token is required (will prompt if missing)
+
+**Example output:**
+```
+Running token synchronization...
+
+[1/5] Verifying credentials and VPS...
+✓ Credentials loaded
+✓ VPS found: 203.0.113.42
+
+[2/5] Detecting tokens...
+✓ Tokens detected: GitHub CLI, Claude Code
+
+[3/5] Claude Code token verified
+
+[4/5] Exporting tokens...
+✓ Archive created: /Users/user/.spoq-migration/archive.tar.gz (4096 bytes)
+
+[5/5] Transferring to VPS...
+✓ Archive transferred to VPS: /tmp/spoq-tokens.tar.gz
+Extracting archive on VPS...
+✓ Archive extracted successfully
+
+✓ Token synchronization complete!
+Tokens have been transferred to your VPS at 203.0.113.42
+```
+
+**Error handling:**
+- If not authenticated: "Error: Not authenticated. Please run spoq to authenticate first."
+- If no VPS: "Error: No VPS configured. Please run spoq to provision a VPS first."
+- If Claude Code token missing: Enters retry loop with instructions
+- If SSH/SCP fails: Shows error message with troubleshooting hints
