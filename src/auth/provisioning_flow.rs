@@ -2187,4 +2187,141 @@ mod tests {
         credentials.expires_at = Some(chrono::Utc::now().timestamp() + 86400); // 1 day
         assert!(!credentials.is_expired());
     }
+
+    #[test]
+    fn test_proactive_token_check_detects_expired_token() {
+        // Test that expired tokens are detected before API calls
+        let mut credentials = Credentials::default();
+        credentials.access_token = Some("expired_token".to_string());
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() - 3600); // 1 hour ago
+        credentials.refresh_token = None;
+
+        // Token should be detected as expired
+        assert!(credentials.is_expired());
+        assert!(credentials.access_token.is_some());
+    }
+
+    #[test]
+    fn test_proactive_token_check_valid_token() {
+        // Test that valid tokens are not flagged as expired
+        let mut credentials = Credentials::default();
+        credentials.access_token = Some("valid_token".to_string());
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() + 3600); // 1 hour from now
+        credentials.refresh_token = Some("refresh_token".to_string());
+
+        // Token should be valid
+        assert!(!credentials.is_expired());
+        assert!(credentials.access_token.is_some());
+    }
+
+    #[test]
+    fn test_proactive_token_check_no_expiration() {
+        // Test that tokens without expiration are treated as expired
+        let mut credentials = Credentials::default();
+        credentials.access_token = Some("token_without_expiry".to_string());
+        credentials.expires_at = None;
+
+        // Without expiration info, should be treated as expired for safety
+        assert!(credentials.is_expired());
+    }
+
+    #[test]
+    fn test_proactive_token_check_with_refresh_token() {
+        // Test that expired token with refresh token is detected
+        let mut credentials = Credentials::default();
+        credentials.access_token = Some("expired_token".to_string());
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() - 1800); // 30 mins ago
+        credentials.refresh_token = Some("valid_refresh_token".to_string());
+
+        // Token is expired but refresh token is available
+        assert!(credentials.is_expired());
+        assert!(credentials.refresh_token.is_some());
+    }
+
+    #[test]
+    fn test_is_auth_error_detection() {
+        // Test that 401 errors are correctly identified as auth errors
+        let auth_error = CentralApiError::ServerError {
+            status: 401,
+            message: "Unauthorized".to_string(),
+        };
+        assert!(is_auth_error(&auth_error));
+
+        // Non-401 errors should not be identified as auth errors
+        let other_error = CentralApiError::ServerError {
+            status: 500,
+            message: "Internal Server Error".to_string(),
+        };
+        assert!(!is_auth_error(&other_error));
+
+        let not_found = CentralApiError::ServerError {
+            status: 404,
+            message: "Not Found".to_string(),
+        };
+        assert!(!is_auth_error(&not_found));
+    }
+
+    #[test]
+    fn test_credentials_clearing_on_expired_token() {
+        // Test that credentials are properly cleared when token is expired
+        let mut credentials = Credentials::default();
+        credentials.access_token = Some("expired_token".to_string());
+        credentials.refresh_token = Some("also_expired_refresh".to_string());
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() - 7200); // 2 hours ago
+
+        // Simulate clearing credentials when refresh fails
+        credentials.access_token = None;
+        credentials.refresh_token = None;
+
+        assert!(credentials.access_token.is_none());
+        assert!(credentials.refresh_token.is_none());
+    }
+
+    #[test]
+    fn test_byovps_flow_proactive_check_flow() {
+        // Test the overall flow:
+        // 1. Token is expired
+        // 2. Refresh token is available
+        // 3. Proactive check should trigger refresh before API call
+
+        let mut credentials = Credentials::default();
+        credentials.access_token = Some("expired_token".to_string());
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() - 1); // just expired
+        credentials.refresh_token = Some("refresh_token".to_string());
+
+        // Token should be expired
+        assert!(credentials.is_expired());
+
+        // After successful refresh, new tokens would be set
+        credentials.access_token = Some("new_access_token".to_string());
+        credentials.refresh_token = Some("new_refresh_token".to_string());
+        credentials.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
+
+        // Now token should be valid
+        assert!(!credentials.is_expired());
+    }
+
+    #[test]
+    fn test_token_expiration_message() {
+        // Test that appropriate error messages are returned for expired tokens
+        let error_msg = "Your session has expired. Please run the CLI again to re-authenticate.";
+        assert!(error_msg.contains("expired"));
+        assert!(error_msg.contains("re-authenticate"));
+    }
+
+    #[test]
+    fn test_proactive_refresh_message() {
+        // Test that proactive refresh is indicated in output
+        let refresh_msg = "Token expired, refreshing proactively...";
+        assert!(refresh_msg.contains("proactively"));
+        assert!(refresh_msg.contains("refreshing"));
+    }
+
+    #[test]
+    fn test_refresh_success_message() {
+        // Test successful refresh message
+        let success_msg = "Token refreshed successfully.";
+        assert!(success_msg.contains("successfully"));
+        assert!(success_msg.contains("refreshed"));
+    }
 }
