@@ -432,6 +432,15 @@ fn run_managed_vps_flow(
     check_interrupt(interrupted);
     if !prompt_confirmation_with_interrupt(interrupted)? {
         println!("Provisioning cancelled.");
+
+        // Run token migration before exiting
+        println!("Running token migration...");
+        let migration_result = run_token_migration();
+        if let Some(ref archive_path) = migration_result.archive_path {
+            credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
+            save_credentials(credentials);
+        }
+
         return Ok(());
     }
 
@@ -480,6 +489,15 @@ fn run_managed_vps_flow(
         Err(CentralApiError::ServerError { status: 409, .. }) => {
             println!("\nYou already have an active VPS.");
             println!("Please use your existing VPS or contact support to delete it first.");
+
+            // Run token migration before exiting
+            println!("Running token migration...");
+            let migration_result = run_token_migration();
+            if let Some(ref archive_path) = migration_result.archive_path {
+                credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
+                save_credentials(credentials);
+            }
+
             return Ok(());
         }
         Err(e) => return Err(e),
@@ -539,6 +557,7 @@ fn run_managed_vps_flow(
     }
 
     // Run token migration after VPS is ready
+    println!("Running token migration...");
     let migration_result = run_token_migration();
     if let Some(ref archive_path) = migration_result.archive_path {
         credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
@@ -868,6 +887,14 @@ fn run_byovps_flow(
             // Already ready, update credentials and return
             update_credentials_from_byovps_response(credentials, &provision_response);
             save_credentials(credentials);
+
+            // Run token migration after BYOVPS is ready
+            let migration_result = run_token_migration();
+            if let Some(ref archive_path) = migration_result.archive_path {
+                credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
+                save_credentials(credentials);
+            }
+
             display_byovps_result(&provision_response);
             return Ok(());
         }
