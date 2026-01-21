@@ -55,6 +55,8 @@ pub struct WsAgentStatus {
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_operation: Option<String>,
     pub timestamp: u64,
 }
 
@@ -1027,5 +1029,153 @@ mod tests {
         assert_eq!(parsed["thread_id"], "thread-serialize");
         assert_eq!(parsed["verified_at"], 1705315800000_i64);
         assert_eq!(parsed["timestamp"], 1705315800001_i64);
+    }
+
+    // -------------------- Agent Status Tests --------------------
+
+    #[test]
+    fn test_deserialize_agent_status_basic() {
+        let json = r#"{
+            "type": "agent_status",
+            "thread_id": "thread-123",
+            "state": "thinking",
+            "model": "claude-opus-4-5",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::AgentStatus(status) => {
+                assert_eq!(status.thread_id, "thread-123");
+                assert_eq!(status.state, "thinking");
+                assert_eq!(status.model, "claude-opus-4-5");
+                assert!(status.tool.is_none());
+                assert!(status.current_operation.is_none());
+                assert_eq!(status.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected AgentStatus"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_agent_status_with_tool() {
+        let json = r#"{
+            "type": "agent_status",
+            "thread_id": "thread-456",
+            "state": "tool_use",
+            "model": "claude-sonnet-4-5",
+            "tool": "Edit",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::AgentStatus(status) => {
+                assert_eq!(status.thread_id, "thread-456");
+                assert_eq!(status.state, "tool_use");
+                assert_eq!(status.model, "claude-sonnet-4-5");
+                assert_eq!(status.tool, Some("Edit".to_string()));
+                assert!(status.current_operation.is_none());
+                assert_eq!(status.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected AgentStatus"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_agent_status_with_current_operation() {
+        let json = r#"{
+            "type": "agent_status",
+            "thread_id": "thread-789",
+            "state": "streaming",
+            "model": "claude-haiku-4",
+            "tool": "Bash",
+            "current_operation": "Running tests",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::AgentStatus(status) => {
+                assert_eq!(status.thread_id, "thread-789");
+                assert_eq!(status.state, "streaming");
+                assert_eq!(status.model, "claude-haiku-4");
+                assert_eq!(status.tool, Some("Bash".to_string()));
+                assert_eq!(status.current_operation, Some("Running tests".to_string()));
+                assert_eq!(status.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected AgentStatus"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_agent_status_current_operation_only() {
+        let json = r#"{
+            "type": "agent_status",
+            "thread_id": "thread-abc",
+            "state": "idle",
+            "model": "claude-opus-4-5",
+            "current_operation": "Analyzing codebase",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::AgentStatus(status) => {
+                assert_eq!(status.thread_id, "thread-abc");
+                assert_eq!(status.state, "idle");
+                assert_eq!(status.model, "claude-opus-4-5");
+                assert!(status.tool.is_none());
+                assert_eq!(status.current_operation, Some("Analyzing codebase".to_string()));
+                assert_eq!(status.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected AgentStatus"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_agent_status_with_current_operation() {
+        let status = WsAgentStatus {
+            thread_id: "thread-serialize".to_string(),
+            state: "streaming".to_string(),
+            model: "claude-opus-4-5".to_string(),
+            tool: Some("Read".to_string()),
+            current_operation: Some("Reading configuration".to_string()),
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&status).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-serialize");
+        assert_eq!(parsed["state"], "streaming");
+        assert_eq!(parsed["model"], "claude-opus-4-5");
+        assert_eq!(parsed["tool"], "Read");
+        assert_eq!(parsed["current_operation"], "Reading configuration");
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+    }
+
+    #[test]
+    fn test_serialize_agent_status_skip_none_fields() {
+        let status = WsAgentStatus {
+            thread_id: "thread-minimal".to_string(),
+            state: "thinking".to_string(),
+            model: "claude-sonnet-4-5".to_string(),
+            tool: None,
+            current_operation: None,
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&status).unwrap();
+
+        // Verify that None fields are not present in serialized JSON
+        assert!(!json.contains("\"tool\""));
+        assert!(!json.contains("\"current_operation\""));
+
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["thread_id"], "thread-minimal");
+        assert_eq!(parsed["state"], "thinking");
+        assert!(parsed.get("tool").is_none());
+        assert!(parsed.get("current_operation").is_none());
     }
 }

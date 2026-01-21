@@ -190,28 +190,50 @@ fn route_ws_message(
                 .map_err(|e| format!("Failed to send WsThreadCreated: {}", e))
         }
         WsIncomingMessage::ThreadModeUpdate(update) => {
-            // Thread mode updates (normal, plan, exec) - TODO: Route to handler
+            // Thread mode updates (normal, plan, exec)
             info!(
                 "Received thread mode update: thread={}, mode={:?}",
                 update.thread_id, update.mode
             );
-            Ok(())
+            message_tx
+                .send(AppMessage::ThreadModeUpdate {
+                    thread_id: update.thread_id,
+                    mode: update.mode,
+                })
+                .map_err(|e| format!("Failed to send ThreadModeUpdate: {}", e))
         }
         WsIncomingMessage::PhaseProgressUpdate(progress) => {
-            // Phase progress updates during plan execution - TODO: Route to handler
+            // Phase progress updates during plan execution
             info!(
                 "Received phase progress: plan={}, phase={}/{}, status={:?}",
                 progress.plan_id, progress.phase_index + 1, progress.total_phases, progress.status
             );
-            Ok(())
+            message_tx
+                .send(AppMessage::PhaseProgressUpdate {
+                    thread_id: progress.thread_id,
+                    plan_id: progress.plan_id,
+                    phase_index: progress.phase_index,
+                    total_phases: progress.total_phases,
+                    phase_name: progress.phase_name,
+                    status: progress.status,
+                    tool_count: progress.tool_count,
+                    last_tool: progress.last_tool,
+                    last_file: progress.last_file,
+                })
+                .map_err(|e| format!("Failed to send PhaseProgressUpdate: {}", e))
         }
         WsIncomingMessage::ThreadVerified(verified) => {
-            // Thread verification notification - TODO: Route to handler
+            // Thread verification notification
             info!(
                 "Received thread verified: thread={}, verified_at={}",
                 verified.thread_id, verified.verified_at
             );
-            Ok(())
+            message_tx
+                .send(AppMessage::ThreadVerified {
+                    thread_id: verified.thread_id,
+                    verified_at: verified.verified_at.to_string(),
+                })
+                .map_err(|e| format!("Failed to send ThreadVerified: {}", e))
         }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })

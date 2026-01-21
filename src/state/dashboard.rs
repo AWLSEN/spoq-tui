@@ -8,7 +8,56 @@ use crate::models::Thread;
 use crate::ui::dashboard::{
     FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadMode, ThreadView,
 };
+use crate::websocket::messages::PhaseStatus;
 use std::collections::{HashMap, HashSet};
+
+// ============================================================================
+// PhaseProgressData
+// ============================================================================
+
+/// Data for tracking phase progress during plan execution
+///
+/// This struct holds the current state of a phase for display in the dashboard.
+#[derive(Debug, Clone)]
+pub struct PhaseProgressData {
+    /// Current phase index (0-based)
+    pub phase_index: u32,
+    /// Total number of phases in the plan
+    pub total_phases: u32,
+    /// Name of the current phase
+    pub phase_name: String,
+    /// Status of the phase (Starting, Running, Completed, Failed)
+    pub status: PhaseStatus,
+    /// Number of tools used in this phase
+    pub tool_count: u32,
+    /// Name of the last tool used
+    pub last_tool: String,
+    /// Last file modified (optional)
+    pub last_file: Option<String>,
+}
+
+impl PhaseProgressData {
+    /// Create a new PhaseProgressData instance
+    pub fn new(
+        phase_index: u32,
+        total_phases: u32,
+        phase_name: String,
+        status: PhaseStatus,
+        tool_count: u32,
+        last_tool: String,
+        last_file: Option<String>,
+    ) -> Self {
+        Self {
+            phase_index,
+            total_phases,
+            phase_name,
+            status,
+            tool_count,
+            last_tool,
+            last_file,
+        }
+    }
+}
 
 // ============================================================================
 // DashboardState
@@ -30,6 +79,8 @@ pub struct DashboardState {
     plan_requests: HashMap<String, (String, PlanSummary)>,
     /// Thread IDs verified locally (backend fallback)
     locally_verified: HashSet<String>,
+    /// Phase progress data by thread_id during plan execution
+    phase_progress: HashMap<String, PhaseProgressData>,
 
     /// Current filter state (None means show all)
     filter: Option<FilterState>,
@@ -59,6 +110,7 @@ impl DashboardState {
             waiting_for: HashMap::new(),
             plan_requests: HashMap::new(),
             locally_verified: HashSet::new(),
+            phase_progress: HashMap::new(),
             filter: None,
             overlay: None,
             aggregate: Aggregate::new(),
@@ -143,6 +195,28 @@ impl DashboardState {
     pub fn clear_waiting_for(&mut self, thread_id: &str) {
         self.waiting_for.remove(thread_id);
         self.thread_views_dirty = true;
+    }
+
+    /// Update phase progress for a thread during plan execution
+    ///
+    /// Called when receiving phase progress updates from WebSocket.
+    pub fn update_phase_progress(&mut self, thread_id: &str, progress: PhaseProgressData) {
+        self.phase_progress
+            .insert(thread_id.to_string(), progress);
+        self.thread_views_dirty = true;
+    }
+
+    /// Clear phase progress for a thread
+    ///
+    /// Called when a phase completes or the plan execution ends.
+    pub fn clear_phase_progress(&mut self, thread_id: &str) {
+        self.phase_progress.remove(thread_id);
+        self.thread_views_dirty = true;
+    }
+
+    /// Get phase progress for a thread
+    pub fn get_phase_progress(&self, thread_id: &str) -> Option<&PhaseProgressData> {
+        self.phase_progress.get(thread_id)
     }
 
     // ========================================================================
