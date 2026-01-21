@@ -16,6 +16,9 @@ pub use request::*;
 pub use thread::*;
 pub use tools::*;
 
+// Re-export ThreadMode from thread module for easy access
+pub use thread::ThreadMode;
+
 use serde::{Deserialize, Deserializer};
 
 /// Helper to deserialize id as either string or integer
@@ -128,6 +131,7 @@ mod tests {
             preview: "Hello, world!".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Conversation,
+            mode: ThreadMode::Normal,
             model: None,
             permission_mode: None,
             message_count: 0,
@@ -142,6 +146,7 @@ mod tests {
         assert_eq!(thread.title, "Test Thread");
         assert_eq!(thread.preview, "Hello, world!");
         assert_eq!(thread.thread_type, ThreadType::Conversation);
+        assert_eq!(thread.mode, ThreadMode::Normal);
     }
 
     #[test]
@@ -153,6 +158,7 @@ mod tests {
             preview: "Let me review this code".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Programming,
+            mode: ThreadMode::Normal,
             model: Some("gpt-4".to_string()),
             permission_mode: Some("auto".to_string()),
             message_count: 5,
@@ -165,6 +171,7 @@ mod tests {
 
         assert_eq!(thread.id, "thread-456");
         assert_eq!(thread.thread_type, ThreadType::Programming);
+        assert_eq!(thread.mode, ThreadMode::Normal);
     }
 
     #[test]
@@ -176,6 +183,7 @@ mod tests {
             preview: "Testing JSON".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Conversation,
+            mode: ThreadMode::Normal,
             model: None,
             permission_mode: None,
             message_count: 0,
@@ -201,6 +209,7 @@ mod tests {
             preview: "Code discussion".to_string(),
             updated_at: Utc::now(),
             thread_type: ThreadType::Programming,
+            mode: ThreadMode::Normal,
             model: None,
             permission_mode: None,
             message_count: 0,
@@ -216,6 +225,7 @@ mod tests {
 
         assert_eq!(thread, deserialized);
         assert_eq!(deserialized.thread_type, ThreadType::Programming);
+        assert_eq!(deserialized.mode, ThreadMode::Normal);
     }
 
     #[test]

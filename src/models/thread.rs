@@ -19,6 +19,19 @@ pub enum ThreadType {
     Programming,
 }
 
+/// Mode of thread operation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThreadMode {
+    /// Normal conversation thread
+    #[default]
+    Normal,
+    /// Planning mode (Nova)
+    Plan,
+    /// Execution mode (Pulsar)
+    Exec,
+}
+
 /// Represents an inline error to be displayed in a thread
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ErrorInfo {
@@ -69,6 +82,9 @@ pub struct Thread {
     /// Type of thread (Normal or Programming)
     #[serde(default, rename = "type", deserialize_with = "deserialize_thread_type")]
     pub thread_type: ThreadType,
+    /// Mode of thread operation (Normal, Plan, or Exec)
+    #[serde(default)]
+    pub mode: ThreadMode,
     /// Model used for this thread
     #[serde(default)]
     pub model: Option<String>,

@@ -557,6 +557,43 @@ impl ConductorClient {
 
         Ok(verified)
     }
+
+    /// Update the mode of a thread.
+    ///
+    /// Calls `PUT /v1/threads/{thread_id}/mode` to update the thread's mode.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The ID of the thread to update
+    /// * `mode` - The new mode for the thread
+    ///
+    /// # Returns
+    /// - `Ok(())` on success
+    /// - `Err(ConductorError::ServerError)` if the server returns an error (404, 400, etc.)
+    pub async fn update_thread_mode(
+        &self,
+        thread_id: &str,
+        mode: &str,
+    ) -> Result<(), ConductorError> {
+        let url = format!("{}/v1/threads/{}/mode", self.base_url, thread_id);
+
+        let body = serde_json::json!({
+            "mode": mode
+        });
+
+        let builder = self.client.put(&url).json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for ConductorClient {
@@ -931,5 +968,13 @@ mod tests {
 
         let client3 = ConductorClient::default();
         assert!(client3.auth_token().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_update_thread_mode_with_invalid_server() {
+        let client = ConductorClient::with_base_url("http://127.0.0.1:1".to_string());
+        let result = client.update_thread_mode("thread-123", "fast").await;
+        // Should fail with HTTP error since server doesn't exist
+        assert!(result.is_err());
     }
 }
