@@ -20,4 +20,7 @@ pub use central_api::CentralApiClient;
 pub use credentials::{Credentials, CredentialsManager};
 pub use flow::run_auth_flow;
 pub use provisioning_flow::{run_provisioning_flow, start_stopped_vps};
-pub use token_migration::{detect_tokens, TokenDetectionResult};
+pub use token_migration::{
+    detect_tokens, export_tokens, wait_for_claude_code_token, TokenDetectionResult,
+    TokenExportResult,
+};
