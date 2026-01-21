@@ -11,7 +11,7 @@ use spoq::models::dashboard::{
     compute_local_aggregate, infer_status_from_agent_state, Aggregate, PlanSummary, ThreadStatus,
     WaitingFor,
 };
-use spoq::models::{Thread, ThreadType};
+use spoq::models::{Thread, ThreadType, ThreadMode};
 use spoq::state::DashboardState;
 use spoq::ui::dashboard::{FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadView};
 use spoq::ui::interaction::{ClickAction, HitAreaRegistry};
@@ -29,7 +29,7 @@ fn make_test_thread(id: &str, title: &str, status: Option<ThreadStatus>) -> Thre
         preview: format!("Preview for {}", title),
         updated_at: chrono::Utc::now(),
         thread_type: ThreadType::Programming,
-            mode: crate::models::ThreadMode::default(),
+        mode: ThreadMode::default(),
         model: Some("claude-opus-4".to_string()),
         permission_mode: Some("plan".to_string()),
         message_count: 5,

@@ -10,6 +10,7 @@ use spoq::ui::{
     breakpoints, calculate_stacked_heights, calculate_two_column_widths, is_terminal_too_small,
     LayoutContext, SizeCategory, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
+use spoq::models::ThreadMode;
 
 // =============================================================================
 // Test Size Constants
@@ -1778,7 +1779,7 @@ mod ui_rendering_integration {
             preview: "Test preview".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: spoq::models::ThreadType::default(),
-            mode: crate::models::ThreadMode::default(),
+            mode: ThreadMode::default(),
             model: Some("claude-sonnet-4-5".to_string()),
             permission_mode: None,
             message_count: 5,
@@ -1826,7 +1827,7 @@ mod ui_rendering_integration {
             preview: "Test preview".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: spoq::models::ThreadType::default(),
-            mode: crate::models::ThreadMode::default(),
+            mode: ThreadMode::default(),
             model: Some("claude-sonnet-4-5".to_string()),
             permission_mode: None,
             message_count: 5,
@@ -1874,7 +1875,7 @@ mod ui_rendering_integration {
             preview: "Test preview".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: spoq::models::ThreadType::default(),
-            mode: crate::models::ThreadMode::default(),
+            mode: ThreadMode::default(),
             model: Some("claude-sonnet-4-5".to_string()),
             permission_mode: None,
             message_count: 5,
