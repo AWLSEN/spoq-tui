@@ -1107,9 +1107,9 @@ mod tests {
 
         let response: TokenResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.access_token, "access-123");
-        assert_eq!(response.refresh_token, "refresh-456");
+        assert_eq!(response.refresh_token, Some("refresh-456".to_string()));
         assert_eq!(response.expires_in, Some(3600));
-        assert_eq!(response.token_type, "Bearer");
+        assert_eq!(response.token_type, Some("Bearer".to_string()));
         assert!(response.user_id.is_none());
         assert!(response.username.is_none());
     }
@@ -1124,9 +1124,9 @@ mod tests {
 
         let response: TokenResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.access_token, "access-123");
-        assert_eq!(response.refresh_token, "refresh-456");
+        assert_eq!(response.refresh_token, Some("refresh-456".to_string()));
         assert!(response.expires_in.is_none());
-        assert_eq!(response.token_type, "Bearer");
+        assert_eq!(response.token_type, Some("Bearer".to_string()));
     }
 
     #[test]
@@ -1379,8 +1379,8 @@ mod tests {
             response.access_token,
             "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MzY4NzI0MDB9.sig"
         );
-        assert_eq!(response.refresh_token, "spoq_refresh_token");
-        assert_eq!(response.token_type, "Bearer");
+        assert_eq!(response.refresh_token, Some("spoq_refresh_token".to_string()));
+        assert_eq!(response.token_type, Some("Bearer".to_string()));
     }
 
     #[test]

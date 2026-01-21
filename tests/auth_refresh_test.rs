@@ -49,8 +49,8 @@ fn create_credentials_no_refresh() -> Credentials {
 fn mock_token_response() -> TokenResponse {
     TokenResponse {
         access_token: "new-access-token".to_string(),
-        refresh_token: "new-refresh-token".to_string(),
-        token_type: "Bearer".to_string(),
+        refresh_token: Some("new-refresh-token".to_string()),
+        token_type: Some("Bearer".to_string()),
         expires_in: Some(3600),
         user_id: Some("user-123".to_string()),
         username: Some("testuser".to_string()),
@@ -92,7 +92,7 @@ async fn test_proactive_refresh_with_expired_token_and_valid_refresh() {
     assert!(result.is_ok());
     let token_response = result.unwrap();
     assert_eq!(token_response.access_token, "new-access-token");
-    assert_eq!(token_response.refresh_token, "new-refresh-token");
+    assert_eq!(token_response.refresh_token, Some("new-refresh-token".to_string()));
     assert_eq!(token_response.expires_in, Some(3600));
 }
 

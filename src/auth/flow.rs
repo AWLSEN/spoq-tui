@@ -228,8 +228,8 @@ mod tests {
         // Test that expires_in falls back to JWT parsing or default
         let token_response = TokenResponse {
             access_token: "test-token".to_string(),
-            refresh_token: "test-refresh".to_string(),
-            token_type: "Bearer".to_string(),
+            refresh_token: Some("test-refresh".to_string()),
+            token_type: Some("Bearer".to_string()),
             expires_in: None,
             user_id: None,
             username: None,
@@ -245,8 +245,8 @@ mod tests {
         // With Some expires_in, should use that value
         let token_with_expires = TokenResponse {
             access_token: "test-token".to_string(),
-            refresh_token: "test-refresh".to_string(),
-            token_type: "Bearer".to_string(),
+            refresh_token: Some("test-refresh".to_string()),
+            token_type: Some("Bearer".to_string()),
             expires_in: Some(7200),
             user_id: None,
             username: None,
@@ -263,8 +263,8 @@ mod tests {
     fn test_credentials_build_from_token_response() {
         let tokens = TokenResponse {
             access_token: "access-123".to_string(),
-            refresh_token: "refresh-456".to_string(),
-            token_type: "Bearer".to_string(),
+            refresh_token: Some("refresh-456".to_string()),
+            token_type: Some("Bearer".to_string()),
             expires_in: Some(3600),
             user_id: Some("user-789".to_string()),
             username: Some("testuser".to_string()),
@@ -272,7 +272,7 @@ mod tests {
 
         let mut credentials = Credentials::default();
         credentials.access_token = Some(tokens.access_token.clone());
-        credentials.refresh_token = Some(tokens.refresh_token.clone());
+        credentials.refresh_token = tokens.refresh_token.clone();
         credentials.user_id = tokens.user_id.clone();
         credentials.username = tokens.username.clone();
 
