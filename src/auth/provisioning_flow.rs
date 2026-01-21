@@ -425,8 +425,19 @@ fn run_managed_vps_flow(
 #[derive(Debug, Clone, PartialEq)]
 enum ByovpsRetryAction {
     Retry,
-    ChangeCredentials,
+    ChangeVpsDetails,
     Exit,
+}
+
+/// Check if an error is an authentication error (401 Unauthorized).
+fn is_auth_error(error: &CentralApiError) -> bool {
+    matches!(
+        error,
+        CentralApiError::ServerError {
+            status: 401,
+            ..
+        }
+    )
 }
 
 /// Check if an error message indicates an SSH connection error.
@@ -479,7 +490,7 @@ fn prompt_byovps_retry_action(
     loop {
         check_interrupt(interrupted);
 
-        print!("\nRetry? (y)es / (c)hange credentials / (e)xit: ");
+        print!("\nRetry? (y)es / (c)hange VPS details / (e)xit: ");
         io::stdout()
             .flush()
             .map_err(|e| CentralApiError::ServerError {
@@ -500,9 +511,9 @@ fn prompt_byovps_retry_action(
         let trimmed = input.trim().to_lowercase();
         match trimmed.as_str() {
             "y" | "yes" => return Ok(ByovpsRetryAction::Retry),
-            "c" | "change" => return Ok(ByovpsRetryAction::ChangeCredentials),
+            "c" | "change" => return Ok(ByovpsRetryAction::ChangeVpsDetails),
             "e" | "exit" => return Ok(ByovpsRetryAction::Exit),
-            _ => println!("Please enter 'y' to retry, 'c' to change credentials, or 'e' to exit."),
+            _ => println!("Please enter 'y' to retry, 'c' to change VPS details, or 'e' to exit."),
         }
     }
 }
@@ -548,15 +559,28 @@ fn run_byovps_flow_with_retry(
                     attempts, BYOVPS_MAX_RETRY_ATTEMPTS
                 );
 
+                // Check if error is auth-related (401) - likely invalid/expired tokens
+                if is_auth_error(&error) {
+                    println!("\nAuthentication failed. Your session may have expired.");
+                    println!("Please run the CLI again to re-authenticate.");
+
+                    // Clear credentials to force fresh authentication
+                    credentials.access_token = None;
+                    credentials.refresh_token = None;
+                    save_credentials(credentials);
+
+                    return Err(error);
+                }
+
                 // Prompt user for action
                 check_interrupt(interrupted);
                 match prompt_byovps_retry_action(interrupted)? {
                     ByovpsRetryAction::Retry => {
-                        println!("\nRetrying with same credentials...");
+                        println!("\nRetrying with same VPS details...");
                         continue;
                     }
-                    ByovpsRetryAction::ChangeCredentials => {
-                        println!("\nPlease enter new credentials:");
+                    ByovpsRetryAction::ChangeVpsDetails => {
+                        println!("\nPlease enter new VPS details:");
                         *byovps_creds = collect_byovps_credentials(interrupted)?;
                         continue;
                     }
@@ -1879,11 +1903,11 @@ mod tests {
     fn test_byovps_retry_action_enum() {
         // Test ByovpsRetryAction enum variants
         let retry = ByovpsRetryAction::Retry;
-        let change = ByovpsRetryAction::ChangeCredentials;
+        let change = ByovpsRetryAction::ChangeVpsDetails;
         let exit = ByovpsRetryAction::Exit;
 
         assert_eq!(retry, ByovpsRetryAction::Retry);
-        assert_eq!(change, ByovpsRetryAction::ChangeCredentials);
+        assert_eq!(change, ByovpsRetryAction::ChangeVpsDetails);
         assert_eq!(exit, ByovpsRetryAction::Exit);
 
         // Test they are not equal to each other
@@ -1893,7 +1917,7 @@ mod tests {
 
         // Test Debug trait
         assert_eq!(format!("{:?}", retry), "Retry");
-        assert_eq!(format!("{:?}", change), "ChangeCredentials");
+        assert_eq!(format!("{:?}", change), "ChangeVpsDetails");
         assert_eq!(format!("{:?}", exit), "Exit");
 
         // Test Clone trait
