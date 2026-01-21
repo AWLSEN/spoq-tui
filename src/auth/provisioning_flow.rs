@@ -273,7 +273,12 @@ fn run_managed_vps_flow(
                 message: "No access token available".to_string(),
             })?;
 
-    let client = CentralApiClient::new().with_auth(access_token);
+    let mut client = CentralApiClient::new().with_auth(access_token);
+
+    // Set refresh token if available for auto-refresh
+    if let Some(ref refresh_token) = credentials.refresh_token {
+        client.set_refresh_token(Some(refresh_token.clone()));
+    }
 
     // Step 1: Fetch available plans
     println!("Fetching available VPS plans...");
@@ -362,7 +367,7 @@ fn run_managed_vps_flow(
 
     // Step 7: Poll for VPS to be ready
     println!("\nWaiting for VPS to be ready...");
-    let status = poll_vps_status_with_interrupt(runtime, &client, interrupted)?;
+    let status = poll_vps_status_with_interrupt(runtime, &mut client, interrupted)?;
 
     // Update credentials with final status
     credentials.vps_id = Some(status.vps_id.clone());
@@ -563,13 +568,18 @@ fn run_byovps_flow(
                 message: "No access token available".to_string(),
             })?;
 
-    let client = CentralApiClient::new().with_auth(access_token);
+    let mut client = CentralApiClient::new().with_auth(access_token);
+
+    // Set refresh token if available for auto-refresh
+    if let Some(ref refresh_token) = credentials.refresh_token {
+        client.set_refresh_token(Some(refresh_token.clone()));
+    }
 
     // Step 1: Call provision_byovps with spinner
     check_interrupt(interrupted);
     let provision_response = provision_byovps_with_spinner(
         runtime,
-        &client,
+        &mut client,
         &byovps_creds.vps_ip,
         &byovps_creds.ssh_username,
         &byovps_creds.ssh_password,
@@ -606,7 +616,7 @@ fn run_byovps_flow(
 
     // Step 2: Poll VPS status until ready or failed
     check_interrupt(interrupted);
-    let final_status = poll_byovps_status_with_interrupt(runtime, &client, interrupted)?;
+    let final_status = poll_byovps_status_with_interrupt(runtime, &mut client, interrupted)?;
 
     // Step 3: Update credentials with final VPS info
     credentials.vps_id = Some(final_status.vps_id.clone());
@@ -643,7 +653,7 @@ fn run_byovps_flow(
 /// Call provision_byovps with spinner animation.
 fn provision_byovps_with_spinner(
     runtime: &tokio::runtime::Runtime,
-    client: &CentralApiClient,
+    client: &mut CentralApiClient,
     vps_ip: &str,
     ssh_username: &str,
     ssh_password: &str,
@@ -702,7 +712,7 @@ fn provision_byovps_with_spinner(
 /// Poll BYOVPS status with spinner and interrupt support.
 fn poll_byovps_status_with_interrupt(
     runtime: &tokio::runtime::Runtime,
-    client: &CentralApiClient,
+    client: &mut CentralApiClient,
     interrupted: &Arc<AtomicBool>,
 ) -> Result<VpsStatusResponse, CentralApiError> {
     let mut attempts = 0;
@@ -1014,7 +1024,7 @@ fn prompt_ssh_password_with_interrupt(
 /// * `Err(CentralApiError)` - VPS failed or timed out
 pub fn poll_vps_until_ready(
     runtime: &tokio::runtime::Runtime,
-    client: &CentralApiClient,
+    client: &mut CentralApiClient,
 ) -> Result<VpsStatusResponse, CentralApiError> {
     let mut attempts = 0;
 
@@ -1079,20 +1089,25 @@ pub fn start_stopped_vps(
             message: "No access token".to_string(),
         })?;
 
-    let client = CentralApiClient::new().with_auth(token);
+    let mut client = CentralApiClient::new().with_auth(token);
+
+    // Set refresh token if available for auto-refresh
+    if let Some(ref refresh_token) = credentials.refresh_token {
+        client.set_refresh_token(Some(refresh_token.clone()));
+    }
 
     // Start VPS
     println!("Starting your VPS...");
     runtime.block_on(client.start_vps())?;
 
     // Poll until ready
-    poll_vps_until_ready(runtime, &client)
+    poll_vps_until_ready(runtime, &mut client)
 }
 
 /// Poll the VPS status with interrupt support.
 fn poll_vps_status_with_interrupt(
     runtime: &tokio::runtime::Runtime,
-    client: &CentralApiClient,
+    client: &mut CentralApiClient,
     interrupted: &Arc<AtomicBool>,
 ) -> Result<VpsStatusResponse, CentralApiError> {
     let mut attempts = 0;

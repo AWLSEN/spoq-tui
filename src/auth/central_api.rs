@@ -282,6 +282,8 @@ pub struct CentralApiClient {
     client: Client,
     /// Optional authentication token for Bearer auth
     auth_token: Option<String>,
+    /// Optional refresh token for automatic token refresh
+    refresh_token: Option<String>,
 }
 
 impl CentralApiClient {
@@ -291,6 +293,7 @@ impl CentralApiClient {
             base_url: CENTRAL_API_URL.to_string(),
             client: Client::new(),
             auth_token: None,
+            refresh_token: None,
         }
     }
 
@@ -300,6 +303,7 @@ impl CentralApiClient {
             base_url,
             client: Client::new(),
             auth_token: None,
+            refresh_token: None,
         }
     }
 
@@ -309,14 +313,30 @@ impl CentralApiClient {
         self
     }
 
+    /// Set the refresh token for automatic token refresh.
+    pub fn with_refresh_token(mut self, token: &str) -> Self {
+        self.refresh_token = Some(token.to_string());
+        self
+    }
+
     /// Set the authentication token on an existing client.
     pub fn set_auth_token(&mut self, token: Option<String>) {
         self.auth_token = token;
     }
 
+    /// Set the refresh token on an existing client.
+    pub fn set_refresh_token(&mut self, token: Option<String>) {
+        self.refresh_token = token;
+    }
+
     /// Get the current authentication token, if set.
     pub fn auth_token(&self) -> Option<&str> {
         self.auth_token.as_deref()
+    }
+
+    /// Get the current refresh token, if set.
+    pub fn get_refresh_token(&self) -> Option<&str> {
+        self.refresh_token.as_deref()
     }
 
     /// Helper to add auth header to a request builder if token is set.
@@ -327,6 +347,7 @@ impl CentralApiClient {
             builder
         }
     }
+
 
     /// Initiate the device code authentication flow.
     ///
@@ -510,7 +531,7 @@ impl CentralApiClient {
     /// * `plan_id` - Optional plan ID for the VPS
     /// * `data_center_id` - Optional data center ID for VPS location
     pub async fn provision_vps(
-        &self,
+        &mut self,
         ssh_password: &str,
         plan_id: Option<&str>,
         data_center_id: Option<u32>,
@@ -528,12 +549,38 @@ impl CentralApiClient {
             body["data_center_id"] = serde_json::json!(dc_id);
         }
 
+        // First attempt
         let builder = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&body);
         let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token);
+                        self.refresh_token = Some(token_response.refresh_token);
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&body);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(_) => response,
+                }
+            } else {
+                response
+            }
+        } else {
+            response
+        };
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -553,11 +600,33 @@ impl CentralApiClient {
     /// GET /api/vps/status
     ///
     /// Requires authentication. Returns the current VPS status including hostname, IP, and URL.
-    pub async fn fetch_vps_status(&self) -> Result<VpsStatusResponse, CentralApiError> {
+    pub async fn fetch_vps_status(&mut self) -> Result<VpsStatusResponse, CentralApiError> {
         let url = format!("{}/api/vps/status", self.base_url);
 
+        // First attempt
         let builder = self.client.get(&url);
         let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token);
+                        self.refresh_token = Some(token_response.refresh_token);
+
+                        // Retry with new token
+                        let builder = self.client.get(&url);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(_) => response,
+                }
+            } else {
+                response
+            }
+        } else {
+            response
+        };
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -751,7 +820,7 @@ impl CentralApiClient {
     /// * `Ok(ByovpsProvisionResponse)` - Provisioning initiated successfully
     /// * `Err(CentralApiError)` - Provisioning failed
     pub async fn provision_byovps(
-        &self,
+        &mut self,
         vps_ip: &str,
         ssh_username: &str,
         ssh_password: &str,
@@ -764,12 +833,38 @@ impl CentralApiClient {
             ssh_password: ssh_password.to_string(),
         };
 
+        // First attempt
         let builder = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&body);
         let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token);
+                        self.refresh_token = Some(token_response.refresh_token);
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&body);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(_) => response,
+                }
+            } else {
+                response
+            }
+        } else {
+            response
+        };
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
@@ -1021,35 +1116,35 @@ mod tests {
     // Async tests for HTTP methods (with invalid server to test error handling)
     #[tokio::test]
     async fn test_request_device_code_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.request_device_code().await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_poll_device_token_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.poll_device_token("test-code").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_refresh_token_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.refresh_token("test-refresh").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_fetch_vps_plans_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.fetch_vps_plans().await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_provision_vps_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client
             .provision_vps("test-password", Some("plan-small"), None)
@@ -1059,7 +1154,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_provision_vps_with_datacenter_id() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client
             .provision_vps("test-password", Some("plan-small"), Some(9))
@@ -1069,7 +1164,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_provision_vps_minimal_params() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.provision_vps("test-password", None, None).await;
         assert!(result.is_err()); // Connection error expected
@@ -1077,7 +1172,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_vps_status_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.fetch_vps_status().await;
         assert!(result.is_err());
@@ -1348,7 +1443,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_datacenters_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.fetch_datacenters().await;
         assert!(result.is_err());
     }
@@ -1371,7 +1466,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_vps_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.start_vps().await;
         assert!(result.is_err());
@@ -1379,7 +1474,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stop_vps_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.stop_vps().await;
         assert!(result.is_err());
@@ -1387,7 +1482,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_restart_vps_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.restart_vps().await;
         assert!(result.is_err());
@@ -1395,7 +1490,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_vps_password_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.reset_vps_password("new-password").await;
         assert!(result.is_err());
@@ -1403,7 +1498,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_revoke_token_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.revoke_token("refresh-token-123").await;
         assert!(result.is_err());
@@ -1545,7 +1640,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_provision_byovps_with_invalid_server() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client
             .provision_byovps("192.168.1.100", "root", "password123")
@@ -1555,7 +1650,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_provision_byovps_with_ipv6() {
-        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client
             .provision_byovps("2001:db8::1", "admin", "password123")
