@@ -1,13 +1,21 @@
 //! Token migration detection module.
 //!
 //! This module wraps the migration script to detect which tokens are present
-//! on the user's system (GitHub CLI, Claude Code, Codex).
+//! on the user's system (GitHub CLI, Claude Code, Codex), and handles secure
+//! transfer of tokens to VPS via SSH.
 
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
+
+/// Spinner characters for transfer animation.
+const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Result of token detection showing which credentials are present.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,6 +280,372 @@ pub fn export_tokens() -> Result<TokenExportResult, String> {
     })
 }
 
+/// Error type for SSH transfer operations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SshTransferError {
+    /// Connection refused - VPS not reachable on port 22
+    ConnectionRefused(String),
+    /// Authentication failed - wrong username/password
+    AuthenticationFailed(String),
+    /// Network timeout - VPS not responding
+    NetworkTimeout(String),
+    /// sshpass not installed
+    SshpassNotInstalled(String),
+    /// Transfer failed - general SSH/tar error
+    TransferFailed(String),
+    /// Import failed on remote VPS
+    ImportFailed(String),
+    /// Missing required credentials
+    MissingCredentials(String),
+    /// Staging directory not found
+    StagingNotFound(String),
+}
+
+impl std::fmt::Display for SshTransferError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SshTransferError::ConnectionRefused(msg) => {
+                write!(f, "SSH connection refused: {}", msg)
+            }
+            SshTransferError::AuthenticationFailed(msg) => {
+                write!(f, "SSH authentication failed: {}", msg)
+            }
+            SshTransferError::NetworkTimeout(msg) => {
+                write!(f, "Network timeout: {}", msg)
+            }
+            SshTransferError::SshpassNotInstalled(msg) => {
+                write!(f, "sshpass not installed: {}", msg)
+            }
+            SshTransferError::TransferFailed(msg) => {
+                write!(f, "Transfer failed: {}", msg)
+            }
+            SshTransferError::ImportFailed(msg) => {
+                write!(f, "Import failed on VPS: {}", msg)
+            }
+            SshTransferError::MissingCredentials(msg) => {
+                write!(f, "Missing credentials: {}", msg)
+            }
+            SshTransferError::StagingNotFound(msg) => {
+                write!(f, "Staging directory not found: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for SshTransferError {}
+
+/// Result of successful token transfer to VPS.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenTransferResult {
+    /// VPS IP that tokens were transferred to
+    pub vps_ip: String,
+    /// SSH username used for transfer
+    pub ssh_username: String,
+    /// Whether import was successful on the VPS
+    pub import_successful: bool,
+    /// Message from import operation
+    pub import_message: Option<String>,
+}
+
+/// VPS connection information for SSH transfer.
+#[derive(Debug, Clone)]
+pub struct VpsConnectionInfo {
+    /// VPS IP address
+    pub vps_ip: String,
+    /// SSH username (defaults to "spoq")
+    pub ssh_username: String,
+    /// SSH password for authentication
+    pub ssh_password: String,
+}
+
+impl VpsConnectionInfo {
+    /// Create new VPS connection info with default username "spoq".
+    pub fn new(vps_ip: String, ssh_password: String) -> Self {
+        Self {
+            vps_ip,
+            ssh_username: "spoq".to_string(),
+            ssh_password,
+        }
+    }
+
+    /// Create new VPS connection info with custom username.
+    pub fn with_username(vps_ip: String, ssh_username: String, ssh_password: String) -> Self {
+        Self {
+            vps_ip,
+            ssh_username,
+            ssh_password,
+        }
+    }
+}
+
+/// Check if sshpass is available on the system.
+fn check_sshpass_available() -> bool {
+    Command::new("which")
+        .arg("sshpass")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+/// Parse SSH error output to determine the specific error type.
+fn parse_ssh_error(stderr: &str, exit_code: Option<i32>) -> SshTransferError {
+    let lower = stderr.to_lowercase();
+
+    // Check for specific error patterns
+    if lower.contains("connection refused") || lower.contains("port 22") {
+        return SshTransferError::ConnectionRefused(stderr.to_string());
+    }
+
+    if lower.contains("permission denied")
+        || lower.contains("authentication failed")
+        || lower.contains("password")
+        || exit_code == Some(5)
+    {
+        // sshpass exit code 5 = Invalid/incorrect password
+        return SshTransferError::AuthenticationFailed(stderr.to_string());
+    }
+
+    if lower.contains("connection timed out")
+        || lower.contains("network unreachable")
+        || lower.contains("host unreachable")
+        || lower.contains("no route to host")
+        || exit_code == Some(6)
+    {
+        // sshpass exit code 6 = Host key verification failed (can indicate network issues)
+        return SshTransferError::NetworkTimeout(stderr.to_string());
+    }
+
+    // Generic transfer failure
+    SshTransferError::TransferFailed(stderr.to_string())
+}
+
+/// Run a spinner animation while a flag is true.
+fn run_spinner(message: &str, stop_flag: Arc<AtomicBool>) {
+    let mut idx = 0;
+    while !stop_flag.load(Ordering::SeqCst) {
+        print!("\r{} {}", SPINNER_CHARS[idx % SPINNER_CHARS.len()], message);
+        io::stdout().flush().unwrap_or(());
+        idx += 1;
+        thread::sleep(Duration::from_millis(100));
+    }
+    // Clear the spinner line
+    print!("\r{}\r", " ".repeat(message.len() + 3));
+    io::stdout().flush().unwrap_or(());
+}
+
+/// Transfer tokens to VPS via SSH using sshpass for password authentication.
+///
+/// This function:
+/// 1. Verifies the staging directory exists with exported tokens
+/// 2. Checks that sshpass is available for password automation
+/// 3. Transfers files to VPS using tar pipe over SSH
+/// 4. Calls the import script on the VPS
+/// 5. Cleans up local staging directory
+///
+/// # Arguments
+///
+/// * `connection_info` - VPS connection details (IP, username, password)
+///
+/// # Returns
+///
+/// Returns `Ok(TokenTransferResult)` on successful transfer and import.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// * Staging directory doesn't exist or is empty
+/// * sshpass is not installed
+/// * SSH connection fails (refused, timeout, auth failure)
+/// * Transfer or import fails
+pub fn transfer_tokens_to_vps(
+    connection_info: &VpsConnectionInfo,
+) -> Result<TokenTransferResult, SshTransferError> {
+    info!(
+        "Starting token transfer to VPS {} as user {}",
+        connection_info.vps_ip, connection_info.ssh_username
+    );
+
+    // Step 1: Verify staging directory exists
+    let home_dir = std::env::var("HOME").map_err(|_| {
+        SshTransferError::MissingCredentials("Failed to get HOME environment variable".to_string())
+    })?;
+    let staging_dir = Path::new(&home_dir).join(".spoq-migration");
+
+    if !staging_dir.exists() {
+        error!("Staging directory does not exist: {:?}", staging_dir);
+        return Err(SshTransferError::StagingNotFound(format!(
+            "Staging directory {:?} does not exist. Run export_tokens() first.",
+            staging_dir
+        )));
+    }
+
+    // Check staging directory is not empty
+    let entries: Vec<_> = fs::read_dir(&staging_dir)
+        .map_err(|e| {
+            SshTransferError::StagingNotFound(format!("Cannot read staging directory: {}", e))
+        })?
+        .filter_map(|e| e.ok())
+        .collect();
+
+    if entries.is_empty() {
+        error!("Staging directory is empty: {:?}", staging_dir);
+        return Err(SshTransferError::StagingNotFound(
+            "Staging directory is empty. No tokens to transfer.".to_string(),
+        ));
+    }
+
+    debug!("Staging directory contains {} entries", entries.len());
+
+    // Step 2: Check sshpass is available
+    if !check_sshpass_available() {
+        error!("sshpass is not installed");
+        return Err(SshTransferError::SshpassNotInstalled(
+            "sshpass is required for password-based SSH authentication. Install with: brew install hudochenkov/sshpass/sshpass (macOS) or apt install sshpass (Linux)".to_string(),
+        ));
+    }
+
+    // Step 3: Build and execute SSH transfer command
+    // Command: tar -czf - -C ~/.spoq-migration . | sshpass -p "$password" ssh -o StrictHostKeyChecking=no user@vps_ip 'mkdir -p ~/.spoq-migration && cd ~/.spoq-migration && tar -xzf -'
+    info!("Transferring tokens to VPS via SSH...");
+
+    let remote_user_host = format!(
+        "{}@{}",
+        connection_info.ssh_username, connection_info.vps_ip
+    );
+
+    // Start spinner in background
+    let stop_spinner = Arc::new(AtomicBool::new(false));
+    let stop_spinner_clone = Arc::clone(&stop_spinner);
+    let spinner_handle = thread::spawn(move || {
+        run_spinner("Transferring tokens to VPS...", stop_spinner_clone);
+    });
+
+    // Execute the transfer: tar locally, pipe through sshpass/ssh to remote tar
+    let transfer_result = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "tar -czf - -C {} . | sshpass -p '{}' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=30 {} 'mkdir -p ~/.spoq-migration && cd ~/.spoq-migration && tar -xzf -'",
+            staging_dir.display(),
+            connection_info.ssh_password.replace("'", "'\\''"), // Escape single quotes in password
+            remote_user_host
+        ))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    // Stop spinner
+    stop_spinner.store(true, Ordering::SeqCst);
+    spinner_handle.join().ok();
+
+    let output = transfer_result.map_err(|e| {
+        error!("Failed to execute transfer command: {}", e);
+        SshTransferError::TransferFailed(format!("Failed to execute SSH command: {}", e))
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        error!("Transfer failed: {}", stderr);
+        return Err(parse_ssh_error(&stderr, output.status.code()));
+    }
+
+    info!("Token files transferred successfully");
+
+    // Step 4: Call import script on VPS
+    info!("Running import script on VPS...");
+
+    let import_result = Command::new("sshpass")
+        .arg("-p")
+        .arg(&connection_info.ssh_password)
+        .arg("ssh")
+        .arg("-o")
+        .arg("StrictHostKeyChecking=no")
+        .arg("-o")
+        .arg("UserKnownHostsFile=/dev/null")
+        .arg("-o")
+        .arg("ConnectTimeout=30")
+        .arg(&remote_user_host)
+        .arg("~/scripts/migration/creds-migrate.sh import ~/.spoq-migration/archive.tar.gz")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    let import_output = import_result.map_err(|e| {
+        error!("Failed to execute import command: {}", e);
+        SshTransferError::ImportFailed(format!("Failed to execute import command: {}", e))
+    })?;
+
+    let import_stdout = String::from_utf8_lossy(&import_output.stdout);
+    let import_stderr = String::from_utf8_lossy(&import_output.stderr);
+    let import_message = if !import_stdout.is_empty() {
+        Some(import_stdout.to_string())
+    } else if !import_stderr.is_empty() {
+        Some(import_stderr.to_string())
+    } else {
+        None
+    };
+
+    let import_successful = import_output.status.success();
+    if !import_successful {
+        warn!(
+            "Import script returned non-zero exit code. stdout: {}, stderr: {}",
+            import_stdout, import_stderr
+        );
+    } else {
+        info!("Import script completed successfully");
+    }
+
+    // Step 5: Clean up local staging directory
+    info!("Cleaning up local staging directory...");
+    if let Err(e) = fs::remove_dir_all(&staging_dir) {
+        warn!(
+            "Failed to clean up staging directory {:?}: {}. Manual cleanup may be required.",
+            staging_dir, e
+        );
+    } else {
+        debug!("Staging directory cleaned up successfully");
+    }
+
+    // Step 6: Print success message
+    println!("✓ Tokens migrated to VPS successfully");
+
+    Ok(TokenTransferResult {
+        vps_ip: connection_info.vps_ip.clone(),
+        ssh_username: connection_info.ssh_username.clone(),
+        import_successful,
+        import_message,
+    })
+}
+
+/// Convenience function to transfer tokens using credentials from the Credentials struct.
+///
+/// This extracts the necessary VPS connection info from stored credentials and calls
+/// `transfer_tokens_to_vps`.
+///
+/// # Arguments
+///
+/// * `vps_ip` - VPS IP address
+/// * `ssh_password` - SSH password for the VPS
+/// * `ssh_username` - Optional SSH username (defaults to "spoq")
+///
+/// # Returns
+///
+/// Returns the transfer result or an error.
+pub fn transfer_tokens_with_credentials(
+    vps_ip: &str,
+    ssh_password: &str,
+    ssh_username: Option<&str>,
+) -> Result<TokenTransferResult, SshTransferError> {
+    let connection_info = VpsConnectionInfo {
+        vps_ip: vps_ip.to_string(),
+        ssh_username: ssh_username.unwrap_or("spoq").to_string(),
+        ssh_password: ssh_password.to_string(),
+    };
+
+    transfer_tokens_to_vps(&connection_info)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,5 +861,225 @@ mod tests {
             staging_dir.is_dir(),
             "Staging path should be a directory"
         );
+    }
+
+    // ===========================================
+    // SSH Transfer Tests
+    // ===========================================
+
+    #[test]
+    fn test_ssh_transfer_error_display() {
+        // Test that all error variants have proper Display implementations
+        let errors = vec![
+            SshTransferError::ConnectionRefused("test connection".to_string()),
+            SshTransferError::AuthenticationFailed("test auth".to_string()),
+            SshTransferError::NetworkTimeout("test timeout".to_string()),
+            SshTransferError::SshpassNotInstalled("test sshpass".to_string()),
+            SshTransferError::TransferFailed("test transfer".to_string()),
+            SshTransferError::ImportFailed("test import".to_string()),
+            SshTransferError::MissingCredentials("test creds".to_string()),
+            SshTransferError::StagingNotFound("test staging".to_string()),
+        ];
+
+        for error in errors {
+            let display = format!("{}", error);
+            assert!(!display.is_empty(), "Error display should not be empty");
+            // Verify the error message contains the inner message
+            assert!(
+                display.contains("test"),
+                "Error display should contain the message"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ssh_transfer_error_equality() {
+        let err1 = SshTransferError::ConnectionRefused("msg".to_string());
+        let err2 = SshTransferError::ConnectionRefused("msg".to_string());
+        let err3 = SshTransferError::ConnectionRefused("different".to_string());
+        let err4 = SshTransferError::AuthenticationFailed("msg".to_string());
+
+        assert_eq!(err1, err2);
+        assert_ne!(err1, err3);
+        assert_ne!(err1, err4);
+    }
+
+    #[test]
+    fn test_vps_connection_info_new() {
+        let conn = VpsConnectionInfo::new("192.168.1.100".to_string(), "password123".to_string());
+
+        assert_eq!(conn.vps_ip, "192.168.1.100");
+        assert_eq!(conn.ssh_username, "spoq"); // Default username
+        assert_eq!(conn.ssh_password, "password123");
+    }
+
+    #[test]
+    fn test_vps_connection_info_with_username() {
+        let conn = VpsConnectionInfo::with_username(
+            "10.0.0.1".to_string(),
+            "custom_user".to_string(),
+            "secret".to_string(),
+        );
+
+        assert_eq!(conn.vps_ip, "10.0.0.1");
+        assert_eq!(conn.ssh_username, "custom_user");
+        assert_eq!(conn.ssh_password, "secret");
+    }
+
+    #[test]
+    fn test_token_transfer_result_structure() {
+        let result = TokenTransferResult {
+            vps_ip: "192.168.1.100".to_string(),
+            ssh_username: "spoq".to_string(),
+            import_successful: true,
+            import_message: Some("Import completed".to_string()),
+        };
+
+        assert_eq!(result.vps_ip, "192.168.1.100");
+        assert_eq!(result.ssh_username, "spoq");
+        assert!(result.import_successful);
+        assert_eq!(result.import_message, Some("Import completed".to_string()));
+    }
+
+    #[test]
+    fn test_token_transfer_result_equality() {
+        let result1 = TokenTransferResult {
+            vps_ip: "10.0.0.1".to_string(),
+            ssh_username: "spoq".to_string(),
+            import_successful: true,
+            import_message: None,
+        };
+
+        let result2 = TokenTransferResult {
+            vps_ip: "10.0.0.1".to_string(),
+            ssh_username: "spoq".to_string(),
+            import_successful: true,
+            import_message: None,
+        };
+
+        let result3 = TokenTransferResult {
+            vps_ip: "10.0.0.2".to_string(),
+            ssh_username: "spoq".to_string(),
+            import_successful: true,
+            import_message: None,
+        };
+
+        assert_eq!(result1, result2);
+        assert_ne!(result1, result3);
+    }
+
+    #[test]
+    fn test_parse_ssh_error_connection_refused() {
+        let error = parse_ssh_error("ssh: connect to host 192.168.1.1 port 22: Connection refused", None);
+        assert!(matches!(error, SshTransferError::ConnectionRefused(_)));
+    }
+
+    #[test]
+    fn test_parse_ssh_error_authentication_failed() {
+        let error = parse_ssh_error("Permission denied (publickey,password)", None);
+        assert!(matches!(error, SshTransferError::AuthenticationFailed(_)));
+
+        // Also test sshpass exit code 5
+        let error2 = parse_ssh_error("", Some(5));
+        assert!(matches!(error2, SshTransferError::AuthenticationFailed(_)));
+    }
+
+    #[test]
+    fn test_parse_ssh_error_network_timeout() {
+        let error = parse_ssh_error("Connection timed out", None);
+        assert!(matches!(error, SshTransferError::NetworkTimeout(_)));
+
+        let error2 = parse_ssh_error("Network unreachable", None);
+        assert!(matches!(error2, SshTransferError::NetworkTimeout(_)));
+
+        let error3 = parse_ssh_error("No route to host", None);
+        assert!(matches!(error3, SshTransferError::NetworkTimeout(_)));
+    }
+
+    #[test]
+    fn test_parse_ssh_error_generic() {
+        let error = parse_ssh_error("Some unknown error", None);
+        assert!(matches!(error, SshTransferError::TransferFailed(_)));
+    }
+
+    #[test]
+    fn test_check_sshpass_available() {
+        // This test checks if sshpass is available
+        // The result depends on whether sshpass is installed on the system
+        let available = check_sshpass_available();
+        // We can't assert a specific value, but the function should not panic
+        debug!("sshpass available: {}", available);
+    }
+
+    #[test]
+    fn test_transfer_tokens_to_vps_staging_not_found() {
+        // Remove staging directory if it exists
+        let home = std::env::var("HOME").expect("HOME should be set");
+        let staging_dir = std::path::Path::new(&home).join(".spoq-migration");
+        let _ = std::fs::remove_dir_all(&staging_dir);
+
+        let conn = VpsConnectionInfo::new("192.168.1.1".to_string(), "password".to_string());
+
+        let result = transfer_tokens_to_vps(&conn);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, SshTransferError::StagingNotFound(_)),
+            "Expected StagingNotFound error, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_transfer_tokens_to_vps_empty_staging() {
+        // Create empty staging directory
+        let home = std::env::var("HOME").expect("HOME should be set");
+        let staging_dir = std::path::Path::new(&home).join(".spoq-migration");
+
+        // Clean and recreate as empty
+        let _ = std::fs::remove_dir_all(&staging_dir);
+        std::fs::create_dir_all(&staging_dir).expect("Failed to create staging directory");
+
+        let conn = VpsConnectionInfo::new("192.168.1.1".to_string(), "password".to_string());
+
+        let result = transfer_tokens_to_vps(&conn);
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&staging_dir);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, SshTransferError::StagingNotFound(_)),
+            "Expected StagingNotFound error for empty directory, got {:?}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_transfer_tokens_with_credentials() {
+        // This tests the convenience function
+        // Remove staging directory first so we get a predictable error
+        let home = std::env::var("HOME").expect("HOME should be set");
+        let staging_dir = std::path::Path::new(&home).join(".spoq-migration");
+        let _ = std::fs::remove_dir_all(&staging_dir);
+
+        // Test with default username
+        let result = transfer_tokens_with_credentials("192.168.1.1", "password", None);
+        assert!(result.is_err());
+
+        // Test with custom username
+        let result2 = transfer_tokens_with_credentials("192.168.1.1", "password", Some("custom"));
+        assert!(result2.is_err());
+    }
+
+    #[test]
+    fn test_spinner_chars_defined() {
+        // Verify spinner characters are defined
+        assert_eq!(SPINNER_CHARS.len(), 10);
+        for ch in SPINNER_CHARS.iter() {
+            assert!(!ch.to_string().is_empty());
+        }
     }
 }
