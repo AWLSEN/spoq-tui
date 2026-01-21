@@ -55,8 +55,6 @@ pub struct WsAgentStatus {
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_operation: Option<String>,
     pub timestamp: u64,
 }
 
