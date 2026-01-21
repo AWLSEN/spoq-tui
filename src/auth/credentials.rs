@@ -40,6 +40,9 @@ pub struct Credentials {
     /// The datacenter ID where the user's VPS is located.
     #[serde(default)]
     pub datacenter_id: Option<u32>,
+    /// Path to the token migration archive file.
+    #[serde(default)]
+    pub token_archive_path: Option<String>,
 }
 
 impl Credentials {
@@ -185,6 +188,7 @@ mod tests {
         assert!(creds.vps_ip.is_none());
         assert!(creds.vps_status.is_none());
         assert!(creds.datacenter_id.is_none());
+        assert!(creds.token_archive_path.is_none());
     }
 
     #[test]
@@ -279,6 +283,7 @@ mod tests {
             vps_ip: Some("192.168.1.100".to_string()),
             vps_status: Some("running".to_string()),
             datacenter_id: Some(1),
+            token_archive_path: Some("/home/user/.spoq-migration/archive.tar.gz".to_string()),
         };
 
         assert!(manager.save(&creds));
@@ -350,6 +355,7 @@ mod tests {
             vps_ip: Some("192.168.1.1".to_string()),
             vps_status: Some("running".to_string()),
             datacenter_id: Some(2),
+            token_archive_path: Some("/tmp/archive.tar.gz".to_string()),
         };
 
         let json = serde_json::to_string(&creds).unwrap();
@@ -400,5 +406,29 @@ mod tests {
         assert_eq!(creds.vps_ip, Some("10.0.0.1".to_string()));
         assert_eq!(creds.vps_status, Some("active".to_string()));
         assert_eq!(creds.datacenter_id, None); // Should default to None
+        assert_eq!(creds.token_archive_path, None); // Should default to None
+    }
+
+    #[test]
+    fn test_credentials_backward_compatibility_with_datacenter() {
+        // Test that credentials.json without token_archive_path can still be loaded
+        let json_without_archive_path = r#"{
+            "access_token": "token",
+            "refresh_token": "refresh",
+            "expires_at": 9999999999,
+            "user_id": "user",
+            "username": "user",
+            "vps_id": "vps",
+            "vps_url": "http://example.com",
+            "vps_hostname": "example.com",
+            "vps_ip": "10.0.0.1",
+            "vps_status": "active",
+            "datacenter_id": 5
+        }"#;
+
+        let creds: Credentials = serde_json::from_str(json_without_archive_path).unwrap();
+
+        assert_eq!(creds.datacenter_id, Some(5));
+        assert_eq!(creds.token_archive_path, None); // Should default to None
     }
 }

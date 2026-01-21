@@ -45,6 +45,7 @@ fn test_credentials_with_vps_info() {
         vps_ip: Some("192.168.1.100".to_string()),
         vps_status: Some("ready".to_string()),
         datacenter_id: Some(1),
+        token_archive_path: None,
     };
 
     // Serialize and deserialize
@@ -141,6 +142,7 @@ fn test_credentials_default() {
     assert!(creds.vps_ip.is_none());
     assert!(creds.vps_status.is_none());
     assert!(creds.datacenter_id.is_none());
+    assert!(creds.token_archive_path.is_none());
 }
 
 /// Test VPS ready status detection
@@ -238,6 +240,7 @@ fn test_credentials_serialization_with_datacenter() {
         vps_ip: Some("1.2.3.4".to_string()),
         vps_status: Some("ready".to_string()),
         datacenter_id: Some(42),
+        token_archive_path: None,
     };
 
     let json = serde_json::to_string(&creds).expect("Should serialize");

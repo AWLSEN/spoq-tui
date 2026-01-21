@@ -9,11 +9,14 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use std::path::PathBuf;
+
 use super::central_api::{
     ByovpsProvisionResponse, CentralApiClient, CentralApiError, DataCenter, VpsPlan,
     VpsStatusResponse,
 };
 use super::credentials::{Credentials, CredentialsManager};
+use super::token_migration::{detect_tokens, export_tokens, wait_for_claude_code_token};
 
 /// VPS type selection.
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +70,123 @@ fn check_interrupt(interrupted: &Arc<AtomicBool>) {
     if interrupted.load(Ordering::SeqCst) {
         println!("\nProvisioning cancelled.");
         std::process::exit(0);
+    }
+}
+
+/// Result of token migration containing the archive path if successful.
+#[derive(Debug, Clone)]
+pub struct TokenMigrationResult {
+    /// Path to the exported token archive, if export succeeded
+    pub archive_path: Option<PathBuf>,
+    /// List of detected token types
+    pub detected_tokens: Vec<String>,
+    /// Whether migration completed successfully
+    pub success: bool,
+    /// Warning message if migration had issues
+    pub warning: Option<String>,
+}
+
+/// Run token migration to detect and export credentials for VPS setup.
+///
+/// This function:
+/// 1. Detects available tokens (GitHub CLI, Claude Code, Codex)
+/// 2. If Claude Code token is missing, prompts user to login
+/// 3. Exports detected tokens to an archive for later use
+///
+/// Errors are handled gracefully - the function warns but doesn't block VPS setup.
+///
+/// # Returns
+///
+/// Returns `TokenMigrationResult` containing archive path and detected tokens.
+fn run_token_migration() -> TokenMigrationResult {
+    println!("\n--- Token Migration ---");
+    println!("Detecting available credentials...");
+
+    // Step 1: Detect tokens
+    let detection = match detect_tokens() {
+        Ok(d) => d,
+        Err(e) => {
+            let warning = format!("Token detection failed: {}. VPS setup will continue.", e);
+            eprintln!("Warning: {}", warning);
+            return TokenMigrationResult {
+                archive_path: None,
+                detected_tokens: vec![],
+                success: false,
+                warning: Some(warning),
+            };
+        }
+    };
+
+    // Build list of detected tokens for display
+    let mut detected_tokens = Vec::new();
+    if detection.github_cli {
+        detected_tokens.push("GitHub CLI".to_string());
+    }
+    if detection.claude_code {
+        detected_tokens.push("Claude Code".to_string());
+    }
+    if detection.codex {
+        detected_tokens.push("Codex".to_string());
+    }
+
+    // Step 2: If Claude Code is missing, prompt user to login
+    if !detection.claude_code {
+        println!("Claude Code token not found. Prompting for login...");
+        if let Err(e) = wait_for_claude_code_token() {
+            let warning = format!(
+                "Claude Code token not available: {}. VPS setup will continue without it.",
+                e
+            );
+            eprintln!("Warning: {}", warning);
+            // Continue without Claude Code token - don't block VPS setup
+        } else {
+            // Token was detected after retry, add to list
+            if !detected_tokens.contains(&"Claude Code".to_string()) {
+                detected_tokens.push("Claude Code".to_string());
+            }
+        }
+    }
+
+    // Step 3: Export tokens to archive
+    println!("Exporting tokens to archive...");
+    let archive_path = match export_tokens() {
+        Ok(export_result) => {
+            println!(
+                "Token archive created: {:?} ({} bytes)",
+                export_result.archive_path, export_result.size_bytes
+            );
+            Some(export_result.archive_path)
+        }
+        Err(e) => {
+            let warning = format!(
+                "Token export failed: {}. VPS setup will continue without token migration.",
+                e
+            );
+            eprintln!("Warning: {}", warning);
+            return TokenMigrationResult {
+                archive_path: None,
+                detected_tokens,
+                success: false,
+                warning: Some(warning),
+            };
+        }
+    };
+
+    // Step 4: Print summary
+    if detected_tokens.is_empty() {
+        println!("Token migration prepared. No tokens detected.");
+    } else {
+        println!(
+            "Token migration prepared. Found: [{}]",
+            detected_tokens.join(", ")
+        );
+    }
+
+    TokenMigrationResult {
+        archive_path,
+        detected_tokens,
+        success: true,
+        warning: None,
     }
 }
 
@@ -416,6 +536,13 @@ fn run_managed_vps_flow(
     }
     if let Some(url) = &status.url {
         println!("  URL: {}", url);
+    }
+
+    // Run token migration after VPS is ready
+    let migration_result = run_token_migration();
+    if let Some(ref archive_path) = migration_result.archive_path {
+        credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
+        save_credentials(credentials);
     }
 
     Ok(())
@@ -797,6 +924,13 @@ fn run_byovps_flow(
     }
     if let Some(url) = &final_status.url {
         println!("  URL: {}", url);
+    }
+
+    // Run token migration after BYOVPS is ready
+    let migration_result = run_token_migration();
+    if let Some(ref archive_path) = migration_result.archive_path {
+        credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
+        save_credentials(credentials);
     }
 
     Ok(())
@@ -2346,5 +2480,124 @@ mod tests {
         let success_msg = "Token refreshed successfully.";
         assert!(success_msg.contains("successfully"));
         assert!(success_msg.contains("refreshed"));
+    }
+
+    #[test]
+    fn test_token_migration_result_struct() {
+        use std::path::PathBuf;
+
+        // Test TokenMigrationResult with successful migration
+        let result = TokenMigrationResult {
+            archive_path: Some(PathBuf::from("/home/user/.spoq-migration/archive.tar.gz")),
+            detected_tokens: vec![
+                "GitHub CLI".to_string(),
+                "Claude Code".to_string(),
+            ],
+            success: true,
+            warning: None,
+        };
+
+        assert!(result.archive_path.is_some());
+        assert_eq!(result.detected_tokens.len(), 2);
+        assert!(result.success);
+        assert!(result.warning.is_none());
+    }
+
+    #[test]
+    fn test_token_migration_result_failure() {
+        // Test TokenMigrationResult with failed migration
+        let result = TokenMigrationResult {
+            archive_path: None,
+            detected_tokens: vec!["GitHub CLI".to_string()],
+            success: false,
+            warning: Some("Token export failed: No credentials found".to_string()),
+        };
+
+        assert!(result.archive_path.is_none());
+        assert_eq!(result.detected_tokens.len(), 1);
+        assert!(!result.success);
+        assert!(result.warning.is_some());
+        assert!(result.warning.unwrap().contains("Token export failed"));
+    }
+
+    #[test]
+    fn test_token_migration_result_no_tokens() {
+        // Test TokenMigrationResult with no tokens detected
+        let result = TokenMigrationResult {
+            archive_path: None,
+            detected_tokens: vec![],
+            success: false,
+            warning: Some("Token detection failed: script not found".to_string()),
+        };
+
+        assert!(result.archive_path.is_none());
+        assert!(result.detected_tokens.is_empty());
+        assert!(!result.success);
+    }
+
+    #[test]
+    fn test_token_migration_result_clone() {
+        use std::path::PathBuf;
+
+        let result = TokenMigrationResult {
+            archive_path: Some(PathBuf::from("/tmp/archive.tar.gz")),
+            detected_tokens: vec!["Claude Code".to_string()],
+            success: true,
+            warning: None,
+        };
+
+        let cloned = result.clone();
+        assert_eq!(cloned.archive_path, result.archive_path);
+        assert_eq!(cloned.detected_tokens, result.detected_tokens);
+        assert_eq!(cloned.success, result.success);
+        assert_eq!(cloned.warning, result.warning);
+    }
+
+    #[test]
+    fn test_token_migration_result_debug() {
+        let result = TokenMigrationResult {
+            archive_path: None,
+            detected_tokens: vec![],
+            success: false,
+            warning: Some("Error".to_string()),
+        };
+
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("TokenMigrationResult"));
+        assert!(debug_str.contains("success"));
+    }
+
+    #[test]
+    fn test_token_migration_detected_tokens_list_format() {
+        let detected_tokens = vec![
+            "GitHub CLI".to_string(),
+            "Claude Code".to_string(),
+            "Codex".to_string(),
+        ];
+
+        let formatted = detected_tokens.join(", ");
+        assert_eq!(formatted, "GitHub CLI, Claude Code, Codex");
+    }
+
+    #[test]
+    fn test_token_migration_archive_path_conversion() {
+        use std::path::PathBuf;
+
+        let archive_path = PathBuf::from("/home/user/.spoq-migration/archive.tar.gz");
+        let path_string = archive_path.to_string_lossy().to_string();
+
+        assert_eq!(path_string, "/home/user/.spoq-migration/archive.tar.gz");
+    }
+
+    #[test]
+    fn test_credentials_token_archive_path_field() {
+        let mut credentials = Credentials::default();
+        assert!(credentials.token_archive_path.is_none());
+
+        credentials.token_archive_path = Some("/tmp/archive.tar.gz".to_string());
+        assert_eq!(
+            credentials.token_archive_path,
+            Some("/tmp/archive.tar.gz".to_string())
+        );
     }
 }
