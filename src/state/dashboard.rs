@@ -508,7 +508,6 @@ impl DashboardState {
             .map(|thread| {
                 let status = thread.effective_status(&self.agent_states);
                 let waiting_for = self.waiting_for.get(&thread.id).cloned();
-                let _needs_action = status.needs_attention() || waiting_for.is_some();
 
                 // Use thread.mode directly from the Thread model
                 let mode = thread.mode;
