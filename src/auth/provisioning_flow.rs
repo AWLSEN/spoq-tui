@@ -607,16 +607,6 @@ fn run_byovps_flow(
     byovps_creds: &ByovpsCredentials,
     interrupted: &Arc<AtomicBool>,
 ) -> Result<(), CentralApiError> {
-    // Check if access token is present
-    let _access_token =
-        credentials
-            .access_token
-            .as_ref()
-            .ok_or_else(|| CentralApiError::ServerError {
-                status: 401,
-                message: "No access token available".to_string(),
-            })?;
-
     // Proactive token expiration check
     if credentials.is_expired() {
         if let Some(ref refresh_token) = credentials.refresh_token {
@@ -1944,7 +1934,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(CentralApiError::ServerError { status, message }) = result {
             assert_eq!(status, 401);
-            assert!(message.contains("access token"));
+            assert!(message.contains("expired") || message.contains("re-authenticate"));
         } else {
             panic!("Expected ServerError with status 401");
         }

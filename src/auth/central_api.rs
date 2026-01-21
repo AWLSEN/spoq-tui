@@ -1140,28 +1140,28 @@ mod tests {
     // Async tests for HTTP methods (with invalid server to test error handling)
     #[tokio::test]
     async fn test_request_device_code_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.request_device_code().await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_poll_device_token_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.poll_device_token("test-code").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_refresh_token_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.refresh_token("test-refresh").await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_fetch_vps_plans_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.fetch_vps_plans().await;
         assert!(result.is_err());
     }
@@ -1467,7 +1467,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fetch_datacenters_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string());
         let result = client.fetch_datacenters().await;
         assert!(result.is_err());
     }
@@ -1490,7 +1490,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_vps_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.start_vps().await;
         assert!(result.is_err());
@@ -1498,7 +1498,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_stop_vps_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.stop_vps().await;
         assert!(result.is_err());
@@ -1506,7 +1506,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_restart_vps_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.restart_vps().await;
         assert!(result.is_err());
@@ -1514,7 +1514,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_reset_vps_password_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.reset_vps_password("new-password").await;
         assert!(result.is_err());
@@ -1522,7 +1522,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_revoke_token_with_invalid_server() {
-        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+        let client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
             .with_auth("test-token");
         let result = client.revoke_token("refresh-token-123").await;
         assert!(result.is_err());
