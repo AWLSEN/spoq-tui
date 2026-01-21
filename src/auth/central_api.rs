@@ -566,10 +566,28 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
+                println!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
-                        self.auth_token = Some(token_response.access_token);
-                        self.refresh_token = Some(token_response.refresh_token);
+                        self.auth_token = Some(token_response.access_token.clone());
+                        self.refresh_token = Some(token_response.refresh_token.clone());
+
+                        // Log successful refresh with expiration time
+                        if let Some(expires_in) = token_response.expires_in {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                        } else if let Some(expires_in) = get_jwt_expires_in(&token_response.access_token) {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                        } else {
+                            println!("Token refresh successful");
+                        }
 
                         // Retry with new token
                         let builder = self
@@ -580,15 +598,19 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        eprintln!("Token refresh failed: {}", refresh_error);
+                        println!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
-                            message: format!("Authentication failed. Token refresh failed: {}. Please sign in again.", refresh_error),
+                            message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
                         });
                     }
                 }
             } else {
-                response
+                println!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
             }
         } else {
             response
@@ -622,25 +644,47 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
+                println!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
-                        self.auth_token = Some(token_response.access_token);
-                        self.refresh_token = Some(token_response.refresh_token);
+                        self.auth_token = Some(token_response.access_token.clone());
+                        self.refresh_token = Some(token_response.refresh_token.clone());
+
+                        // Log successful refresh with expiration time
+                        if let Some(expires_in) = token_response.expires_in {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                        } else if let Some(expires_in) = get_jwt_expires_in(&token_response.access_token) {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                        } else {
+                            println!("Token refresh successful");
+                        }
 
                         // Retry with new token
                         let builder = self.client.get(&url);
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        eprintln!("Token refresh failed: {}", refresh_error);
+                        println!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
-                            message: format!("Authentication failed. Token refresh failed: {}. Please sign in again.", refresh_error),
+                            message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
                         });
                     }
                 }
             } else {
-                response
+                println!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
             }
         } else {
             response
@@ -862,10 +906,28 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
+                println!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
-                        self.auth_token = Some(token_response.access_token);
-                        self.refresh_token = Some(token_response.refresh_token);
+                        self.auth_token = Some(token_response.access_token.clone());
+                        self.refresh_token = Some(token_response.refresh_token.clone());
+
+                        // Log successful refresh with expiration time
+                        if let Some(expires_in) = token_response.expires_in {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                        } else if let Some(expires_in) = get_jwt_expires_in(&token_response.access_token) {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                        } else {
+                            println!("Token refresh successful");
+                        }
 
                         // Retry with new token
                         let builder = self
@@ -876,15 +938,19 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        eprintln!("Token refresh failed: {}", refresh_error);
+                        println!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
-                            message: format!("Authentication failed. Token refresh failed: {}. Please sign in again.", refresh_error),
+                            message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
                         });
                     }
                 }
             } else {
-                response
+                println!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
             }
         } else {
             response
@@ -1719,7 +1785,7 @@ mod tests {
         if let Err(CentralApiError::ServerError { status, message }) = result {
             assert_eq!(status, 401);
             assert!(message.contains("Token refresh failed"));
-            assert!(message.contains("Please sign in again"));
+            assert!(message.contains("re-authenticate"));
         } else {
             panic!("Expected ServerError with refresh failure message");
         }
@@ -1761,7 +1827,7 @@ mod tests {
         if let Err(CentralApiError::ServerError { status, message }) = result {
             assert_eq!(status, 401);
             assert!(message.contains("Token refresh failed"));
-            assert!(message.contains("Please sign in again"));
+            assert!(message.contains("re-authenticate"));
         } else {
             panic!("Expected ServerError with refresh failure message");
         }
@@ -1803,7 +1869,7 @@ mod tests {
         if let Err(CentralApiError::ServerError { status, message }) = result {
             assert_eq!(status, 401);
             assert!(message.contains("Token refresh failed"));
-            assert!(message.contains("Please sign in again"));
+            assert!(message.contains("re-authenticate"));
         } else {
             panic!("Expected ServerError with refresh failure message");
         }

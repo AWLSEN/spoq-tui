@@ -608,9 +608,11 @@ fn run_byovps_flow(
     interrupted: &Arc<AtomicBool>,
 ) -> Result<(), CentralApiError> {
     // Proactive token expiration check
+    println!("Checking token expiration...");
     if credentials.is_expired() {
+        println!("Token is expired");
         if let Some(ref refresh_token) = credentials.refresh_token {
-            println!("Token expired, refreshing proactively...");
+            println!("Proactively refreshing expired token...");
 
             // Create temporary client to refresh token
             let temp_client = CentralApiClient::new();
@@ -626,41 +628,51 @@ fn run_byovps_flow(
                     if let Some(expires_in) = token_response.expires_in {
                         let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
                         credentials.expires_at = Some(expires_at);
+                        let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                            .map(|dt| dt.to_rfc3339())
+                            .unwrap_or_else(|| "unknown".to_string());
+                        println!("Token refresh successful, new expiration: {}", expiration_time);
                     } else {
                         // Extract expiration from JWT if not provided in response
                         if let Some(expires_in) = super::central_api::get_jwt_expires_in(&token_response.access_token) {
                             let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
                             credentials.expires_at = Some(expires_at);
+                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                .map(|dt| dt.to_rfc3339())
+                                .unwrap_or_else(|| "unknown".to_string());
+                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                        } else {
+                            println!("Token refresh successful");
                         }
                     }
 
                     // Save updated credentials to disk
                     save_credentials(credentials);
-                    println!("Token refreshed successfully.");
                 }
-                Err(_) => {
+                Err(refresh_error) => {
                     // Refresh failed - clear credentials and return error
-                    println!("Token expired, no valid refresh token available.");
+                    println!("Token refresh failed: {}", refresh_error);
                     credentials.access_token = None;
                     credentials.refresh_token = None;
                     save_credentials(credentials);
                     return Err(CentralApiError::ServerError {
                         status: 401,
-                        message: "Your session has expired. Please run the CLI again to re-authenticate.".to_string(),
+                        message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
                     });
                 }
             }
         } else {
             // No refresh token available - clear credentials and return error
-            println!("Token expired, no valid refresh token available.");
             credentials.access_token = None;
             credentials.refresh_token = None;
             save_credentials(credentials);
             return Err(CentralApiError::ServerError {
                 status: 401,
-                message: "Your session has expired. Please run the CLI again to re-authenticate.".to_string(),
+                message: "No refresh token available. Please sign in again.".to_string(),
             });
         }
+    } else {
+        println!("Token is valid");
     }
 
     // Get the (potentially refreshed) access token
@@ -1934,7 +1946,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(CentralApiError::ServerError { status, message }) = result {
             assert_eq!(status, 401);
-            assert!(message.contains("expired") || message.contains("re-authenticate"));
+            assert!(message.contains("refresh token") || message.contains("sign in again"));
         } else {
             panic!("Expected ServerError with status 401");
         }
@@ -2128,7 +2140,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(CentralApiError::ServerError { status, message }) = result {
             assert_eq!(status, 401);
-            assert!(message.contains("access token") || message.contains("expired"));
+            assert!(message.contains("refresh token") || message.contains("sign in again"));
         } else {
             panic!("Expected ServerError with status 401");
         }
@@ -2159,7 +2171,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(CentralApiError::ServerError { status, message }) = result {
             assert_eq!(status, 401);
-            assert!(message.contains("expired") || message.contains("re-authenticate"));
+            assert!(message.contains("refresh token") || message.contains("sign in again"));
         } else {
             panic!("Expected ServerError with status 401");
         }
