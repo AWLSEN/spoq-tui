@@ -67,6 +67,9 @@ impl From<serde_json::Error> for CentralApiError {
 /// Parse error response from API.
 /// Tries to extract {"error": "message"} format, falls back to raw body.
 fn parse_error_response(status: u16, body: &str) -> CentralApiError {
+    // Debug: Print the raw response body
+    eprintln!("\n[DEBUG] HTTP {} Response body: {}", status, body);
+
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
         if let Some(msg) = json.get("error").and_then(|e| e.as_str()) {
             return CentralApiError::ServerError {
@@ -97,8 +100,10 @@ pub struct DeviceCodeResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenResponse {
     pub access_token: String,
-    pub refresh_token: String,
-    pub token_type: String,
+    #[serde(default)]
+    pub refresh_token: Option<String>, // Optional: refresh endpoint may not return new token
+    #[serde(default)]
+    pub token_type: Option<String>,
     #[serde(default)]
     pub expires_in: Option<u32>, // API may not return this; decode from JWT
     #[serde(default)]
@@ -570,7 +575,10 @@ impl CentralApiClient {
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
-                        self.refresh_token = Some(token_response.refresh_token.clone());
+                        // Only update refresh_token if server provides a new one
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
 
                         // Log successful refresh with expiration time
                         if let Some(expires_in) = token_response.expires_in {
@@ -648,7 +656,10 @@ impl CentralApiClient {
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
-                        self.refresh_token = Some(token_response.refresh_token.clone());
+                        // Only update refresh_token if server provides a new one
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
 
                         // Log successful refresh with expiration time
                         if let Some(expires_in) = token_response.expires_in {
@@ -910,7 +921,10 @@ impl CentralApiClient {
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
-                        self.refresh_token = Some(token_response.refresh_token.clone());
+                        // Only update refresh_token if server provides a new one
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
 
                         // Log successful refresh with expiration time
                         if let Some(expires_in) = token_response.expires_in {
@@ -966,6 +980,20 @@ impl CentralApiClient {
         }
 
         let data: ByovpsProvisionResponse = response.json().await?;
+
+        // Debug: Print the full response
+        eprintln!("\n[DEBUG] Provision response:");
+        eprintln!("  Status: {}", data.status);
+        eprintln!("  Hostname: {:?}", data.hostname);
+        eprintln!("  Message: {:?}", data.message);
+        if let Some(ref install_script) = data.install_script {
+            eprintln!("  Install script status: {}", install_script.status);
+            if let Some(ref output) = install_script.output {
+                eprintln!("  Install script output (first 500 chars): {}",
+                    &output.chars().take(500).collect::<String>());
+            }
+        }
+
         Ok(data)
     }
 }

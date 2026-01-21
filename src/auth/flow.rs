@@ -75,7 +75,7 @@ pub fn run_auth_flow(runtime: &tokio::runtime::Runtime) -> Result<Credentials, C
     // Build credentials from token response
     let mut credentials = Credentials::default();
     credentials.access_token = Some(tokens.access_token);
-    credentials.refresh_token = Some(tokens.refresh_token);
+    credentials.refresh_token = tokens.refresh_token; // Already Option<String>
     credentials.expires_at = Some(expires_at);
     credentials.user_id = tokens.user_id;
     credentials.username = tokens.username;

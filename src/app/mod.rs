@@ -541,8 +541,11 @@ impl App {
         self.credentials.expires_at = Some(now + i64::from(expires_in));
 
         // Update refresh token if a new one was provided
-        if !token_response.refresh_token.is_empty() {
-            self.credentials.refresh_token = Some(token_response.refresh_token);
+        // Update refresh_token if server provides a new one
+        if let Some(new_refresh_token) = token_response.refresh_token {
+            if !new_refresh_token.is_empty() {
+                self.credentials.refresh_token = Some(new_refresh_token);
+            }
         }
 
         // Recreate clients with new token

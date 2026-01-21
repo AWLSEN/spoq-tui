@@ -141,11 +141,11 @@ fn collect_byovps_credentials(
         }
     };
 
-    // Prompt for SSH password (minimum 1 character)
+    // Prompt for SSH password (minimum 8 characters)
     let ssh_password = loop {
         check_interrupt(interrupted);
 
-        print!("Enter SSH password (min 1 character): ");
+        print!("Enter SSH password (min 8 characters): ");
         io::stdout()
             .flush()
             .map_err(|e| CentralApiError::ServerError {
@@ -160,11 +160,11 @@ fn collect_byovps_credentials(
 
         check_interrupt(interrupted);
 
-        if !password.is_empty() {
+        if password.len() >= 8 {
             break password;
         }
 
-        println!("Password must be at least 1 character. Try again.");
+        println!("Password must be at least 8 characters. Try again.");
     };
 
     Ok(ByovpsCredentials {
@@ -622,7 +622,10 @@ fn run_byovps_flow(
                 Ok(token_response) => {
                     // Update credentials with new tokens
                     credentials.access_token = Some(token_response.access_token.clone());
-                    credentials.refresh_token = Some(token_response.refresh_token.clone());
+                    // If server returns new refresh_token, use it; otherwise keep the old one
+                    if let Some(new_refresh_token) = token_response.refresh_token {
+                        credentials.refresh_token = Some(new_refresh_token);
+                    }
 
                     // Calculate and save new expiration time
                     if let Some(expires_in) = token_response.expires_in {
@@ -718,9 +721,17 @@ fn run_byovps_flow(
     // Check initial provision status
     match provision_response.status.to_lowercase().as_str() {
         "failed" | "error" => {
-            let msg = provision_response
+            let mut msg = provision_response
                 .message
                 .unwrap_or_else(|| "BYOVPS provisioning failed".to_string());
+
+            // Include install script output if available
+            if let Some(ref install_script) = provision_response.install_script {
+                if let Some(ref output) = install_script.output {
+                    msg = format!("{}\n\nScript output:\n{}", msg, output);
+                }
+            }
+
             return Err(CentralApiError::ServerError {
                 status: 500,
                 message: msg,
