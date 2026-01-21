@@ -904,6 +904,80 @@ impl App {
                     Some(&thread_id),
                 );
             }
+            AppMessage::ThreadModeUpdate { thread_id, mode } => {
+                // Log for terminal debugging
+                tracing::info!("THREAD_MODE_UPDATE: thread_id={}, mode={:?}", thread_id, mode);
+                // TODO: Update dashboard or conversation state with new thread mode
+                // Emit StateChange for thread mode update
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::WebSocket,
+                        "THREAD_MODE_UPDATE",
+                        format!("thread_id: {}, mode: {:?}", thread_id, mode),
+                    )),
+                    Some(&thread_id),
+                );
+            }
+            AppMessage::PhaseProgressUpdate {
+                thread_id,
+                plan_id,
+                phase_index,
+                total_phases,
+                phase_name,
+                status,
+                tool_count,
+                last_tool,
+                last_file,
+            } => {
+                // Log for terminal debugging
+                tracing::info!(
+                    "PHASE_PROGRESS_UPDATE: plan_id={}, phase={}/{}, status={:?}",
+                    plan_id,
+                    phase_index + 1,
+                    total_phases,
+                    status
+                );
+                // TODO: Update dashboard with phase progress
+                // Emit StateChange for phase progress
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::WebSocket,
+                        "PHASE_PROGRESS_UPDATE",
+                        format!(
+                            "plan_id: {}, phase: {}/{} ({}), status: {:?}, tools: {}, last_tool: {}{}",
+                            plan_id,
+                            phase_index + 1,
+                            total_phases,
+                            phase_name,
+                            status,
+                            tool_count,
+                            last_tool,
+                            last_file.as_ref().map(|f| format!(", file: {}", f)).unwrap_or_default()
+                        ),
+                    )),
+                    thread_id.as_deref(),
+                );
+            }
+            AppMessage::ThreadVerified {
+                thread_id,
+                verified_at,
+            } => {
+                // Log for terminal debugging
+                tracing::info!("THREAD_VERIFIED: thread_id={}, verified_at={}", thread_id, verified_at);
+                // TODO: Update dashboard or conversation state with verification status
+                // Emit StateChange for thread verification
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::WebSocket,
+                        "THREAD_VERIFIED",
+                        format!("thread_id: {}, verified_at: {}", thread_id, verified_at),
+                    )),
+                    Some(&thread_id),
+                );
+            }
         }
     }
 }
