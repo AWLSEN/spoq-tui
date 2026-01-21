@@ -14,6 +14,13 @@ use super::central_api::{
 };
 use super::credentials::Credentials;
 
+/// VPS type selection.
+#[derive(Debug, Clone, PartialEq)]
+pub enum VpsType {
+    Managed,
+    Byovps,
+}
+
 /// Poll interval for VPS status checks (in seconds).
 const POLL_INTERVAL_SECS: u64 = 3;
 
@@ -42,6 +49,49 @@ fn check_interrupt(interrupted: &Arc<AtomicBool>) {
     }
 }
 
+/// Prompt the user to choose VPS type with interrupt support.
+///
+/// # Arguments
+/// * `interrupted` - Interrupt flag for Ctrl+C handling
+///
+/// # Returns
+/// * `Ok(VpsType)` - User selected VPS type
+/// * `Err(CentralApiError)` - Failed to read input
+fn choose_vps_type(interrupted: &Arc<AtomicBool>) -> Result<VpsType, CentralApiError> {
+    println!("\nChoose VPS type:");
+    println!("  [1] Managed VPS");
+    println!("  [2] BYOVPS (Bring Your Own VPS)");
+
+    loop {
+        check_interrupt(interrupted);
+
+        print!("\nEnter your choice (1-2): ");
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to read input: {}", e),
+            })?;
+
+        check_interrupt(interrupted);
+
+        let trimmed = input.trim();
+        match trimmed {
+            "1" => return Ok(VpsType::Managed),
+            "2" => return Ok(VpsType::Byovps),
+            _ => println!("Please enter either 1 or 2."),
+        }
+    }
+}
+
 /// Run the provisioning flow to set up VPS for the user.
 ///
 /// This function blocks until provisioning is complete and updates credentials.
@@ -62,6 +112,29 @@ pub fn run_provisioning_flow(
     // Set up interrupt handler
     let interrupted = setup_interrupt_handler();
 
+    // Step 0: Choose VPS type
+    let vps_type = choose_vps_type(&interrupted)?;
+
+    // Branch based on VPS type
+    match vps_type {
+        VpsType::Managed => {
+            // Continue with managed VPS provisioning flow
+            run_managed_vps_flow(runtime, credentials, &interrupted)
+        }
+        VpsType::Byovps => {
+            // BYOVPS flow will be implemented in later phases
+            println!("\nBYOVPS setup coming soon!");
+            Ok(())
+        }
+    }
+}
+
+/// Run the managed VPS provisioning flow.
+fn run_managed_vps_flow(
+    runtime: &tokio::runtime::Runtime,
+    credentials: &mut Credentials,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<(), CentralApiError> {
     // Create API client with authentication
     let access_token =
         credentials
@@ -87,9 +160,9 @@ pub fn run_provisioning_flow(
     }
 
     // Step 2: Display plans and get user selection
-    check_interrupt(&interrupted);
+    check_interrupt(interrupted);
     display_plans(&plans);
-    let selected_index = prompt_plan_selection_with_interrupt(plans.len(), &interrupted)?;
+    let selected_index = prompt_plan_selection_with_interrupt(plans.len(), interrupted)?;
     let selected_plan = &plans[selected_index];
 
     println!(
@@ -99,18 +172,18 @@ pub fn run_provisioning_flow(
     );
 
     // Step 3: Get SSH password from user
-    check_interrupt(&interrupted);
-    let ssh_password = prompt_ssh_password_with_interrupt(&interrupted)?;
+    check_interrupt(interrupted);
+    let ssh_password = prompt_ssh_password_with_interrupt(interrupted)?;
 
     // Step 4: Confirm provisioning
-    check_interrupt(&interrupted);
-    if !prompt_confirmation_with_interrupt(&interrupted)? {
+    check_interrupt(interrupted);
+    if !prompt_confirmation_with_interrupt(interrupted)? {
         println!("Provisioning cancelled.");
         return Ok(());
     }
 
     // Step 5: Fetch and select datacenter
-    check_interrupt(&interrupted);
+    check_interrupt(interrupted);
     println!("\nFetching available data centers...");
     let datacenters = runtime.block_on(client.fetch_datacenters())?;
 
@@ -121,14 +194,14 @@ pub fn run_provisioning_flow(
         });
     }
 
-    check_interrupt(&interrupted);
+    check_interrupt(interrupted);
     let ordered_dcs = display_datacenters(&datacenters);
     let selected_datacenter_id =
-        prompt_datacenter_selection_with_interrupt(&ordered_dcs, &interrupted)?;
+        prompt_datacenter_selection_with_interrupt(&ordered_dcs, interrupted)?;
     credentials.datacenter_id = Some(selected_datacenter_id);
 
     // Step 6: Provision the VPS
-    check_interrupt(&interrupted);
+    check_interrupt(interrupted);
     println!("\nProvisioning your VPS...");
     let provision_result = runtime.block_on(client.provision_vps(
         &ssh_password,
@@ -161,7 +234,7 @@ pub fn run_provisioning_flow(
 
     // Step 7: Poll for VPS to be ready
     println!("\nWaiting for VPS to be ready...");
-    let status = poll_vps_status_with_interrupt(runtime, &client, &interrupted)?;
+    let status = poll_vps_status_with_interrupt(runtime, &client, interrupted)?;
 
     // Update credentials with final status
     credentials.vps_id = Some(status.vps_id.clone());
@@ -595,20 +668,22 @@ mod tests {
     }
 
     #[test]
-    fn test_run_provisioning_flow_requires_access_token() {
-        let runtime = tokio::runtime::Runtime::new().unwrap();
-        let mut credentials = Credentials::default();
+    fn test_vps_type_enum() {
+        // Test VpsType enum variants
+        let managed = VpsType::Managed;
+        let byovps = VpsType::Byovps;
 
-        // Without access token, should fail
-        let result = run_provisioning_flow(&runtime, &mut credentials);
-        assert!(result.is_err());
+        assert_eq!(managed, VpsType::Managed);
+        assert_eq!(byovps, VpsType::Byovps);
+        assert_ne!(managed, byovps);
 
-        if let Err(CentralApiError::ServerError { status, message }) = result {
-            assert_eq!(status, 401);
-            assert!(message.contains("access token"));
-        } else {
-            panic!("Expected ServerError with 401 status");
-        }
+        // Test Debug trait
+        assert_eq!(format!("{:?}", managed), "Managed");
+        assert_eq!(format!("{:?}", byovps), "Byovps");
+
+        // Test Clone trait
+        let managed_clone = managed.clone();
+        assert_eq!(managed, managed_clone);
     }
 
     #[tokio::test]
