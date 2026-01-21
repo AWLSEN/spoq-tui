@@ -1103,4 +1103,243 @@ mod tests {
         assert_eq!(result.tool_count, 5);
         assert_eq!(result.last_tool, "Edit");
     }
+
+    // -------------------- Round 6: Progress and Mode Tests --------------------
+
+    #[test]
+    fn test_build_thread_views_includes_mode() {
+        use crate::models::ThreadMode;
+
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.mode = ThreadMode::Plan; // Set a specific mode
+        state.threads.insert("t1".to_string(), thread);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.mode, ThreadMode::Plan);
+    }
+
+    #[test]
+    fn test_build_thread_views_includes_progress_when_running() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Add phase progress with Running status
+        let progress = PhaseProgressData::new(
+            2,
+            5,
+            "Phase 2".to_string(),
+            PhaseStatus::Running,
+            10,
+            "Edit".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", progress);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert!(view.progress.is_some());
+        let prog = view.progress.as_ref().unwrap();
+        assert_eq!(prog.current, 2);
+        assert_eq!(prog.total, 5);
+    }
+
+    #[test]
+    fn test_build_thread_views_includes_progress_when_starting() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Add phase progress with Starting status
+        let progress = PhaseProgressData::new(
+            0,
+            3,
+            "Phase 0".to_string(),
+            PhaseStatus::Starting,
+            0,
+            "".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", progress);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert!(view.progress.is_some());
+    }
+
+    #[test]
+    fn test_build_thread_views_no_progress_when_completed() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Done);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Add phase progress with Completed status (should not create Progress)
+        let progress = PhaseProgressData::new(
+            4,
+            5,
+            "Phase 4".to_string(),
+            PhaseStatus::Completed,
+            20,
+            "Bash".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", progress);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        // Progress should be None because status is Completed, not Running/Starting
+        assert!(view.progress.is_none());
+    }
+
+    #[test]
+    fn test_build_thread_views_no_progress_when_failed() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Error);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Add phase progress with Failed status (should not create Progress)
+        let progress = PhaseProgressData::new(
+            2,
+            5,
+            "Phase 2".to_string(),
+            PhaseStatus::Failed,
+            10,
+            "Edit".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", progress);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        // Progress should be None because status is Failed, not Running/Starting
+        assert!(view.progress.is_none());
+    }
+
+    #[test]
+    fn test_build_thread_views_no_progress_without_phase_data() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // No phase progress added
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert!(view.progress.is_none());
+    }
+
+    #[test]
+    fn test_build_thread_views_with_mode_and_progress() {
+        use crate::models::ThreadMode;
+
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.mode = ThreadMode::Exec;
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Add phase progress
+        let progress = PhaseProgressData::new(
+            1,
+            4,
+            "Exec Phase 1".to_string(),
+            PhaseStatus::Running,
+            5,
+            "Bash".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", progress);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.mode, ThreadMode::Exec);
+        assert!(view.progress.is_some());
+        let prog = view.progress.as_ref().unwrap();
+        assert_eq!(prog.current, 1);
+        assert_eq!(prog.total, 4);
+    }
+
+    #[test]
+    fn test_build_thread_views_multiple_threads_with_progress() {
+        use crate::models::ThreadMode;
+
+        let mut state = DashboardState::new();
+
+        // Thread 1: Plan mode with progress
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.mode = ThreadMode::Plan;
+        t1.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), t1);
+
+        let p1 = PhaseProgressData::new(
+            0,
+            2,
+            "Phase 1".to_string(),
+            PhaseStatus::Starting,
+            0,
+            "".to_string(),
+            None,
+        );
+        state.update_phase_progress("t1", p1);
+
+        // Thread 2: Exec mode with progress
+        let mut t2 = make_thread("t2", "Thread 2");
+        t2.mode = ThreadMode::Exec;
+        t2.status = Some(ThreadStatus::Running);
+        state.threads.insert("t2".to_string(), t2);
+
+        let p2 = PhaseProgressData::new(
+            2,
+            5,
+            "Phase 2".to_string(),
+            PhaseStatus::Running,
+            10,
+            "Edit".to_string(),
+            None,
+        );
+        state.update_phase_progress("t2", p2);
+
+        // Thread 3: Normal mode, no progress
+        let mut t3 = make_thread("t3", "Thread 3");
+        t3.mode = ThreadMode::default();
+        t3.status = Some(ThreadStatus::Idle);
+        state.threads.insert("t3".to_string(), t3);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 3);
+
+        // Find each thread and verify properties
+        let v1 = views.iter().find(|v| v.id == "t1").unwrap();
+        assert_eq!(v1.mode, ThreadMode::Plan);
+        assert!(v1.progress.is_some());
+
+        let v2 = views.iter().find(|v| v.id == "t2").unwrap();
+        assert_eq!(v2.mode, ThreadMode::Exec);
+        assert!(v2.progress.is_some());
+
+        let v3 = views.iter().find(|v| v.id == "t3").unwrap();
+        assert!(v3.progress.is_none());
+    }
 }
