@@ -42,6 +42,9 @@ const BYOVPS_POLL_INTERVAL_SECS: u64 = 5;
 /// Maximum number of BYOVPS poll attempts before timing out.
 const BYOVPS_MAX_POLL_ATTEMPTS: u32 = 120; // 10 minutes at 5 second intervals
 
+/// Maximum number of retry attempts for BYOVPS provisioning.
+const BYOVPS_MAX_RETRY_ATTEMPTS: u32 = 3;
+
 /// Spinner characters for loading animation.
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -246,10 +249,10 @@ pub fn run_provisioning_flow(
         VpsType::Byovps => {
             // Collect BYOVPS credentials
             check_interrupt(&interrupted);
-            let byovps_creds = collect_byovps_credentials(&interrupted)?;
+            let mut byovps_creds = collect_byovps_credentials(&interrupted)?;
 
-            // Run BYOVPS provisioning flow
-            run_byovps_flow(runtime, credentials, &byovps_creds, &interrupted)
+            // Run BYOVPS provisioning flow with retry logic
+            run_byovps_flow_with_retry(runtime, credentials, &mut byovps_creds, &interrupted)
         }
     }
 }
@@ -387,6 +390,155 @@ fn run_managed_vps_flow(
     }
 
     Ok(())
+}
+
+/// Retry action for BYOVPS provisioning failure.
+#[derive(Debug, Clone, PartialEq)]
+enum ByovpsRetryAction {
+    Retry,
+    ChangeCredentials,
+    Exit,
+}
+
+/// Check if an error message indicates an SSH connection error.
+fn is_ssh_connection_error(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("ssh")
+        || lower.contains("connection refused")
+        || lower.contains("connection timed out")
+        || lower.contains("host unreachable")
+        || lower.contains("network unreachable")
+        || lower.contains("no route to host")
+        || lower.contains("authentication failed")
+        || lower.contains("permission denied")
+        || lower.contains("port 22")
+}
+
+/// Display BYOVPS provisioning error with helpful details.
+fn display_byovps_error(error: &CentralApiError) {
+    let message = match error {
+        CentralApiError::ServerError { message, .. } => message.clone(),
+        CentralApiError::Http(e) => e.to_string(),
+        _ => format!("{}", error),
+    };
+
+    println!("\nProvisioning failed!");
+
+    if is_ssh_connection_error(&message) {
+        println!("\nFailed to connect via SSH. Please verify:");
+        println!("  - VPS IP is correct");
+        println!("  - VPS is running and accessible");
+        println!("  - SSH is enabled (port 22)");
+        println!("  - Username and password are correct");
+        println!("\nError details: {}", message);
+    } else {
+        println!("\nError: {}", message);
+    }
+}
+
+/// Prompt user for retry action after BYOVPS provisioning failure.
+///
+/// # Arguments
+/// * `interrupted` - Interrupt flag for Ctrl+C handling
+///
+/// # Returns
+/// * `Ok(ByovpsRetryAction)` - User's chosen action
+/// * `Err(CentralApiError)` - Failed to read input
+fn prompt_byovps_retry_action(
+    interrupted: &Arc<AtomicBool>,
+) -> Result<ByovpsRetryAction, CentralApiError> {
+    loop {
+        check_interrupt(interrupted);
+
+        print!("\nRetry? (y)es / (c)hange credentials / (e)xit: ");
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to read input: {}", e),
+            })?;
+
+        check_interrupt(interrupted);
+
+        let trimmed = input.trim().to_lowercase();
+        match trimmed.as_str() {
+            "y" | "yes" => return Ok(ByovpsRetryAction::Retry),
+            "c" | "change" => return Ok(ByovpsRetryAction::ChangeCredentials),
+            "e" | "exit" => return Ok(ByovpsRetryAction::Exit),
+            _ => println!("Please enter 'y' to retry, 'c' to change credentials, or 'e' to exit."),
+        }
+    }
+}
+
+/// Run the BYOVPS provisioning flow with error handling and retry logic.
+///
+/// This flow:
+/// 1. Attempts to provision BYOVPS
+/// 2. On failure, displays error details and prompts for retry
+/// 3. Supports up to 3 retry attempts
+/// 4. User can retry with same credentials, change credentials, or exit
+fn run_byovps_flow_with_retry(
+    runtime: &tokio::runtime::Runtime,
+    credentials: &mut Credentials,
+    byovps_creds: &mut ByovpsCredentials,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<(), CentralApiError> {
+    let mut attempts = 0;
+
+    loop {
+        attempts += 1;
+
+        // Attempt provisioning
+        let result = run_byovps_flow(runtime, credentials, byovps_creds, interrupted);
+
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                // Display error with helpful details
+                display_byovps_error(&error);
+
+                // Check if max retries reached
+                if attempts >= BYOVPS_MAX_RETRY_ATTEMPTS {
+                    println!(
+                        "\nMaximum retry attempts ({}) reached. Exiting provisioning.",
+                        BYOVPS_MAX_RETRY_ATTEMPTS
+                    );
+                    return Err(error);
+                }
+
+                println!(
+                    "\nAttempt {}/{} failed.",
+                    attempts, BYOVPS_MAX_RETRY_ATTEMPTS
+                );
+
+                // Prompt user for action
+                check_interrupt(interrupted);
+                match prompt_byovps_retry_action(interrupted)? {
+                    ByovpsRetryAction::Retry => {
+                        println!("\nRetrying with same credentials...");
+                        continue;
+                    }
+                    ByovpsRetryAction::ChangeCredentials => {
+                        println!("\nPlease enter new credentials:");
+                        *byovps_creds = collect_byovps_credentials(interrupted)?;
+                        continue;
+                    }
+                    ByovpsRetryAction::Exit => {
+                        println!("\nExiting provisioning.");
+                        return Err(error);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Run the BYOVPS provisioning flow.
@@ -1651,5 +1803,146 @@ mod tests {
         let total_timeout_secs = BYOVPS_MAX_POLL_ATTEMPTS as u64 * BYOVPS_POLL_INTERVAL_SECS;
         assert_eq!(total_timeout_secs, 600);
         assert_eq!(total_timeout_secs / 60, 10); // 10 minutes
+    }
+
+    #[test]
+    fn test_byovps_max_retry_constant() {
+        // Verify max retry attempts is 3
+        assert_eq!(BYOVPS_MAX_RETRY_ATTEMPTS, 3);
+    }
+
+    #[test]
+    fn test_byovps_retry_action_enum() {
+        // Test ByovpsRetryAction enum variants
+        let retry = ByovpsRetryAction::Retry;
+        let change = ByovpsRetryAction::ChangeCredentials;
+        let exit = ByovpsRetryAction::Exit;
+
+        assert_eq!(retry, ByovpsRetryAction::Retry);
+        assert_eq!(change, ByovpsRetryAction::ChangeCredentials);
+        assert_eq!(exit, ByovpsRetryAction::Exit);
+
+        // Test they are not equal to each other
+        assert_ne!(retry, change);
+        assert_ne!(retry, exit);
+        assert_ne!(change, exit);
+
+        // Test Debug trait
+        assert_eq!(format!("{:?}", retry), "Retry");
+        assert_eq!(format!("{:?}", change), "ChangeCredentials");
+        assert_eq!(format!("{:?}", exit), "Exit");
+
+        // Test Clone trait
+        let retry_clone = retry.clone();
+        assert_eq!(retry, retry_clone);
+    }
+
+    #[test]
+    fn test_is_ssh_connection_error_ssh_keywords() {
+        // Test SSH-related error messages
+        assert!(is_ssh_connection_error("SSH connection failed"));
+        assert!(is_ssh_connection_error("ssh: Connection refused"));
+        assert!(is_ssh_connection_error("Failed to establish SSH connection"));
+        assert!(is_ssh_connection_error("SSH authentication failed"));
+    }
+
+    #[test]
+    fn test_is_ssh_connection_error_connection_errors() {
+        // Test connection error messages
+        assert!(is_ssh_connection_error("Connection refused"));
+        assert!(is_ssh_connection_error("connection timed out"));
+        assert!(is_ssh_connection_error("Host unreachable"));
+        assert!(is_ssh_connection_error("Network unreachable"));
+        assert!(is_ssh_connection_error("No route to host"));
+    }
+
+    #[test]
+    fn test_is_ssh_connection_error_auth_errors() {
+        // Test authentication error messages
+        assert!(is_ssh_connection_error("Authentication failed"));
+        assert!(is_ssh_connection_error("Permission denied"));
+        assert!(is_ssh_connection_error("permission denied (publickey,password)"));
+    }
+
+    #[test]
+    fn test_is_ssh_connection_error_port_errors() {
+        // Test port 22 related errors
+        assert!(is_ssh_connection_error("Failed to connect to port 22"));
+        assert!(is_ssh_connection_error("Port 22: Connection refused"));
+    }
+
+    #[test]
+    fn test_is_ssh_connection_error_case_insensitive() {
+        // Test case insensitivity
+        assert!(is_ssh_connection_error("SSH Connection Failed"));
+        assert!(is_ssh_connection_error("CONNECTION REFUSED"));
+        assert!(is_ssh_connection_error("Authentication FAILED"));
+    }
+
+    #[test]
+    fn test_is_ssh_connection_error_non_ssh_errors() {
+        // Test non-SSH errors return false
+        assert!(!is_ssh_connection_error("Invalid request"));
+        assert!(!is_ssh_connection_error("Server error 500"));
+        assert!(!is_ssh_connection_error("VPS already exists"));
+        assert!(!is_ssh_connection_error("Quota exceeded"));
+        assert!(!is_ssh_connection_error("Internal error"));
+    }
+
+    #[test]
+    fn test_display_byovps_error_ssh_error() {
+        // Test display_byovps_error with SSH error - just verify it doesn't panic
+        let error = CentralApiError::ServerError {
+            status: 500,
+            message: "SSH connection refused".to_string(),
+        };
+        // This will print to stdout but shouldn't panic
+        display_byovps_error(&error);
+    }
+
+    #[test]
+    fn test_display_byovps_error_non_ssh_error() {
+        // Test display_byovps_error with non-SSH error - just verify it doesn't panic
+        let error = CentralApiError::ServerError {
+            status: 400,
+            message: "Invalid VPS IP address".to_string(),
+        };
+        display_byovps_error(&error);
+    }
+
+    #[test]
+    fn test_display_byovps_error_authorization_error() {
+        // Test display_byovps_error with authorization errors
+        let pending = CentralApiError::AuthorizationPending;
+        display_byovps_error(&pending);
+
+        let expired = CentralApiError::AuthorizationExpired;
+        display_byovps_error(&expired);
+
+        let denied = CentralApiError::AccessDenied;
+        display_byovps_error(&denied);
+    }
+
+    #[test]
+    fn test_display_byovps_error_various_messages() {
+        // Test various error messages that might indicate SSH issues
+        let errors = vec![
+            "Failed to connect via SSH",
+            "Connection timed out after 30 seconds",
+            "Host 192.168.1.100 unreachable",
+            "Network is unreachable",
+            "No route to host 10.0.0.1",
+            "Authentication failed for user root",
+            "Permission denied for root@192.168.1.1",
+        ];
+
+        for msg in errors {
+            let error = CentralApiError::ServerError {
+                status: 500,
+                message: msg.to_string(),
+            };
+            // Just verify they don't panic
+            display_byovps_error(&error);
+        }
     }
 }
