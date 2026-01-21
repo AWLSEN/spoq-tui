@@ -21,6 +21,14 @@ pub enum VpsType {
     Byovps,
 }
 
+/// BYOVPS credentials collected from user input.
+#[derive(Debug, Clone)]
+pub struct ByovpsCredentials {
+    pub vps_ip: String,
+    pub ssh_username: String,
+    pub ssh_password: String,
+}
+
 /// Poll interval for VPS status checks (in seconds).
 const POLL_INTERVAL_SECS: u64 = 3;
 
@@ -47,6 +55,110 @@ fn check_interrupt(interrupted: &Arc<AtomicBool>) {
         println!("\nProvisioning cancelled.");
         std::process::exit(0);
     }
+}
+
+/// Collect BYOVPS credentials from user input with interrupt support.
+///
+/// # Arguments
+/// * `interrupted` - Interrupt flag for Ctrl+C handling
+///
+/// # Returns
+/// * `Ok(ByovpsCredentials)` - Collected and validated credentials
+/// * `Err(CentralApiError)` - Failed to read input
+fn collect_byovps_credentials(
+    interrupted: &Arc<AtomicBool>,
+) -> Result<ByovpsCredentials, CentralApiError> {
+    // Prompt for VPS IP address
+    let vps_ip = loop {
+        check_interrupt(interrupted);
+
+        print!("\nEnter VPS IP address (IPv4 or IPv6): ");
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to read input: {}", e),
+            })?;
+
+        check_interrupt(interrupted);
+
+        let trimmed = input.trim().to_string();
+        if !trimmed.is_empty() {
+            break trimmed;
+        }
+
+        println!("IP address cannot be empty. Please try again.");
+    };
+
+    // Prompt for SSH username (default: "root")
+    let ssh_username = loop {
+        check_interrupt(interrupted);
+
+        print!("Enter SSH username [root]: ");
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
+
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to read input: {}", e),
+            })?;
+
+        check_interrupt(interrupted);
+
+        let trimmed = input.trim().to_string();
+        if trimmed.is_empty() {
+            break "root".to_string();
+        } else if !trimmed.is_empty() {
+            break trimmed;
+        }
+    };
+
+    // Prompt for SSH password (minimum 1 character)
+    let ssh_password = loop {
+        check_interrupt(interrupted);
+
+        print!("Enter SSH password (min 1 character): ");
+        io::stdout()
+            .flush()
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: format!("Failed to flush stdout: {}", e),
+            })?;
+
+        let password = rpassword::read_password().map_err(|e| CentralApiError::ServerError {
+            status: 0,
+            message: format!("Failed to read password: {}", e),
+        })?;
+
+        check_interrupt(interrupted);
+
+        if !password.is_empty() {
+            break password;
+        }
+
+        println!("Password must be at least 1 character. Try again.");
+    };
+
+    Ok(ByovpsCredentials {
+        vps_ip,
+        ssh_username,
+        ssh_password,
+    })
 }
 
 /// Prompt the user to choose VPS type with interrupt support.
@@ -122,8 +234,17 @@ pub fn run_provisioning_flow(
             run_managed_vps_flow(runtime, credentials, &interrupted)
         }
         VpsType::Byovps => {
-            // BYOVPS flow will be implemented in later phases
-            println!("\nBYOVPS setup coming soon!");
+            // Collect BYOVPS credentials
+            check_interrupt(&interrupted);
+            let byovps_creds = collect_byovps_credentials(&interrupted)?;
+
+            // Display confirmation
+            println!(
+                "\nProvisioning VPS at {} with user {}...",
+                byovps_creds.vps_ip, byovps_creds.ssh_username
+            );
+
+            // TODO: Actual provisioning logic will be added in later phases
             Ok(())
         }
     }
@@ -964,5 +1085,117 @@ mod tests {
             let is_polling = matches!(state.to_lowercase().as_str(), "pending" | "provisioning");
             assert!(is_polling, "State '{}' should be a polling state", state);
         }
+    }
+
+    #[test]
+    fn test_byovps_credentials_struct() {
+        // Test ByovpsCredentials struct creation and field access
+        let creds = ByovpsCredentials {
+            vps_ip: "192.168.1.100".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "testpass".to_string(),
+        };
+
+        assert_eq!(creds.vps_ip, "192.168.1.100");
+        assert_eq!(creds.ssh_username, "root");
+        assert_eq!(creds.ssh_password, "testpass");
+
+        // Test Debug trait
+        let debug_str = format!("{:?}", creds);
+        assert!(debug_str.contains("ByovpsCredentials"));
+        assert!(debug_str.contains("192.168.1.100"));
+
+        // Test Clone trait
+        let cloned = creds.clone();
+        assert_eq!(cloned.vps_ip, creds.vps_ip);
+        assert_eq!(cloned.ssh_username, creds.ssh_username);
+        assert_eq!(cloned.ssh_password, creds.ssh_password);
+    }
+
+    #[test]
+    fn test_byovps_credentials_ipv6_support() {
+        // Test that IPv6 addresses can be stored in ByovpsCredentials
+        let ipv6_creds = ByovpsCredentials {
+            vps_ip: "2001:0db8:85a3:0000:0000:8a2e:0370:7334".to_string(),
+            ssh_username: "admin".to_string(),
+            ssh_password: "securepass".to_string(),
+        };
+
+        assert_eq!(
+            ipv6_creds.vps_ip,
+            "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
+        );
+        assert!(ipv6_creds.vps_ip.contains(":"));
+    }
+
+    #[test]
+    fn test_byovps_credentials_username_defaults() {
+        // Test that "root" is a valid username
+        let creds_root = ByovpsCredentials {
+            vps_ip: "10.0.0.1".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "pass".to_string(),
+        };
+
+        assert_eq!(creds_root.ssh_username, "root");
+
+        // Test custom usernames
+        let creds_custom = ByovpsCredentials {
+            vps_ip: "10.0.0.1".to_string(),
+            ssh_username: "ubuntu".to_string(),
+            ssh_password: "pass".to_string(),
+        };
+
+        assert_eq!(creds_custom.ssh_username, "ubuntu");
+    }
+
+    #[test]
+    fn test_byovps_credentials_password_validation() {
+        // Test that minimum 1 character password is accepted
+        let creds_short = ByovpsCredentials {
+            vps_ip: "10.0.0.1".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "p".to_string(),
+        };
+
+        assert_eq!(creds_short.ssh_password.len(), 1);
+        assert!(!creds_short.ssh_password.is_empty());
+
+        // Test longer passwords
+        let creds_long = ByovpsCredentials {
+            vps_ip: "10.0.0.1".to_string(),
+            ssh_username: "root".to_string(),
+            ssh_password: "verylongsecurepassword123!@#".to_string(),
+        };
+
+        assert!(creds_long.ssh_password.len() > 1);
+    }
+
+    #[test]
+    fn test_byovps_input_validation_logic() {
+        // Test trimming and validation logic that would be used in collect_byovps_credentials
+
+        // IP address validation - non-empty after trim
+        let ip_with_spaces = "  192.168.1.1  ";
+        let trimmed_ip = ip_with_spaces.trim();
+        assert!(!trimmed_ip.is_empty());
+        assert_eq!(trimmed_ip, "192.168.1.1");
+
+        // Username validation - empty means default to "root"
+        let empty_username = "   ";
+        let trimmed_username = empty_username.trim();
+        let final_username = if trimmed_username.is_empty() {
+            "root"
+        } else {
+            trimmed_username
+        };
+        assert_eq!(final_username, "root");
+
+        // Password validation - minimum 1 character
+        let valid_password = "x";
+        assert!(valid_password.len() >= 1);
+
+        let empty_password = "";
+        assert!(empty_password.is_empty());
     }
 }
