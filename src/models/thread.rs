@@ -32,6 +32,17 @@ pub enum ThreadMode {
     Exec,
 }
 
+impl ThreadMode {
+    /// Get display symbol for the mode
+    pub fn symbol(&self) -> &'static str {
+        match self {
+            ThreadMode::Normal => "",
+            ThreadMode::Plan => "[PLAN]",
+            ThreadMode::Exec => "[EXEC]",
+        }
+    }
+}
+
 /// Represents an inline error to be displayed in a thread
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ErrorInfo {

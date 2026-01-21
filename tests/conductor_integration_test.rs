@@ -28,6 +28,7 @@ async fn test_stream_request_construction() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -43,6 +44,7 @@ async fn test_stream_request_construction() {
         thread_id: Some("thread-123".to_string()),
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -58,6 +60,7 @@ async fn test_stream_request_construction() {
         thread_id: Some("thread-123".to_string()),
         reply_to: Some(456),
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -77,6 +80,7 @@ async fn test_conductor_error_handling() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -107,6 +111,7 @@ async fn test_conductor_client_methods_exist() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -141,6 +146,7 @@ async fn test_stream_request_with_different_configurations() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -155,6 +161,7 @@ async fn test_stream_request_with_different_configurations() {
         thread_id: Some("thread-123".to_string()),
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -167,6 +174,7 @@ async fn test_stream_request_with_different_configurations() {
         thread_id: Some("thread-123".to_string()),
         reply_to: Some(456),
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -317,6 +325,7 @@ fn test_thread_detail_response_structure() {
     let response = ThreadDetailResponse {
         id: "thread-123".to_string(),
         thread_type: spoq::models::ThreadType::Conversation,
+            mode: crate::models::ThreadMode::default(),
         name: Some("Test Thread".to_string()),
         project_path: None,
         provider: Some("anthropic".to_string()),
@@ -356,6 +365,7 @@ fn test_thread_detail_response_with_messages() {
     let response = ThreadDetailResponse {
         id: "thread-456".to_string(),
         thread_type: spoq::models::ThreadType::Programming,
+            mode: crate::models::ThreadMode::default(),
         name: Some("Programming Thread".to_string()),
         project_path: Some("/path/to/project".to_string()),
         provider: Some("anthropic".to_string()),
@@ -379,6 +389,7 @@ async fn test_stream_request_with_working_directory() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: Some("/Users/dev/my-project".to_string()),
     };
@@ -398,6 +409,7 @@ async fn test_stream_request_without_working_directory() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -414,6 +426,7 @@ fn test_stream_request_working_directory_serialization() {
         thread_id: Some("thread-456".to_string()),
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: Some("/home/user/workspace".to_string()),
     };
@@ -438,6 +451,7 @@ fn test_stream_request_working_directory_omitted_when_none() {
         thread_id: None,
         reply_to: None,
         thread_type: None,
+            mode: crate::models::ThreadMode::default(),
         permission_mode: None,
         working_directory: None,
     };
@@ -463,6 +477,7 @@ fn test_stream_request_working_directory_with_various_paths() {
             thread_id: None,
             reply_to: None,
             thread_type: None,
+            mode: crate::models::ThreadMode::default(),
             permission_mode: None,
             working_directory: Some(path.to_string()),
         };

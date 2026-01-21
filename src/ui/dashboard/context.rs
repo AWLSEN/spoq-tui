@@ -7,6 +7,9 @@
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
 use crate::ui::theme;
 
+// Re-export ThreadMode from models for convenience
+pub use crate::models::ThreadMode;
+
 // ============================================================================
 // Theme (lightweight reference for dashboard rendering)
 // ============================================================================
@@ -102,33 +105,6 @@ impl FilterState {
             FilterState::Working => FilterState::All,
             FilterState::ReadyToTest => FilterState::Working,
             FilterState::Idle => FilterState::ReadyToTest,
-        }
-    }
-}
-
-// ============================================================================
-// Thread Mode
-// ============================================================================
-
-/// Mode of thread operation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThreadMode {
-    /// Normal conversation thread
-    #[default]
-    Normal,
-    /// Planning mode (Nova)
-    Plan,
-    /// Execution mode (Pulsar)
-    Exec,
-}
-
-impl ThreadMode {
-    /// Get display symbol for the mode
-    pub fn symbol(&self) -> &'static str {
-        match self {
-            ThreadMode::Normal => "",
-            ThreadMode::Plan => "[PLAN]",
-            ThreadMode::Exec => "[EXEC]",
         }
     }
 }

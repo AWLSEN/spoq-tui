@@ -248,6 +248,7 @@ mod tests {
             preview: "Code".to_string(),
             updated_at: chrono::Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            mode: crate::models::ThreadMode::default(),
             model: None,
             permission_mode: None,
             message_count: 0,

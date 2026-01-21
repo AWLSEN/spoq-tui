@@ -29,6 +29,7 @@ fn make_test_thread(id: &str, title: &str, status: Option<ThreadStatus>) -> Thre
         preview: format!("Preview for {}", title),
         updated_at: chrono::Utc::now(),
         thread_type: ThreadType::Programming,
+            mode: crate::models::ThreadMode::default(),
         model: Some("claude-opus-4".to_string()),
         permission_mode: Some("plan".to_string()),
         message_count: 5,

@@ -447,6 +447,7 @@ mod tests {
             preview: String::new(),
             updated_at: Utc::now(),
             thread_type: crate::models::ThreadType::Programming,
+            mode: crate::models::ThreadMode::default(),
             model: None,
             permission_mode: None,
             message_count: 0,
