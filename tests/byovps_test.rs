@@ -742,6 +742,278 @@ fn test_byovps_has_vps_check() {
     assert!(creds_with_vps.has_vps());
 }
 
+// ============================================================================
+// Token Refresh Tests for BYOVPS
+// ============================================================================
+
+/// Test BYOVPS provision with expired token triggers auto-refresh
+#[tokio::test]
+async fn test_byovps_auto_refresh_on_expired_token() {
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path, header};
+
+    let mock_server = MockServer::start().await;
+
+    // First BYOVPS provision request returns 401 (expired token)
+    Mock::given(method("POST"))
+        .and(path("/api/byovps/provision"))
+        .and(header("Authorization", "Bearer expired-token"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "error": "Unauthorized"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Refresh token succeeds
+    Mock::given(method("POST"))
+        .and(path("/auth/refresh"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "new-byovps-token",
+            "refresh_token": "new-byovps-refresh",
+            "token_type": "Bearer",
+            "expires_in": 3600
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Retry with new token succeeds
+    Mock::given(method("POST"))
+        .and(path("/api/byovps/provision"))
+        .and(header("Authorization", "Bearer new-byovps-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "provisioning",
+            "vps_id": "byovps-refresh-test",
+            "hostname": "refreshed.spoq.dev"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let mut client = CentralApiClient::with_base_url(mock_server.uri())
+        .with_auth("expired-token")
+        .with_refresh_token("valid-refresh");
+
+    let result = client.provision_byovps("192.168.1.100", "root", "password").await;
+
+    assert!(result.is_ok());
+    let response = result.unwrap();
+    assert_eq!(response.status, "provisioning");
+    assert_eq!(response.vps_id, Some("byovps-refresh-test".to_string()));
+
+    // Verify tokens were updated
+    let (access, refresh) = client.get_tokens();
+    assert_eq!(access, Some("new-byovps-token".to_string()));
+    assert_eq!(refresh, Some("new-byovps-refresh".to_string()));
+}
+
+/// Test BYOVPS provision fails when refresh token is invalid
+#[tokio::test]
+async fn test_byovps_refresh_fails_with_invalid_refresh_token() {
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+
+    let mock_server = MockServer::start().await;
+
+    // First request returns 401
+    Mock::given(method("POST"))
+        .and(path("/api/byovps/provision"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "error": "Unauthorized"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    // Refresh fails with 401
+    Mock::given(method("POST"))
+        .and(path("/auth/refresh"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "error": "Invalid refresh token"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let mut client = CentralApiClient::with_base_url(mock_server.uri())
+        .with_auth("expired-token")
+        .with_refresh_token("invalid-refresh-token");
+
+    let result = client.provision_byovps("10.0.0.1", "admin", "pass").await;
+
+    assert!(result.is_err());
+    if let Err(CentralApiError::ServerError { status, message }) = result {
+        assert_eq!(status, 401);
+        assert!(message.contains("Token refresh failed"));
+        assert!(message.contains("re-authenticate"));
+    } else {
+        panic!("Expected ServerError with refresh failure message");
+    }
+}
+
+/// Test BYOVPS provision fails when no refresh token available
+#[tokio::test]
+async fn test_byovps_no_refresh_token_available() {
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+
+    let mock_server = MockServer::start().await;
+
+    // Request returns 401
+    Mock::given(method("POST"))
+        .and(path("/api/byovps/provision"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+            "error": "Unauthorized"
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let mut client = CentralApiClient::with_base_url(mock_server.uri())
+        .with_auth("expired-token");
+    // No refresh token set
+
+    let result = client.provision_byovps("172.16.0.1", "root", "secret").await;
+
+    assert!(result.is_err());
+    if let Err(CentralApiError::ServerError { status, message }) = result {
+        assert_eq!(status, 401);
+        assert!(message.contains("No refresh token available"));
+        assert!(message.contains("sign in again"));
+    } else {
+        panic!("Expected ServerError with 'No refresh token available' message");
+    }
+}
+
+/// Test BYOVPS provision succeeds without refresh when token is valid
+#[tokio::test]
+async fn test_byovps_no_refresh_when_token_valid() {
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path, header};
+
+    let mock_server = MockServer::start().await;
+
+    // Request succeeds on first attempt
+    Mock::given(method("POST"))
+        .and(path("/api/byovps/provision"))
+        .and(header("Authorization", "Bearer valid-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "ready",
+            "vps_id": "byovps-no-refresh",
+            "hostname": "direct.spoq.dev",
+            "url": "https://direct.spoq.dev:8000"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    // Refresh should NOT be called
+    Mock::given(method("POST"))
+        .and(path("/auth/refresh"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "should-not-be-called",
+            "refresh_token": "should-not-be-called",
+            "token_type": "Bearer"
+        })))
+        .expect(0)
+        .mount(&mock_server)
+        .await;
+
+    let mut client = CentralApiClient::with_base_url(mock_server.uri())
+        .with_auth("valid-token")
+        .with_refresh_token("valid-refresh");
+
+    let result = client.provision_byovps("192.168.100.50", "ubuntu", "testpass").await;
+
+    assert!(result.is_ok());
+    let response = result.unwrap();
+    assert_eq!(response.status, "ready");
+
+    // Verify token was NOT changed
+    let (access, _) = client.get_tokens();
+    assert_eq!(access, Some("valid-token".to_string()));
+}
+
+/// Test credentials remain valid when not expired
+#[test]
+fn test_byovps_credentials_valid_when_not_expired() {
+    let mut creds = Credentials::default();
+    creds.access_token = Some("valid-token".to_string());
+    creds.refresh_token = Some("refresh-token".to_string());
+    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600); // 1 hour in future
+
+    // Should be valid
+    assert!(creds.has_token());
+    assert!(!creds.is_expired());
+    assert!(creds.is_valid());
+}
+
+/// Test credentials are invalid when expired
+#[test]
+fn test_byovps_credentials_invalid_when_expired() {
+    let mut creds = Credentials::default();
+    creds.access_token = Some("expired-token".to_string());
+    creds.refresh_token = Some("refresh-token".to_string());
+    creds.expires_at = Some(0); // Unix epoch - expired
+
+    // Should be invalid
+    assert!(creds.has_token());
+    assert!(creds.is_expired());
+    assert!(!creds.is_valid());
+}
+
+/// Test credentials are invalid when no expiration set
+#[test]
+fn test_byovps_credentials_invalid_when_no_expiration() {
+    let mut creds = Credentials::default();
+    creds.access_token = Some("token".to_string());
+    creds.refresh_token = Some("refresh".to_string());
+    creds.expires_at = None; // No expiration
+
+    // Should be invalid (conservative approach)
+    assert!(creds.has_token());
+    assert!(creds.is_expired()); // No expiration means expired
+    assert!(!creds.is_valid());
+}
+
+/// Test saving and loading credentials with expiration
+#[test]
+fn test_byovps_credentials_save_load_with_expiration() {
+    use tempfile::TempDir;
+    use std::fs;
+
+    let temp_dir = TempDir::new().unwrap();
+    let credentials_dir = temp_dir.path().join(".spoq");
+    let credentials_path = credentials_dir.join("credentials.json");
+
+    // Create the credentials directory
+    fs::create_dir_all(&credentials_dir).unwrap();
+
+    // Create credentials with expiration
+    let mut creds = Credentials::default();
+    creds.access_token = Some("test-token".to_string());
+    creds.refresh_token = Some("test-refresh".to_string());
+    creds.expires_at = Some(chrono::Utc::now().timestamp() + 7200); // 2 hours
+    creds.vps_id = Some("byovps-save-test".to_string());
+    creds.vps_url = Some("https://test.spoq.dev".to_string());
+
+    // Save
+    let json = serde_json::to_string_pretty(&creds).unwrap();
+    fs::write(&credentials_path, json).unwrap();
+
+    // Load
+    let loaded_json = fs::read_to_string(&credentials_path).unwrap();
+    let loaded: Credentials = serde_json::from_str(&loaded_json).unwrap();
+
+    assert_eq!(loaded.access_token, creds.access_token);
+    assert_eq!(loaded.refresh_token, creds.refresh_token);
+    assert_eq!(loaded.expires_at, creds.expires_at);
+    assert_eq!(loaded.vps_id, creds.vps_id);
+    assert_eq!(loaded.vps_url, creds.vps_url);
+
+    // Verify expiration status is preserved
+    assert!(!loaded.is_expired());
+    assert!(loaded.is_valid());
+}
+
 /// Test BYOVPS status response deserialization
 #[test]
 fn test_vps_status_response_deserialization() {
