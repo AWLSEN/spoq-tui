@@ -6,7 +6,7 @@
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::Thread;
 use crate::ui::dashboard::{
-    FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadMode, ThreadView,
+    FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadView,
 };
 use crate::websocket::messages::PhaseStatus;
 use std::collections::{HashMap, HashSet};
@@ -480,6 +480,8 @@ impl DashboardState {
 
     /// Build thread views from current data
     fn build_thread_views(&self) -> Vec<ThreadView> {
+        use crate::ui::dashboard::Progress;
+
         let mut views: Vec<ThreadView> = self
             .threads
             .values()
@@ -488,12 +490,18 @@ impl DashboardState {
                 let waiting_for = self.waiting_for.get(&thread.id).cloned();
                 let _needs_action = status.needs_attention() || waiting_for.is_some();
 
-                // Determine thread mode based on working directory presence
-                let mode = if thread.working_directory.is_some() {
-                    ThreadMode::Normal // Could be Plan/Exec based on additional data
-                } else {
-                    ThreadMode::Normal
-                };
+                // Use thread.mode directly from the Thread model
+                let mode = thread.mode;
+
+                // Look up phase progress and create Progress if status is Running or Starting
+                let progress = self.get_phase_progress(&thread.id).and_then(|phase_data| {
+                    match phase_data.status {
+                        PhaseStatus::Running | PhaseStatus::Starting => {
+                            Some(Progress::new(phase_data.phase_index, phase_data.total_phases))
+                        }
+                        _ => None,
+                    }
+                });
 
                 ThreadView::new(
                     thread.id.clone(),
@@ -503,6 +511,7 @@ impl DashboardState {
                 .with_mode(mode)
                 .with_status(status)
                 .with_waiting_for(waiting_for)
+                .with_progress(progress)
                 .with_duration(thread.display_duration())
             })
             .collect();
