@@ -279,6 +279,38 @@ pub struct ByovpsProvisionResponse {
     pub url: Option<String>,
 }
 
+/// Response from checkout session creation endpoint (POST /api/payments/create-checkout-session).
+#[derive(Debug, Clone, Deserialize)]
+pub struct CheckoutSessionResponse {
+    pub checkout_url: String,
+    pub session_id: String,
+    pub customer_email: String,
+}
+
+/// Response from payment status endpoint (GET /api/payments/status/:session_id).
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaymentStatusResponse {
+    pub status: String,
+    #[serde(default)]
+    pub subscription_id: Option<String>,
+    #[serde(default)]
+    pub customer_id: Option<String>,
+}
+
+/// Response from subscription status endpoint (GET /api/payments/subscription).
+#[derive(Debug, Clone, Deserialize)]
+pub struct SubscriptionStatus {
+    pub status: String,
+    #[serde(default)]
+    pub plan: Option<String>,
+    #[serde(default)]
+    pub current_period_end: Option<String>,
+    #[serde(default)]
+    pub cancel_at_period_end: Option<bool>,
+    #[serde(default)]
+    pub customer_portal_url: Option<String>,
+}
+
 /// Client for interacting with the Spoq Central API.
 pub struct CentralApiClient {
     /// Base URL for the Central API
@@ -994,6 +1026,141 @@ impl CentralApiClient {
             }
         }
 
+        Ok(data)
+    }
+
+    /// Create a Stripe checkout session for VPS subscription.
+    ///
+    /// POST /api/payments/create-checkout-session
+    ///
+    /// Requires authentication. Returns checkout URL and session ID.
+    ///
+    /// # Arguments
+    /// * `plan_id` - The plan ID to create checkout session for
+    pub async fn create_checkout_session(
+        &mut self,
+        plan_id: &str,
+    ) -> Result<CheckoutSessionResponse, CentralApiError> {
+        let url = format!("{}/api/payments/create-checkout-session", self.base_url);
+
+        let body = serde_json::json!({
+            "plan_id": plan_id,
+        });
+
+        // First attempt
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                println!("Token expired (401), attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        // Only update refresh_token if server provides a new one
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+
+                        // Log successful refresh
+                        println!("Token refresh successful");
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&body);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(refresh_error) => {
+                        println!("Token refresh failed: {}", refresh_error);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
+                        });
+                    }
+                }
+            } else {
+                println!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: CheckoutSessionResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Check payment status for a checkout session.
+    ///
+    /// GET /api/payments/status/:session_id
+    ///
+    /// Requires authentication. Returns payment status.
+    ///
+    /// # Arguments
+    /// * `session_id` - The Stripe checkout session ID
+    pub async fn check_payment_status(
+        &self,
+        session_id: &str,
+    ) -> Result<PaymentStatusResponse, CentralApiError> {
+        let url = format!("{}/api/payments/status/{}", self.base_url, session_id);
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: PaymentStatusResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Get subscription status for the authenticated user (stub for future use).
+    ///
+    /// GET /api/payments/subscription
+    ///
+    /// Requires authentication. Returns subscription details.
+    pub async fn get_subscription_status(&self) -> Result<SubscriptionStatus, CentralApiError> {
+        let url = format!("{}/api/payments/subscription", self.base_url);
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: SubscriptionStatus = response.json().await?;
         Ok(data)
     }
 }

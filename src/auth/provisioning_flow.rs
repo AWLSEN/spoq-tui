@@ -48,6 +48,12 @@ const BYOVPS_MAX_POLL_ATTEMPTS: u32 = 120; // 10 minutes at 5 second intervals
 /// Maximum number of retry attempts for BYOVPS provisioning.
 const BYOVPS_MAX_RETRY_ATTEMPTS: u32 = 3;
 
+/// Poll interval for payment status checks (in seconds).
+const PAYMENT_POLL_INTERVAL_SECS: u64 = 5;
+
+/// Maximum number of payment poll attempts before timing out.
+const PAYMENT_MAX_POLL_ATTEMPTS: u32 = 120; // 10 minutes at 5 second intervals
+
 /// Spinner characters for loading animation.
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -377,6 +383,91 @@ pub fn run_provisioning_flow(
     }
 }
 
+/// Poll payment completion status with interrupt support.
+///
+/// # Arguments
+/// * `runtime` - The Tokio runtime for async operations
+/// * `client` - API client for checking payment status
+/// * `session_id` - Stripe checkout session ID
+/// * `interrupted` - Interrupt flag for Ctrl+C handling
+///
+/// # Returns
+/// * `Ok(PaymentStatusResponse)` - Payment completed successfully
+/// * `Err(CentralApiError)` - Payment failed, expired, or timed out
+fn poll_payment_completion(
+    runtime: &tokio::runtime::Runtime,
+    client: &CentralApiClient,
+    session_id: &str,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<super::central_api::PaymentStatusResponse, CentralApiError> {
+    let start_time = std::time::Instant::now();
+    let mut attempts = 0;
+
+    loop {
+        check_interrupt(interrupted);
+
+        attempts += 1;
+        if attempts > PAYMENT_MAX_POLL_ATTEMPTS {
+            return Err(CentralApiError::ServerError {
+                status: 408,
+                message: format!(
+                    "Payment timed out after {} minutes. Please check your payment status and try again.",
+                    (PAYMENT_MAX_POLL_ATTEMPTS as u64) * PAYMENT_POLL_INTERVAL_SECS / 60
+                ),
+            });
+        }
+
+        // Poll payment status
+        let status_result = runtime.block_on(client.check_payment_status(session_id));
+
+        match status_result {
+            Ok(status) => {
+                match status.status.as_str() {
+                    "paid" | "complete" => {
+                        // Payment successful
+                        return Ok(status);
+                    }
+                    "expired" | "cancelled" => {
+                        // Payment failed
+                        return Err(CentralApiError::ServerError {
+                            status: 400,
+                            message: format!("Payment {}: Please try again.", status.status),
+                        });
+                    }
+                    "pending" | "open" => {
+                        // Continue polling
+                    }
+                    _ => {
+                        // Unknown status, log and continue
+                        eprintln!("Unknown payment status: {}", status.status);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error checking payment status: {}", e);
+                // Continue polling unless it's a critical error
+                if matches!(e, CentralApiError::ServerError { status: 401, .. }) {
+                    return Err(e);
+                }
+            }
+        }
+
+        // Show spinner with elapsed time
+        let elapsed = start_time.elapsed().as_secs();
+        let spinner_char = SPINNER_CHARS[attempts as usize % SPINNER_CHARS.len()];
+        print!(
+            "\r{} Waiting for payment completion... ({}m {}s)",
+            spinner_char,
+            elapsed / 60,
+            elapsed % 60
+        );
+        io::stdout().flush().ok();
+
+        // Wait before next poll
+        thread::sleep(Duration::from_secs(PAYMENT_POLL_INTERVAL_SECS));
+    }
+}
+
 /// Run the managed VPS provisioning flow.
 fn run_managed_vps_flow(
     runtime: &tokio::runtime::Runtime,
@@ -424,11 +515,62 @@ fn run_managed_vps_flow(
         selected_plan.price_cents as f64 / 100.0
     );
 
-    // Step 3: Get SSH password from user
+    // Step 3: Create checkout session and process payment
+    check_interrupt(interrupted);
+    println!("\nCreating payment session...");
+    let checkout_response = runtime.block_on(client.create_checkout_session(&selected_plan.id))?;
+
+    // Check if tokens were refreshed and update credentials
+    let (new_access_token, new_refresh_token) = client.get_tokens();
+    if let Some(access_token) = new_access_token {
+        if credentials.access_token.as_ref() != Some(&access_token) {
+            credentials.access_token = Some(access_token);
+            if let Some(refresh_token) = new_refresh_token {
+                credentials.refresh_token = Some(refresh_token);
+            }
+            save_credentials(credentials);
+        }
+    }
+
+    // Display payment information
+    println!("\n╔═════════════════════════════════════════════════════╗");
+    println!("║              Payment Required                       ║");
+    println!("╚═════════════════════════════════════════════════════╝");
+    println!("\n  Plan:  {}", selected_plan.name);
+    println!("  Price: ${:.2}/month", selected_plan.price_cents as f64 / 100.0);
+    println!("  Email: {}", checkout_response.customer_email);
+    println!("\n  Opening payment page in your browser...");
+    println!("  URL: {}", checkout_response.checkout_url);
+
+    // Open browser with checkout URL
+    check_interrupt(interrupted);
+    if let Err(e) = webbrowser::open(&checkout_response.checkout_url) {
+        eprintln!("\nWarning: Failed to open browser: {}", e);
+        println!("Please manually open the URL above to complete payment.");
+    }
+
+    // Poll for payment completion
+    println!("\n  Waiting for payment...");
+    let payment_status = poll_payment_completion(
+        runtime,
+        &client,
+        &checkout_response.session_id,
+        interrupted,
+    )?;
+
+    println!("\n\n✓ Payment successful!");
+
+    // Store subscription ID in credentials
+    if let Some(ref subscription_id) = payment_status.subscription_id {
+        credentials.subscription_id = Some(subscription_id.clone());
+        save_credentials(credentials);
+    }
+
+    // Step 4: Get SSH password from user
     check_interrupt(interrupted);
     let ssh_password = prompt_ssh_password_with_interrupt(interrupted)?;
 
-    // Step 4: Confirm provisioning
+    // Step 5: Confirm provisioning
     check_interrupt(interrupted);
     if !prompt_confirmation_with_interrupt(interrupted)? {
         println!("Provisioning cancelled.");
@@ -444,7 +586,7 @@ fn run_managed_vps_flow(
         return Ok(());
     }
 
-    // Step 5: Fetch and select datacenter
+    // Step 6: Fetch and select datacenter
     check_interrupt(interrupted);
     println!("\nFetching available data centers...");
     let datacenters = runtime.block_on(client.fetch_datacenters())?;
@@ -462,7 +604,7 @@ fn run_managed_vps_flow(
         prompt_datacenter_selection_with_interrupt(&ordered_dcs, interrupted)?;
     credentials.datacenter_id = Some(selected_datacenter_id);
 
-    // Step 6: Provision the VPS
+    // Step 7: Provision the VPS
     check_interrupt(interrupted);
     println!("\nProvisioning your VPS...");
     let provision_result = runtime.block_on(client.provision_vps(
@@ -515,7 +657,7 @@ fn run_managed_vps_flow(
         credentials.vps_hostname = Some(hostname.clone());
     }
 
-    // Step 7: Poll for VPS to be ready
+    // Step 8: Poll for VPS to be ready
     println!("\nWaiting for VPS to be ready...");
     let status = poll_vps_status_with_interrupt(runtime, &mut client, interrupted)?;
 

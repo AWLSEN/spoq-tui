@@ -1,6 +1,8 @@
 use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary};
 use spoq::websocket::WsClientConfig;
 use spoq::auth::{run_auth_flow, run_provisioning_flow, start_stopped_vps, CredentialsManager};
+use spoq::auth::central_api::{CentralApiClient, VpsStatusResponse};
+use spoq::auth::credentials::Credentials;
 use spoq::debug::{
     create_debug_channel, start_debug_server, DebugEvent, DebugEventKind, StateChangeData, StateType,
 };
@@ -354,6 +356,71 @@ fn handle_manual_update() -> Result<()> {
     })
 }
 
+/// Attempt to refresh an expired access token using the refresh token.
+///
+/// # Arguments
+/// * `runtime` - Tokio runtime for async operations
+/// * `credentials` - Current credentials with refresh_token
+///
+/// # Returns
+/// * `Ok(Credentials)` - New credentials with refreshed tokens
+/// * `Err(CentralApiError)` - Refresh failed (trigger re-auth)
+fn attempt_token_refresh(
+    runtime: &tokio::runtime::Runtime,
+    credentials: &Credentials,
+) -> Result<Credentials, spoq::auth::central_api::CentralApiError> {
+    use spoq::auth::central_api::{CentralApiError, get_jwt_expires_in};
+
+    let refresh_token = credentials.refresh_token.as_ref()
+        .ok_or_else(|| CentralApiError::ServerError {
+            status: 0,
+            message: "No refresh token available".to_string(),
+        })?;
+
+    let client = CentralApiClient::new();
+
+    let refresh_response = runtime.block_on(client.refresh_token(refresh_token))?;
+
+    // Build new credentials with refreshed tokens
+    let mut new_credentials = credentials.clone();
+    new_credentials.access_token = Some(refresh_response.access_token.clone());
+
+    // Update refresh token if server provided a new one
+    if let Some(new_refresh) = refresh_response.refresh_token {
+        new_credentials.refresh_token = Some(new_refresh);
+    }
+
+    // Calculate expiration from response or JWT
+    let expires_in = refresh_response
+        .expires_in
+        .or_else(|| get_jwt_expires_in(&refresh_response.access_token))
+        .unwrap_or(900); // Default 15 minutes
+    new_credentials.expires_at = Some(chrono::Utc::now().timestamp() + expires_in as i64);
+
+    Ok(new_credentials)
+}
+
+/// Fetch VPS status from API for cases where vps_status field is missing.
+///
+/// # Arguments
+/// * `runtime` - Tokio runtime for async operations
+/// * `credentials` - Current credentials with access token
+///
+/// # Returns
+/// * `Ok(VpsStatusResponse)` - VPS status from API
+/// * `Err(CentralApiError)` - API call failed
+fn fetch_vps_status(
+    runtime: &tokio::runtime::Runtime,
+    credentials: &Credentials,
+) -> Result<VpsStatusResponse, spoq::auth::central_api::CentralApiError> {
+    let client = if let Some(ref token) = credentials.access_token {
+        CentralApiClient::new().with_auth(token)
+    } else {
+        CentralApiClient::new()
+    };
+    runtime.block_on(client.fetch_vps_status())
+}
+
 fn main() -> Result<()> {
     // Handle --version flag before any initialization
     if std::env::args().any(|arg| arg == "--version") {
@@ -388,8 +455,12 @@ fn main() -> Result<()> {
     let manager = CredentialsManager::new().expect("Failed to initialize credentials manager");
     let mut credentials = manager.load();
 
-    // Auth check - run interactive flow if not authenticated
+    // =========================================================
+    // Auth check - validate token and refresh if needed
+    // =========================================================
+
     if credentials.access_token.is_none() {
+        // No token at all - run full auth flow
         credentials = match run_auth_flow(&runtime) {
             Ok(creds) => creds,
             Err(e) => {
@@ -397,48 +468,135 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         };
+        // Save credentials after auth
+        if !manager.save(&credentials) {
+            eprintln!("Warning: Failed to save credentials after authentication");
+        }
+    } else if credentials.is_expired() {
+        // Token exists but expired - try to refresh
+        match attempt_token_refresh(&runtime, &credentials) {
+            Ok(refreshed) => {
+                credentials = refreshed;
+                if !manager.save(&credentials) {
+                    eprintln!("Warning: Failed to save refreshed credentials");
+                }
+            }
+            Err(e) => {
+                eprintln!("Token refresh failed: {}. Re-authenticating...", e);
+                credentials = match run_auth_flow(&runtime) {
+                    Ok(creds) => creds,
+                    Err(e) => {
+                        eprintln!("Authentication failed: {}", e);
+                        std::process::exit(1);
+                    }
+                };
+                if !manager.save(&credentials) {
+                    eprintln!("Warning: Failed to save credentials after authentication");
+                }
+            }
+        }
     }
 
-    // VPS check - ensure VPS is in a usable state before launching TUI
-    // State matrix handles all possible VPS states
-    match credentials.vps_status.as_deref() {
-        Some("ready") | Some("running") | Some("active") => {
-            // Good to go - launch TUI
+    // =========================================================
+    // VPS check - ensure VPS exists and is usable
+    // =========================================================
+
+    if !credentials.has_vps() {
+        // No VPS configured - need to provision
+        if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
+            eprintln!("Provisioning failed: {}", e);
+            std::process::exit(1);
         }
-        Some("stopped") => {
-            // Auto-start existing VPS (don't re-provision!)
-            match start_stopped_vps(&runtime, &credentials) {
-                Ok(status) => {
-                    credentials.vps_status = Some(status.status);
-                    credentials.vps_ip = status.ip;
-                    if !manager.save(&credentials) {
-                        eprintln!("Warning: Failed to save credentials after starting VPS");
+        if !manager.save(&credentials) {
+            eprintln!("Warning: Failed to save credentials after provisioning");
+        }
+    } else {
+        // VPS exists - check its status
+        match credentials.vps_status.as_deref() {
+            Some("ready") | Some("running") | Some("active") => {
+                // Good to go - launch TUI
+            }
+            Some("stopped") => {
+                // Auto-start existing VPS
+                match start_stopped_vps(&runtime, &credentials) {
+                    Ok(status) => {
+                        credentials.vps_status = Some(status.status);
+                        credentials.vps_ip = status.ip;
+                        if !manager.save(&credentials) {
+                            eprintln!("Warning: Failed to save credentials after starting VPS");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to start VPS: {}", e);
+                        std::process::exit(1);
                     }
                 }
-                Err(e) => {
-                    eprintln!("Failed to start VPS: {}", e);
-                    std::process::exit(1);
-                }
             }
-        }
-        Some("failed") | Some("terminated") | None => {
-            // Need to provision
-            if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
-                eprintln!("Provisioning failed: {}", e);
+            Some("failed") | Some("terminated") => {
+                // Failed VPS - don't auto-reprovision, show error
+                eprintln!("Error: VPS is in failed state (status: {}).",
+                    credentials.vps_status.as_deref().unwrap_or("unknown"));
+                eprintln!("Your VPS cannot be started automatically.");
+                eprintln!("Please contact support@spoq.dev for assistance.");
                 std::process::exit(1);
             }
-            // Save updated credentials after provisioning
-            if !manager.save(&credentials) {
-                eprintln!("Warning: Failed to save credentials after provisioning");
+            None => {
+                // VPS exists but status field missing (legacy credentials)
+                // Fetch status from API instead of re-provisioning
+                match fetch_vps_status(&runtime, &credentials) {
+                    Ok(status) => {
+                        credentials.vps_status = Some(status.status.clone());
+                        if let Some(ip) = status.ip {
+                            credentials.vps_ip = Some(ip);
+                        }
+                        if !manager.save(&credentials) {
+                            eprintln!("Warning: Failed to save updated VPS status");
+                        }
+                        // Re-check status after fetching
+                        match status.status.as_str() {
+                            "ready" | "running" | "active" => {
+                                // Good to go
+                            }
+                            "stopped" => {
+                                // Need to start it
+                                match start_stopped_vps(&runtime, &credentials) {
+                                    Ok(status) => {
+                                        credentials.vps_status = Some(status.status);
+                                        credentials.vps_ip = status.ip;
+                                        if !manager.save(&credentials) {
+                                            eprintln!("Warning: Failed to save credentials");
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Failed to start VPS: {}", e);
+                                        std::process::exit(1);
+                                    }
+                                }
+                            }
+                            "failed" | "terminated" => {
+                                eprintln!("Error: VPS is in failed state (status: {}).", status.status);
+                                eprintln!("Your VPS cannot be started automatically.");
+                                eprintln!("Please contact support@spoq.dev for assistance.");
+                                std::process::exit(1);
+                            }
+                            other => {
+                                eprintln!("VPS in unexpected state: {}. Please wait or contact support.", other);
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Error: Cannot determine VPS status: {}", e);
+                        eprintln!("Please check your network connection and try again.");
+                        std::process::exit(1);
+                    }
+                }
             }
-        }
-        Some(other) => {
-            // Unknown state - probably still provisioning
-            eprintln!(
-                "VPS in unexpected state: {}. Please wait or contact support.",
-                other
-            );
-            std::process::exit(1);
+            Some(other) => {
+                // Unknown state
+                eprintln!("VPS in unexpected state: {}. Please wait or contact support.", other);
+                std::process::exit(1);
+            }
         }
     }
 

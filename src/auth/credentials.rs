@@ -43,6 +43,9 @@ pub struct Credentials {
     /// Path to the token migration archive file.
     #[serde(default)]
     pub token_archive_path: Option<String>,
+    /// The user's Stripe subscription ID.
+    #[serde(default)]
+    pub subscription_id: Option<String>,
 }
 
 impl Credentials {
@@ -189,6 +192,7 @@ mod tests {
         assert!(creds.vps_status.is_none());
         assert!(creds.datacenter_id.is_none());
         assert!(creds.token_archive_path.is_none());
+        assert!(creds.subscription_id.is_none());
     }
 
     #[test]
@@ -284,6 +288,7 @@ mod tests {
             vps_status: Some("running".to_string()),
             datacenter_id: Some(1),
             token_archive_path: Some("/home/user/.spoq-migration/archive.tar.gz".to_string()),
+            subscription_id: None,
         };
 
         assert!(manager.save(&creds));
@@ -356,6 +361,7 @@ mod tests {
             vps_status: Some("running".to_string()),
             datacenter_id: Some(2),
             token_archive_path: Some("/tmp/archive.tar.gz".to_string()),
+            subscription_id: Some("sub_1234567890".to_string()),
         };
 
         let json = serde_json::to_string(&creds).unwrap();
@@ -407,6 +413,7 @@ mod tests {
         assert_eq!(creds.vps_status, Some("active".to_string()));
         assert_eq!(creds.datacenter_id, None); // Should default to None
         assert_eq!(creds.token_archive_path, None); // Should default to None
+        assert_eq!(creds.subscription_id, None); // Should default to None
     }
 
     #[test]
@@ -430,5 +437,6 @@ mod tests {
 
         assert_eq!(creds.datacenter_id, Some(5));
         assert_eq!(creds.token_archive_path, None); // Should default to None
+        assert_eq!(creds.subscription_id, None); // Should default to None
     }
 }
