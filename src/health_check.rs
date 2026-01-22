@@ -12,6 +12,8 @@ pub struct HealthCheckResult {
     pub conductor_response_time_ms: Option<u64>,
     pub claude_code_works: bool,
     pub github_cli_works: bool,
+    pub should_block: bool, // Block user from proceeding if true
+    pub error_message: Option<String>, // Error message if blocking
 }
 
 /// Run comprehensive health checks on VPS via Conductor
@@ -27,11 +29,24 @@ pub async fn run_health_checks(credentials: &Credentials) -> HealthCheckResult {
         conductor_response_time_ms: None,
         claude_code_works: false,
         github_cli_works: false,
+        should_block: false,
+        error_message: None,
     };
 
-    // Create conductor client
-    let conductor = match &credentials.vps_url {
-        Some(url) => ConductorClient::with_url(url),
+    // Create conductor client with authentication
+    let mut conductor = match &credentials.vps_url {
+        Some(url) => {
+            let mut client = ConductorClient::with_url(url);
+            // Add JWT token if available
+            if let Some(ref token) = credentials.access_token {
+                client = client.with_auth(token);
+            }
+            // Add refresh token if available
+            if let Some(ref refresh) = credentials.refresh_token {
+                client = client.with_refresh_token(refresh);
+            }
+            client
+        }
         None => return result, // No VPS URL
     };
 
@@ -49,13 +64,40 @@ pub async fn run_health_checks(credentials: &Credentials) -> HealthCheckResult {
     }
 
     // Step 2: Verify tokens via conductor
+    println!(
+        "[HEALTH] Attempting token verification on VPS at {}",
+        credentials.vps_url.as_ref().unwrap_or(&"unknown".to_string())
+    );
     match conductor.verify_tokens().await {
         Ok(tokens) => {
             result.claude_code_works = tokens.claude_code.installed && tokens.claude_code.authenticated;
             result.github_cli_works = tokens.github_cli.installed && tokens.github_cli.authenticated;
+            println!(
+                "[HEALTH] Token verification successful: claude_code={}, github_cli={}",
+                result.claude_code_works, result.github_cli_works
+            );
+
+            // Block if any required tokens are missing
+            if !result.claude_code_works || !result.github_cli_works {
+                result.should_block = true;
+                let mut missing = Vec::new();
+                if !result.claude_code_works {
+                    missing.push("Claude Code");
+                }
+                if !result.github_cli_works {
+                    missing.push("GitHub CLI");
+                }
+                result.error_message = Some(format!(
+                    "VPS credentials not set up: {} missing",
+                    missing.join(", ")
+                ));
+            }
         }
         Err(e) => {
+            println!("[HEALTH] Token verification failed: {}", e);
             eprintln!("⚠️  Token verification failed: {}", e);
+            result.should_block = true;
+            result.error_message = Some(format!("Failed to verify VPS credentials: {}", e));
         }
     }
 
@@ -66,7 +108,8 @@ pub async fn run_health_checks(credentials: &Credentials) -> HealthCheckResult {
 ///
 /// # Arguments
 /// * `result` - Health check results to display
-pub fn display_health_check_results(result: &HealthCheckResult) {
+/// * `vps_ip` - Optional VPS IP address for instructions
+pub fn display_health_check_results(result: &HealthCheckResult, vps_ip: Option<&str>) {
     println!();
 
     // Conductor health
@@ -77,32 +120,49 @@ pub fn display_health_check_results(result: &HealthCheckResult) {
             println!("✓ Conductor healthy");
         }
     } else {
-        println!("⚠️  Conductor not responding");
-        println!("   Your VPS may be offline or starting up.");
+        println!("✗ Conductor not responding");
+        println!("  Your VPS may be offline or starting up.");
+        println!("  Please check your VPS status and try again.\n");
         return; // Don't show token status if conductor is down
     }
 
-    // Token verification
+    // Token verification - only show status if everything works
     if result.claude_code_works && result.github_cli_works {
         println!("✓ Claude Code verified on VPS");
         println!("✓ GitHub CLI verified on VPS");
         println!("\n✓ All systems ready!\n");
-    } else {
-        if result.claude_code_works {
-            println!("✓ Claude Code verified on VPS");
-        } else {
-            println!("⚠️  Claude Code not authenticated on VPS");
-            println!("   Run: ssh spoq@[VPS_IP] → claude login");
+    } else if result.should_block {
+        // Show error and block user
+        println!("\n✗ VPS Setup Required\n");
+        println!("Your VPS needs to be configured with credentials before you can proceed.");
+        println!("\nMissing credentials:");
+
+        if !result.claude_code_works {
+            println!("  • Claude Code");
+        }
+        if !result.github_cli_works {
+            println!("  • GitHub CLI");
         }
 
-        if result.github_cli_works {
-            println!("✓ GitHub CLI verified on VPS");
+        println!("\nTo set up credentials:");
+        if let Some(ip) = vps_ip {
+            println!("  1. SSH to your VPS:");
+            println!("     ssh spoq@{}", ip);
         } else {
-            println!("⚠️  GitHub CLI not authenticated on VPS");
-            println!("   Run: ssh spoq@[VPS_IP] → gh auth login");
+            println!("  1. SSH to your VPS");
         }
 
-        println!("\n⚠️  Some checks failed. You may experience issues.\n");
+        if !result.claude_code_works {
+            println!("  2. Authenticate Claude Code:");
+            println!("     claude login");
+        }
+
+        if !result.github_cli_works {
+            println!("  3. Authenticate GitHub CLI:");
+            println!("     gh auth login");
+        }
+
+        println!("\nAfter setting up credentials, restart this application.\n");
     }
 }
 
@@ -117,12 +177,15 @@ mod tests {
             conductor_response_time_ms: Some(100),
             claude_code_works: true,
             github_cli_works: true,
+            should_block: false,
+            error_message: None,
         };
 
         assert!(result.conductor_healthy);
         assert_eq!(result.conductor_response_time_ms, Some(100));
         assert!(result.claude_code_works);
         assert!(result.github_cli_works);
+        assert!(!result.should_block);
     }
 
     #[test]
@@ -132,11 +195,14 @@ mod tests {
             conductor_response_time_ms: Some(150),
             claude_code_works: true,
             github_cli_works: false, // GitHub CLI not working
+            should_block: true,
+            error_message: Some("GitHub CLI missing".to_string()),
         };
 
         assert!(result.conductor_healthy);
         assert!(result.claude_code_works);
         assert!(!result.github_cli_works);
+        assert!(result.should_block);
     }
 
     #[test]
@@ -146,6 +212,8 @@ mod tests {
             conductor_response_time_ms: None,
             claude_code_works: false,
             github_cli_works: false,
+            should_block: false,
+            error_message: None,
         };
 
         assert!(!result.conductor_healthy);

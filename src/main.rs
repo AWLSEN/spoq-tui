@@ -377,6 +377,17 @@ fn attempt_token_refresh(
             message: "No refresh token available".to_string(),
         })?;
 
+    // Log refresh attempt with first 10 chars of refresh token for debugging
+    let token_preview = if refresh_token.len() > 10 {
+        &refresh_token[..10]
+    } else {
+        refresh_token
+    };
+    println!(
+        "[TOKEN] Token expired, attempting refresh with refresh_token={}...",
+        token_preview
+    );
+
     let client = CentralApiClient::new();
 
     let refresh_response = runtime.block_on(client.refresh_token(refresh_token))?;
@@ -395,7 +406,13 @@ fn attempt_token_refresh(
         .expires_in
         .or_else(|| get_jwt_expires_in(&refresh_response.access_token))
         .unwrap_or(900); // Default 15 minutes
-    new_credentials.expires_at = Some(chrono::Utc::now().timestamp() + expires_in as i64);
+    let new_expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+    new_credentials.expires_at = Some(new_expires_at);
+
+    println!(
+        "[TOKEN] Token refresh successful, new expires_at={}, saved to credentials",
+        new_expires_at
+    );
 
     Ok(new_credentials)
 }
@@ -452,7 +469,12 @@ fn sync_vps_state(
             // Server has VPS - sync local credentials
             println!("Found existing VPS on server. Syncing local credentials...");
             credentials.vps_id = Some(server_vps.vps_id.clone());
-            credentials.vps_url = server_vps.url.clone();
+
+            // Always prefer hostname for HTTPS URL (server may return internal :8000 URL)
+            credentials.vps_url = server_vps.hostname.as_ref()
+                .map(|h| format!("https://{}", h))
+                .or_else(|| server_vps.url.clone());
+
             credentials.vps_hostname = server_vps.hostname.clone();
             credentials.vps_ip = server_vps.ip.clone();
             credentials.vps_status = Some(server_vps.status.clone());
@@ -524,14 +546,27 @@ fn main() -> Result<()> {
         }
     } else if credentials.is_expired() {
         // Token exists but expired - try to refresh
+        let now = chrono::Utc::now().timestamp();
+        let expires_at = credentials.expires_at.unwrap_or(0);
+        println!(
+            "[TOKEN] Checking token expiration: expires_at={}, current={}, expired=true",
+            expires_at, now
+        );
+
         match attempt_token_refresh(&runtime, &credentials) {
             Ok(refreshed) => {
                 credentials = refreshed;
                 if !manager.save(&credentials) {
                     eprintln!("Warning: Failed to save refreshed credentials");
+                } else {
+                    // CRITICAL: Reload credentials from disk to ensure health check uses fresh tokens
+                    // This prevents TOCTOU race where health check reads stale in-memory credentials
+                    credentials = manager.load();
+                    println!("[TOKEN] Credentials reloaded from disk after refresh to prevent TOCTOU race");
                 }
             }
             Err(e) => {
+                println!("[TOKEN] Token refresh failed: {}, falling back to full auth flow", e);
                 eprintln!("Token refresh failed: {}. Re-authenticating...", e);
                 credentials = match run_auth_flow(&runtime) {
                     Ok(creds) => creds,
@@ -542,9 +577,22 @@ fn main() -> Result<()> {
                 };
                 if !manager.save(&credentials) {
                     eprintln!("Warning: Failed to save credentials after authentication");
+                } else {
+                    // Reload after re-auth as well to ensure consistency
+                    credentials = manager.load();
+                    println!("[TOKEN] Credentials reloaded from disk after re-authentication");
                 }
             }
         }
+    } else {
+        // Token exists and is valid
+        let now = chrono::Utc::now().timestamp();
+        let expires_at = credentials.expires_at.unwrap_or(0);
+        let time_remaining = expires_at - now;
+        println!(
+            "[TOKEN] Checking token expiration: expires_at={}, current={}, expired=false, time_remaining={}s",
+            expires_at, now, time_remaining
+        );
     }
 
     // =========================================================
@@ -698,15 +746,89 @@ fn main() -> Result<()> {
     if credentials.has_vps() {
         println!("\nRunning VPS health checks...\n");
 
-        // Run health checks
-        let health_result = runtime.block_on(
-            spoq::health_check::run_health_checks(&credentials)
-        );
+        let mut first_attempt = true;
 
-        // Display results
-        spoq::health_check::display_health_check_results(&health_result);
+        // Keep checking until VPS is ready
+        loop {
+            // Run health checks
+            let health_result = runtime.block_on(
+                spoq::health_check::run_health_checks(&credentials)
+            );
 
-        // Non-blocking: continue to TUI even if checks failed
+            // If tokens are missing on first attempt, try to auto-sync
+            if first_attempt && health_result.should_block {
+                first_attempt = false;
+
+                println!("⚙️  Attempting to sync credentials to VPS...\n");
+
+                // Attempt sync via conductor
+                match &credentials.vps_url {
+                    Some(url) => {
+                        let mut conductor = spoq::conductor::ConductorClient::with_url(url);
+                        if let Some(ref token) = credentials.access_token {
+                            conductor = conductor.with_auth(token);
+                        }
+                        if let Some(ref refresh) = credentials.refresh_token {
+                            conductor = conductor.with_refresh_token(refresh);
+                        }
+
+                        match runtime.block_on(conductor.sync_tokens("all")) {
+                            Ok(_) => {
+                                println!("✓ Sync initiated, verifying...\n");
+
+                                // Reload credentials in case conductor auto-refreshed during sync
+                                // This ensures we use the freshest tokens on retry
+                                credentials = manager.load();
+                                println!("[TOKEN] Credentials reloaded after sync (in case auto-refresh occurred)");
+
+                                std::thread::sleep(std::time::Duration::from_secs(2));
+                                continue; // Recheck immediately
+                            }
+                            Err(e) => {
+                                println!("⚠️  Auto-sync failed: {}\n", e);
+                            }
+                        }
+                    }
+                    None => {}
+                }
+            }
+
+            // Display results
+            let vps_ip = credentials.vps_ip.as_deref();
+            spoq::health_check::display_health_check_results(&health_result, vps_ip);
+
+            // If all checks pass, break out of loop
+            if !health_result.should_block {
+                break;
+            }
+
+            // Wait for user input to retry
+            println!("Press 'r' to retry verification, or Ctrl+C to exit.");
+
+            use std::io::{self, BufRead};
+            let stdin = io::stdin();
+            let mut line = String::new();
+
+            // Read user input
+            match stdin.lock().read_line(&mut line) {
+                Ok(_) => {
+                    let input = line.trim().to_lowercase();
+                    if input == "r" || input == "retry" {
+                        // Reload credentials before retry in case user fixed tokens externally
+                        credentials = manager.load();
+                        println!("[TOKEN] Credentials reloaded before retry");
+                        println!("\nRetrying VPS verification...\n");
+                        continue;
+                    } else {
+                        println!("Invalid input. Press 'r' to retry.\n");
+                    }
+                }
+                Err(_) => {
+                    println!("Failed to read input. Exiting.\n");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 
     // =========================================================
