@@ -1357,13 +1357,6 @@ fn test_vps_status_persistence() {
 /// token migration is called and credentials are saved with token_archive_path
 #[test]
 fn test_byovps_ready_immediately_runs_migration() {
-    use tempfile::TempDir;
-    use std::fs;
-
-    let temp_dir = TempDir::new().unwrap();
-    let credentials_dir = temp_dir.path().join(".spoq");
-    fs::create_dir_all(&credentials_dir).unwrap();
-
     // Simulate the early return path when BYOVPS returns ready immediately
     let mut creds = Credentials::default();
     creds.access_token = Some("valid-token".to_string());
