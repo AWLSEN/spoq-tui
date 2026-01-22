@@ -115,7 +115,7 @@ fn test_subscription_status_inactive() {
 fn test_central_api_client_creation() {
     let api = CentralApiClient::new();
     // Just verify it was created successfully
-    assert_eq!(api.base_url, "https://spoq-api-production.up.railway.app");
+    assert_eq!(api.base_url, "https://spoq.dev");
 }
 
 /// Test payment status polling workflow simulation
