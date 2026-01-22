@@ -368,13 +368,18 @@ fn handle_manual_update() -> Result<()> {
 fn attempt_token_refresh(
     runtime: &tokio::runtime::Runtime,
     credentials: &Credentials,
+    manager: &CredentialsManager,
 ) -> Result<Credentials, spoq::auth::central_api::CentralApiError> {
     use spoq::auth::central_api::{CentralApiError, get_jwt_expires_in};
 
+    // Check for refresh token availability
     let refresh_token = credentials.refresh_token.as_ref()
-        .ok_or_else(|| CentralApiError::ServerError {
-            status: 0,
-            message: "No refresh token available".to_string(),
+        .ok_or_else(|| {
+            println!("[TOKEN] ERROR: No refresh token available for refresh attempt");
+            CentralApiError::ServerError {
+                status: 0,
+                message: "No refresh token available".to_string(),
+            }
         })?;
 
     // Log refresh attempt with first 10 chars of refresh token for debugging
@@ -390,7 +395,41 @@ fn attempt_token_refresh(
 
     let client = CentralApiClient::new();
 
-    let refresh_response = runtime.block_on(client.refresh_token(refresh_token))?;
+    // Attempt the refresh and provide detailed error context
+    let refresh_response = match runtime.block_on(client.refresh_token(refresh_token)) {
+        Ok(response) => {
+            println!("[TOKEN] Refresh endpoint returned success response");
+            response
+        }
+        Err(e) => {
+            // Categorize the error and provide context
+            let error_context = match &e {
+                CentralApiError::Http(http_err) => {
+                    if http_err.is_timeout() {
+                        "Network timeout - please check your connection"
+                    } else if http_err.is_connect() {
+                        "Cannot connect to server - please check your network"
+                    } else {
+                        "Network error occurred"
+                    }
+                }
+                CentralApiError::ServerError { status, message: _ } => {
+                    match status {
+                        401 => "Refresh token is invalid or expired - re-authentication required",
+                        403 => "Access denied - refresh token may have been revoked",
+                        500..=599 => "Server error - this is temporary, will retry on next startup",
+                        _ => "Server returned an error",
+                    }
+                }
+                CentralApiError::Json(_) => "Failed to parse server response - server may be having issues",
+                _ => "Unknown error occurred",
+            };
+
+            println!("[TOKEN] ERROR: Token refresh failed - {}", error_context);
+            println!("[TOKEN] ERROR: Detailed error: {}", e);
+            return Err(e);
+        }
+    };
 
     // Build new credentials with refreshed tokens
     let mut new_credentials = credentials.clone();
@@ -398,21 +437,35 @@ fn attempt_token_refresh(
 
     // Update refresh token if server provided a new one
     if let Some(new_refresh) = refresh_response.refresh_token {
+        println!("[TOKEN] Server provided new refresh token (rotation)");
         new_credentials.refresh_token = Some(new_refresh);
     }
 
     // Calculate expiration from response or JWT
-    let expires_in = refresh_response
-        .expires_in
-        .or_else(|| get_jwt_expires_in(&refresh_response.access_token))
-        .unwrap_or(900); // Default 15 minutes
+    let expires_in = if let Some(exp) = refresh_response.expires_in {
+        println!("[TOKEN] Using expires_in from server response: {} seconds", exp);
+        exp
+    } else if let Some(jwt_exp) = get_jwt_expires_in(&refresh_response.access_token) {
+        println!("[TOKEN] Parsed expiration from JWT: {} seconds", jwt_exp);
+        jwt_exp
+    } else {
+        println!("[TOKEN] WARNING: Could not determine expiration time, defaulting to 900 seconds (15 minutes)");
+        900
+    };
+
     let new_expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
     new_credentials.expires_at = Some(new_expires_at);
 
-    println!(
-        "[TOKEN] Token refresh successful, new expires_at={}, saved to credentials",
-        new_expires_at
-    );
+    // CRITICAL: Save credentials immediately after successful refresh
+    if !manager.save(&new_credentials) {
+        println!("[TOKEN] ERROR: Failed to save refreshed credentials to disk");
+        println!("[TOKEN] WARNING: Tokens are refreshed in memory but not persisted");
+        eprintln!("Warning: Failed to save refreshed credentials to disk");
+    } else {
+        println!("[TOKEN] SUCCESS: Token refresh complete, credentials saved to disk");
+        println!("[TOKEN] New access token expires at: {}", new_expires_at);
+        println!("[TOKEN] Token valid for {} seconds ({} minutes)", expires_in, expires_in / 60);
+    }
 
     Ok(new_credentials)
 }
@@ -553,17 +606,12 @@ fn main() -> Result<()> {
             expires_at, now
         );
 
-        match attempt_token_refresh(&runtime, &credentials) {
-            Ok(refreshed) => {
-                credentials = refreshed;
-                if !manager.save(&credentials) {
-                    eprintln!("Warning: Failed to save refreshed credentials");
-                } else {
-                    // CRITICAL: Reload credentials from disk to ensure health check uses fresh tokens
-                    // This prevents TOCTOU race where health check reads stale in-memory credentials
-                    credentials = manager.load();
-                    println!("[TOKEN] Credentials reloaded from disk after refresh to prevent TOCTOU race");
-                }
+        match attempt_token_refresh(&runtime, &credentials, &manager) {
+            Ok(_refreshed) => {
+                // Note: credentials are already saved inside attempt_token_refresh()
+                // Reload from disk to ensure consistency and prevent TOCTOU race
+                credentials = manager.load();
+                println!("[TOKEN] Credentials reloaded from disk after refresh to prevent TOCTOU race");
             }
             Err(e) => {
                 println!("[TOKEN] Token refresh failed: {}, falling back to full auth flow", e);

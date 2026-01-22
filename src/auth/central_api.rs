@@ -514,6 +514,14 @@ impl CentralApiClient {
     ) -> Result<TokenResponse, CentralApiError> {
         let url = format!("{}/auth/refresh", self.base_url);
 
+        // Log the refresh attempt (but not the full token for security)
+        let token_preview = if refresh_token.len() > 10 {
+            format!("{}...", &refresh_token[..10])
+        } else {
+            "***".to_string()
+        };
+        eprintln!("[API] POST {} (refresh_token={})", url, token_preview);
+
         let body = serde_json::json!({
             "refresh_token": refresh_token,
         });
@@ -526,16 +534,21 @@ impl CentralApiClient {
             .send()
             .await?;
 
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
+        let status = response.status();
+        eprintln!("[API] Response status: {}", status);
+
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let body = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(parse_error_response(status, &body));
+            eprintln!("[API] Error response body: {}", body);
+            return Err(parse_error_response(status_code, &body));
         }
 
         let data: TokenResponse = response.json().await?;
+        eprintln!("[API] Token refresh successful, received new access_token");
         Ok(data)
     }
 
