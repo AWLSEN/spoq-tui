@@ -19,6 +19,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::pin::Pin;
 
+// macOS Keychain access for Claude Code OAuth tokens
+#[cfg(target_os = "macos")]
+use security_framework::passwords::get_generic_password;
+
 /// Default URL for the Conductor API
 pub const DEFAULT_CONDUCTOR_URL: &str = "http://100.85.185.33:8000";
 
@@ -98,11 +102,43 @@ pub struct TokenStatus {
     pub checked_at: String,
 }
 
+/// Debug info from conductor for troubleshooting
+#[derive(Debug, Clone, Deserialize)]
+pub struct DebugInfo {
+    pub home_dir: String,
+    pub current_user: String,
+    pub path: String,
+}
+
 /// Response from token verification endpoint
 #[derive(Debug, Clone, Deserialize)]
 pub struct TokensVerifyResponse {
     pub claude_code: TokenStatus,
     pub github_cli: TokenStatus,
+    /// Diagnostic info for debugging
+    #[serde(default)]
+    pub debug_info: Option<DebugInfo>,
+}
+
+/// Post-sync verification results
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncVerification {
+    #[serde(default)]
+    pub claude_code_works: Option<bool>,
+    #[serde(default)]
+    pub github_cli_works: Option<bool>,
+    pub home_dir_used: String,
+}
+
+/// Response from token sync endpoint
+#[derive(Debug, Clone, Deserialize)]
+pub struct SyncResponse {
+    pub success: bool,
+    pub message: String,
+    #[serde(default)]
+    pub synced: Option<Vec<String>>,
+    #[serde(default)]
+    pub verification: Option<SyncVerification>,
 }
 
 /// Client for interacting with the Conductor backend API.
@@ -119,6 +155,31 @@ pub struct ConductorClient {
     refresh_token: Option<String>,
     /// Central API URL for token refresh
     central_api_url: String,
+}
+
+/// Read Claude Code OAuth tokens from macOS Keychain.
+///
+/// On macOS, Claude Code stores OAuth tokens in Keychain under "Claude Code-credentials".
+/// The account name is the current username.
+#[cfg(target_os = "macos")]
+fn read_claude_keychain_credentials() -> Option<String> {
+    // Claude Code stores credentials with service name "Claude Code-credentials"
+    // The account name is the current username
+    let username = std::env::var("USER").unwrap_or_else(|_| "".to_string());
+
+    match get_generic_password("Claude Code-credentials", &username) {
+        Ok(password_bytes) => {
+            // Convert bytes to string - this is JSON containing OAuth tokens
+            String::from_utf8(password_bytes.to_vec()).ok()
+        }
+        Err(_) => None,
+    }
+}
+
+/// Stub for non-macOS platforms
+#[cfg(not(target_os = "macos"))]
+fn read_claude_keychain_credentials() -> Option<String> {
+    None
 }
 
 /// Read local token files for syncing to VPS
@@ -140,18 +201,26 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
 
     // Read Claude Code tokens
     if sync_type == "claude_code" || sync_type == "all" {
+        let mut claude_data = serde_json::Map::new();
+
+        // On macOS, read OAuth tokens from Keychain (this has the actual tokens)
+        if let Some(keychain_creds) = read_claude_keychain_credentials() {
+            claude_data.insert(
+                "keychain_credentials".to_string(),
+                serde_json::Value::String(keychain_creds),
+            );
+        }
+
+        // Also read ~/.claude.json for account metadata
         let claude_json_path = PathBuf::from(&home).join(".claude.json");
-
         if claude_json_path.exists() {
-            let contents = fs::read_to_string(&claude_json_path).map_err(|e| {
-                ConductorError::ServerError {
-                    status: 500,
-                    message: format!("Failed to read ~/.claude.json: {}", e),
-                }
-            })?;
+            if let Ok(contents) = fs::read_to_string(&claude_json_path) {
+                claude_data.insert("claude_json".to_string(), serde_json::Value::String(contents));
+            }
+        }
 
-            let mut claude_data = serde_json::Map::new();
-            claude_data.insert("claude_json".to_string(), serde_json::Value::String(contents));
+        // Only add if we have something to sync
+        if !claude_data.is_empty() {
             data.insert("claude_code".to_string(), serde_json::Value::Object(claude_data));
         }
     }
@@ -556,8 +625,8 @@ impl ConductorClient {
     /// * `sync_type` - What to sync: "claude_code", "github_cli", or "all"
     ///
     /// # Returns
-    /// Success status of the sync operation
-    pub async fn sync_tokens(&mut self, sync_type: &str) -> Result<bool, ConductorError> {
+    /// Full sync response including post-sync verification results
+    pub async fn sync_tokens(&mut self, sync_type: &str) -> Result<SyncResponse, ConductorError> {
         let url = format!("{}/v1/tokens/sync", self.base_url);
 
         // Read local token files based on sync_type
@@ -581,7 +650,7 @@ impl ConductorClient {
             let response = self.add_auth_header(builder).send().await?;
 
             if response.status().is_success() {
-                return Ok(true);
+                return Ok(response.json::<SyncResponse>().await?);
             } else {
                 let status = response.status().as_u16();
                 let text = response.text().await.unwrap_or_default();
@@ -593,7 +662,7 @@ impl ConductorClient {
         }
 
         if response.status().is_success() {
-            Ok(true)
+            Ok(response.json::<SyncResponse>().await?)
         } else {
             let status = response.status().as_u16();
             let text = response.text().await.unwrap_or_default();

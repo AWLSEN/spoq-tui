@@ -64,18 +64,10 @@ pub async fn run_health_checks(credentials: &Credentials) -> HealthCheckResult {
     }
 
     // Step 2: Verify tokens via conductor
-    println!(
-        "[HEALTH] Attempting token verification on VPS at {}",
-        credentials.vps_url.as_ref().unwrap_or(&"unknown".to_string())
-    );
     match conductor.verify_tokens().await {
         Ok(tokens) => {
             result.claude_code_works = tokens.claude_code.installed && tokens.claude_code.authenticated;
             result.github_cli_works = tokens.github_cli.installed && tokens.github_cli.authenticated;
-            println!(
-                "[HEALTH] Token verification successful: claude_code={}, github_cli={}",
-                result.claude_code_works, result.github_cli_works
-            );
 
             // Block if any required tokens are missing
             if !result.claude_code_works || !result.github_cli_works {
@@ -94,8 +86,6 @@ pub async fn run_health_checks(credentials: &Credentials) -> HealthCheckResult {
             }
         }
         Err(e) => {
-            println!("[HEALTH] Token verification failed: {}", e);
-            eprintln!("⚠️  Token verification failed: {}", e);
             result.should_block = true;
             result.error_message = Some(format!("Failed to verify VPS credentials: {}", e));
         }

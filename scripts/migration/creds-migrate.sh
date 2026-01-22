@@ -32,6 +32,9 @@ EXPORT_ITEMS=()
 # Temporary directory for staging
 STAGING_DIR=""
 
+# Flag for Claude Code keychain availability (macOS only)
+CLAUDE_KEYCHAIN_AVAILABLE=false
+
 #------------------------------------------------------------------------------
 # Utility Functions
 #------------------------------------------------------------------------------
@@ -100,11 +103,23 @@ check_claude_credentials() {
     local claude_json="${home_dir}/.claude.json"
     local claude_dir="${home_dir}/.claude"
     local found=false
+    local os_type
+    os_type="$(detect_os)"
+
+    # On macOS, check Keychain for actual OAuth tokens
+    if [[ "$os_type" == "macos" ]]; then
+        if security find-generic-password -s "Claude Code-credentials" &>/dev/null; then
+            log_success "Claude Code: Found OAuth tokens in macOS Keychain"
+            # Mark that we need to extract from keychain (handled in export)
+            CLAUDE_KEYCHAIN_AVAILABLE=true
+            found=true
+        fi
+    fi
 
     if [[ -f "$claude_json" ]]; then
         # Check if it contains OAuth account info
         if grep -q "oauthAccount" "$claude_json" 2>/dev/null; then
-            log_success "Claude Code: Found OAuth credentials in ~/.claude.json"
+            log_success "Claude Code: Found account metadata in ~/.claude.json"
             EXPORT_ITEMS+=(".claude.json")
             found=true
         fi
@@ -223,6 +238,25 @@ do_export() {
         fi
     done
 
+    # Extract Claude Code OAuth tokens from macOS Keychain
+    if [[ "${CLAUDE_KEYCHAIN_AVAILABLE}" == "true" ]]; then
+        log_info "Extracting Claude Code OAuth tokens from Keychain..."
+        local keychain_creds
+        keychain_creds="$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null || true)"
+
+        if [[ -n "$keychain_creds" ]]; then
+            mkdir -p "${STAGING_DIR}/.claude"
+            echo "$keychain_creds" > "${STAGING_DIR}/.claude/credentials.json"
+            chmod 600 "${STAGING_DIR}/.claude/credentials.json"
+            log_success "  Staged: .claude/credentials.json (from Keychain)"
+
+            # Add to items list for manifest
+            EXPORT_ITEMS+=(".claude/credentials.json")
+        else
+            log_warn "  Could not extract Keychain credentials (may need password)"
+        fi
+    fi
+
     # Create manifest
     cat > "$manifest_file" << EOF
 {
@@ -312,13 +346,20 @@ do_import() {
             fi
 
             # Set secure permissions for sensitive files
-            if [[ "$item" == *"hosts.yml"* ]] || [[ "$item" == *"auth.json"* ]]; then
+            if [[ "$item" == *"hosts.yml"* ]] || [[ "$item" == *"auth.json"* ]] || [[ "$item" == *"credentials.json"* ]]; then
                 chmod 600 "$dest"
             fi
 
             log_success "Imported: ${item}"
         fi
     done
+
+    # Handle Claude Code credentials on Linux (no Keychain)
+    local creds_file="${home_dir}/.claude/credentials.json"
+    if [[ -f "$creds_file" ]] && [[ "$(detect_os)" == "linux" ]]; then
+        log_info "Claude Code credentials imported to ~/.claude/credentials.json"
+        log_info "Claude Code on Linux should read from this file automatically."
+    fi
 
     echo ""
     log_success "Import complete!"
@@ -362,8 +403,13 @@ USAGE:
 
 SUPPORTED TOOLS:
     - GitHub CLI (gh)     ~/.config/gh/
-    - Claude Code         ~/.claude.json, ~/.claude/
+    - Claude Code         macOS Keychain + ~/.claude.json, ~/.claude/
     - Codex (OpenAI)      ~/.codex/
+
+NOTES:
+    On macOS, Claude Code OAuth tokens are stored in Keychain.
+    This script extracts them and stores in .claude/credentials.json
+    for import on Linux systems.
 
 EXAMPLES:
     # Export credentials

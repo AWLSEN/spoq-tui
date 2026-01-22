@@ -375,61 +375,16 @@ fn attempt_token_refresh(
     // Check for refresh token availability
     let refresh_token = credentials.refresh_token.as_ref()
         .ok_or_else(|| {
-            println!("[TOKEN] ERROR: No refresh token available for refresh attempt");
             CentralApiError::ServerError {
                 status: 0,
                 message: "No refresh token available".to_string(),
             }
         })?;
 
-    // Log refresh attempt with first 10 chars of refresh token for debugging
-    let token_preview = if refresh_token.len() > 10 {
-        &refresh_token[..10]
-    } else {
-        refresh_token
-    };
-    println!(
-        "[TOKEN] Token expired, attempting refresh with refresh_token={}...",
-        token_preview
-    );
-
     let client = CentralApiClient::new();
 
-    // Attempt the refresh and provide detailed error context
-    let refresh_response = match runtime.block_on(client.refresh_token(refresh_token)) {
-        Ok(response) => {
-            println!("[TOKEN] Refresh endpoint returned success response");
-            response
-        }
-        Err(e) => {
-            // Categorize the error and provide context
-            let error_context = match &e {
-                CentralApiError::Http(http_err) => {
-                    if http_err.is_timeout() {
-                        "Network timeout - please check your connection"
-                    } else if http_err.is_connect() {
-                        "Cannot connect to server - please check your network"
-                    } else {
-                        "Network error occurred"
-                    }
-                }
-                CentralApiError::ServerError { status, message: _ } => {
-                    match status {
-                        401 => "Refresh token is invalid or expired - re-authentication required",
-                        403 => "Access denied - refresh token may have been revoked",
-                        500..=599 => "Server error - this is temporary, will retry on next startup",
-                        _ => "Server returned an error",
-                    }
-                }
-                CentralApiError::Json(_) => "Failed to parse server response - server may be having issues",
-                _ => "Unknown error occurred",
-            };
-
-            println!("[TOKEN] ERROR: Token refresh failed - {}", error_context);
-            println!("[TOKEN] ERROR: Detailed error: {}", e);
-            return Err(e);
-        }
-    };
+    // Attempt the refresh
+    let refresh_response = runtime.block_on(client.refresh_token(refresh_token))?;
 
     // Build new credentials with refreshed tokens
     let mut new_credentials = credentials.clone();
@@ -437,34 +392,24 @@ fn attempt_token_refresh(
 
     // Update refresh token if server provided a new one
     if let Some(new_refresh) = refresh_response.refresh_token {
-        println!("[TOKEN] Server provided new refresh token (rotation)");
         new_credentials.refresh_token = Some(new_refresh);
     }
 
     // Calculate expiration from response or JWT
     let expires_in = if let Some(exp) = refresh_response.expires_in {
-        println!("[TOKEN] Using expires_in from server response: {} seconds", exp);
         exp
     } else if let Some(jwt_exp) = get_jwt_expires_in(&refresh_response.access_token) {
-        println!("[TOKEN] Parsed expiration from JWT: {} seconds", jwt_exp);
         jwt_exp
     } else {
-        println!("[TOKEN] WARNING: Could not determine expiration time, defaulting to 900 seconds (15 minutes)");
-        900
+        900 // Default to 15 minutes
     };
 
     let new_expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
     new_credentials.expires_at = Some(new_expires_at);
 
-    // CRITICAL: Save credentials immediately after successful refresh
+    // Save credentials immediately after successful refresh
     if !manager.save(&new_credentials) {
-        println!("[TOKEN] ERROR: Failed to save refreshed credentials to disk");
-        println!("[TOKEN] WARNING: Tokens are refreshed in memory but not persisted");
         eprintln!("Warning: Failed to save refreshed credentials to disk");
-    } else {
-        println!("[TOKEN] SUCCESS: Token refresh complete, credentials saved to disk");
-        println!("[TOKEN] New access token expires at: {}", new_expires_at);
-        println!("[TOKEN] Token valid for {} seconds ({} minutes)", expires_in, expires_in / 60);
     }
 
     Ok(new_credentials)
@@ -599,23 +544,13 @@ fn main() -> Result<()> {
         }
     } else if credentials.is_expired() {
         // Token exists but expired - try to refresh
-        let now = chrono::Utc::now().timestamp();
-        let expires_at = credentials.expires_at.unwrap_or(0);
-        println!(
-            "[TOKEN] Checking token expiration: expires_at={}, current={}, expired=true",
-            expires_at, now
-        );
-
         match attempt_token_refresh(&runtime, &credentials, &manager) {
             Ok(_refreshed) => {
-                // Note: credentials are already saved inside attempt_token_refresh()
-                // Reload from disk to ensure consistency and prevent TOCTOU race
+                // Reload from disk to ensure consistency
                 credentials = manager.load();
-                println!("[TOKEN] Credentials reloaded from disk after refresh to prevent TOCTOU race");
             }
-            Err(e) => {
-                println!("[TOKEN] Token refresh failed: {}, falling back to full auth flow", e);
-                eprintln!("Token refresh failed: {}. Re-authenticating...", e);
+            Err(_e) => {
+                // Token refresh failed - fall back to full auth flow
                 credentials = match run_auth_flow(&runtime) {
                     Ok(creds) => creds,
                     Err(e) => {
@@ -626,9 +561,7 @@ fn main() -> Result<()> {
                 if !manager.save(&credentials) {
                     eprintln!("Warning: Failed to save credentials after authentication");
                 } else {
-                    // Reload after re-auth as well to ensure consistency
                     credentials = manager.load();
-                    println!("[TOKEN] Credentials reloaded from disk after re-authentication");
                 }
             }
         }
@@ -642,29 +575,10 @@ fn main() -> Result<()> {
         const PROACTIVE_REFRESH_THRESHOLD: i64 = 300;
 
         if time_remaining < PROACTIVE_REFRESH_THRESHOLD && time_remaining > 0 {
-            let minutes_remaining = time_remaining / 60;
-            println!(
-                "[TOKEN] Token expires soon (in {} minutes), proactively refreshing...",
-                minutes_remaining
-            );
-
-            match attempt_token_refresh(&runtime, &credentials, &manager) {
-                Ok(_refreshed) => {
-                    // Reload from disk to ensure consistency
-                    credentials = manager.load();
-                    println!("[TOKEN] Proactive refresh successful, credentials reloaded");
-                }
-                Err(e) => {
-                    println!("[TOKEN] Proactive refresh failed: {}, will retry on next startup", e);
-                    // Don't force re-auth here since token is still technically valid
-                    // Let it naturally expire and refresh on next startup or API call
-                }
+            // Silently refresh token in background
+            if let Ok(_refreshed) = attempt_token_refresh(&runtime, &credentials, &manager) {
+                credentials = manager.load();
             }
-        } else {
-            println!(
-                "[TOKEN] Checking token expiration: expires_at={}, current={}, expired=false, time_remaining={}s",
-                expires_at, now, time_remaining
-            );
         }
     }
 
@@ -817,7 +731,9 @@ fn main() -> Result<()> {
     // VPS health check - verify conductor and tokens
     // =========================================================
     if credentials.has_vps() {
-        println!("\nRunning VPS health checks...\n");
+        print!("\n◐ Connecting to VPS");
+        use std::io::Write;
+        std::io::stdout().flush().ok();
 
         let mut first_attempt = true;
 
@@ -832,7 +748,8 @@ fn main() -> Result<()> {
             if first_attempt && health_result.should_block {
                 first_attempt = false;
 
-                println!("⚙️  Attempting to sync credentials to VPS...\n");
+                print!("\r◑ Syncing credentials to VPS...    ");
+                std::io::stdout().flush().ok();
 
                 // Attempt sync via conductor
                 match &credentials.vps_url {
@@ -846,25 +763,27 @@ fn main() -> Result<()> {
                         }
 
                         match runtime.block_on(conductor.sync_tokens("all")) {
-                            Ok(_) => {
-                                println!("✓ Sync initiated, verifying...\n");
+                            Ok(_sync_response) => {
+                                print!("\r◒ Verifying credentials...          ");
+                                std::io::stdout().flush().ok();
 
                                 // Reload credentials in case conductor auto-refreshed during sync
-                                // This ensures we use the freshest tokens on retry
                                 credentials = manager.load();
-                                println!("[TOKEN] Credentials reloaded after sync (in case auto-refresh occurred)");
 
-                                std::thread::sleep(std::time::Duration::from_secs(2));
+                                std::thread::sleep(std::time::Duration::from_secs(1));
                                 continue; // Recheck immediately
                             }
-                            Err(e) => {
-                                println!("⚠️  Auto-sync failed: {}\n", e);
+                            Err(_e) => {
+                                println!("\r✗ Credential sync failed              ");
                             }
                         }
                     }
                     None => {}
                 }
             }
+
+            // Clear the loading line
+            println!("\r                                      ");
 
             // Display results
             let vps_ip = credentials.vps_ip.as_deref();
@@ -878,8 +797,8 @@ fn main() -> Result<()> {
             // Wait for user input to retry
             println!("Press 'r' to retry verification, or Ctrl+C to exit.");
 
-            use std::io::{self, BufRead};
-            let stdin = io::stdin();
+            use std::io::BufRead;
+            let stdin = std::io::stdin();
             let mut line = String::new();
 
             // Read user input
@@ -887,10 +806,10 @@ fn main() -> Result<()> {
                 Ok(_) => {
                     let input = line.trim().to_lowercase();
                     if input == "r" || input == "retry" {
-                        // Reload credentials before retry in case user fixed tokens externally
+                        // Reload credentials before retry
                         credentials = manager.load();
-                        println!("[TOKEN] Credentials reloaded before retry");
-                        println!("\nRetrying VPS verification...\n");
+                        print!("\n◐ Retrying VPS verification...");
+                        std::io::stdout().flush().ok();
                         continue;
                     } else {
                         println!("Invalid input. Press 'r' to retry.\n");

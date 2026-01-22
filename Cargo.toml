@@ -43,6 +43,10 @@ ctrlc = "3"
 sysinfo = "0.30"
 webbrowser = "1.0"
 
+# macOS Keychain access (for Claude Code OAuth tokens)
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "2"
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3"

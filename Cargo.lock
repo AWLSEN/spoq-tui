@@ -3081,6 +3081,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rpassword",
+ "security-framework",
  "serde",
  "serde_json",
  "serial_test",
