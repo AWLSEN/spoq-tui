@@ -746,6 +746,68 @@ impl CentralApiClient {
         Ok(data)
     }
 
+    /// Check if user has any VPS configured on the server.
+    ///
+    /// GET /api/vps/status
+    ///
+    /// Returns Some(VpsStatusResponse) if user has a VPS, None if not (404).
+    /// Requires authentication. Handles token refresh automatically on 401.
+    pub async fn fetch_user_vps(&mut self) -> Result<Option<VpsStatusResponse>, CentralApiError> {
+        let url = format!("{}/api/vps/status", self.base_url);
+
+        // First attempt
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        // Only update refresh_token if server provides a new one
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+
+                        // Retry with new token
+                        let builder = self.client.get(&url);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(_) => {
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: "Unauthorized - please re-authenticate".to_string(),
+                        });
+                    }
+                }
+            } else {
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "Unauthorized - please re-authenticate".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        // Handle different status codes
+        match response.status().as_u16() {
+            200 => {
+                let vps = response.json::<VpsStatusResponse>().await?;
+                Ok(Some(vps))
+            }
+            404 => {
+                // No VPS found - this is expected for new users
+                Ok(None)
+            }
+            status => {
+                let error_body = response.text().await.unwrap_or_default();
+                Err(parse_error_response(status, &error_body))
+            }
+        }
+    }
+
     /// Fetch available data centers.
     ///
     /// GET /api/vps/datacenters (no auth required)

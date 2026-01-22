@@ -421,6 +421,56 @@ fn fetch_vps_status(
     runtime.block_on(client.fetch_vps_status())
 }
 
+/// Sync VPS state between local credentials and server.
+///
+/// Checks if server has a VPS when local credentials don't, and syncs if needed.
+///
+/// # Arguments
+/// * `runtime` - Tokio runtime for async operations
+/// * `credentials` - Current credentials (will be modified if sync needed)
+/// * `manager` - Credentials manager for saving
+///
+/// # Returns
+/// * `Ok(true)` - Provisioning needed (no VPS on server)
+/// * `Ok(false)` - VPS synced from server (no provisioning needed)
+/// * `Err(CentralApiError)` - Server check failed
+fn sync_vps_state(
+    runtime: &tokio::runtime::Runtime,
+    credentials: &mut Credentials,
+    manager: &CredentialsManager,
+) -> Result<bool, spoq::auth::central_api::CentralApiError> {
+    println!("Checking VPS status...");
+
+    let mut client = if let Some(ref token) = credentials.access_token {
+        CentralApiClient::new().with_auth(token)
+    } else {
+        CentralApiClient::new()
+    };
+
+    match runtime.block_on(client.fetch_user_vps())? {
+        Some(server_vps) => {
+            // Server has VPS - sync local credentials
+            println!("Found existing VPS on server. Syncing local credentials...");
+            credentials.vps_id = Some(server_vps.vps_id.clone());
+            credentials.vps_url = server_vps.url.clone();
+            credentials.vps_hostname = server_vps.hostname.clone();
+            credentials.vps_ip = server_vps.ip.clone();
+            credentials.vps_status = Some(server_vps.status.clone());
+
+            if !manager.save(credentials) {
+                eprintln!("Warning: Failed to save synced VPS credentials");
+            }
+
+            println!("VPS credentials synced successfully.");
+            Ok(false) // No provisioning needed
+        }
+        None => {
+            // Server confirms no VPS
+            Ok(true) // Provisioning needed
+        }
+    }
+}
+
 fn main() -> Result<()> {
     // Handle --version flag before any initialization
     if std::env::args().any(|arg| arg == "--version") {
@@ -502,15 +552,30 @@ fn main() -> Result<()> {
     // =========================================================
 
     if !credentials.has_vps() {
-        // No VPS configured - need to provision
-        if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
-            eprintln!("Provisioning failed: {}", e);
-            std::process::exit(1);
+        // Local credentials show no VPS - check server state first
+        match sync_vps_state(&runtime, &mut credentials, &manager) {
+            Ok(true) => {
+                // Provisioning needed (server confirms no VPS)
+                if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
+                    eprintln!("Provisioning failed: {}", e);
+                    std::process::exit(1);
+                }
+                if !manager.save(&credentials) {
+                    eprintln!("Warning: Failed to save credentials after provisioning");
+                }
+            }
+            Ok(false) => {
+                // VPS synced from server - continue to status checks below
+            }
+            Err(e) => {
+                eprintln!("Error: Cannot verify VPS status: {}", e);
+                eprintln!("Please check your network connection and try again.");
+                std::process::exit(1);
+            }
         }
-        if !manager.save(&credentials) {
-            eprintln!("Warning: Failed to save credentials after provisioning");
-        }
-    } else {
+    }
+
+    if credentials.has_vps() {
         // VPS exists - check its status
         match credentials.vps_status.as_deref() {
             Some("ready") | Some("running") | Some("active") => {

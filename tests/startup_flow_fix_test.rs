@@ -142,6 +142,54 @@ fn test_credentials_missing_vps_status_field() {
     // Startup should fetch status from API, not reprovision
 }
 
+/// Scenario 8: Local has no VPS but server does (sync required)
+#[test]
+#[serial]
+fn test_local_missing_vps_server_has_vps() {
+    let temp_dir = TempDir::new().unwrap();
+    let manager = create_test_manager(&temp_dir);
+
+    // Setup credentials with valid token but no VPS fields
+    let mut creds = Credentials::default();
+    creds.access_token = Some("valid-token".to_string());
+    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
+    // Explicitly set VPS fields to None to simulate state mismatch
+    creds.vps_id = None;
+    creds.vps_url = None;
+    creds.vps_status = None;
+
+    assert!(manager.save(&creds));
+
+    let loaded = manager.load();
+    assert!(loaded.has_token());
+    assert!(!loaded.is_expired());
+    assert!(!loaded.has_vps()); // Should detect no VPS locally
+    // In actual startup flow, this would trigger sync_vps_state()
+    // which would fetch VPS from server and sync local credentials
+}
+
+/// Scenario 9: Both local and server have no VPS (provisioning needed)
+#[test]
+#[serial]
+fn test_no_vps_anywhere() {
+    let temp_dir = TempDir::new().unwrap();
+    let manager = create_test_manager(&temp_dir);
+
+    // Setup credentials with valid token but no VPS
+    let mut creds = Credentials::default();
+    creds.access_token = Some("valid-token".to_string());
+    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
+
+    assert!(manager.save(&creds));
+
+    let loaded = manager.load();
+    assert!(loaded.has_token());
+    assert!(!loaded.is_expired());
+    assert!(!loaded.has_vps());
+    // In actual startup flow, sync_vps_state() would return Ok(true)
+    // indicating provisioning is needed, and provisioning flow would run
+}
+
 // Helper function
 fn create_test_manager(temp_dir: &TempDir) -> CredentialsManager {
     // Set HOME to temp directory so CredentialsManager uses it
