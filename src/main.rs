@@ -413,7 +413,7 @@ fn fetch_vps_status(
     runtime: &tokio::runtime::Runtime,
     credentials: &Credentials,
 ) -> Result<VpsStatusResponse, spoq::auth::central_api::CentralApiError> {
-    let client = if let Some(ref token) = credentials.access_token {
+    let mut client = if let Some(ref token) = credentials.access_token {
         CentralApiClient::new().with_auth(token)
     } else {
         CentralApiClient::new()

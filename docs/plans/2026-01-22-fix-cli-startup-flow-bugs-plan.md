@@ -445,19 +445,20 @@ fn create_test_manager(temp_dir: &TempDir) -> CredentialsManager {
 ## Implementation Checklist
 
 ### Phase 1: Core Bug Fixes
-- [ ] Add `attempt_token_refresh()` helper function in main.rs
-- [ ] Add `fetch_vps_status()` helper function in main.rs
-- [ ] Add `use spoq_tui::auth::central_api::VpsStatusResponse` import
-- [ ] Replace auth check (line 392) with token expiration logic
-- [ ] Replace VPS check (line 404) to use `has_vps()` instead of `vps_status`
-- [ ] Add proactive token refresh when `is_expired()` is true
-- [ ] Change failed/terminated VPS case from provisioning to error message
-- [ ] Add `vps_status = None` case to fetch from API
+- [x] Add `attempt_token_refresh()` helper function in main.rs
+- [x] Add `fetch_vps_status()` helper function in main.rs
+- [x] Add `use spoq::auth::central_api::VpsStatusResponse` import
+- [x] Replace auth check (line 392) with token expiration logic
+- [x] Replace VPS check (line 404) to use `has_vps()` instead of `vps_status`
+- [x] Add proactive token refresh when `is_expired()` is true
+- [x] Change failed/terminated VPS case from provisioning to error message
+- [x] Add `vps_status = None` case to fetch from API
+- [x] Fixed pre-existing compilation errors in provisioning_flow.rs
 
 ### Phase 2: Testing
-- [ ] Create `tests/startup_flow_fix_test.rs`
-- [ ] Implement all 7 test scenarios
-- [ ] Run `cargo test` to verify no regressions
+- [x] Create `tests/startup_flow_fix_test.rs`
+- [x] Implement all 7 test scenarios
+- [x] Run `cargo test` to verify all tests pass (7/7 passed)
 - [ ] Manual test with actual BYOVPS flow
 - [ ] Test with expired token scenario
 - [ ] Test with stopped VPS scenario

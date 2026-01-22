@@ -136,6 +136,7 @@ fn test_credentials_missing_vps_status_field() {
 
 // Helper function
 fn create_test_manager(temp_dir: &TempDir) -> CredentialsManager {
-    let credentials_path = temp_dir.path().join(".spoq").join("credentials.json");
-    CredentialsManager { credentials_path }
+    // Set HOME to temp directory so CredentialsManager uses it
+    std::env::set_var("HOME", temp_dir.path());
+    CredentialsManager::new().expect("Failed to create credentials manager")
 }
