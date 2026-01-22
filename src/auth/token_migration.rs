@@ -25,6 +25,35 @@ pub struct TokenDetectionResult {
     pub codex: bool,
 }
 
+/// Strip ANSI color codes from a string.
+///
+/// Removes escape sequences like `\x1b[0;32m` (green) and `\x1b[0m` (reset)
+/// that are used for terminal coloring.
+fn strip_ansi_codes(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            // Skip ANSI escape sequence
+            if chars.peek() == Some(&'[') {
+                chars.next(); // consume '['
+                // Skip until we find a letter (the command character)
+                while let Some(&next_ch) = chars.peek() {
+                    chars.next();
+                    if next_ch.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(ch);
+        }
+    }
+
+    result
+}
+
 /// Detects which tokens are present by calling the migration script.
 ///
 /// Calls `./scripts/migration/creds-migrate.sh list` and parses the output
@@ -57,10 +86,13 @@ pub fn detect_tokens() -> Result<TokenDetectionResult, String> {
 
     debug!("Migration script output:\n{}", combined_output);
 
+    // Strip ANSI color codes before parsing
+    let stripped_output = strip_ansi_codes(&combined_output);
+
     // Parse the output to detect tokens
-    let github_cli = combined_output.contains("[OK] GitHub CLI:");
-    let claude_code = combined_output.contains("[OK] Claude Code:");
-    let codex = combined_output.contains("[OK] Codex:");
+    let github_cli = stripped_output.contains("[OK] GitHub CLI:");
+    let claude_code = stripped_output.contains("[OK] Claude Code:");
+    let codex = stripped_output.contains("[OK] Codex:");
 
     let result = TokenDetectionResult {
         claude_code,

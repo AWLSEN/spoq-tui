@@ -15,10 +15,15 @@ use futures_util::stream::{self, Stream};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
+use std::fs;
+use std::path::PathBuf;
 use std::pin::Pin;
 
 /// Default URL for the Conductor API
 pub const DEFAULT_CONDUCTOR_URL: &str = "http://100.85.185.33:8000";
+
+/// Central API URL for token refresh
+const CENTRAL_API_URL: &str = "https://spoq-api-production.up.railway.app";
 
 /// Error type for Conductor client operations
 #[derive(Debug)]
@@ -110,6 +115,76 @@ pub struct ConductorClient {
     client: Client,
     /// Optional authentication token for Bearer auth
     auth_token: Option<String>,
+    /// Optional refresh token for automatic token refresh
+    refresh_token: Option<String>,
+    /// Central API URL for token refresh
+    central_api_url: String,
+}
+
+/// Read local token files for syncing to VPS
+///
+/// # Arguments
+/// * `sync_type` - What to sync: "claude_code", "github_cli", or "all"
+///
+/// # Returns
+/// JSON object containing token data to send to Conductor
+fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorError> {
+    let home = std::env::var("HOME").map_err(|_| {
+        ConductorError::ServerError {
+            status: 500,
+            message: "HOME environment variable not set".to_string(),
+        }
+    })?;
+
+    let mut data = serde_json::Map::new();
+
+    // Read Claude Code tokens
+    if sync_type == "claude_code" || sync_type == "all" {
+        let claude_json_path = PathBuf::from(&home).join(".claude.json");
+
+        if claude_json_path.exists() {
+            let contents = fs::read_to_string(&claude_json_path).map_err(|e| {
+                ConductorError::ServerError {
+                    status: 500,
+                    message: format!("Failed to read ~/.claude.json: {}", e),
+                }
+            })?;
+
+            let mut claude_data = serde_json::Map::new();
+            claude_data.insert("claude_json".to_string(), serde_json::Value::String(contents));
+            data.insert("claude_code".to_string(), serde_json::Value::Object(claude_data));
+        }
+    }
+
+    // Read GitHub CLI tokens
+    if sync_type == "github_cli" || sync_type == "all" {
+        let gh_dir = PathBuf::from(&home).join(".config").join("gh");
+        let hosts_yml_path = gh_dir.join("hosts.yml");
+
+        if hosts_yml_path.exists() {
+            let contents = fs::read_to_string(&hosts_yml_path).map_err(|e| {
+                ConductorError::ServerError {
+                    status: 500,
+                    message: format!("Failed to read ~/.config/gh/hosts.yml: {}", e),
+                }
+            })?;
+
+            let mut gh_data = serde_json::Map::new();
+            gh_data.insert("hosts_yml".to_string(), serde_json::Value::String(contents));
+
+            // Also read config.yml if it exists
+            let config_yml_path = gh_dir.join("config.yml");
+            if config_yml_path.exists() {
+                if let Ok(config_contents) = fs::read_to_string(&config_yml_path) {
+                    gh_data.insert("config_yml".to_string(), serde_json::Value::String(config_contents));
+                }
+            }
+
+            data.insert("github_cli".to_string(), serde_json::Value::Object(gh_data));
+        }
+    }
+
+    Ok(serde_json::Value::Object(data))
 }
 
 impl ConductorClient {
@@ -123,6 +198,8 @@ impl ConductorClient {
             base_url: DEFAULT_CONDUCTOR_URL.to_string(),
             client: Client::new(),
             auth_token,
+            refresh_token: None,
+            central_api_url: CENTRAL_API_URL.to_string(),
         }
     }
 
@@ -134,6 +211,8 @@ impl ConductorClient {
         let auth_token = std::env::var("SPOQ_DEV_TOKEN").ok();
         Self {
             base_url,
+            refresh_token: None,
+            central_api_url: CENTRAL_API_URL.to_string(),
             client: Client::new(),
             auth_token,
         }
@@ -152,6 +231,14 @@ impl ConductorClient {
         self
     }
 
+    /// Set the refresh token for automatic token refresh.
+    ///
+    /// Returns self for method chaining.
+    pub fn with_refresh_token(mut self, token: &str) -> Self {
+        self.refresh_token = Some(token.to_string());
+        self
+    }
+
     /// Set the authentication token on an existing client.
     pub fn set_auth_token(&mut self, token: Option<String>) {
         self.auth_token = token;
@@ -160,6 +247,59 @@ impl ConductorClient {
     /// Get the current authentication token, if set.
     pub fn auth_token(&self) -> Option<&str> {
         self.auth_token.as_deref()
+    }
+
+    /// Get both current tokens (access_token, refresh_token).
+    pub fn get_tokens(&self) -> (Option<String>, Option<String>) {
+        (self.auth_token.clone(), self.refresh_token.clone())
+    }
+
+    /// Refresh the access token using the refresh token.
+    ///
+    /// Calls the central API's refresh endpoint and updates the stored tokens.
+    async fn refresh_access_token(&mut self) -> Result<(), ConductorError> {
+        let refresh_token = self.refresh_token.as_ref().ok_or_else(|| {
+            ConductorError::ServerError {
+                status: 401,
+                message: "No refresh token available".to_string(),
+            }
+        })?;
+
+        let url = format!("{}/auth/refresh", self.central_api_url);
+        let body = serde_json::json!({
+            "refresh_token": refresh_token,
+        });
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(ConductorError::ServerError {
+                status: response.status().as_u16(),
+                message: "Token refresh failed".to_string(),
+            });
+        }
+
+        #[derive(Deserialize)]
+        struct TokenResponse {
+            access_token: String,
+            refresh_token: Option<String>,
+        }
+
+        let token_response: TokenResponse = response.json().await?;
+        self.auth_token = Some(token_response.access_token);
+
+        // Update refresh token if a new one was provided
+        if let Some(new_refresh) = token_response.refresh_token {
+            self.refresh_token = Some(new_refresh);
+        }
+
+        Ok(())
     }
 
     /// Helper to add auth header to a request builder if token is set.
@@ -363,18 +503,97 @@ impl ConductorClient {
     ///
     /// Checks if Claude Code and GitHub CLI are installed and authenticated
     /// on the VPS by asking Conductor to run local verification commands.
+    /// Automatically refreshes the access token if it expires (401).
     ///
     /// # Returns
     /// Token status for both Claude Code and GitHub CLI
-    pub async fn verify_tokens(&self) -> Result<TokensVerifyResponse, ConductorError> {
+    pub async fn verify_tokens(&mut self) -> Result<TokensVerifyResponse, ConductorError> {
         let url = format!("{}/v1/tokens/verify", self.base_url);
 
         let builder = self.client.get(&url);
         let response = self.add_auth_header(builder).send().await?;
 
+        // Check for 401 and try to refresh
+        if response.status().as_u16() == 401 && self.refresh_token.is_some() {
+            // Try to refresh the token
+            self.refresh_access_token().await?;
+
+            // Retry the request with new token
+            let builder = self.client.get(&url);
+            let response = self.add_auth_header(builder).send().await?;
+
+            if response.status().is_success() {
+                return Ok(response.json::<TokensVerifyResponse>().await?);
+            } else {
+                let status = response.status().as_u16();
+                let text = response.text().await.unwrap_or_default();
+                return Err(ConductorError::ServerError {
+                    status,
+                    message: text,
+                });
+            }
+        }
+
         if response.status().is_success() {
             let result = response.json::<TokensVerifyResponse>().await?;
             Ok(result)
+        } else {
+            let status = response.status().as_u16();
+            let text = response.text().await.unwrap_or_default();
+            Err(ConductorError::ServerError {
+                status,
+                message: text,
+            })
+        }
+    }
+
+    /// Sync local tokens to VPS via Conductor.
+    ///
+    /// Reads local token files and transfers them to the VPS via Conductor.
+    /// Automatically refreshes the access token if it expires (401).
+    ///
+    /// # Arguments
+    /// * `sync_type` - What to sync: "claude_code", "github_cli", or "all"
+    ///
+    /// # Returns
+    /// Success status of the sync operation
+    pub async fn sync_tokens(&mut self, sync_type: &str) -> Result<bool, ConductorError> {
+        let url = format!("{}/v1/tokens/sync", self.base_url);
+
+        // Read local token files based on sync_type
+        let data = read_local_tokens(sync_type)?;
+
+        let body = serde_json::json!({
+            "sync_type": sync_type,
+            "data": data
+        });
+
+        let builder = self.client.post(&url).json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and try to refresh
+        if response.status().as_u16() == 401 && self.refresh_token.is_some() {
+            // Try to refresh the token
+            self.refresh_access_token().await?;
+
+            // Retry the request with new token
+            let builder = self.client.post(&url).json(&body);
+            let response = self.add_auth_header(builder).send().await?;
+
+            if response.status().is_success() {
+                return Ok(true);
+            } else {
+                let status = response.status().as_u16();
+                let text = response.text().await.unwrap_or_default();
+                return Err(ConductorError::ServerError {
+                    status,
+                    message: text,
+                });
+            }
+        }
+
+        if response.status().is_success() {
+            Ok(true)
         } else {
             let status = response.status().as_u16();
             let text = response.text().await.unwrap_or_default();
