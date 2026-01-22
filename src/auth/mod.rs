@@ -15,6 +15,7 @@ pub mod credentials;
 pub mod flow;
 pub mod provisioning_flow;
 pub mod token_migration;
+pub mod token_verification;
 
 pub use central_api::CentralApiClient;
 pub use credentials::{Credentials, CredentialsManager};
@@ -24,4 +25,8 @@ pub use token_migration::{
     detect_tokens, export_tokens, transfer_tokens_to_vps, transfer_tokens_with_credentials,
     wait_for_claude_code_token, SshTransferError, TokenDetectionResult, TokenExportResult,
     TokenTransferResult, VpsConnectionInfo,
+};
+pub use token_verification::{
+    display_missing_tokens_error, display_vps_verification_results, verify_local_tokens,
+    verify_vps_tokens, LocalTokenVerification, TokenVerificationError, VpsTokenVerification,
 };

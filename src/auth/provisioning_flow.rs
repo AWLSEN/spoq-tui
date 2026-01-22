@@ -360,6 +360,28 @@ pub fn run_provisioning_flow(
 ) -> Result<(), CentralApiError> {
     println!("\nPress Ctrl+C to cancel.\n");
 
+    // Verify required tokens exist locally before proceeding
+    println!("Verifying local tokens...");
+    let local_verification = match super::token_verification::verify_local_tokens() {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(CentralApiError::ServerError {
+                status: 0,
+                message: format!("Token verification failed: {}", e),
+            });
+        }
+    };
+
+    if !local_verification.all_required_present {
+        super::token_verification::display_missing_tokens_error(&local_verification);
+        return Err(CentralApiError::ServerError {
+            status: 0,
+            message: "Required tokens missing. Please login first.".to_string(),
+        });
+    }
+
+    println!("✓ Required tokens verified\n");
+
     // Set up interrupt handler
     let interrupted = setup_interrupt_handler();
 
@@ -706,6 +728,24 @@ fn run_managed_vps_flow(
         save_credentials(credentials);
     }
 
+    // Verify tokens work on VPS
+    if let Some(ref vps_ip) = credentials.vps_ip {
+        println!("\nVerifying tokens on VPS...");
+        match super::token_verification::verify_vps_tokens(
+            vps_ip,
+            "spoq", // Managed VPS uses "spoq" username
+            &ssh_password,
+        ) {
+            Ok(verification) => {
+                super::token_verification::display_vps_verification_results(&verification);
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not verify tokens on VPS: {}", e);
+                eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -1044,6 +1084,22 @@ fn run_byovps_flow(
                 save_credentials(credentials);
             }
 
+            // Verify tokens work on VPS
+            println!("\nVerifying tokens on VPS...");
+            match super::token_verification::verify_vps_tokens(
+                &byovps_creds.vps_ip,
+                &byovps_creds.ssh_username,
+                &byovps_creds.ssh_password,
+            ) {
+                Ok(verification) => {
+                    super::token_verification::display_vps_verification_results(&verification);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Could not verify tokens on VPS: {}", e);
+                    eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
+                }
+            }
+
             display_byovps_result(&provision_response);
             return Ok(());
         }
@@ -1109,6 +1165,22 @@ fn run_byovps_flow(
         credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
         println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
         save_credentials(credentials);
+    }
+
+    // Verify tokens work on VPS
+    println!("\nVerifying tokens on VPS...");
+    match super::token_verification::verify_vps_tokens(
+        &byovps_creds.vps_ip,
+        &byovps_creds.ssh_username,
+        &byovps_creds.ssh_password,
+    ) {
+        Ok(verification) => {
+            super::token_verification::display_vps_verification_results(&verification);
+        }
+        Err(e) => {
+            eprintln!("Warning: Could not verify tokens on VPS: {}", e);
+            eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
+        }
     }
 
     Ok(())
