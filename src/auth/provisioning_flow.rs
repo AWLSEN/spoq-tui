@@ -867,6 +867,11 @@ fn run_byovps_flow(
     // Check initial provision status
     match provision_response.status.to_lowercase().as_str() {
         "failed" | "error" => {
+            // Update credentials with failed status before returning error
+            update_credentials_from_byovps_response(credentials, &provision_response);
+            println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
+            save_credentials(credentials);
+
             let mut msg = provision_response
                 .message
                 .unwrap_or_else(|| "BYOVPS provisioning failed".to_string());
@@ -886,12 +891,14 @@ fn run_byovps_flow(
         "ready" | "running" | "active" => {
             // Already ready, update credentials and return
             update_credentials_from_byovps_response(credentials, &provision_response);
+            println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
             save_credentials(credentials);
 
             // Run token migration after BYOVPS is ready
             let migration_result = run_token_migration();
             if let Some(ref archive_path) = migration_result.archive_path {
                 credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
+                println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
                 save_credentials(credentials);
             }
 
@@ -938,6 +945,7 @@ fn run_byovps_flow(
     }
 
     // Save updated credentials
+    println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
     save_credentials(credentials);
 
     // Display final result
@@ -957,6 +965,7 @@ fn run_byovps_flow(
     let migration_result = run_token_migration();
     if let Some(ref archive_path) = migration_result.archive_path {
         credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
+        println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
         save_credentials(credentials);
     }
 

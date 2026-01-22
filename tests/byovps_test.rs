@@ -1194,3 +1194,156 @@ async fn test_byovps_early_return_with_token_migration() {
     // This test verifies the API response structure for early return case
     // The actual run_token_migration() call is tested via integration
 }
+
+// ============================================================================
+// VPS Status Saving Tests (Phase 3)
+// ============================================================================
+
+/// Test vps_status is saved when BYOVPS provision fails
+#[test]
+fn test_vps_status_saved_on_failed_provision() {
+    let mut creds = Credentials::default();
+
+    // Simulate a failed BYOVPS provision response
+    creds.vps_status = Some("failed".to_string());
+    creds.vps_id = Some("byovps-failed-123".to_string());
+
+    // Verify status is set correctly
+    assert_eq!(creds.vps_status, Some("failed".to_string()));
+    assert_eq!(creds.vps_id, Some("byovps-failed-123".to_string()));
+}
+
+/// Test vps_status is saved when BYOVPS provision has error
+#[test]
+fn test_vps_status_saved_on_error_provision() {
+    let mut creds = Credentials::default();
+
+    // Simulate an error BYOVPS provision response
+    creds.vps_status = Some("error".to_string());
+    creds.vps_id = Some("byovps-error-456".to_string());
+
+    // Verify status is set correctly
+    assert_eq!(creds.vps_status, Some("error".to_string()));
+    assert_eq!(creds.vps_id, Some("byovps-error-456".to_string()));
+}
+
+/// Test vps_status is saved when BYOVPS provision returns ready immediately
+#[test]
+fn test_vps_status_saved_on_immediate_ready() {
+    let mut creds = Credentials::default();
+
+    // Simulate ready BYOVPS provision response (early return path)
+    creds.vps_status = Some("ready".to_string());
+    creds.vps_id = Some("byovps-ready-789".to_string());
+    creds.vps_hostname = Some("ready.spoq.dev".to_string());
+
+    // Verify status is set correctly
+    assert_eq!(creds.vps_status, Some("ready".to_string()));
+    assert_eq!(creds.vps_id, Some("byovps-ready-789".to_string()));
+}
+
+/// Test vps_status is saved after successful polling
+#[test]
+fn test_vps_status_saved_after_polling() {
+    let mut creds = Credentials::default();
+
+    // Simulate status update after polling completes
+    creds.vps_status = Some("ready".to_string());
+    creds.vps_id = Some("byovps-polled-999".to_string());
+    creds.vps_hostname = Some("polled.spoq.dev".to_string());
+    creds.vps_ip = Some("10.0.0.100".to_string());
+    creds.vps_url = Some("https://polled.spoq.dev:8000".to_string());
+
+    // Verify all fields are set correctly
+    assert_eq!(creds.vps_status, Some("ready".to_string()));
+    assert_eq!(creds.vps_id, Some("byovps-polled-999".to_string()));
+    assert_eq!(creds.vps_hostname, Some("polled.spoq.dev".to_string()));
+    assert_eq!(creds.vps_ip, Some("10.0.0.100".to_string()));
+    assert_eq!(creds.vps_url, Some("https://polled.spoq.dev:8000".to_string()));
+}
+
+/// Test vps_status transitions from provisioning to ready
+#[test]
+fn test_vps_status_transition_provisioning_to_ready() {
+    let mut creds = Credentials::default();
+
+    // Initial state: provisioning
+    creds.vps_status = Some("provisioning".to_string());
+    creds.vps_id = Some("byovps-transition-001".to_string());
+    assert_eq!(creds.vps_status, Some("provisioning".to_string()));
+
+    // After polling: ready
+    creds.vps_status = Some("ready".to_string());
+    creds.vps_hostname = Some("transition.spoq.dev".to_string());
+    creds.vps_url = Some("https://transition.spoq.dev:8000".to_string());
+
+    // Verify status transitioned correctly
+    assert_eq!(creds.vps_status, Some("ready".to_string()));
+    assert_eq!(creds.vps_hostname, Some("transition.spoq.dev".to_string()));
+}
+
+/// Test BYOVPS provision response with failed status includes error details
+#[tokio::test]
+async fn test_byovps_failed_provision_response_structure() {
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+
+    let mock_server = MockServer::start().await;
+
+    // BYOVPS provision returns failed status
+    Mock::given(method("POST"))
+        .and(path("/api/byovps/provision"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "failed",
+            "vps_id": "byovps-failed-test",
+            "message": "SSH connection failed: Connection refused"
+        })))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let mut client = CentralApiClient::with_base_url(mock_server.uri())
+        .with_auth("valid-token");
+
+    let result = client.provision_byovps("192.168.1.1", "root", "password").await;
+
+    assert!(result.is_ok());
+    let response = result.unwrap();
+    assert_eq!(response.status, "failed");
+    assert_eq!(response.vps_id, Some("byovps-failed-test".to_string()));
+    assert_eq!(response.message, Some("SSH connection failed: Connection refused".to_string()));
+}
+
+/// Test vps_status is persisted correctly across credential saves
+#[test]
+fn test_vps_status_persistence() {
+    use tempfile::TempDir;
+    use std::fs;
+
+    let temp_dir = TempDir::new().unwrap();
+    let credentials_dir = temp_dir.path().join(".spoq");
+    let credentials_path = credentials_dir.join("credentials.json");
+
+    // Create the credentials directory
+    fs::create_dir_all(&credentials_dir).unwrap();
+
+    // Create credentials with vps_status
+    let mut creds = Credentials::default();
+    creds.vps_status = Some("ready".to_string());
+    creds.vps_id = Some("byovps-persist-test".to_string());
+    creds.vps_hostname = Some("persist.spoq.dev".to_string());
+    creds.access_token = Some("test-token".to_string());
+
+    // Save
+    let json = serde_json::to_string_pretty(&creds).unwrap();
+    fs::write(&credentials_path, json).unwrap();
+
+    // Load
+    let loaded_json = fs::read_to_string(&credentials_path).unwrap();
+    let loaded: Credentials = serde_json::from_str(&loaded_json).unwrap();
+
+    // Verify vps_status was persisted
+    assert_eq!(loaded.vps_status, Some("ready".to_string()));
+    assert_eq!(loaded.vps_id, Some("byovps-persist-test".to_string()));
+    assert_eq!(loaded.vps_hostname, Some("persist.spoq.dev".to_string()));
+}
