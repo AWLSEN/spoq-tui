@@ -50,6 +50,7 @@ fn test_credentials_serialization_with_archive_path() {
         vps_status: Some("running".to_string()),
         datacenter_id: Some(1),
         token_archive_path: Some("/tmp/archive.tar.gz".to_string()),
+        subscription_id: None,
     };
 
     let json = serde_json::to_string(&creds).expect("Should serialize");

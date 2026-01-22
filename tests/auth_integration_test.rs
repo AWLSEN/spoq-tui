@@ -46,6 +46,7 @@ fn test_credentials_with_vps_info() {
         vps_status: Some("ready".to_string()),
         datacenter_id: Some(1),
         token_archive_path: None,
+        subscription_id: None,
     };
 
     // Serialize and deserialize
@@ -241,6 +242,7 @@ fn test_credentials_serialization_with_datacenter() {
         vps_status: Some("ready".to_string()),
         datacenter_id: Some(42),
         token_archive_path: None,
+        subscription_id: None,
     };
 
     let json = serde_json::to_string(&creds).expect("Should serialize");

@@ -1,8 +1,10 @@
 use spoq::auth::credentials::{Credentials, CredentialsManager};
 use tempfile::TempDir;
+use serial_test::serial;
 
 /// Scenario 1: Fresh install (no credentials.json)
 #[test]
+#[serial]
 fn test_fresh_install_no_credentials() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
@@ -14,6 +16,7 @@ fn test_fresh_install_no_credentials() {
 
 /// Scenario 2: Valid credentials + VPS (should skip auth/provision)
 #[test]
+#[serial]
 fn test_valid_credentials_with_vps() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
@@ -36,6 +39,7 @@ fn test_valid_credentials_with_vps() {
 
 /// Scenario 3: Expired token + VPS (should refresh, not re-auth)
 #[test]
+#[serial]
 fn test_expired_token_with_vps() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
@@ -58,6 +62,7 @@ fn test_expired_token_with_vps() {
 
 /// Scenario 4: Valid token + no VPS (should provision)
 #[test]
+#[serial]
 fn test_valid_token_no_vps() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
@@ -76,6 +81,7 @@ fn test_valid_token_no_vps() {
 
 /// Scenario 5: Valid token + stopped VPS (should auto-start)
 #[test]
+#[serial]
 fn test_valid_token_stopped_vps() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
@@ -95,6 +101,7 @@ fn test_valid_token_stopped_vps() {
 
 /// Scenario 6: Valid token + failed VPS (should error, not reprovision)
 #[test]
+#[serial]
 fn test_valid_token_failed_vps() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
@@ -115,6 +122,7 @@ fn test_valid_token_failed_vps() {
 
 /// Scenario 7: Credentials missing vps_status field (should fetch, not reprovision)
 #[test]
+#[serial]
 fn test_credentials_missing_vps_status_field() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);

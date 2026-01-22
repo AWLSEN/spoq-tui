@@ -47,6 +47,7 @@ webbrowser = "1.0"
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3"
 wiremock = "0.6"
+serial_test = "3"
 
 [[bench]]
 name = "render_benchmark"
