@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 /// Default URL for the Central API
-pub const CENTRAL_API_URL: &str = "https://spoq-api-production.up.railway.app";
+pub const CENTRAL_API_URL: &str = "https://spoq.dev";
 
 /// Error type for Central API client operations
 #[derive(Debug)]

@@ -633,14 +633,39 @@ fn main() -> Result<()> {
             }
         }
     } else {
-        // Token exists and is valid
+        // Token exists and is valid - check if it expires soon
         let now = chrono::Utc::now().timestamp();
         let expires_at = credentials.expires_at.unwrap_or(0);
         let time_remaining = expires_at - now;
-        println!(
-            "[TOKEN] Checking token expiration: expires_at={}, current={}, expired=false, time_remaining={}s",
-            expires_at, now, time_remaining
-        );
+
+        // Proactive refresh if token expires within 5 minutes (300 seconds)
+        const PROACTIVE_REFRESH_THRESHOLD: i64 = 300;
+
+        if time_remaining < PROACTIVE_REFRESH_THRESHOLD && time_remaining > 0 {
+            let minutes_remaining = time_remaining / 60;
+            println!(
+                "[TOKEN] Token expires soon (in {} minutes), proactively refreshing...",
+                minutes_remaining
+            );
+
+            match attempt_token_refresh(&runtime, &credentials, &manager) {
+                Ok(_refreshed) => {
+                    // Reload from disk to ensure consistency
+                    credentials = manager.load();
+                    println!("[TOKEN] Proactive refresh successful, credentials reloaded");
+                }
+                Err(e) => {
+                    println!("[TOKEN] Proactive refresh failed: {}, will retry on next startup", e);
+                    // Don't force re-auth here since token is still technically valid
+                    // Let it naturally expire and refresh on next startup or API call
+                }
+            }
+        } else {
+            println!(
+                "[TOKEN] Checking token expiration: expires_at={}, current={}, expired=false, time_remaining={}s",
+                expires_at, now, time_remaining
+            );
+        }
     }
 
     // =========================================================
