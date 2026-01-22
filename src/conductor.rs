@@ -14,6 +14,7 @@ use crate::state::Task;
 use futures_util::stream::{self, Stream};
 use futures_util::StreamExt;
 use reqwest::Client;
+use serde::Deserialize;
 use std::pin::Pin;
 
 /// Default URL for the Conductor API
@@ -78,6 +79,25 @@ impl From<serde_json::Error> for ConductorError {
     fn from(e: serde_json::Error) -> Self {
         ConductorError::Json(e)
     }
+}
+
+/// Token status from Conductor verification
+#[derive(Debug, Clone, Deserialize)]
+pub struct TokenStatus {
+    pub installed: bool,
+    pub authenticated: bool,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub user: Option<String>,
+    pub checked_at: String,
+}
+
+/// Response from token verification endpoint
+#[derive(Debug, Clone, Deserialize)]
+pub struct TokensVerifyResponse {
+    pub claude_code: TokenStatus,
+    pub github_cli: TokenStatus,
 }
 
 /// Client for interacting with the Conductor backend API.
@@ -337,6 +357,32 @@ impl ConductorClient {
         let response = self.add_auth_header(builder).send().await?;
 
         Ok(response.status().is_success())
+    }
+
+    /// Verify tokens on the VPS via Conductor.
+    ///
+    /// Checks if Claude Code and GitHub CLI are installed and authenticated
+    /// on the VPS by asking Conductor to run local verification commands.
+    ///
+    /// # Returns
+    /// Token status for both Claude Code and GitHub CLI
+    pub async fn verify_tokens(&self) -> Result<TokensVerifyResponse, ConductorError> {
+        let url = format!("{}/v1/tokens/verify", self.base_url);
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if response.status().is_success() {
+            let result = response.json::<TokensVerifyResponse>().await?;
+            Ok(result)
+        } else {
+            let status = response.status().as_u16();
+            let text = response.text().await.unwrap_or_default();
+            Err(ConductorError::ServerError {
+                status,
+                message: text,
+            })
+        }
     }
 
     /// Cancel an ongoing streaming session.

@@ -548,6 +548,33 @@ fn main() -> Result<()> {
     }
 
     // =========================================================
+    // Token verification - check Claude Code and GitHub CLI
+    // =========================================================
+
+    println!("Verifying local tokens...");
+    match spoq::auth::verify_local_tokens() {
+        Ok(verification) => {
+            if verification.all_required_present {
+                println!("✓ Required tokens verified (Claude Code, GitHub CLI)");
+            } else {
+                eprintln!("\n⚠️  Warning: Required tokens missing on local machine:");
+                if !verification.claude_code_present {
+                    eprintln!("  ✗ Claude Code - not found. Run: claude login");
+                }
+                if !verification.github_cli_present {
+                    eprintln!("  ✗ GitHub CLI - not found. Run: gh auth login");
+                }
+                eprintln!("\nThese tokens are required for VPS provisioning.");
+                eprintln!("You can continue, but provisioning will fail without them.\n");
+            }
+        }
+        Err(e) => {
+            eprintln!("⚠️  Warning: Could not verify local tokens: {}", e);
+            eprintln!("Continuing anyway, but VPS provisioning may fail.\n");
+        }
+    }
+
+    // =========================================================
     // VPS check - ensure VPS exists and is usable
     // =========================================================
 
@@ -663,6 +690,23 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         }
+    }
+
+    // =========================================================
+    // VPS health check - verify conductor and tokens
+    // =========================================================
+    if credentials.has_vps() {
+        println!("\nRunning VPS health checks...\n");
+
+        // Run health checks
+        let health_result = runtime.block_on(
+            spoq::health_check::run_health_checks(&credentials)
+        );
+
+        // Display results
+        spoq::health_check::display_health_check_results(&health_result);
+
+        // Non-blocking: continue to TUI even if checks failed
     }
 
     // =========================================================

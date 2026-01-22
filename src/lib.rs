@@ -8,6 +8,7 @@ pub mod cache;
 pub mod conductor;
 pub mod debug;
 pub mod events;
+pub mod health_check;
 pub mod input_history;
 pub mod markdown;
 pub mod models;
