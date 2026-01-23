@@ -733,7 +733,7 @@ fn run_managed_vps_flow(
         println!("\nVerifying tokens on VPS...");
         match super::token_verification::verify_vps_tokens(
             vps_ip,
-            "spoq", // Managed VPS uses "spoq" username
+            "root", // Managed VPS uses "root" username
             &ssh_password,
         ) {
             Ok(verification) => {

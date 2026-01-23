@@ -384,18 +384,18 @@ pub struct TokenTransferResult {
 pub struct VpsConnectionInfo {
     /// VPS IP address
     pub vps_ip: String,
-    /// SSH username (defaults to "spoq")
+    /// SSH username (defaults to "root")
     pub ssh_username: String,
     /// SSH password for authentication
     pub ssh_password: String,
 }
 
 impl VpsConnectionInfo {
-    /// Create new VPS connection info with default username "spoq".
+    /// Create new VPS connection info with default username "root".
     pub fn new(vps_ip: String, ssh_password: String) -> Self {
         Self {
             vps_ip,
-            ssh_username: "spoq".to_string(),
+            ssh_username: "root".to_string(),
             ssh_password,
         }
     }
@@ -659,7 +659,7 @@ pub fn transfer_tokens_to_vps(
 ///
 /// * `vps_ip` - VPS IP address
 /// * `ssh_password` - SSH password for the VPS
-/// * `ssh_username` - Optional SSH username (defaults to "spoq")
+/// * `ssh_username` - Optional SSH username (defaults to "root")
 ///
 /// # Returns
 ///
@@ -671,7 +671,7 @@ pub fn transfer_tokens_with_credentials(
 ) -> Result<TokenTransferResult, SshTransferError> {
     let connection_info = VpsConnectionInfo {
         vps_ip: vps_ip.to_string(),
-        ssh_username: ssh_username.unwrap_or("spoq").to_string(),
+        ssh_username: ssh_username.unwrap_or("root").to_string(),
         ssh_password: ssh_password.to_string(),
     };
 
@@ -941,7 +941,7 @@ mod tests {
         let conn = VpsConnectionInfo::new("192.168.1.100".to_string(), "password123".to_string());
 
         assert_eq!(conn.vps_ip, "192.168.1.100");
-        assert_eq!(conn.ssh_username, "spoq"); // Default username
+        assert_eq!(conn.ssh_username, "root"); // Default username
         assert_eq!(conn.ssh_password, "password123");
     }
 
@@ -962,13 +962,13 @@ mod tests {
     fn test_token_transfer_result_structure() {
         let result = TokenTransferResult {
             vps_ip: "192.168.1.100".to_string(),
-            ssh_username: "spoq".to_string(),
+            ssh_username: "root".to_string(),
             import_successful: true,
             import_message: Some("Import completed".to_string()),
         };
 
         assert_eq!(result.vps_ip, "192.168.1.100");
-        assert_eq!(result.ssh_username, "spoq");
+        assert_eq!(result.ssh_username, "root");
         assert!(result.import_successful);
         assert_eq!(result.import_message, Some("Import completed".to_string()));
     }
@@ -977,21 +977,21 @@ mod tests {
     fn test_token_transfer_result_equality() {
         let result1 = TokenTransferResult {
             vps_ip: "10.0.0.1".to_string(),
-            ssh_username: "spoq".to_string(),
+            ssh_username: "root".to_string(),
             import_successful: true,
             import_message: None,
         };
 
         let result2 = TokenTransferResult {
             vps_ip: "10.0.0.1".to_string(),
-            ssh_username: "spoq".to_string(),
+            ssh_username: "root".to_string(),
             import_successful: true,
             import_message: None,
         };
 
         let result3 = TokenTransferResult {
             vps_ip: "10.0.0.2".to_string(),
-            ssh_username: "spoq".to_string(),
+            ssh_username: "root".to_string(),
             import_successful: true,
             import_message: None,
         };
