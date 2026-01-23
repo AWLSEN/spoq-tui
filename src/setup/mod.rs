@@ -5,9 +5,10 @@
 //! - Provision: Create a new VPS via the Central API
 //! - Health-wait: Wait for VPS to become healthy
 //! - Creds-sync: Sync credentials to VPS
-//! - Creds-verify: Verify credentials on VPS (future)
+//! - Creds-verify: Verify credentials on VPS
 
 pub mod creds_sync;
+pub mod creds_verify;
 pub mod health_wait;
 pub mod keychain;
 pub mod precheck;
@@ -17,6 +18,7 @@ pub use creds_sync::{
     get_local_credentials_info, sync_and_verify_credentials, sync_credentials, CredsSyncError,
     CredsSyncResult,
 };
+pub use creds_verify::{verify_credentials, VerifyError, VerifyResult};
 pub use health_wait::{
     wait_for_health, wait_for_health_with_progress, HealthWaitError, DEFAULT_HEALTH_TIMEOUT_SECS,
 };
