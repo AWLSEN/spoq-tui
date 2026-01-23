@@ -1,6 +1,7 @@
 //! Setup module for Spoq TUI.
 //!
 //! This module handles the setup flow steps for the CLI:
+//! - Flow orchestrator: Main entry point that runs all steps in sequence
 //! - Pre-check: Determine if a VPS already exists for the user
 //! - Provision: Create a new VPS via the Central API
 //! - Health-wait: Wait for VPS to become healthy
@@ -9,6 +10,7 @@
 
 pub mod creds_sync;
 pub mod creds_verify;
+pub mod flow;
 pub mod health_wait;
 pub mod keychain;
 pub mod precheck;
@@ -19,6 +21,7 @@ pub use creds_sync::{
     CredsSyncResult,
 };
 pub use creds_verify::{verify_credentials, VerifyError, VerifyResult};
+pub use flow::{run_setup_flow, SetupError, SetupResult, SetupStep, SetupSuccess};
 pub use health_wait::{
     wait_for_health, wait_for_health_with_progress, HealthWaitError, DEFAULT_HEALTH_TIMEOUT_SECS,
 };
