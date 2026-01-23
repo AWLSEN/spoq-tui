@@ -13,6 +13,7 @@ pub mod input_history;
 pub mod markdown;
 pub mod models;
 pub mod rendered_lines_cache;
+pub mod setup;
 pub mod sse;
 pub mod state;
 pub mod system;
