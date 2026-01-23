@@ -16,7 +16,7 @@ fn test_vps_connection_info_new_default_username() {
     let conn = VpsConnectionInfo::new("10.0.0.1".to_string(), "secret123".to_string());
 
     assert_eq!(conn.vps_ip, "10.0.0.1");
-    assert_eq!(conn.ssh_username, "spoq"); // Default username should be "spoq"
+    assert_eq!(conn.ssh_username, "root"); // Default username should be "root"
     assert_eq!(conn.ssh_password, "secret123");
 }
 
@@ -135,13 +135,13 @@ fn test_ssh_transfer_error_is_std_error() {
 fn test_token_transfer_result_structure() {
     let result = TokenTransferResult {
         vps_ip: "10.0.0.1".to_string(),
-        ssh_username: "spoq".to_string(),
+        ssh_username: "root".to_string(),
         import_successful: true,
         import_message: Some("Imported 3 tokens".to_string()),
     };
 
     assert_eq!(result.vps_ip, "10.0.0.1");
-    assert_eq!(result.ssh_username, "spoq");
+    assert_eq!(result.ssh_username, "root");
     assert!(result.import_successful);
     assert_eq!(result.import_message, Some("Imported 3 tokens".to_string()));
 }
@@ -231,7 +231,7 @@ fn test_transfer_tokens_with_credentials_uses_default_username() {
     let staging_dir = std::path::Path::new(&home).join(".spoq-migration");
     let _ = std::fs::remove_dir_all(&staging_dir);
 
-    // Using None for username should use default "spoq"
+    // Using None for username should use default "root"
     let result = transfer_tokens_with_credentials("192.168.1.1", "password", None);
 
     // Should fail at staging check, not at username parsing
@@ -266,7 +266,7 @@ fn test_vps_connection_info_ipv6() {
     );
 
     assert_eq!(conn.vps_ip, "2001:db8::1");
-    assert_eq!(conn.ssh_username, "spoq");
+    assert_eq!(conn.ssh_username, "root");
 }
 
 #[test]
@@ -323,21 +323,21 @@ fn test_ssh_transfer_error_equality() {
 fn test_token_transfer_result_equality() {
     let result1 = TokenTransferResult {
         vps_ip: "1.2.3.4".to_string(),
-        ssh_username: "spoq".to_string(),
+        ssh_username: "root".to_string(),
         import_successful: true,
         import_message: None,
     };
 
     let result2 = TokenTransferResult {
         vps_ip: "1.2.3.4".to_string(),
-        ssh_username: "spoq".to_string(),
+        ssh_username: "root".to_string(),
         import_successful: true,
         import_message: None,
     };
 
     let result3 = TokenTransferResult {
         vps_ip: "5.6.7.8".to_string(),
-        ssh_username: "spoq".to_string(),
+        ssh_username: "root".to_string(),
         import_successful: true,
         import_message: None,
     };

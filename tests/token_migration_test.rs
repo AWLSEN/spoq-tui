@@ -354,7 +354,7 @@ fn test_vps_connection_info_construction() {
     let conn = VpsConnectionInfo::new("192.168.1.100".to_string(), "test_password".to_string());
 
     assert_eq!(conn.vps_ip, "192.168.1.100");
-    assert_eq!(conn.ssh_username, "spoq");
+    assert_eq!(conn.ssh_username, "root");
     assert_eq!(conn.ssh_password, "test_password");
 }
 
@@ -653,7 +653,7 @@ fn test_ssh_connection_string_format() {
     let conn = VpsConnectionInfo::new("192.168.1.100".to_string(), "password".to_string());
 
     let connection_string = format!("{}@{}", conn.ssh_username, conn.vps_ip);
-    assert_eq!(connection_string, "spoq@192.168.1.100");
+    assert_eq!(connection_string, "root@192.168.1.100");
 }
 
 #[test]
