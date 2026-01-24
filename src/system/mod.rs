@@ -1,7 +1,6 @@
 //! System monitoring and statistics.
 //!
-//! This module provides system resource monitoring capabilities including
-//! CPU and RAM usage tracking.
+//! This module previously provided local system resource monitoring capabilities.
+//! System stats are now received from the backend via WebSocket connections.
 
 mod stats;
-pub use stats::{spawn_stats_poller, SystemStatsPoller};
