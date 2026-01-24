@@ -291,6 +291,16 @@ pub struct ByovpsCredentials {
     pub expires_at: Option<String>,
 }
 
+/// Response from BYOVPS provision endpoint when status is "pending" (POST /api/byovps/provision).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ByovpsPendingResponse {
+    pub hostname: String,
+    pub ip_address: String,
+    pub jwt_secret: String,
+    pub ssh_password: String,
+    pub message: String,
+}
+
 /// Response from BYOVPS provision endpoint (POST /api/byovps/provision).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ByovpsProvisionResponse {
@@ -1432,6 +1442,122 @@ impl CentralApiClient {
         Ok(data)
     }
 
+    /// Provision a BYOVPS (Bring Your Own VPS) - returns pending response.
+    ///
+    /// POST /api/byovps/provision
+    ///
+    /// Requires authentication. Initiates provisioning of a user-provided VPS
+    /// and returns the pending response with VPS credentials.
+    ///
+    /// # Arguments
+    /// * `vps_ip` - The IP address of the user's VPS (IPv4 or IPv6)
+    /// * `ssh_username` - SSH username for connecting to the VPS
+    /// * `ssh_password` - SSH password for connecting to the VPS
+    ///
+    /// # Returns
+    /// * `Ok(ByovpsPendingResponse)` - Provisioning initiated successfully, returns pending credentials
+    /// * `Err(CentralApiError)` - Provisioning failed
+    pub async fn provision_byovps_pending(
+        &mut self,
+        vps_ip: &str,
+        ssh_username: &str,
+        ssh_password: &str,
+    ) -> Result<ByovpsPendingResponse, CentralApiError> {
+        let url = format!("{}/api/byovps/provision", self.base_url);
+
+        let body = ByovpsProvisionRequest {
+            vps_ip: vps_ip.to_string(),
+            ssh_username: ssh_username.to_string(),
+            ssh_password: ssh_password.to_string(),
+        };
+
+        // First attempt
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                println!("Token expired (401), attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        // Only update refresh_token if server provides a new one
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+
+                        // Log successful refresh with expiration time
+                        if let Some(expires_in) = token_response.expires_in {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
+                        } else if let Some(expires_in) =
+                            get_jwt_expires_in(&token_response.access_token)
+                        {
+                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
+                        } else {
+                            println!("Token refresh successful");
+                        }
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&body);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(refresh_error) => {
+                        println!("Token refresh failed: {}", refresh_error);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
+                        });
+                    }
+                }
+            } else {
+                println!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: ByovpsPendingResponse = response.json().await?;
+        Ok(data)
+    }
+
     /// Create a Stripe checkout session for VPS subscription.
     ///
     /// POST /api/payments/create-checkout-session
@@ -2398,6 +2524,69 @@ mod tests {
         } else {
             panic!("Expected ServerError with refresh failure message");
         }
+    }
+
+    #[test]
+    fn test_byovps_pending_response_deserialize() {
+        let json = r#"{
+            "hostname": "user.spoq.dev",
+            "ip_address": "192.168.1.100",
+            "jwt_secret": "secret-token-123",
+            "ssh_password": "temp-password",
+            "message": "VPS provisioning initiated"
+        }"#;
+        let response: ByovpsPendingResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.hostname, "user.spoq.dev");
+        assert_eq!(response.ip_address, "192.168.1.100");
+        assert_eq!(response.jwt_secret, "secret-token-123");
+        assert_eq!(response.ssh_password, "temp-password");
+        assert_eq!(response.message, "VPS provisioning initiated");
+    }
+
+    #[tokio::test]
+    async fn test_provision_byovps_pending_with_invalid_server() {
+        let mut client = CentralApiClient::with_base_url("http://127.0.0.1:1".to_string())
+            .with_auth("test-token");
+        let result = client
+            .provision_byovps_pending("192.168.1.100", "root", "password123")
+            .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_provision_byovps_pending_success() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/api/byovps/provision"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "hostname": "testuser.spoq.dev",
+                "ip_address": "192.168.1.100",
+                "jwt_secret": "test-secret",
+                "ssh_password": "test-password",
+                "message": "VPS provisioning initiated successfully"
+            })))
+            .mount(&mock_server)
+            .await;
+
+        let mut client = CentralApiClient::with_base_url(mock_server.uri())
+            .with_auth("valid-token");
+
+        let result = client
+            .provision_byovps_pending("192.168.1.100", "root", "password123")
+            .await;
+
+        assert!(result.is_ok());
+        let response = result.unwrap();
+        assert_eq!(response.hostname, "testuser.spoq.dev");
+        assert_eq!(response.ip_address, "192.168.1.100");
+        assert_eq!(response.jwt_secret, "test-secret");
+        assert_eq!(response.ssh_password, "test-password");
+        assert_eq!(response.message, "VPS provisioning initiated successfully");
     }
 
     #[tokio::test]
