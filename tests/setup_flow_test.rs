@@ -594,8 +594,10 @@ fn test_creds_sync_result_any_synced_claude_only() {
     let result = CredsSyncResult {
         claude_synced: true,
         github_synced: false,
+        codex_synced: false,
         claude_bytes: 100,
         github_bytes: 0,
+        codex_bytes: 0,
     };
     assert!(result.any_synced());
     assert!(!result.all_synced());
@@ -606,8 +608,10 @@ fn test_creds_sync_result_any_synced_github_only() {
     let result = CredsSyncResult {
         claude_synced: false,
         github_synced: true,
+        codex_synced: false,
         claude_bytes: 0,
         github_bytes: 200,
+        codex_bytes: 0,
     };
     assert!(result.any_synced());
     assert!(!result.all_synced());
@@ -618,8 +622,10 @@ fn test_creds_sync_result_all_synced() {
     let result = CredsSyncResult {
         claude_synced: true,
         github_synced: true,
+        codex_synced: false, // Codex is optional, not required for all_synced
         claude_bytes: 100,
         github_bytes: 200,
+        codex_bytes: 0,
     };
     assert!(result.any_synced());
     assert!(result.all_synced());
@@ -630,8 +636,10 @@ fn test_creds_sync_result_none_synced() {
     let result = CredsSyncResult {
         claude_synced: false,
         github_synced: false,
+        codex_synced: false,
         claude_bytes: 0,
         github_bytes: 0,
+        codex_bytes: 0,
     };
     assert!(!result.any_synced());
     assert!(!result.all_synced());
@@ -666,10 +674,11 @@ fn test_get_local_credentials_info() {
     // The actual results depend on the local system state
     use spoq::setup::creds_sync::get_local_credentials_info;
 
-    let (claude, github) = get_local_credentials_info();
+    let (claude, github, codex) = get_local_credentials_info();
     // Results are system-dependent, just verify types
     let _: bool = claude;
     let _: bool = github;
+    let _: bool = codex;
 }
 
 // ============================================================================
@@ -1198,8 +1207,10 @@ fn test_creds_sync_result_zero_bytes_with_synced_true() {
     let result = CredsSyncResult {
         claude_synced: true,
         github_synced: false,
+        codex_synced: false,
         claude_bytes: 0,
         github_bytes: 0,
+        codex_bytes: 0,
     };
     assert!(result.any_synced()); // Still reports as synced based on flag
 }

@@ -445,6 +445,9 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
             if sync_result.github_synced {
                 println!("  GitHub credentials synced ({} bytes)", sync_result.github_bytes);
             }
+            if sync_result.codex_synced {
+                println!("  Codex credentials synced ({} bytes)", sync_result.codex_bytes);
+            }
         } else {
             // No credentials found locally to sync
             print_step_skipped(

@@ -1,12 +1,13 @@
 //! Credentials synchronization module for SPOQ setup.
 //!
-//! This module handles syncing CLI credentials (Claude Code + GitHub) to a VPS
+//! This module handles syncing CLI credentials (Claude Code, GitHub, Codex) to a VPS
 //! via SSH/SFTP. It extracts credentials from the local system and uploads them
 //! to the appropriate locations on the VPS.
 //!
 //! ## Credentials Synced
 //! - **Claude Code**: Extracted from macOS Keychain, uploaded to `/root/.claude/.credentials.json`
 //! - **GitHub CLI**: Read from `~/.config/gh/hosts.yml`, uploaded to `/root/.config/gh/hosts.yml`
+//! - **Codex**: Read from `~/.codex/auth.json`, uploaded to `/root/.codex/auth.json`
 
 use ssh2::Session;
 use std::io::{Read, Write};
@@ -43,7 +44,7 @@ impl std::fmt::Display for CredsSyncError {
             CredsSyncError::Sftp(msg) => write!(f, "SFTP operation failed: {}", msg),
             CredsSyncError::SshCommand(msg) => write!(f, "SSH command failed: {}", msg),
             CredsSyncError::NoCredentialsFound => {
-                write!(f, "No credentials found (neither Claude nor GitHub)")
+                write!(f, "No credentials found (neither Claude, GitHub, nor Codex)")
             }
             CredsSyncError::FileRead(msg) => write!(f, "Failed to read file: {}", msg),
         }
@@ -59,19 +60,24 @@ pub struct CredsSyncResult {
     pub claude_synced: bool,
     /// Whether GitHub credentials were synced
     pub github_synced: bool,
+    /// Whether Codex credentials were synced
+    pub codex_synced: bool,
     /// Number of bytes synced for Claude credentials
     pub claude_bytes: usize,
     /// Number of bytes synced for GitHub credentials
     pub github_bytes: usize,
+    /// Number of bytes synced for Codex credentials
+    pub codex_bytes: usize,
 }
 
 impl CredsSyncResult {
     /// Returns true if at least one credential type was synced.
     pub fn any_synced(&self) -> bool {
-        self.claude_synced || self.github_synced
+        self.claude_synced || self.github_synced || self.codex_synced
     }
 
-    /// Returns true if both credential types were synced.
+    /// Returns true if all required credential types were synced.
+    /// Note: Codex is optional, so only Claude and GitHub are required.
     pub fn all_synced(&self) -> bool {
         self.claude_synced && self.github_synced
     }
@@ -286,8 +292,18 @@ pub async fn sync_credentials(
         None
     };
 
+    // Read Codex credentials from auth.json
+    let codex_auth_path = home.join(".codex/auth.json");
+    let codex_creds = if codex_auth_path.exists() {
+        std::fs::read_to_string(&codex_auth_path)
+            .map_err(|e| CredsSyncError::FileRead(format!("{}: {}", codex_auth_path.display(), e)))
+            .ok()
+    } else {
+        None
+    };
+
     // Check if we have any credentials to sync
-    if claude_creds.is_none() && github_creds.is_none() {
+    if claude_creds.is_none() && github_creds.is_none() && codex_creds.is_none() {
         return Err(CredsSyncError::NoCredentialsFound);
     }
 
@@ -297,8 +313,10 @@ pub async fn sync_credentials(
     let mut result = CredsSyncResult {
         claude_synced: false,
         github_synced: false,
+        codex_synced: false,
         claude_bytes: 0,
         github_bytes: 0,
+        codex_bytes: 0,
     };
 
     // Sync Claude credentials
@@ -332,6 +350,23 @@ pub async fn sync_credentials(
         if verify_file_content(&session, creds, remote_path)? {
             result.github_synced = true;
             result.github_bytes = creds.len();
+        }
+    }
+
+    // Sync Codex credentials
+    if let Some(ref creds) = codex_creds {
+        let remote_path = "/root/.codex/auth.json";
+
+        // Create directory
+        run_ssh_command(&session, "mkdir -p /root/.codex")?;
+
+        // Upload file
+        upload_file_sftp(&session, creds, remote_path, "600")?;
+
+        // Verify upload
+        if verify_file_content(&session, creds, remote_path)? {
+            result.codex_synced = true;
+            result.codex_bytes = creds.len();
         }
     }
 
@@ -401,15 +436,19 @@ pub async fn sync_and_verify_credentials(
 /// attempting to sync.
 ///
 /// # Returns
-/// Tuple of (claude_available, github_available)
-pub fn get_local_credentials_info() -> (bool, bool) {
+/// Tuple of (claude_available, github_available, codex_available)
+pub fn get_local_credentials_info() -> (bool, bool, bool) {
     let claude_available = matches!(extract_claude_credentials(), KeychainResult::Found(_));
 
     let github_available = dirs::home_dir()
         .map(|home| home.join(".config/gh/hosts.yml").exists())
         .unwrap_or(false);
 
-    (claude_available, github_available)
+    let codex_available = dirs::home_dir()
+        .map(|home| home.join(".codex/auth.json").exists())
+        .unwrap_or(false);
+
+    (claude_available, github_available, codex_available)
 }
 
 #[cfg(test)]
@@ -421,8 +460,10 @@ mod tests {
         let result = CredsSyncResult {
             claude_synced: true,
             github_synced: false,
+            codex_synced: false,
             claude_bytes: 100,
             github_bytes: 0,
+            codex_bytes: 0,
         };
         assert!(result.any_synced());
         assert!(!result.all_synced());
@@ -433,8 +474,10 @@ mod tests {
         let result = CredsSyncResult {
             claude_synced: true,
             github_synced: true,
+            codex_synced: true,
             claude_bytes: 100,
             github_bytes: 200,
+            codex_bytes: 300,
         };
         assert!(result.any_synced());
         assert!(result.all_synced());
@@ -445,8 +488,10 @@ mod tests {
         let result = CredsSyncResult {
             claude_synced: false,
             github_synced: false,
+            codex_synced: false,
             claude_bytes: 0,
             github_bytes: 0,
+            codex_bytes: 0,
         };
         assert!(!result.any_synced());
         assert!(!result.all_synced());
@@ -463,7 +508,7 @@ mod tests {
         let err = CredsSyncError::NoCredentialsFound;
         assert_eq!(
             format!("{}", err),
-            "No credentials found (neither Claude nor GitHub)"
+            "No credentials found (neither Claude, GitHub, nor Codex)"
         );
     }
 
@@ -471,9 +516,10 @@ mod tests {
     fn test_get_local_credentials_info() {
         // This test just verifies the function runs without panicking
         // The actual results depend on the local system state
-        let (claude, github) = get_local_credentials_info();
+        let (claude, github, codex) = get_local_credentials_info();
         // Results are system-dependent, just verify types
         let _: bool = claude;
+        let _: bool = codex;
         let _: bool = github;
     }
 }

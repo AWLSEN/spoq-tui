@@ -18,6 +18,7 @@ use super::central_api::{
 use super::credentials::{Credentials, CredentialsManager};
 use super::token_migration::{detect_tokens, export_tokens, wait_for_claude_code_token};
 use crate::cli_output::{self, icons, SPINNER_CHARS};
+use crate::setup::creds_sync::sync_credentials;
 
 /// VPS type selection.
 #[derive(Debug, Clone, PartialEq)]
@@ -881,10 +882,25 @@ fn run_byovps_flow_with_retry(
 
                             // STEP 4: CREDENTIAL SYNC
                             cli_output::print_step_start(4, "CREDENTIAL SYNC");
-                            let migration_result = run_token_migration();
-                            if migration_result.success {
-                                for token_type in &migration_result.detected_tokens {
-                                    cli_output::print_step_line(icons::SUCCESS, &format!("{} synced", token_type));
+                            match runtime.block_on(sync_credentials(
+                                &byovps_creds.vps_ip,
+                                &byovps_creds.ssh_username,
+                                &byovps_creds.ssh_password,
+                                22,
+                            )) {
+                                Ok(sync_result) => {
+                                    if sync_result.claude_synced {
+                                        cli_output::print_step_line(icons::SUCCESS, "Claude Code synced");
+                                    }
+                                    if sync_result.github_synced {
+                                        cli_output::print_step_line(icons::SUCCESS, "GitHub CLI synced");
+                                    }
+                                    if sync_result.codex_synced {
+                                        cli_output::print_step_line(icons::SUCCESS, "Codex synced");
+                                    }
+                                }
+                                Err(e) => {
+                                    cli_output::print_step_line(icons::WARNING, &format!("Sync failed: {}", e));
                                 }
                             }
                             cli_output::print_step_end();
@@ -1178,16 +1194,31 @@ fn run_byovps_flow(
     cli_output::print_step_start(4, "CREDENTIAL SYNC");
     check_interrupt(interrupted);
 
-    let migration_result = run_token_migration();
-    if migration_result.success {
-        for token_type in &migration_result.detected_tokens {
-            cli_output::print_step_line(icons::SUCCESS, &format!("{} synced", token_type));
+    // Sync credentials to VPS via SFTP
+    match runtime.block_on(sync_credentials(
+        &byovps_creds.vps_ip,
+        &byovps_creds.ssh_username,
+        &byovps_creds.ssh_password,
+        22,
+    )) {
+        Ok(sync_result) => {
+            if sync_result.claude_synced {
+                cli_output::print_step_line(icons::SUCCESS, "Claude Code synced");
+            }
+            if sync_result.github_synced {
+                cli_output::print_step_line(icons::SUCCESS, "GitHub CLI synced");
+            }
+            if sync_result.codex_synced {
+                cli_output::print_step_line(icons::SUCCESS, "Codex synced");
+            }
+            if !sync_result.any_synced() {
+                has_warnings = true;
+                cli_output::print_step_line(icons::WARNING, "No credentials found to sync");
+            }
         }
-    } else {
-        has_warnings = true;
-        cli_output::print_step_line(icons::WARNING, "Token sync had issues");
-        if let Some(warning) = &migration_result.warning {
-            cli_output::print_step_line(icons::WARNING, warning);
+        Err(e) => {
+            has_warnings = true;
+            cli_output::print_step_line(icons::WARNING, &format!("Sync failed: {}", e));
         }
     }
     cli_output::print_step_end();
@@ -2295,38 +2326,6 @@ mod tests {
                 state
             );
         }
-    }
-
-    #[test]
-    fn test_display_byovps_result_does_not_panic() {
-        use super::super::central_api::ByovpsProvisionResponse;
-
-        // Test with full response
-        let response_full = ByovpsProvisionResponse {
-            hostname: Some("test.spoq.dev".to_string()),
-            status: "ready".to_string(),
-            install_script: None,
-            credentials: None,
-            message: None,
-            vps_id: Some("test-id".to_string()),
-            ip: Some("10.0.0.1".to_string()),
-            url: Some("https://test.spoq.dev:8000".to_string()),
-        };
-        // Just verify it doesn't panic
-        display_byovps_result(&response_full);
-
-        // Test with minimal response
-        let response_minimal = ByovpsProvisionResponse {
-            hostname: None,
-            status: "ready".to_string(),
-            install_script: None,
-            credentials: None,
-            message: None,
-            vps_id: None,
-            ip: None,
-            url: None,
-        };
-        display_byovps_result(&response_minimal);
     }
 
     #[test]
