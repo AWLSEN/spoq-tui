@@ -9,6 +9,7 @@ pub mod cache;
 pub mod cli_output;
 pub mod conductor;
 pub mod debug;
+pub mod domain;
 pub mod error;
 pub mod events;
 pub mod health_check;
