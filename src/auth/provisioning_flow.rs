@@ -898,9 +898,24 @@ fn run_byovps_flow_with_retry(
                         "Request timed out, checking health...",
                     );
 
-                    // Use hostname (HTTPS via Cloudflare)
-                    let hostname = format!("{}.spoq.dev", byovps_creds.ssh_username);
-                    let health_url = format!("https://{}", hostname);
+                    // Fetch VPS status to get the actual hostname
+                    let mut client = CentralApiClient::new();
+                    if let Some(ref token) = credentials.access_token {
+                        client = client.with_auth(token);
+                    }
+                    if let Some(ref refresh) = credentials.refresh_token {
+                        client = client.with_refresh_token(refresh);
+                    }
+
+                    let health_url = match runtime.block_on(client.fetch_user_vps()) {
+                        Ok(Some(vps)) if vps.hostname.is_some() => {
+                            format!("https://{}", vps.hostname.unwrap())
+                        }
+                        _ => {
+                            // Fallback to IP-based health check if we can't get hostname
+                            format!("http://{}:8080", byovps_creds.vps_ip)
+                        }
+                    };
                     match wait_for_health_with_ui(
                         runtime,
                         &health_url,
