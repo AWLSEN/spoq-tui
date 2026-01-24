@@ -192,7 +192,7 @@ mod tests {
             "Test Plan".to_string(),
             vec!["Phase 1".to_string(), "Phase 2".to_string()],
             5,
-            10000,
+            Some(10000),
         );
         let overlay = OverlayState::Plan {
             thread_id: "t1".to_string(),

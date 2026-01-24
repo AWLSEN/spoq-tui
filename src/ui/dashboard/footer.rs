@@ -161,7 +161,7 @@ mod tests {
             "Test Plan".to_string(),
             vec!["Phase 1".to_string()],
             2,
-            5000,
+            Some(5000),
         );
 
         let overlay = OverlayState::Plan {

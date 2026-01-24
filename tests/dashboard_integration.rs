@@ -348,7 +348,7 @@ fn test_overlay_opens_plan_for_plan_approval() {
         "t1",
         ThreadStatus::Waiting,
         Some(WaitingFor::PlanApproval {
-            plan_summary: "Add dark mode".to_string(),
+            request_id: "req-123".to_string(),
         }),
     );
 
@@ -360,7 +360,7 @@ fn test_overlay_opens_plan_for_plan_approval() {
             "Add dark mode".to_string(),
             vec!["Phase 1".to_string(), "Phase 2".to_string()],
             10,
-            50000,
+            Some(50000),
         ),
     );
 

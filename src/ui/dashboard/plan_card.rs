@@ -88,12 +88,15 @@ pub fn render(
     y += 1;
 
     // Row 2: Summary line
-    let tokens_k = summary.estimated_tokens / 1000;
+    let tokens_str = match summary.estimated_tokens {
+        Some(tokens) => format!("~{}k tokens", tokens / 1000),
+        None => "tokens unknown".to_string(),
+    };
     let summary_line = format!(
-        "plan ready \u{00b7} {} phases \u{00b7} {} files \u{00b7} ~{}k tokens",
+        "plan ready \u{00b7} {} phases \u{00b7} {} files \u{00b7} {}",
         summary.phases.len(),
         summary.file_count,
-        tokens_k
+        tokens_str
     );
     let summary_truncated = truncate_string(&summary_line, area.width as usize);
     frame.render_widget(

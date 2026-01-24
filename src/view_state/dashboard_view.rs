@@ -660,7 +660,7 @@ mod tests {
                 "Test Plan".to_string(),
                 vec!["Phase 1".to_string()],
                 3,
-                1000,
+                Some(1000),
             ),
             scroll_offset: 0,
             anchor_y: 5,

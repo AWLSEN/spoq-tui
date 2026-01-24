@@ -878,7 +878,7 @@ impl App {
                     &thread_id,
                     ThreadStatus::Waiting,
                     Some(WaitingFor::PlanApproval {
-                        plan_summary: plan_summary.title.clone(),
+                        request_id: request_id.clone(),
                     }),
                 );
                 self.dashboard.set_plan_request(

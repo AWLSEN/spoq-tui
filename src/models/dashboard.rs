@@ -55,8 +55,8 @@ pub enum WaitingFor {
     },
     /// Waiting for plan approval
     PlanApproval {
-        /// Summary title for display
-        plan_summary: String,
+        /// Request ID for tracking the plan approval
+        request_id: String,
     },
     /// Waiting for generic user input
     UserInput,
@@ -67,7 +67,7 @@ impl WaitingFor {
     pub fn description(&self) -> String {
         match self {
             WaitingFor::Permission { tool_name, .. } => format!("Permission: {}", tool_name),
-            WaitingFor::PlanApproval { plan_summary } => format!("Plan: {}", plan_summary),
+            WaitingFor::PlanApproval { request_id } => format!("Plan: {}", request_id),
             WaitingFor::UserInput => "User input".to_string(),
         }
     }
@@ -85,14 +85,15 @@ pub struct PlanSummary {
     /// List of phase descriptions
     pub phases: Vec<String>,
     /// Number of files to be modified/created
-    pub file_count: u32,
-    /// Estimated token usage
-    pub estimated_tokens: u32,
+    pub file_count: i32,
+    /// Estimated token usage (optional, may be missing or null from backend)
+    #[serde(default)]
+    pub estimated_tokens: Option<i64>,
 }
 
 impl PlanSummary {
     /// Create a new plan summary
-    pub fn new(title: String, phases: Vec<String>, file_count: u32, estimated_tokens: u32) -> Self {
+    pub fn new(title: String, phases: Vec<String>, file_count: i32, estimated_tokens: Option<i64>) -> Self {
         Self {
             title,
             phases,
@@ -379,10 +380,10 @@ mod tests {
     #[test]
     fn test_waiting_for_plan_approval() {
         let waiting = WaitingFor::PlanApproval {
-            plan_summary: "Add dark mode".to_string(),
+            request_id: "req-123".to_string(),
         };
 
-        assert_eq!(waiting.description(), "Plan: Add dark mode");
+        assert_eq!(waiting.description(), "Plan: req-123");
     }
 
     #[test]
@@ -408,12 +409,12 @@ mod tests {
 
     #[test]
     fn test_waiting_for_deserialization() {
-        let json = r#"{"type": "plan_approval", "plan_summary": "Test plan"}"#;
+        let json = r#"{"type": "plan_approval", "request_id": "req-456"}"#;
         let waiting: WaitingFor = serde_json::from_str(json).expect("Failed to deserialize");
 
         match waiting {
-            WaitingFor::PlanApproval { plan_summary } => {
-                assert_eq!(plan_summary, "Test plan");
+            WaitingFor::PlanApproval { request_id } => {
+                assert_eq!(request_id, "req-456");
             }
             _ => panic!("Expected PlanApproval"),
         }
@@ -427,13 +428,13 @@ mod tests {
             "Test Plan".to_string(),
             vec!["Phase 1".to_string(), "Phase 2".to_string()],
             5,
-            10000,
+            Some(10000),
         );
 
         assert_eq!(plan.title, "Test Plan");
         assert_eq!(plan.phases.len(), 2);
         assert_eq!(plan.file_count, 5);
-        assert_eq!(plan.estimated_tokens, 10000);
+        assert_eq!(plan.estimated_tokens, Some(10000));
     }
 
     #[test]
@@ -446,7 +447,7 @@ mod tests {
                 "Testing".to_string(),
             ],
             10,
-            50000,
+            Some(50000),
         );
 
         assert_eq!(plan.phase_count(), 3);
@@ -458,13 +459,50 @@ mod tests {
             "Serialize Test".to_string(),
             vec!["Phase A".to_string()],
             2,
-            5000,
+            Some(5000),
         );
 
         let json = serde_json::to_string(&plan).expect("Failed to serialize");
         let deserialized: PlanSummary = serde_json::from_str(&json).expect("Failed to deserialize");
 
         assert_eq!(plan, deserialized);
+    }
+
+    #[test]
+    fn test_plan_summary_deserialization_with_missing_estimated_tokens() {
+        // Backend may send estimated_tokens as null or missing
+        let json = r#"{"title":"Test","phases":["Phase 1"],"file_count":3}"#;
+        let plan: PlanSummary = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(plan.title, "Test");
+        assert_eq!(plan.file_count, 3);
+        assert_eq!(plan.estimated_tokens, None);
+    }
+
+    #[test]
+    fn test_plan_summary_deserialization_with_null_estimated_tokens() {
+        let json = r#"{"title":"Test","phases":["Phase 1"],"file_count":3,"estimated_tokens":null}"#;
+        let plan: PlanSummary = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(plan.estimated_tokens, None);
+    }
+
+    #[test]
+    fn test_plan_summary_deserialization_with_i64_estimated_tokens() {
+        // Backend may send large i64 values
+        let json = r#"{"title":"Test","phases":["Phase 1"],"file_count":3,"estimated_tokens":9999999999}"#;
+        let plan: PlanSummary = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(plan.estimated_tokens, Some(9999999999));
+    }
+
+    #[test]
+    fn test_plan_summary_deserialization_with_negative_file_count() {
+        // Backend sends i32, test negative value
+        let json = r#"{"title":"Test","phases":[],"file_count":-1}"#;
+        let plan: PlanSummary = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(plan.file_count, -1);
     }
 
     // -------------------- Aggregate Tests --------------------

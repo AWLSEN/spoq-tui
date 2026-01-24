@@ -662,14 +662,14 @@ mod tests {
         state.waiting_for.insert(
             "t1".to_string(),
             WaitingFor::PlanApproval {
-                plan_summary: "Test plan".to_string(),
+                request_id: "req-123".to_string(),
             },
         );
         state.plan_requests.insert(
             "t1".to_string(),
             (
                 "req-123".to_string(),
-                PlanSummary::new("Test".to_string(), vec!["Phase 1".to_string()], 3, 1000),
+                PlanSummary::new("Test".to_string(), vec!["Phase 1".to_string()], 3, Some(1000)),
             ),
         );
 
@@ -789,14 +789,14 @@ mod tests {
         state.waiting_for.insert(
             "t1".to_string(),
             WaitingFor::PlanApproval {
-                plan_summary: "Test".to_string(),
+                request_id: "req-1".to_string(),
             },
         );
         state.plan_requests.insert(
             "t1".to_string(),
             (
                 "req-1".to_string(),
-                PlanSummary::new("Test".to_string(), vec![], 0, 0),
+                PlanSummary::new("Test".to_string(), vec![], 0, None),
             ),
         );
         state.expand_thread("t1", 10);
@@ -818,14 +818,14 @@ mod tests {
         state.waiting_for.insert(
             "t1".to_string(),
             WaitingFor::PlanApproval {
-                plan_summary: "Test".to_string(),
+                request_id: "req-1".to_string(),
             },
         );
         state.plan_requests.insert(
             "t1".to_string(),
             (
                 "req-1".to_string(),
-                PlanSummary::new("Test".to_string(), vec![], 0, 0),
+                PlanSummary::new("Test".to_string(), vec![], 0, None),
             ),
         );
         state.expand_thread("t1", 10);
@@ -874,7 +874,7 @@ mod tests {
             "Test Plan".to_string(),
             vec!["Phase 1".to_string()],
             5,
-            10000,
+            Some(10000),
         );
 
         state.set_plan_request("t1", "req-123".to_string(), summary);

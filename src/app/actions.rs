@@ -530,7 +530,7 @@ mod tests {
             "t2",
             ThreadStatus::Waiting,
             Some(WaitingFor::PlanApproval {
-                plan_summary: "Test Plan".to_string(),
+                request_id: "plan-t2".to_string(),
             }),
         );
         app.dashboard.set_plan_request(
@@ -540,7 +540,7 @@ mod tests {
                 "Test Plan".to_string(),
                 vec!["Phase 1".to_string()],
                 3,
-                1000,
+                Some(1000),
             ),
         );
 

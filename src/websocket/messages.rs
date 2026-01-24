@@ -769,7 +769,7 @@ mod tests {
                 assert_eq!(req.plan_summary.title, "Add dark mode");
                 assert_eq!(req.plan_summary.phases.len(), 3);
                 assert_eq!(req.plan_summary.file_count, 15);
-                assert_eq!(req.plan_summary.estimated_tokens, 50000);
+                assert_eq!(req.plan_summary.estimated_tokens, Some(50000));
                 assert_eq!(req.timestamp, 1705315800000);
             }
             _ => panic!("Expected PlanApprovalRequest"),
@@ -778,7 +778,7 @@ mod tests {
 
     #[test]
     fn test_serialize_plan_approval_request() {
-        use crate::models::PlanSummary;
+        use crate::models::dashboard::PlanSummary;
 
         let req = WsPlanApprovalRequest {
             thread_id: "thread-plan-serialize".to_string(),
@@ -787,7 +787,7 @@ mod tests {
                 "Refactor module".to_string(),
                 vec!["Phase 1".to_string(), "Phase 2".to_string()],
                 5,
-                10000,
+                Some(10000),
             ),
             timestamp: 1705315800000, // Unix ms
         };
