@@ -46,6 +46,53 @@ pub use registry::CommandRegistry;
 
 use crate::app::App;
 
+/// Translates a base character to its shifted equivalent for US keyboard layout.
+///
+/// This function maps characters to what they become when Shift is pressed:
+/// - Number keys: 1→!, 2→@, 3→#, etc.
+/// - Symbol keys: -→_, =→+, [→{, etc.
+/// - Letters are returned uppercase (already handled by caller)
+/// - Unrecognized characters are returned unchanged
+///
+/// # Examples
+///
+/// ```
+/// use spoq::input::translate_shifted_char;
+///
+/// assert_eq!(translate_shifted_char('1'), '!');
+/// assert_eq!(translate_shifted_char('-'), '_');
+/// assert_eq!(translate_shifted_char('a'), 'a'); // Letters unchanged (caller handles case)
+/// ```
+pub fn translate_shifted_char(c: char) -> char {
+    match c {
+        // Number row
+        '1' => '!',
+        '2' => '@',
+        '3' => '#',
+        '4' => '$',
+        '5' => '%',
+        '6' => '^',
+        '7' => '&',
+        '8' => '*',
+        '9' => '(',
+        '0' => ')',
+        // Symbol keys
+        '-' => '_',
+        '=' => '+',
+        '[' => '{',
+        ']' => '}',
+        '\\' => '|',
+        ';' => ':',
+        '\'' => '"',
+        ',' => '<',
+        '.' => '>',
+        '/' => '?',
+        '`' => '~',
+        // Everything else (including letters) unchanged
+        _ => c,
+    }
+}
+
 impl App {
     /// Builds an InputContext from the current application state.
     ///
@@ -263,6 +310,112 @@ mod tests {
             assert!(app.textarea.content().contains('a'));
         } else {
             panic!("Expected command to be dispatched");
+        }
+    }
+
+    // Tests for translate_shifted_char function
+
+    #[test]
+    fn test_translate_shifted_char_number_keys() {
+        assert_eq!(translate_shifted_char('1'), '!');
+        assert_eq!(translate_shifted_char('2'), '@');
+        assert_eq!(translate_shifted_char('3'), '#');
+        assert_eq!(translate_shifted_char('4'), '$');
+        assert_eq!(translate_shifted_char('5'), '%');
+        assert_eq!(translate_shifted_char('6'), '^');
+        assert_eq!(translate_shifted_char('7'), '&');
+        assert_eq!(translate_shifted_char('8'), '*');
+        assert_eq!(translate_shifted_char('9'), '(');
+        assert_eq!(translate_shifted_char('0'), ')');
+    }
+
+    #[test]
+    fn test_translate_shifted_char_symbol_keys() {
+        assert_eq!(translate_shifted_char('-'), '_');
+        assert_eq!(translate_shifted_char('='), '+');
+        assert_eq!(translate_shifted_char('['), '{');
+        assert_eq!(translate_shifted_char(']'), '}');
+        assert_eq!(translate_shifted_char('\\'), '|');
+        assert_eq!(translate_shifted_char(';'), ':');
+        assert_eq!(translate_shifted_char('\''), '"');
+        assert_eq!(translate_shifted_char(','), '<');
+        assert_eq!(translate_shifted_char('.'), '>');
+        assert_eq!(translate_shifted_char('/'), '?');
+        assert_eq!(translate_shifted_char('`'), '~');
+    }
+
+    #[test]
+    fn test_translate_shifted_char_letters_unchanged() {
+        // Letters should be returned unchanged (uppercase handling is done by caller)
+        assert_eq!(translate_shifted_char('a'), 'a');
+        assert_eq!(translate_shifted_char('z'), 'z');
+        assert_eq!(translate_shifted_char('A'), 'A');
+        assert_eq!(translate_shifted_char('Z'), 'Z');
+        assert_eq!(translate_shifted_char('m'), 'm');
+    }
+
+    #[test]
+    fn test_translate_shifted_char_unrecognized() {
+        // Unrecognized characters should be returned unchanged
+        assert_eq!(translate_shifted_char('!'), '!');
+        assert_eq!(translate_shifted_char('@'), '@');
+        assert_eq!(translate_shifted_char(' '), ' ');
+        assert_eq!(translate_shifted_char('\n'), '\n');
+        assert_eq!(translate_shifted_char('€'), '€');
+    }
+
+    #[test]
+    fn test_translate_shifted_char_all_number_mappings() {
+        let number_mappings = [
+            ('1', '!'),
+            ('2', '@'),
+            ('3', '#'),
+            ('4', '$'),
+            ('5', '%'),
+            ('6', '^'),
+            ('7', '&'),
+            ('8', '*'),
+            ('9', '('),
+            ('0', ')'),
+        ];
+
+        for (input, expected) in number_mappings {
+            assert_eq!(
+                translate_shifted_char(input),
+                expected,
+                "Failed for input '{}', expected '{}', got '{}'",
+                input,
+                expected,
+                translate_shifted_char(input)
+            );
+        }
+    }
+
+    #[test]
+    fn test_translate_shifted_char_all_symbol_mappings() {
+        let symbol_mappings = [
+            ('-', '_'),
+            ('=', '+'),
+            ('[', '{'),
+            (']', '}'),
+            ('\\', '|'),
+            (';', ':'),
+            ('\'', '"'),
+            (',', '<'),
+            ('.', '>'),
+            ('/', '?'),
+            ('`', '~'),
+        ];
+
+        for (input, expected) in symbol_mappings {
+            assert_eq!(
+                translate_shifted_char(input),
+                expected,
+                "Failed for input '{}', expected '{}', got '{}'",
+                input,
+                expected,
+                translate_shifted_char(input)
+            );
         }
     }
 }
