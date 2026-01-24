@@ -124,29 +124,25 @@ fn render_logo(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
 
     // Row 0: LOGO_TOP
     let y0 = logo_y;
-    let mut offset = 0u16;
-    for ch in LOGO_TOP.chars() {
-        let pos_x = logo_x + offset;
+    for (offset, ch) in LOGO_TOP.chars().enumerate() {
+        let pos_x = logo_x + offset as u16;
         if pos_x < area.x + area.width && y0 < area.y + area.height {
             buf[(pos_x, y0)]
                 .set_char(ch)
                 .set_style(Style::default().fg(ctx.theme.accent));
         }
-        offset += 1;
     }
 
     // Row 1: LOGO_BOT
     let y1 = logo_y + 1;
     if y1 < area.y + area.height {
-        let mut offset = 0u16;
-        for ch in LOGO_BOT.chars() {
-            let pos_x = logo_x + offset;
+        for (offset, ch) in LOGO_BOT.chars().enumerate() {
+            let pos_x = logo_x + offset as u16;
             if pos_x < area.x + area.width {
                 buf[(pos_x, y1)]
                     .set_char(ch)
                     .set_style(Style::default().fg(ctx.theme.accent));
             }
-            offset += 1;
         }
     }
 }
@@ -166,15 +162,13 @@ fn render_right_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
     // Vertically center the single-line text within the header area
     let y = area.y + (area.height.saturating_sub(1)) / 2;
 
-    let mut offset = 0u16;
-    for ch in text.chars() {
-        let pos_x = x + offset;
+    for (offset, ch) in text.chars().enumerate() {
+        let pos_x = x + offset as u16;
         if pos_x < area.x + area.width {
             buf[(pos_x, y)]
                 .set_char(ch)
                 .set_style(Style::default().fg(ctx.theme.dim));
         }
-        offset += 1;
     }
 }
 

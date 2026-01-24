@@ -235,7 +235,7 @@ pub async fn provision_with_options(
 
     // Handle specific HTTP status codes
     match status {
-        200 | 201 | 202 => {
+        200..=202 => {
             // Success - parse response
             let text = response.text().await?;
             let provision_response: ProvisionResponse = serde_json::from_str(&text)?;

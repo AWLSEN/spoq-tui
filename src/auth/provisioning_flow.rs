@@ -1313,7 +1313,7 @@ fn wait_for_health_with_ui(
                 .build()
                 .map_err(|e| e.to_string())?;
 
-            let resp = client.get(&format!("{}/health", url))
+            let resp = client.get(format!("{}/health", url))
                 .send()
                 .await
                 .map_err(|e| e.to_string())?;

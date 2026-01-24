@@ -9,6 +9,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 /// Result of debug system initialization.
+#[derive(Default)]
 pub struct DebugSystemResult {
     /// Debug event sender (for sending debug events)
     pub tx: Option<DebugEventSender>,
@@ -16,16 +17,6 @@ pub struct DebugSystemResult {
     pub server_handle: Option<JoinHandle<()>>,
     /// State snapshot (for debug server state)
     pub state_snapshot: Option<Arc<RwLock<crate::debug::StateSnapshot>>>,
-}
-
-impl Default for DebugSystemResult {
-    fn default() -> Self {
-        Self {
-            tx: None,
-            server_handle: None,
-            state_snapshot: None,
-        }
-    }
 }
 
 /// Start the debug system (channel + server).

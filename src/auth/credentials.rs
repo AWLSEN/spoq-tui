@@ -78,6 +78,21 @@ impl CredentialsManager {
         Some(Self { credentials_path })
     }
 
+    /// Create a CredentialsManager with a custom base path (for testing).
+    ///
+    /// This constructor is available when running tests to allow isolated
+    /// temporary directories for each test.
+    ///
+    /// # Arguments
+    /// * `base_path` - The base directory where credentials will be stored
+    ///
+    /// The actual credentials file will be at `base_path/.spoq/.credentials.json`
+    #[doc(hidden)]
+    pub fn with_path(base_path: PathBuf) -> Self {
+        let credentials_path = base_path.join(CREDENTIALS_DIR).join(CREDENTIALS_FILE);
+        Self { credentials_path }
+    }
+
     /// Get the path to the credentials file.
     pub fn credentials_path(&self) -> &PathBuf {
         &self.credentials_path
@@ -97,10 +112,7 @@ impl CredentialsManager {
         };
 
         let reader = BufReader::new(file);
-        match serde_json::from_reader(reader) {
-            Ok(creds) => creds,
-            Err(_) => Credentials::default(),
-        }
+        serde_json::from_reader::<_, Credentials>(reader).unwrap_or_default()
     }
 
     /// Save credentials to the credentials file.

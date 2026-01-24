@@ -49,7 +49,7 @@ impl StreamingState {
 
     /// Get cursor visibility based on tick count (blinks every ~500ms at 10 ticks/sec)
     pub fn show_cursor(&self) -> bool {
-        (self.tick_count / 5) % 2 == 0
+        (self.tick_count / 5).is_multiple_of(2)
     }
 }
 

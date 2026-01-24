@@ -79,10 +79,7 @@ impl UpdateStateManager {
         };
 
         let reader = BufReader::new(file);
-        match serde_json::from_reader(reader) {
-            Ok(state) => state,
-            Err(_) => UpdateState::default(),
-        }
+        serde_json::from_reader::<_, UpdateState>(reader).unwrap_or_default()
     }
 
     /// Save update state to the state file.

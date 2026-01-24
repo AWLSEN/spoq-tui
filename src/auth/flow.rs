@@ -73,11 +73,12 @@ pub fn run_auth_flow(runtime: &tokio::runtime::Runtime) -> Result<Credentials, C
     let expires_at = Utc::now().timestamp() + expires_in as i64;
 
     // Build credentials from token response (only auth tokens)
-    let mut credentials = Credentials::default();
-    credentials.access_token = Some(tokens.access_token);
-    credentials.refresh_token = tokens.refresh_token; // Already Option<String>
-    credentials.expires_at = Some(expires_at);
-    credentials.user_id = tokens.user_id;
+    let credentials = Credentials {
+        access_token: Some(tokens.access_token),
+        refresh_token: tokens.refresh_token,
+        expires_at: Some(expires_at),
+        user_id: tokens.user_id,
+    };
 
     // Persist credentials
     let manager = CredentialsManager::new().ok_or_else(|| CentralApiError::ServerError {

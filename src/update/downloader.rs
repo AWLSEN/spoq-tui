@@ -607,11 +607,11 @@ pub async fn cleanup_old_updates_logged(keep_version: Option<&str>) -> Result<us
         }
 
         // Remove old update files
-        if filename_str.starts_with("spoq-") || filename_str.ends_with(".tmp") {
-            if tokio::fs::remove_file(entry.path()).await.is_ok() {
-                files_removed += 1;
-                log_update_debug(&format!("Removed old update file: {}", filename_str));
-            }
+        if (filename_str.starts_with("spoq-") || filename_str.ends_with(".tmp"))
+            && tokio::fs::remove_file(entry.path()).await.is_ok()
+        {
+            files_removed += 1;
+            log_update_debug(&format!("Removed old update file: {}", filename_str));
         }
     }
 

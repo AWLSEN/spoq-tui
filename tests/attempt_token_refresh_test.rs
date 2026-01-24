@@ -16,8 +16,7 @@ use wiremock::matchers::{method, path};
 
 /// Helper to create a test credentials manager with temp directory
 fn create_test_manager(temp_dir: &TempDir) -> CredentialsManager {
-    std::env::set_var("HOME", temp_dir.path());
-    CredentialsManager::new().expect("Failed to create credentials manager")
+    CredentialsManager::with_path(temp_dir.path().to_path_buf())
 }
 
 /// Test that attempt_token_refresh saves credentials after successful refresh

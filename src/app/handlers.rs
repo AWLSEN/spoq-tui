@@ -830,7 +830,7 @@ impl App {
                 tracing::info!("WS_THREAD_STATUS: thread={}, status={:?}", thread_id, status);
                 // Update dashboard state with thread status
                 self.dashboard
-                    .update_thread_status(&thread_id, status.clone(), waiting_for.clone());
+                    .update_thread_status(&thread_id, status, waiting_for.clone());
                 // Emit StateChange for thread status update
                 emit_debug(
                     &self.debug_tx,
@@ -951,7 +951,7 @@ impl App {
                     phase_index,
                     total_phases,
                     phase_name.clone(),
-                    status.clone(),
+                    status,
                     tool_count,
                     last_tool.clone(),
                     last_file.clone(),

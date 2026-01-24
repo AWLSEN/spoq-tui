@@ -58,8 +58,6 @@ impl ReqwestHttpClient {
             HttpError::Timeout(err.to_string())
         } else if err.is_connect() {
             HttpError::ConnectionFailed(err.to_string())
-        } else if err.is_request() {
-            HttpError::Other(err.to_string())
         } else {
             HttpError::Other(err.to_string())
         }

@@ -32,7 +32,7 @@ impl App {
             user_has_scrolled: self.user_has_scrolled,
             scroll_velocity: self.scroll_velocity,
             scroll_position: self.scroll_position,
-            scroll_boundary_hit: self.scroll_boundary_hit.clone(),
+            scroll_boundary_hit: self.scroll_boundary_hit,
             boundary_hit_tick: self.boundary_hit_tick,
             input_section_start: self.input_section_start,
             total_content_lines: self.total_content_lines,

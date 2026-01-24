@@ -19,12 +19,10 @@ use std::panic;
 /// ```no_run
 /// use spoq::terminal::setup_panic_hook;
 ///
-/// fn main() {
-///     // Install panic hook early
-///     setup_panic_hook();
+/// // Install panic hook early
+/// setup_panic_hook();
 ///
-///     // ... rest of initialization ...
-/// }
+/// // ... rest of initialization ...
 /// ```
 pub fn setup_panic_hook() {
     let original_hook = panic::take_hook();

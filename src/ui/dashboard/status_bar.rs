@@ -295,13 +295,11 @@ fn render_labels(buf: &mut Buffer, area: Rect, ctx: &RenderContext, widths: &Seg
 
 /// Helper to render text at a position, respecting area bounds
 fn render_text_at(buf: &mut Buffer, x: u16, y: u16, text: &str, style: Style, area: Rect) {
-    let mut offset = 0u16;
-    for ch in text.chars() {
-        let pos_x = x + offset;
+    for (offset, ch) in text.chars().enumerate() {
+        let pos_x = x + offset as u16;
         if pos_x < area.x + area.width {
             buf[(pos_x, y)].set_char(ch).set_style(style);
         }
-        offset += 1;
     }
 }
 

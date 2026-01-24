@@ -132,13 +132,10 @@ pub fn attempt_token_refresh(
     }
 
     // Calculate expiration from response or JWT
-    let expires_in = if let Some(exp) = refresh_response.expires_in {
-        exp
-    } else if let Some(jwt_exp) = get_jwt_expires_in(&refresh_response.access_token) {
-        jwt_exp
-    } else {
-        900 // Default to 15 minutes
-    };
+    let expires_in = refresh_response
+        .expires_in
+        .or_else(|| get_jwt_expires_in(&refresh_response.access_token))
+        .unwrap_or(900);
 
     let new_expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
     new_credentials.expires_at = Some(new_expires_at);
