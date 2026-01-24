@@ -173,8 +173,8 @@ fn render_split_view(
         }
     }
 
-    // Special state: "all clear" when no need_action threads
-    if need_action.is_empty() {
+    // Special state: "all clear" when no need_action threads AND no autonomous threads
+    if need_action.is_empty() && autonomous.is_empty() {
         // Calculate the area available for the "all clear" message
         // (from top of area to separator line)
         let need_action_area = Rect::new(
