@@ -6,6 +6,7 @@
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
+use crate::view_state::SystemStats;
 use crate::websocket::{WsClient, WsClientConfig, WsConnectionState, WsIncomingMessage};
 
 use super::AppMessage;
@@ -239,7 +240,6 @@ fn route_ws_message(
         }
         WsIncomingMessage::SystemMetricsUpdate(metrics) => {
             // System metrics update - convert MB to GB for SystemStats
-            use crate::view_state::SystemStats;
             let stats = SystemStats::new(
                 true, // WebSocket is connected if we're receiving this
                 metrics.cpu_percent,
