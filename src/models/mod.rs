@@ -9,7 +9,7 @@ pub use dashboard::{
     compute_duration, compute_local_aggregate, derive_repository, infer_status_from_agent_state,
     Aggregate, PlanSummary, ThreadStatus, WaitingFor,
 };
-pub use folder::{Folder, FolderListResponse};
+pub use folder::Folder;
 pub use message::*;
 pub use request::PermissionMode;
 pub use request::*;

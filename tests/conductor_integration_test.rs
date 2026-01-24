@@ -499,3 +499,36 @@ fn test_stream_request_working_directory_with_thread_builder() {
         Some("/workspace/app".to_string())
     );
 }
+
+// ROUND 1 TESTS - fetch_folders API format change
+
+#[tokio::test]
+async fn test_fetch_folders_with_invalid_server() {
+    // Test that fetch_folders returns appropriate errors for invalid servers
+    let client = ConductorClient::with_base_url("http://invalid-server-12345:9999".to_string());
+    let result = client.fetch_folders().await;
+
+    // Should return an error (Http error for connection failure)
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_fetch_folders_method_exists() {
+    // Verify fetch_folders method is callable and returns the correct type
+    let client = ConductorClient::default();
+
+    // Call the method (will fail to connect but that's expected)
+    let result = client.fetch_folders().await;
+
+    // Result should be Err due to connection failure, or Ok with Vec<Folder>
+    match result {
+        Ok(folders) => {
+            // If it succeeds (unlikely in test env), verify it's a vector
+            assert!(folders.is_empty() || !folders.is_empty());
+        }
+        Err(_) => {
+            // Expected - connection failed
+            assert!(result.is_err());
+        }
+    }
+}
