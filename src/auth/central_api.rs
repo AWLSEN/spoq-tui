@@ -549,13 +549,38 @@ impl CentralApiClient {
         Ok(data)
     }
 
-    /// Fetch available VPS plans.
+    /// Fetch available VPS plans from Hostinger.
     ///
     /// GET /api/vps/plans
     ///
-    /// Returns a list of available VPS plans.
+    /// Returns a list of available VPS plans from infrastructure provider.
     pub async fn fetch_vps_plans(&self) -> Result<Vec<VpsPlan>, CentralApiError> {
         let url = format!("{}/api/vps/plans", self.base_url);
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let wrapper: VpsPlansResponse = response.json().await?;
+        Ok(wrapper.plans)
+    }
+
+    /// Fetch subscription plans with Stripe pricing.
+    ///
+    /// GET /api/vps/subscription-plans
+    ///
+    /// Returns a list of subscription plans with Stripe price IDs for checkout.
+    /// Use this for the managed VPS payment flow.
+    pub async fn fetch_subscription_plans(&self) -> Result<Vec<VpsPlan>, CentralApiError> {
+        let url = format!("{}/api/vps/subscription-plans", self.base_url);
 
         let builder = self.client.get(&url);
         let response = self.add_auth_header(builder).send().await?;

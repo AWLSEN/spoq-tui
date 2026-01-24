@@ -517,10 +517,10 @@ fn run_managed_vps_flow(
         client.set_refresh_token(Some(refresh_token.clone()));
     }
 
-    // Step 1: Fetch available plans
-    println!("Fetching available VPS plans...");
+    // Step 1: Fetch available subscription plans (with Stripe pricing)
+    println!("Fetching available plans...");
     check_interrupt(&interrupted);
-    let plans = runtime.block_on(client.fetch_vps_plans())?;
+    let plans = runtime.block_on(client.fetch_subscription_plans())?;
 
     if plans.is_empty() {
         return Err(CentralApiError::ServerError {
