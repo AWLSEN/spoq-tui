@@ -1843,65 +1843,6 @@ pub fn start_stopped_vps(
     poll_vps_until_ready(runtime, &mut client)
 }
 
-/// Poll the VPS status with interrupt support.
-///
-/// Note: This function is kept for backwards compatibility but is no longer used
-/// in the main provisioning flow. The new health-first approach polls the conductor's
-/// health endpoint directly instead of /api/vps/status.
-#[allow(dead_code)]
-fn poll_vps_status_with_interrupt(
-    runtime: &tokio::runtime::Runtime,
-    client: &mut CentralApiClient,
-    interrupted: &Arc<AtomicBool>,
-) -> Result<VpsStatusResponse, CentralApiError> {
-    let mut attempts = 0;
-    let spinner_chars = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
-    loop {
-        check_interrupt(interrupted);
-
-        let status = runtime.block_on(client.fetch_vps_status())?;
-
-        // Check if VPS is ready
-        match status.status.to_lowercase().as_str() {
-            "ready" | "running" | "active" => {
-                print!("\r"); // Clear the spinner line
-                io::stdout().flush().ok();
-                return Ok(status);
-            }
-            "stopped" | "failed" | "terminated" | "error" => {
-                return Err(CentralApiError::ServerError {
-                    status: 500,
-                    message: format!("VPS provisioning failed with status: {}", status.status),
-                });
-            }
-            _ => {
-                // Still provisioning, show progress
-                let spinner = spinner_chars[attempts as usize % spinner_chars.len()];
-                print!(
-                    "\r{} Status: {} (attempt {}/{})",
-                    spinner,
-                    status.status,
-                    attempts + 1,
-                    MAX_POLL_ATTEMPTS
-                );
-                io::stdout().flush().ok();
-            }
-        }
-
-        attempts += 1;
-        if attempts >= MAX_POLL_ATTEMPTS {
-            return Err(CentralApiError::ServerError {
-                status: 408,
-                message: "VPS provisioning timed out".to_string(),
-            });
-        }
-
-        // Check interrupt before sleeping
-        check_interrupt(interrupted);
-        thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -1983,34 +1924,6 @@ mod tests {
         assert_eq!(managed, managed_clone);
     }
 
-    #[tokio::test]
-    async fn test_poll_vps_status_ready_states() {
-        // Test that various "ready" states are recognized
-        let ready_states = ["ready", "running", "active", "Ready", "RUNNING", "Active"];
-
-        for state in &ready_states {
-            let status = VpsStatusResponse {
-                vps_id: "test".to_string(),
-                status: state.to_string(),
-                hostname: Some("test.example.com".to_string()),
-                ip: Some("1.2.3.4".to_string()),
-                url: Some("https://test.example.com".to_string()),
-                ssh_username: None,
-                provider: None,
-                plan_id: None,
-                data_center_id: None,
-                created_at: None,
-                ready_at: None,
-            };
-
-            // Verify status is recognized as ready
-            let is_ready = matches!(
-                status.status.to_lowercase().as_str(),
-                "ready" | "running" | "active"
-            );
-            assert!(is_ready, "State '{}' should be recognized as ready", state);
-        }
-    }
 
     #[test]
     fn test_vps_status_failed_states() {
