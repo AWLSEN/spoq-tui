@@ -133,7 +133,12 @@ pub struct SegmentWidths {
 ///
 /// # Returns
 /// `SegmentWidths` with calculated widths that sum to `total_width`
-pub fn calculate_segment_widths(working: u32, ready: u32, idle: u32, total_width: u16) -> SegmentWidths {
+pub fn calculate_segment_widths(
+    working: u32,
+    ready: u32,
+    idle: u32,
+    total_width: u16,
+) -> SegmentWidths {
     let total = working + ready + idle;
 
     if total == 0 {
@@ -167,7 +172,12 @@ pub fn calculate_segment_widths(working: u32, ready: u32, idle: u32, total_width
 // ============================================================================
 
 /// Render the proportional bar on row 0
-fn render_proportional_bar(buf: &mut Buffer, area: Rect, widths: &SegmentWidths, filter: Option<FilterState>) {
+fn render_proportional_bar(
+    buf: &mut Buffer,
+    area: Rect,
+    widths: &SegmentWidths,
+    filter: Option<FilterState>,
+) {
     let y = area.y;
     let mut x = area.x;
 
@@ -323,13 +333,12 @@ fn register_hit_areas(registry: &mut HitAreaRegistry, area: Rect, widths: &Segme
 
     // Ready segment hit area
     if widths.ready > 0 {
-        let ready_rect = Rect::new(
-            area.x + widths.working,
-            area.y,
-            widths.ready,
-            hit_height,
+        let ready_rect = Rect::new(area.x + widths.working, area.y, widths.ready, hit_height);
+        registry.register(
+            ready_rect,
+            ClickAction::FilterReadyToTest,
+            Some(hover_style),
         );
-        registry.register(ready_rect, ClickAction::FilterReadyToTest, Some(hover_style));
     }
 
     // Idle segment hit area
@@ -345,12 +354,7 @@ fn register_hit_areas(registry: &mut HitAreaRegistry, area: Rect, widths: &Segme
 
     // Clear filter button hit area (positioned at far right of row 1)
     // We register this regardless of filter state - click handler will ignore if not filtered
-    let clear_rect = Rect::new(
-        (area.x + area.width).saturating_sub(3),
-        area.y + 1,
-        3,
-        1,
-    );
+    let clear_rect = Rect::new((area.x + area.width).saturating_sub(3), area.y + 1, 3, 1);
     registry.register(clear_rect, ClickAction::ClearFilter, Some(hover_style));
 }
 

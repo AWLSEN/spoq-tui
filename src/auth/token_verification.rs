@@ -110,7 +110,10 @@ pub fn verify_vps_tokens(
     ssh_username: &str,
     ssh_password: &str,
 ) -> Result<VpsTokenVerification, TokenVerificationError> {
-    info!("Verifying tokens on VPS {} as user {}", vps_ip, ssh_username);
+    info!(
+        "Verifying tokens on VPS {} as user {}",
+        vps_ip, ssh_username
+    );
 
     // Check sshpass is available
     if !check_sshpass_available() {
@@ -138,28 +141,24 @@ pub fn verify_vps_tokens(
     };
 
     // Verify GitHub CLI
-    let github_cli_works = match run_ssh_command(
-        vps_ip,
-        ssh_username,
-        ssh_password,
-        "gh auth status",
-    ) {
-        Ok(output) => {
-            debug!("GitHub CLI verification output: {}", output);
-            // Check for success indicators in output
-            let success = output.contains("Logged in") || output.contains("✓");
-            if success {
-                info!("GitHub CLI verified on VPS");
-            } else {
-                warn!("GitHub CLI not authenticated on VPS");
+    let github_cli_works =
+        match run_ssh_command(vps_ip, ssh_username, ssh_password, "gh auth status") {
+            Ok(output) => {
+                debug!("GitHub CLI verification output: {}", output);
+                // Check for success indicators in output
+                let success = output.contains("Logged in") || output.contains("✓");
+                if success {
+                    info!("GitHub CLI verified on VPS");
+                } else {
+                    warn!("GitHub CLI not authenticated on VPS");
+                }
+                success
             }
-            success
-        }
-        Err(e) => {
-            warn!("GitHub CLI verification failed: {}", e);
-            false
-        }
-    };
+            Err(e) => {
+                warn!("GitHub CLI verification failed: {}", e);
+                false
+            }
+        };
 
     Ok(VpsTokenVerification {
         claude_code_works,
@@ -185,7 +184,10 @@ fn run_ssh_command(
     ssh_password: &str,
     command: &str,
 ) -> Result<String, TokenVerificationError> {
-    debug!("Running SSH command: {} on {}@{}", command, ssh_username, vps_ip);
+    debug!(
+        "Running SSH command: {} on {}@{}",
+        command, ssh_username, vps_ip
+    );
 
     let remote_host = format!("{}@{}", ssh_username, vps_ip);
     let escaped_password = ssh_password.replace("'", "'\\''"); // Escape single quotes
@@ -228,7 +230,9 @@ fn run_ssh_command(
             Err(TokenVerificationError::SshConnectionFailed(
                 "Authentication failed. Check SSH username and password.".to_string(),
             ))
-        } else if stderr.to_lowercase().contains("timed out") || stderr.to_lowercase().contains("timeout") {
+        } else if stderr.to_lowercase().contains("timed out")
+            || stderr.to_lowercase().contains("timeout")
+        {
             Err(TokenVerificationError::SshCommandTimeout(
                 "SSH connection timed out. VPS may be slow to respond.".to_string(),
             ))

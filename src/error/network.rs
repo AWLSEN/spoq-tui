@@ -12,15 +12,10 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum NetworkError {
     /// Connection to the server failed.
-    ConnectionFailed {
-        url: String,
-        message: String,
-    },
+    ConnectionFailed { url: String, message: String },
 
     /// DNS resolution failed.
-    DnsResolutionFailed {
-        host: String,
-    },
+    DnsResolutionFailed { host: String },
 
     /// Request timed out.
     Timeout {
@@ -29,33 +24,22 @@ pub enum NetworkError {
     },
 
     /// TLS/SSL error.
-    TlsError {
-        message: String,
-    },
+    TlsError { message: String },
 
     /// HTTP status error (non-2xx response).
-    HttpStatus {
-        status: u16,
-        message: String,
-    },
+    HttpStatus { status: u16, message: String },
 
     /// Rate limited by server.
-    RateLimited {
-        retry_after_secs: Option<u64>,
-    },
+    RateLimited { retry_after_secs: Option<u64> },
 
     /// Invalid response format.
-    InvalidResponse {
-        message: String,
-    },
+    InvalidResponse { message: String },
 
     /// Request was cancelled.
     Cancelled,
 
     /// Generic network error.
-    Other {
-        message: String,
-    },
+    Other { message: String },
 }
 
 impl NetworkError {
@@ -155,7 +139,10 @@ impl fmt::Display for NetworkError {
             NetworkError::DnsResolutionFailed { host } => {
                 write!(f, "DNS resolution failed for '{}'", host)
             }
-            NetworkError::Timeout { operation, duration_secs } => {
+            NetworkError::Timeout {
+                operation,
+                duration_secs,
+            } => {
                 write!(f, "{} timed out after {} seconds", operation, duration_secs)
             }
             NetworkError::TlsError { message } => {
@@ -164,12 +151,10 @@ impl fmt::Display for NetworkError {
             NetworkError::HttpStatus { status, message } => {
                 write!(f, "HTTP {} error: {}", status, message)
             }
-            NetworkError::RateLimited { retry_after_secs } => {
-                match retry_after_secs {
-                    Some(secs) => write!(f, "Rate limited, retry after {} seconds", secs),
-                    None => write!(f, "Rate limited"),
-                }
-            }
+            NetworkError::RateLimited { retry_after_secs } => match retry_after_secs {
+                Some(secs) => write!(f, "Rate limited, retry after {} seconds", secs),
+                None => write!(f, "Rate limited"),
+            },
             NetworkError::InvalidResponse { message } => {
                 write!(f, "Invalid response: {}", message)
             }

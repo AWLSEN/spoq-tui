@@ -44,7 +44,10 @@ impl std::fmt::Display for CredsSyncError {
             CredsSyncError::Sftp(msg) => write!(f, "SFTP operation failed: {}", msg),
             CredsSyncError::SshCommand(msg) => write!(f, "SSH command failed: {}", msg),
             CredsSyncError::NoCredentialsFound => {
-                write!(f, "No credentials found (neither Claude, GitHub, nor Codex)")
+                write!(
+                    f,
+                    "No credentials found (neither Claude, GitHub, nor Codex)"
+                )
             }
             CredsSyncError::FileRead(msg) => write!(f, "Failed to read file: {}", msg),
         }
@@ -412,8 +415,10 @@ pub async fn sync_and_verify_credentials(
     // Verify Claude Code if synced
     if sync_result.claude_synced {
         // Use script to fake TTY (Claude needs it) + timeout to prevent hanging
-        let (output, exit_code) =
-            run_ssh_command(&session, "script -q /dev/null -c \"timeout 30 claude -p 'say OK'\" 2>&1")?;
+        let (output, exit_code) = run_ssh_command(
+            &session,
+            "script -q /dev/null -c \"timeout 30 claude -p 'say OK'\" 2>&1",
+        )?;
 
         let claude_ok = exit_code == 0
             && !output.to_lowercase().contains("invalid api key")

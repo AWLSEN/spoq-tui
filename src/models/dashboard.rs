@@ -128,19 +128,36 @@ impl Aggregate {
 
     /// Count of working threads (Running + Waiting)
     pub fn working(&self) -> u32 {
-        self.by_status.get(&ThreadStatus::Running).copied().unwrap_or(0)
-            + self.by_status.get(&ThreadStatus::Waiting).copied().unwrap_or(0)
+        self.by_status
+            .get(&ThreadStatus::Running)
+            .copied()
+            .unwrap_or(0)
+            + self
+                .by_status
+                .get(&ThreadStatus::Waiting)
+                .copied()
+                .unwrap_or(0)
     }
 
     /// Count of threads ready for testing (Done)
     pub fn ready_to_test(&self) -> u32 {
-        self.by_status.get(&ThreadStatus::Done).copied().unwrap_or(0)
+        self.by_status
+            .get(&ThreadStatus::Done)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Count of idle threads (Idle + Error)
     pub fn idle(&self) -> u32 {
-        self.by_status.get(&ThreadStatus::Idle).copied().unwrap_or(0)
-            + self.by_status.get(&ThreadStatus::Error).copied().unwrap_or(0)
+        self.by_status
+            .get(&ThreadStatus::Idle)
+            .copied()
+            .unwrap_or(0)
+            + self
+                .by_status
+                .get(&ThreadStatus::Error)
+                .copied()
+                .unwrap_or(0)
     }
 
     /// Count of threads with a specific status
@@ -580,19 +597,13 @@ mod tests {
             infer_status_from_agent_state("finished"),
             ThreadStatus::Done
         );
-        assert_eq!(
-            infer_status_from_agent_state("success"),
-            ThreadStatus::Done
-        );
+        assert_eq!(infer_status_from_agent_state("success"), ThreadStatus::Done);
     }
 
     #[test]
     fn test_infer_status_error() {
         assert_eq!(infer_status_from_agent_state("error"), ThreadStatus::Error);
-        assert_eq!(
-            infer_status_from_agent_state("failed"),
-            ThreadStatus::Error
-        );
+        assert_eq!(infer_status_from_agent_state("failed"), ThreadStatus::Error);
         assert_eq!(
             infer_status_from_agent_state("failure"),
             ThreadStatus::Error
@@ -612,10 +623,7 @@ mod tests {
             infer_status_from_agent_state("unknown_state"),
             ThreadStatus::Idle
         );
-        assert_eq!(
-            infer_status_from_agent_state("xyz"),
-            ThreadStatus::Idle
-        );
+        assert_eq!(infer_status_from_agent_state("xyz"), ThreadStatus::Idle);
     }
 
     // -------------------- derive_repository Tests --------------------
@@ -628,14 +636,20 @@ mod tests {
     #[test]
     fn test_derive_repository_macos_path() {
         assert_eq!(derive_repository("/Users/sam/api"), "~/api");
-        assert_eq!(derive_repository("/Users/sam/projects/myapp"), "~/projects/myapp");
+        assert_eq!(
+            derive_repository("/Users/sam/projects/myapp"),
+            "~/projects/myapp"
+        );
         assert_eq!(derive_repository("/Users/john"), "~");
     }
 
     #[test]
     fn test_derive_repository_linux_path() {
         assert_eq!(derive_repository("/home/sam/api"), "~/api");
-        assert_eq!(derive_repository("/home/user/projects/myapp"), "~/projects/myapp");
+        assert_eq!(
+            derive_repository("/home/user/projects/myapp"),
+            "~/projects/myapp"
+        );
         assert_eq!(derive_repository("/home/john"), "~");
     }
 

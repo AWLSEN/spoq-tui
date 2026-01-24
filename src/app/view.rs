@@ -89,7 +89,11 @@ impl App {
             }),
             has_overlay: self.dashboard.overlay().is_some(),
             thread_count: self.dashboard.thread_count(),
-            action_count: self.dashboard.aggregate().count(crate::models::dashboard::ThreadStatus::Waiting) as usize,
+            action_count: self
+                .dashboard
+                .aggregate()
+                .count(crate::models::dashboard::ThreadStatus::Waiting)
+                as usize,
         };
 
         // Build input state

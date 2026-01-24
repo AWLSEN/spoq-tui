@@ -195,8 +195,10 @@ mod tests {
 
     #[test]
     fn test_context_from_io_error() {
-        let io_result: Result<(), std::io::Error> =
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "not found"));
+        let io_result: Result<(), std::io::Error> = Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "not found",
+        ));
 
         let with_ctx = io_result.context(ErrorContext::new("read_file"));
 
@@ -213,8 +215,8 @@ mod tests {
             duration_secs: 30,
         }));
 
-        let with_ctx = result
-            .context(ErrorContext::new("send_message").with_thread_id("thread-123"));
+        let with_ctx =
+            result.context(ErrorContext::new("send_message").with_thread_id("thread-123"));
 
         let err = with_ctx.unwrap_err();
         assert_eq!(err.context().unwrap().operation, "send_message");

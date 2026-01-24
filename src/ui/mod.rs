@@ -57,8 +57,10 @@ pub use messages::{estimate_wrapped_line_count, truncate_preview};
 pub use interaction::{handle_click_action, ClickAction, HitArea, HitAreaRegistry};
 
 // Re-export prepare phase for external use
-pub use prepare::{apply_render_outputs, get_message_heights, get_total_visual_lines, prepare_render};
 pub use context::{MessageHeightInfo, RenderOutputs};
+pub use prepare::{
+    apply_render_outputs, get_message_heights, get_total_visual_lines, prepare_render,
+};
 
 use ratatui::{
     layout::{Alignment, Rect},
@@ -134,8 +136,8 @@ mod tests {
     use crate::models::PermissionMode;
     use conversation::create_mode_indicator_line;
     use helpers::{
-        extract_short_model_name, get_tool_icon, is_terminal_too_small,
-        truncate_string, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+        extract_short_model_name, get_tool_icon, is_terminal_too_small, truncate_string,
+        MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
     };
     use input::{build_contextual_keybinds, get_permission_preview};
     use messages::{render_tool_event, truncate_preview};
@@ -1005,7 +1007,8 @@ mod tests {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal
@@ -1053,7 +1056,8 @@ mod tests {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal
@@ -1101,7 +1105,8 @@ mod tests {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal
@@ -1149,7 +1154,8 @@ mod tests {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal
@@ -1217,7 +1223,8 @@ mod tests {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal
@@ -1545,7 +1552,6 @@ mod tests {
             "Should show permission key options [y], [a], [n]"
         );
     }
-
 
     #[test]
     fn test_truncate_string_no_truncation() {

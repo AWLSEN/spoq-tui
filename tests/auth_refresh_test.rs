@@ -8,8 +8,8 @@
 
 use spoq::auth::central_api::{CentralApiClient, CentralApiError, TokenResponse};
 use spoq::auth::credentials::Credentials;
-use wiremock::{MockServer, Mock, ResponseTemplate};
-use wiremock::matchers::{method, path, header};
+use wiremock::matchers::{header, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper to create expired credentials
 fn create_expired_credentials() -> Credentials {
@@ -84,12 +84,17 @@ async fn test_proactive_refresh_with_expired_token_and_valid_refresh() {
         .await;
 
     let client = CentralApiClient::with_base_url(mock_server.uri());
-    let result = client.refresh_token(creds.refresh_token.as_ref().unwrap()).await;
+    let result = client
+        .refresh_token(creds.refresh_token.as_ref().unwrap())
+        .await;
 
     assert!(result.is_ok());
     let token_response = result.unwrap();
     assert_eq!(token_response.access_token, "new-access-token");
-    assert_eq!(token_response.refresh_token, Some("new-refresh-token".to_string()));
+    assert_eq!(
+        token_response.refresh_token,
+        Some("new-refresh-token".to_string())
+    );
     assert_eq!(token_response.expires_in, Some(3600));
 }
 
@@ -116,7 +121,9 @@ async fn test_proactive_refresh_with_expired_token_and_invalid_refresh() {
         .await;
 
     let client = CentralApiClient::with_base_url(mock_server.uri());
-    let result = client.refresh_token(creds.refresh_token.as_ref().unwrap()).await;
+    let result = client
+        .refresh_token(creds.refresh_token.as_ref().unwrap())
+        .await;
 
     assert!(result.is_err());
     if let Err(CentralApiError::ServerError { status, message }) = result {
@@ -271,8 +278,7 @@ async fn test_auto_refresh_on_401_with_no_refresh_token() {
         .mount(&mock_server)
         .await;
 
-    let mut client = CentralApiClient::with_base_url(mock_server.uri())
-        .with_auth("expired-token");
+    let mut client = CentralApiClient::with_base_url(mock_server.uri()).with_auth("expired-token");
     // No refresh token set
 
     let result = client.provision_vps("password", None, None).await;
@@ -442,7 +448,9 @@ async fn test_auto_refresh_with_provision_byovps() {
         .with_auth("expired-token")
         .with_refresh_token("valid-refresh");
 
-    let result = client.provision_byovps("192.168.1.100", "root", "password").await;
+    let result = client
+        .provision_byovps("192.168.1.100", "root", "password")
+        .await;
 
     assert!(result.is_ok());
     let response = result.unwrap();
@@ -575,7 +583,11 @@ async fn test_refresh_logging_output() {
     // - "Token expired (401), attempting refresh..."
     // - "Token refresh successful, new expiration: ..."
     let result = client.provision_vps("pass", None, None).await;
-    assert!(result.is_ok(), "Expected success but got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Expected success but got: {:?}",
+        result.err()
+    );
 }
 
 // ============================================================================
@@ -688,8 +700,8 @@ async fn test_tokens_updated_after_successful_refresh() {
 
 #[test]
 fn test_credentials_manager_expired_token_handling() {
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
     let credentials_dir = temp_dir.path().join(".spoq");

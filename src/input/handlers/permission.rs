@@ -39,9 +39,7 @@ pub fn handle_permission_command(app: &mut App, cmd: &Command) -> bool {
             }
         }
 
-        Command::HandlePermissionKey(c) => {
-            app.handle_permission_key(*c)
-        }
+        Command::HandlePermissionKey(c) => app.handle_permission_key(*c),
 
         _ => false,
     }
@@ -324,7 +322,13 @@ mod tests {
     fn test_handle_resize() {
         let mut app = create_test_app();
 
-        let handled = handle_misc_command(&mut app, &Command::Resize { width: 120, height: 40 });
+        let handled = handle_misc_command(
+            &mut app,
+            &Command::Resize {
+                width: 120,
+                height: 40,
+            },
+        );
         assert!(handled);
         assert_eq!(app.terminal_width, 120);
         assert_eq!(app.terminal_height, 40);

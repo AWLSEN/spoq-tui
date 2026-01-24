@@ -175,10 +175,7 @@ fn render_free_form_mode(
 
     // Truncated question
     let truncated_q = truncate_with_ellipsis(question, area.width.saturating_sub(4) as usize);
-    frame.render_widget(
-        Line::raw(truncated_q),
-        Rect::new(area.x, y, area.width, 1),
-    );
+    frame.render_widget(Line::raw(truncated_q), Rect::new(area.x, y, area.width, 1));
     y += 2; // Skip blank line
 
     // Input box
@@ -228,10 +225,7 @@ fn render_free_form_mode(
         }
         spans.push(Span::raw(" \u{2502}"));
 
-        frame.render_widget(
-            Line::from(spans),
-            Rect::new(area.x, y, area.width, 1),
-        );
+        frame.render_widget(Line::from(spans), Rect::new(area.x, y, area.width, 1));
         y += 1;
 
         // Bottom border

@@ -6,11 +6,11 @@
 // - 200x50 (ultra-wide)
 // - 30x10 (minimum size boundary)
 
+use spoq::models::ThreadMode;
 use spoq::ui::{
     breakpoints, calculate_stacked_heights, calculate_two_column_widths, is_terminal_too_small,
     LayoutContext, SizeCategory, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
-use spoq::models::ThreadMode;
 
 // =============================================================================
 // Test Size Constants
@@ -1793,7 +1793,8 @@ mod ui_rendering_integration {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal
@@ -1841,7 +1842,8 @@ mod ui_rendering_integration {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal
@@ -1889,7 +1891,8 @@ mod ui_rendering_integration {
 
         // Sync threads to dashboard for rendering
         let threads: Vec<_> = app.cache.threads().into_iter().cloned().collect();
-        app.dashboard.set_threads(threads, &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(threads, &std::collections::HashMap::new());
         app.dashboard.compute_thread_views();
 
         terminal

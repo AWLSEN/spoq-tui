@@ -155,7 +155,10 @@ fn render_actions(
         // Waiting + Permission or PlanApproval -> [approve] [reject]
         (ThreadStatus::Waiting, Some(WaitingFor::Permission { .. }))
         | (ThreadStatus::Waiting, Some(WaitingFor::PlanApproval { .. })) => {
-            vec![("[approve]", ButtonAction::Approve), ("[reject]", ButtonAction::Reject)]
+            vec![
+                ("[approve]", ButtonAction::Approve),
+                ("[reject]", ButtonAction::Reject),
+            ]
         }
         // Waiting + UserInput -> [answer]
         (ThreadStatus::Waiting, Some(WaitingFor::UserInput)) => {

@@ -217,7 +217,10 @@ pub async fn download_from_url(
     let status = response.status();
     if !status.is_success() {
         let status_code = status.as_u16();
-        let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let message = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
         return Err(DownloadError::ServerError {
             status: status_code,
             message,
@@ -528,13 +531,15 @@ pub async fn download_from_url_logged(
     drop(file);
 
     // Rename temp file to final location (atomic on most filesystems)
-    tokio::fs::rename(&temp_path, &file_path).await.map_err(|e| {
-        // Clean up temp file on failure
-        let _ = std::fs::remove_file(&temp_path);
-        let err = classify_io_error(e, Some(file_path.clone()), "rename temp file");
-        logger.log_download_failed(version_str, &err);
-        err
-    })?;
+    tokio::fs::rename(&temp_path, &file_path)
+        .await
+        .map_err(|e| {
+            // Clean up temp file on failure
+            let _ = std::fs::remove_file(&temp_path);
+            let err = classify_io_error(e, Some(file_path.clone()), "rename temp file");
+            logger.log_download_failed(version_str, &err);
+            err
+        })?;
 
     // Verify file was written correctly
     let metadata = tokio::fs::metadata(&file_path).await.map_err(|e| {
@@ -593,9 +598,11 @@ pub async fn cleanup_old_updates_logged(keep_version: Option<&str>) -> Result<us
         .await
         .map_err(|e| classify_io_error(e, Some(update_dir.clone()), "read update directory"))?;
 
-    while let Some(entry) = entries.next_entry().await.map_err(|e| {
-        classify_io_error(e, Some(update_dir.clone()), "read directory entry")
-    })? {
+    while let Some(entry) = entries
+        .next_entry()
+        .await
+        .map_err(|e| classify_io_error(e, Some(update_dir.clone()), "read directory entry"))?
+    {
         let filename = entry.file_name();
         let filename_str = filename.to_string_lossy();
 
@@ -823,7 +830,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = download_from_url_logged(&client, "http://127.0.0.1:1/fake", Some("0.0.0")).await;
+        let result =
+            download_from_url_logged(&client, "http://127.0.0.1:1/fake", Some("0.0.0")).await;
         assert!(result.is_err());
 
         let err = result.unwrap_err();
@@ -857,7 +865,10 @@ mod tests {
         // Test UnsupportedPlatform conversion
         let download_err = DownloadError::UnsupportedPlatform("windows-x86".to_string());
         let update_err: UpdateError = download_err.into();
-        assert!(matches!(update_err, UpdateError::UnsupportedPlatform { .. }));
+        assert!(matches!(
+            update_err,
+            UpdateError::UnsupportedPlatform { .. }
+        ));
 
         // Test VerificationFailed conversion
         let download_err = DownloadError::VerificationFailed("Size mismatch".to_string());

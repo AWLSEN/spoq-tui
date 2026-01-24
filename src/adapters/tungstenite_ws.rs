@@ -50,7 +50,9 @@ impl TungsteniteWsConnection {
     /// # Returns
     /// A connected WebSocket adapter or an error
     pub async fn connect(config: WsClientConfig) -> Result<Self, TraitWsError> {
-        let client = WsClient::connect(config).await.map_err(TraitWsError::from)?;
+        let client = WsClient::connect(config)
+            .await
+            .map_err(TraitWsError::from)?;
 
         // Get the state receiver before moving client
         let state_rx = client.state_receiver();

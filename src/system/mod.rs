@@ -4,4 +4,4 @@
 //! CPU and RAM usage tracking.
 
 mod stats;
-pub use stats::{SystemStatsPoller, spawn_stats_poller};
+pub use stats::{spawn_stats_poller, SystemStatsPoller};

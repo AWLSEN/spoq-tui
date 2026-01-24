@@ -113,28 +113,24 @@ fn test_byovps_username_validation() {
     // Empty username should default to "root"
     let empty_username = "";
     let trimmed = empty_username.trim();
-    let final_username = if trimmed.is_empty() {
-        "root"
-    } else {
-        trimmed
-    };
+    let final_username = if trimmed.is_empty() { "root" } else { trimmed };
     assert_eq!(final_username, "root");
 
     // Whitespace-only should default to "root"
     let whitespace_username = "   ";
     let trimmed = whitespace_username.trim();
-    let final_username = if trimmed.is_empty() {
-        "root"
-    } else {
-        trimmed
-    };
+    let final_username = if trimmed.is_empty() { "root" } else { trimmed };
     assert_eq!(final_username, "root");
 
     // Valid custom usernames
     let valid_usernames = vec!["root", "ubuntu", "admin", "user", "deploy"];
     for username in valid_usernames {
         let trimmed = username.trim();
-        assert!(!trimmed.is_empty(), "Username '{}' should be valid", username);
+        assert!(
+            !trimmed.is_empty(),
+            "Username '{}' should be valid",
+            username
+        );
     }
 
     // Username with whitespace should be trimmed
@@ -147,7 +143,12 @@ fn test_byovps_username_validation() {
 #[test]
 fn test_byovps_password_validation() {
     // Password must be at least 1 character
-    let valid_passwords = vec!["p", "password", "P@ssw0rd!", "very_long_secure_password_123"];
+    let valid_passwords = vec![
+        "p",
+        "password",
+        "P@ssw0rd!",
+        "very_long_secure_password_123",
+    ];
 
     for password in valid_passwords {
         assert!(
@@ -192,10 +193,7 @@ fn test_byovps_provision_response_structure() {
     assert_eq!(response.hostname, Some("user.spoq.dev".to_string()));
     assert_eq!(response.vps_id, Some("byovps-uuid-123".to_string()));
     assert_eq!(response.ip, Some("192.168.1.100".to_string()));
-    assert_eq!(
-        response.url,
-        Some("https://user.spoq.dev:8000".to_string())
-    );
+    assert_eq!(response.url, Some("https://user.spoq.dev:8000".to_string()));
     assert_eq!(
         response.message,
         Some("BYOVPS provisioned successfully".to_string())
@@ -264,7 +262,11 @@ fn test_byovps_status_failed_states() {
             state.to_lowercase().as_str(),
             "failed" | "error" | "terminated"
         );
-        assert!(is_failed, "State '{}' should be recognized as failed", state);
+        assert!(
+            is_failed,
+            "State '{}' should be recognized as failed",
+            state
+        );
     }
 }
 
@@ -427,7 +429,9 @@ fn test_ssh_connection_error_detection() {
     // Test SSH-related errors
     assert!(is_ssh_connection_error("SSH connection failed"));
     assert!(is_ssh_connection_error("ssh: Connection refused"));
-    assert!(is_ssh_connection_error("Failed to establish SSH connection"));
+    assert!(is_ssh_connection_error(
+        "Failed to establish SSH connection"
+    ));
 
     // Test connection errors
     assert!(is_ssh_connection_error("Connection refused"));
@@ -662,8 +666,7 @@ fn test_byovps_ssh_credentials_serialization() {
     assert!(json.contains("admin"));
 
     // Deserialize back
-    let parsed: TestByovpsCredentials =
-        serde_json::from_str(&json).expect("Should deserialize");
+    let parsed: TestByovpsCredentials = serde_json::from_str(&json).expect("Should deserialize");
     assert_eq!(parsed.vps_ip, "10.0.0.1");
     assert_eq!(parsed.ssh_username, "admin");
 }
@@ -675,8 +678,8 @@ fn test_byovps_ssh_credentials_serialization() {
 /// Test BYOVPS provision with expired token triggers auto-refresh
 #[tokio::test]
 async fn test_byovps_auto_refresh_on_expired_token() {
-    use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path, header};
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
 
@@ -721,7 +724,9 @@ async fn test_byovps_auto_refresh_on_expired_token() {
         .with_auth("expired-token")
         .with_refresh_token("valid-refresh");
 
-    let result = client.provision_byovps("192.168.1.100", "root", "password").await;
+    let result = client
+        .provision_byovps("192.168.1.100", "root", "password")
+        .await;
 
     assert!(result.is_ok());
     let response = result.unwrap();
@@ -737,8 +742,8 @@ async fn test_byovps_auto_refresh_on_expired_token() {
 /// Test BYOVPS provision fails when refresh token is invalid
 #[tokio::test]
 async fn test_byovps_refresh_fails_with_invalid_refresh_token() {
-    use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
 
@@ -779,8 +784,8 @@ async fn test_byovps_refresh_fails_with_invalid_refresh_token() {
 /// Test BYOVPS provision fails when no refresh token available
 #[tokio::test]
 async fn test_byovps_no_refresh_token_available() {
-    use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
 
@@ -793,11 +798,12 @@ async fn test_byovps_no_refresh_token_available() {
         .mount(&mock_server)
         .await;
 
-    let mut client = CentralApiClient::with_base_url(mock_server.uri())
-        .with_auth("expired-token");
+    let mut client = CentralApiClient::with_base_url(mock_server.uri()).with_auth("expired-token");
     // No refresh token set
 
-    let result = client.provision_byovps("172.16.0.1", "root", "secret").await;
+    let result = client
+        .provision_byovps("172.16.0.1", "root", "secret")
+        .await;
 
     assert!(result.is_err());
     if let Err(CentralApiError::ServerError { status, message }) = result {
@@ -812,8 +818,8 @@ async fn test_byovps_no_refresh_token_available() {
 /// Test BYOVPS provision succeeds without refresh when token is valid
 #[tokio::test]
 async fn test_byovps_no_refresh_when_token_valid() {
-    use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path, header};
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
 
@@ -847,7 +853,9 @@ async fn test_byovps_no_refresh_when_token_valid() {
         .with_auth("valid-token")
         .with_refresh_token("valid-refresh");
 
-    let result = client.provision_byovps("192.168.100.50", "ubuntu", "testpass").await;
+    let result = client
+        .provision_byovps("192.168.100.50", "ubuntu", "testpass")
+        .await;
 
     assert!(result.is_ok());
     let response = result.unwrap();
@@ -903,8 +911,8 @@ fn test_byovps_credentials_invalid_when_no_expiration() {
 /// Test saving and loading credentials with token expiration
 #[test]
 fn test_byovps_credentials_save_load_with_token_expiration() {
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
     let credentials_dir = temp_dir.path().join(".spoq");
@@ -1011,8 +1019,8 @@ fn test_byovps_validation_comprehensive() {
 /// Test BYOVPS early return with ready status (API response structure)
 #[tokio::test]
 async fn test_byovps_early_return_with_ready_response() {
-    use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
 
@@ -1030,10 +1038,11 @@ async fn test_byovps_early_return_with_ready_response() {
         .mount(&mock_server)
         .await;
 
-    let mut client = CentralApiClient::with_base_url(mock_server.uri())
-        .with_auth("valid-token");
+    let mut client = CentralApiClient::with_base_url(mock_server.uri()).with_auth("valid-token");
 
-    let result = client.provision_byovps("192.168.99.99", "root", "password").await;
+    let result = client
+        .provision_byovps("192.168.99.99", "root", "password")
+        .await;
 
     assert!(result.is_ok());
     let response = result.unwrap();
@@ -1041,14 +1050,17 @@ async fn test_byovps_early_return_with_ready_response() {
     assert_eq!(response.vps_id, Some("byovps-instant-ready".to_string()));
     assert_eq!(response.hostname, Some("instant.spoq.dev".to_string()));
     assert_eq!(response.ip, Some("192.168.99.99".to_string()));
-    assert_eq!(response.url, Some("https://instant.spoq.dev:8000".to_string()));
+    assert_eq!(
+        response.url,
+        Some("https://instant.spoq.dev:8000".to_string())
+    );
 }
 
 /// Test BYOVPS failed provision response structure
 #[tokio::test]
 async fn test_byovps_failed_provision_response_structure() {
-    use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let mock_server = MockServer::start().await;
 
@@ -1064,16 +1076,20 @@ async fn test_byovps_failed_provision_response_structure() {
         .mount(&mock_server)
         .await;
 
-    let mut client = CentralApiClient::with_base_url(mock_server.uri())
-        .with_auth("valid-token");
+    let mut client = CentralApiClient::with_base_url(mock_server.uri()).with_auth("valid-token");
 
-    let result = client.provision_byovps("192.168.1.1", "root", "password").await;
+    let result = client
+        .provision_byovps("192.168.1.1", "root", "password")
+        .await;
 
     assert!(result.is_ok());
     let response = result.unwrap();
     assert_eq!(response.status, "failed");
     assert_eq!(response.vps_id, Some("byovps-failed-test".to_string()));
-    assert_eq!(response.message, Some("SSH connection failed: Connection refused".to_string()));
+    assert_eq!(
+        response.message,
+        Some("SSH connection failed: Connection refused".to_string())
+    );
 }
 
 /// Test Credentials struct has only auth fields (verification test)

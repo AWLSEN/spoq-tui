@@ -64,8 +64,8 @@ fn test_credentials_serialization() {
 /// Test credentials save and load
 #[test]
 fn test_credentials_save_load() {
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     let temp_dir = TempDir::new().unwrap();
     let credentials_dir = temp_dir.path().join(".spoq");

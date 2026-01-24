@@ -22,8 +22,8 @@ pub use crate::app::{App, AppMessage, Focus, Screen, ScrollBoundary};
 
 // Model types
 pub use crate::models::{
-    ErrorInfo, Folder, Message, MessageRole, MessageSegment, PermissionMode, StreamRequest,
-    Thread, ThreadMode, ThreadType, ToolEvent, ToolEventStatus,
+    ErrorInfo, Folder, Message, MessageRole, MessageSegment, PermissionMode, StreamRequest, Thread,
+    ThreadMode, ThreadType, ToolEvent, ToolEventStatus,
 };
 
 // Cache

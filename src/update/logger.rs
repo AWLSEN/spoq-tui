@@ -27,9 +27,7 @@ pub enum UpdateLogLevel {
 pub enum UpdateEvent {
     // ========== Check Events ==========
     /// Starting an update check
-    CheckStarted {
-        current_version: String,
-    },
+    CheckStarted { current_version: String },
     /// Update check completed successfully
     CheckCompleted {
         current_version: String,
@@ -46,10 +44,7 @@ pub enum UpdateEvent {
 
     // ========== Download Events ==========
     /// Starting a download
-    DownloadStarted {
-        version: String,
-        url: String,
-    },
+    DownloadStarted { version: String, url: String },
     /// Download progress update
     DownloadProgress {
         version: String,
@@ -79,9 +74,7 @@ pub enum UpdateEvent {
         target_path: String,
     },
     /// Backup created
-    BackupCreated {
-        backup_path: String,
-    },
+    BackupCreated { backup_path: String },
     /// Installation completed successfully
     InstallCompleted {
         version: String,
@@ -100,27 +93,20 @@ pub enum UpdateEvent {
 
     // ========== Rollback Events ==========
     /// Starting rollback
-    RollbackStarted {
-        backup_path: String,
-    },
+    RollbackStarted { backup_path: String },
     /// Rollback completed
     RollbackCompleted {
         backup_path: String,
         duration: Duration,
     },
     /// Rollback failed
-    RollbackFailed {
-        error: String,
-        duration: Duration,
-    },
+    RollbackFailed { error: String, duration: Duration },
 
     // ========== Cleanup Events ==========
     /// Cleanup started
     CleanupStarted,
     /// Cleanup completed
-    CleanupCompleted {
-        files_removed: usize,
-    },
+    CleanupCompleted { files_removed: usize },
 }
 
 impl UpdateEvent {

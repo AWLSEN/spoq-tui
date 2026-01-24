@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch, Mutex};
 
-use crate::traits::{WebSocketConnection, TraitWsError};
+use crate::traits::{TraitWsError, WebSocketConnection};
 use crate::websocket::messages::{WsIncomingMessage, WsOutgoingMessage};
 use crate::websocket::WsConnectionState;
 
@@ -128,7 +128,9 @@ impl MockWebSocket {
 
     /// Simulate a reconnection attempt.
     pub fn simulate_reconnecting(&self, attempt: u8) {
-        let _ = self.state_tx.send(WsConnectionState::Reconnecting { attempt });
+        let _ = self
+            .state_tx
+            .send(WsConnectionState::Reconnecting { attempt });
     }
 
     /// Simulate a successful reconnection.
@@ -233,7 +235,8 @@ mod tests {
 
         let mock = MockWebSocket::new();
 
-        let msg = WsOutgoingMessage::CancelPermission(WsCancelPermission::new("req-123".to_string()));
+        let msg =
+            WsOutgoingMessage::CancelPermission(WsCancelPermission::new("req-123".to_string()));
         mock.send(msg).await.unwrap();
 
         let sent = mock.get_sent_messages().await;
@@ -247,7 +250,8 @@ mod tests {
         let mock = MockWebSocket::new();
         mock.set_send_should_fail(true).await;
 
-        let msg = WsOutgoingMessage::CancelPermission(WsCancelPermission::new("req-123".to_string()));
+        let msg =
+            WsOutgoingMessage::CancelPermission(WsCancelPermission::new("req-123".to_string()));
         let result = mock.send(msg).await;
 
         assert!(result.is_err());
@@ -298,7 +302,8 @@ mod tests {
 
         let mock = MockWebSocket::new();
 
-        let msg = WsOutgoingMessage::CancelPermission(WsCancelPermission::new("req-123".to_string()));
+        let msg =
+            WsOutgoingMessage::CancelPermission(WsCancelPermission::new("req-123".to_string()));
         mock.send(msg).await.unwrap();
 
         assert_eq!(mock.get_sent_messages().await.len(), 1);

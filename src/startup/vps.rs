@@ -125,18 +125,14 @@ pub fn verify_vps(
                 .map_err(|e| VpsError::StartFailed(e.to_string()))?;
             Ok(started_vps)
         }
-        "failed" | "terminated" => {
-            Err(VpsError::UnrecoverableState(format!(
-                "VPS is in {} state. Please contact support@spoq.dev for assistance.",
-                vps.status
-            )))
-        }
-        other => {
-            Err(VpsError::UnrecoverableState(format!(
-                "VPS in unexpected state: {}. Please wait or contact support.",
-                other
-            )))
-        }
+        "failed" | "terminated" => Err(VpsError::UnrecoverableState(format!(
+            "VPS is in {} state. Please contact support@spoq.dev for assistance.",
+            vps.status
+        ))),
+        other => Err(VpsError::UnrecoverableState(format!(
+            "VPS in unexpected state: {}. Please wait or contact support.",
+            other
+        ))),
     }
 }
 
@@ -189,7 +185,10 @@ mod tests {
             ready_at: None,
         };
 
-        assert_eq!(build_vps_url(&vps), Some("https://test.spoq.dev".to_string()));
+        assert_eq!(
+            build_vps_url(&vps),
+            Some("https://test.spoq.dev".to_string())
+        );
     }
 
     #[test]

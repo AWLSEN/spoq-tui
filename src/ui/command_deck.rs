@@ -39,9 +39,9 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(10),               // Main content area
-                Constraint::Length(1),             // Mode indicator
-                Constraint::Length(input_height),  // Input area (responsive)
+                Constraint::Min(10),              // Main content area
+                Constraint::Length(1),            // Mode indicator
+                Constraint::Length(input_height), // Input area (responsive)
             ])
             .split(size);
 
@@ -58,8 +58,8 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(10),               // Main content area
-                Constraint::Length(input_height),  // Input area (responsive)
+                Constraint::Min(10),              // Main content area
+                Constraint::Length(input_height), // Input area (responsive)
             ])
             .split(size);
 
@@ -91,10 +91,9 @@ pub fn render_main_content(frame: &mut Frame, area: Rect, app: &mut App, _ctx: &
 fn render_dashboard_content(frame: &mut Frame, area: Rect, app: &mut App) {
     // Build the render context from app state
     let theme = Theme::default();
-    let render_ctx = app.dashboard.build_render_context(
-        &app.system_stats,
-        &theme,
-    );
+    let render_ctx = app
+        .dashboard
+        .build_render_context(&app.system_stats, &theme);
 
     // Note: hit_registry is cleared in prepare_render()
     render_dashboard(frame, area, &render_ctx, &mut app.hit_registry);

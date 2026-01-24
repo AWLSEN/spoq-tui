@@ -370,8 +370,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
         // Add permission lines if pending
         if let Some(perm) = app.session_state.pending_permission.as_ref() {
-            let perm_lines =
-                build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
+            let perm_lines = build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
             lines.extend(perm_lines);
         }
 

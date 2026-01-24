@@ -180,10 +180,7 @@ fn route_ws_message(
         }
         WsIncomingMessage::ThreadCreated(created) => {
             // New thread created - add to dashboard immediately
-            info!(
-                "Received thread_created: thread_id={}",
-                created.thread.id
-            );
+            info!("Received thread_created: thread_id={}", created.thread.id);
             message_tx
                 .send(AppMessage::WsThreadCreated {
                     thread: created.thread,
@@ -207,7 +204,11 @@ fn route_ws_message(
             // Phase progress updates during plan execution
             info!(
                 "Received phase progress: plan={}, phase={}/{}, status={:?}, thread_id={:?}",
-                progress.plan_id, progress.phase_index + 1, progress.total_phases, progress.status, progress.thread_id
+                progress.plan_id,
+                progress.phase_index + 1,
+                progress.total_phases,
+                progress.status,
+                progress.thread_id
             );
             message_tx
                 .send(AppMessage::PhaseProgressUpdate {

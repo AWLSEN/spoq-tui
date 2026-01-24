@@ -12,7 +12,7 @@ pub struct HealthCheckResult {
     pub conductor_response_time_ms: Option<u64>,
     pub claude_code_works: bool,
     pub github_cli_works: bool,
-    pub should_block: bool, // Block user from proceeding if true
+    pub should_block: bool,            // Block user from proceeding if true
     pub error_message: Option<String>, // Error message if blocking
 }
 
@@ -61,8 +61,10 @@ pub async fn run_health_checks(vps_url: &str, credentials: &Credentials) -> Heal
     // Step 2: Verify tokens via conductor
     match conductor.verify_tokens().await {
         Ok(tokens) => {
-            result.claude_code_works = tokens.claude_code.installed && tokens.claude_code.authenticated;
-            result.github_cli_works = tokens.github_cli.installed && tokens.github_cli.authenticated;
+            result.claude_code_works =
+                tokens.claude_code.installed && tokens.claude_code.authenticated;
+            result.github_cli_works =
+                tokens.github_cli.installed && tokens.github_cli.authenticated;
 
             // Block if any required tokens are missing
             if !result.claude_code_works || !result.github_cli_works {

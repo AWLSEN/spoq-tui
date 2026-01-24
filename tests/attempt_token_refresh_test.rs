@@ -1,3 +1,4 @@
+use spoq::auth::central_api::CentralApiClient;
 /// Integration test for attempt_token_refresh function in main.rs
 ///
 /// This test verifies the credential saving behavior added in Phase 3,
@@ -7,12 +8,10 @@
 /// 1. Credentials are saved immediately after successful refresh
 /// 2. Error categorization provides user-friendly messages
 /// 3. Enhanced logging throughout the refresh flow
-
 use spoq::auth::credentials::{Credentials, CredentialsManager};
-use spoq::auth::central_api::CentralApiClient;
 use tempfile::TempDir;
-use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper to create a test credentials manager with temp directory
 fn create_test_manager(temp_dir: &TempDir) -> CredentialsManager {
@@ -54,7 +53,9 @@ async fn test_token_refresh_saves_credentials_on_success() {
 
     // Simulate the refresh flow (what attempt_token_refresh does)
     let client = CentralApiClient::with_base_url(mock_server.uri());
-    let refresh_response = client.refresh_token(credentials.refresh_token.as_ref().unwrap()).await;
+    let refresh_response = client
+        .refresh_token(credentials.refresh_token.as_ref().unwrap())
+        .await;
     assert!(refresh_response.is_ok());
 
     let token_response = refresh_response.unwrap();
@@ -69,20 +70,38 @@ async fn test_token_refresh_saves_credentials_on_success() {
     new_credentials.expires_at = Some(new_expires_at);
 
     // CRITICAL: Save credentials after refresh (Phase 3 fix)
-    assert!(manager.save(&new_credentials), "Failed to save refreshed credentials");
+    assert!(
+        manager.save(&new_credentials),
+        "Failed to save refreshed credentials"
+    );
 
     // Verify credentials were saved correctly by checking the file exists and reloading
     let creds_path = manager.credentials_path();
-    assert!(creds_path.exists(), "Credentials file should exist after save");
+    assert!(
+        creds_path.exists(),
+        "Credentials file should exist after save"
+    );
 
     // Reload to verify persistence
     let loaded_credentials = manager.load();
-    assert_eq!(loaded_credentials.access_token, Some("new-access-token".to_string()),
-        "Access token should be saved and reloaded correctly");
-    assert_eq!(loaded_credentials.refresh_token, Some("new-refresh-token".to_string()),
-        "Refresh token should be saved and reloaded correctly");
-    assert!(!loaded_credentials.is_expired(), "Reloaded credentials should not be expired");
-    assert!(loaded_credentials.is_valid(), "Reloaded credentials should be valid");
+    assert_eq!(
+        loaded_credentials.access_token,
+        Some("new-access-token".to_string()),
+        "Access token should be saved and reloaded correctly"
+    );
+    assert_eq!(
+        loaded_credentials.refresh_token,
+        Some("new-refresh-token".to_string()),
+        "Refresh token should be saved and reloaded correctly"
+    );
+    assert!(
+        !loaded_credentials.is_expired(),
+        "Reloaded credentials should not be expired"
+    );
+    assert!(
+        loaded_credentials.is_valid(),
+        "Reloaded credentials should be valid"
+    );
 }
 
 /// Test that refresh failure doesn't corrupt existing credentials
@@ -114,14 +133,22 @@ async fn test_token_refresh_preserves_credentials_on_failure() {
 
     // Attempt refresh (will fail)
     let client = CentralApiClient::with_base_url(mock_server.uri());
-    let refresh_response = client.refresh_token(credentials.refresh_token.as_ref().unwrap()).await;
+    let refresh_response = client
+        .refresh_token(credentials.refresh_token.as_ref().unwrap())
+        .await;
     assert!(refresh_response.is_err());
 
     // On failure, credentials should NOT be saved (attempt_token_refresh returns Err)
     // Verify original credentials are still intact
     let loaded_credentials = manager.load();
-    assert_eq!(loaded_credentials.access_token, Some("expired-token".to_string()));
-    assert_eq!(loaded_credentials.refresh_token, Some("invalid-refresh-token".to_string()));
+    assert_eq!(
+        loaded_credentials.access_token,
+        Some("expired-token".to_string())
+    );
+    assert_eq!(
+        loaded_credentials.refresh_token,
+        Some("invalid-refresh-token".to_string())
+    );
 }
 
 /// Test error response handling matches Phase 3 error categorization
@@ -180,7 +207,10 @@ async fn test_refresh_token_rotation() {
         .await;
 
     let client = CentralApiClient::with_base_url(mock_server.uri());
-    let token_response = client.refresh_token(credentials.refresh_token.as_ref().unwrap()).await.unwrap();
+    let token_response = client
+        .refresh_token(credentials.refresh_token.as_ref().unwrap())
+        .await
+        .unwrap();
 
     // Build new credentials with rotated tokens
     let mut new_credentials = credentials.clone();
@@ -198,8 +228,14 @@ async fn test_refresh_token_rotation() {
     assert!(manager.save(&new_credentials));
     let loaded = manager.load();
 
-    assert_eq!(loaded.access_token, Some("rotated-access-token".to_string()));
-    assert_eq!(loaded.refresh_token, Some("rotated-refresh-token".to_string()));
+    assert_eq!(
+        loaded.access_token,
+        Some("rotated-access-token".to_string())
+    );
+    assert_eq!(
+        loaded.refresh_token,
+        Some("rotated-refresh-token".to_string())
+    );
 }
 
 /// Test expiration calculation fallback to 900 seconds
@@ -224,5 +260,8 @@ async fn test_expiration_fallback_to_default() {
 
     // Should fall back to 900 seconds (15 minutes) when expires_in is missing
     let expires_in = token_response.expires_in.unwrap_or(900);
-    assert_eq!(expires_in, 900, "Should default to 900 seconds when expires_in is missing");
+    assert_eq!(
+        expires_in, 900,
+        "Should default to 900 seconds when expires_in is missing"
+    );
 }

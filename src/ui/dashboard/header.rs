@@ -68,9 +68,9 @@ fn render_left_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
 
     // Connection status circle (far left, before CPU)
     let (conn_char, conn_color) = if ctx.system_stats.connected {
-        ('●', ctx.theme.success)  // Filled circle, green
+        ('●', ctx.theme.success) // Filled circle, green
     } else {
-        ('○', ctx.theme.error)    // Empty circle, red
+        ('○', ctx.theme.error) // Empty circle, red
     };
 
     // Render circle at x position
@@ -80,7 +80,7 @@ fn render_left_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
 
     // Add space after circle, then continue with CPU
     // Shift all subsequent rendering by 2 positions (circle + space)
-    x += 2;  // Now CPU starts after "● "
+    x += 2; // Now CPU starts after "● "
 
     // Format: "cpu ▓▓▓░░  4.2/8g"
     // CPU label and bar

@@ -2,10 +2,10 @@
 //!
 //! Handles manual update checking, downloading, and installation.
 
-use color_eyre::Result;
 use crate::update::{
     check_for_update, cleanup_backup, detect_platform, download_binary, install_update,
 };
+use color_eyre::Result;
 
 /// Handle the --update flag for manual update check and installation.
 ///

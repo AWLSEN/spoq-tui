@@ -115,7 +115,9 @@ impl InputState {
     /// Returns the previous entry if available, or None if at the beginning.
     pub fn history_up(&mut self) -> Option<String> {
         let current = self.get_input();
-        self.input_history.navigate_up(&current).map(|s| s.to_string())
+        self.input_history
+            .navigate_up(&current)
+            .map(|s| s.to_string())
     }
 
     /// Navigate to the next history entry (Down arrow).
@@ -364,9 +366,18 @@ mod tests {
     fn test_folder_picker_filter() {
         let mut state = InputState::new_without_history();
         state.folders = vec![
-            Folder { name: "Project Alpha".to_string(), path: "/alpha".to_string() },
-            Folder { name: "Project Beta".to_string(), path: "/beta".to_string() },
-            Folder { name: "Other".to_string(), path: "/other".to_string() },
+            Folder {
+                name: "Project Alpha".to_string(),
+                path: "/alpha".to_string(),
+            },
+            Folder {
+                name: "Project Beta".to_string(),
+                path: "/beta".to_string(),
+            },
+            Folder {
+                name: "Other".to_string(),
+                path: "/other".to_string(),
+            },
         ];
 
         // No filter - all folders
@@ -388,9 +399,18 @@ mod tests {
     fn test_folder_picker_navigation() {
         let mut state = InputState::new_without_history();
         state.folders = vec![
-            Folder { name: "Folder 1".to_string(), path: "/f1".to_string() },
-            Folder { name: "Folder 2".to_string(), path: "/f2".to_string() },
-            Folder { name: "Folder 3".to_string(), path: "/f3".to_string() },
+            Folder {
+                name: "Folder 1".to_string(),
+                path: "/f1".to_string(),
+            },
+            Folder {
+                name: "Folder 2".to_string(),
+                path: "/f2".to_string(),
+            },
+            Folder {
+                name: "Folder 3".to_string(),
+                path: "/f3".to_string(),
+            },
         ];
 
         assert_eq!(state.folder_picker_cursor, 0);
@@ -417,9 +437,10 @@ mod tests {
     #[test]
     fn test_folder_selection() {
         let mut state = InputState::new_without_history();
-        state.folders = vec![
-            Folder { name: "Test Folder".to_string(), path: "/test".to_string() },
-        ];
+        state.folders = vec![Folder {
+            name: "Test Folder".to_string(),
+            path: "/test".to_string(),
+        }];
 
         state.show_folder_picker();
         let selected = state.select_folder();
@@ -451,9 +472,10 @@ mod tests {
         assert!(state.is_loading_folders());
         assert!(state.folders_error.is_none());
 
-        state.set_folders(vec![
-            Folder { name: "Loaded Folder".to_string(), path: "/loaded".to_string() },
-        ]);
+        state.set_folders(vec![Folder {
+            name: "Loaded Folder".to_string(),
+            path: "/loaded".to_string(),
+        }]);
         assert!(!state.is_loading_folders());
         assert_eq!(state.folders.len(), 1);
     }

@@ -19,6 +19,6 @@ pub mod websocket;
 
 pub use credentials::{CredentialsError, CredentialsProvider};
 pub use http::{Headers, HttpClient, HttpError, Response};
-pub use sse::{SseParserTrait, SseParseError as TraitSseParseError};
+pub use sse::{SseParseError as TraitSseParseError, SseParserTrait};
 pub use terminal::{TerminalBackend, TerminalError};
 pub use websocket::{WebSocketConnection, WsError as TraitWsError};

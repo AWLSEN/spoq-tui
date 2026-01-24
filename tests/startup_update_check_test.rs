@@ -48,10 +48,7 @@ fn test_update_state_persistence() {
         available_version: Some("0.2.0".to_string()),
     };
 
-    assert!(
-        manager.save(&state),
-        "State should be saved successfully"
-    );
+    assert!(manager.save(&state), "State should be saved successfully");
 
     // Load and verify
     let loaded_state = manager.load();

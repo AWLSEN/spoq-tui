@@ -94,10 +94,8 @@ impl KeybindingConfig {
     /// Sets up global keybindings (always active).
     fn setup_global_bindings(&mut self) {
         // Ctrl+C: Quit
-        self.global.insert(
-            KeyCombo::ctrl(KeyCode::Char('c')),
-            Command::Quit,
-        );
+        self.global
+            .insert(KeyCombo::ctrl(KeyCode::Char('c')), Command::Quit);
 
         // Shift+Escape: Navigate to CommandDeck
         self.global.insert(
@@ -118,10 +116,8 @@ impl KeybindingConfig {
         );
 
         // Ctrl+N: Create new thread (alternative)
-        self.global.insert(
-            KeyCombo::ctrl(KeyCode::Char('n')),
-            Command::CreateNewThread,
-        );
+        self.global
+            .insert(KeyCombo::ctrl(KeyCode::Char('n')), Command::CreateNewThread);
 
         // Alt+P: Submit as programming thread
         self.global.insert(
@@ -137,25 +133,41 @@ impl KeybindingConfig {
         folder_picker.insert(KeyCombo::plain(KeyCode::Esc), Command::CloseFolderPicker);
         folder_picker.insert(KeyCombo::plain(KeyCode::Enter), Command::SelectFolder);
         folder_picker.insert(KeyCombo::plain(KeyCode::Up), Command::FolderPickerCursorUp);
-        folder_picker.insert(KeyCombo::plain(KeyCode::Down), Command::FolderPickerCursorDown);
-        folder_picker.insert(KeyCombo::plain(KeyCode::Backspace), Command::FolderPickerBackspace);
+        folder_picker.insert(
+            KeyCombo::plain(KeyCode::Down),
+            Command::FolderPickerCursorDown,
+        );
+        folder_picker.insert(
+            KeyCombo::plain(KeyCode::Backspace),
+            Command::FolderPickerBackspace,
+        );
         self.modal.insert(ModalType::FolderPicker, folder_picker);
 
         // Thread switcher bindings
         let mut thread_switcher = HashMap::new();
         thread_switcher.insert(KeyCombo::plain(KeyCode::Tab), Command::CycleSwitcherForward);
-        thread_switcher.insert(KeyCombo::plain(KeyCode::Down), Command::CycleSwitcherForward);
+        thread_switcher.insert(
+            KeyCombo::plain(KeyCode::Down),
+            Command::CycleSwitcherForward,
+        );
         thread_switcher.insert(KeyCombo::plain(KeyCode::Up), Command::CycleSwitcherBackward);
         thread_switcher.insert(KeyCombo::plain(KeyCode::Esc), Command::CloseSwitcher);
-        thread_switcher.insert(KeyCombo::plain(KeyCode::Enter), Command::ConfirmSwitcherSelection);
-        self.modal.insert(ModalType::ThreadSwitcher, thread_switcher);
+        thread_switcher.insert(
+            KeyCombo::plain(KeyCode::Enter),
+            Command::ConfirmSwitcherSelection,
+        );
+        self.modal
+            .insert(ModalType::ThreadSwitcher, thread_switcher);
 
         // AskUserQuestion bindings
         let mut question = HashMap::new();
         question.insert(KeyCombo::plain(KeyCode::Tab), Command::QuestionNextTab);
         question.insert(KeyCombo::plain(KeyCode::Up), Command::QuestionPrevOption);
         question.insert(KeyCombo::plain(KeyCode::Down), Command::QuestionNextOption);
-        question.insert(KeyCombo::plain(KeyCode::Char(' ')), Command::QuestionToggleOption);
+        question.insert(
+            KeyCombo::plain(KeyCode::Char(' ')),
+            Command::QuestionToggleOption,
+        );
         question.insert(KeyCombo::plain(KeyCode::Enter), Command::QuestionConfirm);
         self.modal.insert(ModalType::AskUserQuestion, question);
 
@@ -163,8 +175,12 @@ impl KeybindingConfig {
         let mut question_other = HashMap::new();
         question_other.insert(KeyCombo::plain(KeyCode::Esc), Command::QuestionCancelOther);
         question_other.insert(KeyCombo::plain(KeyCode::Enter), Command::QuestionConfirm);
-        question_other.insert(KeyCombo::plain(KeyCode::Backspace), Command::QuestionBackspace);
-        self.modal.insert(ModalType::AskUserQuestionOther, question_other);
+        question_other.insert(
+            KeyCombo::plain(KeyCode::Backspace),
+            Command::QuestionBackspace,
+        );
+        self.modal
+            .insert(ModalType::AskUserQuestionOther, question_other);
     }
 
     /// Sets up screen-specific keybindings.
@@ -184,45 +200,79 @@ impl KeybindingConfig {
         threads.insert(KeyCombo::plain(KeyCode::Down), Command::MoveDown);
         threads.insert(KeyCombo::plain(KeyCode::Enter), Command::OpenSelectedThread);
         threads.insert(KeyCombo::plain(KeyCode::Tab), Command::HandleTabPress);
-        threads.insert(KeyCombo::plain(KeyCode::BackTab), Command::CyclePermissionMode);
+        threads.insert(
+            KeyCombo::plain(KeyCode::BackTab),
+            Command::CyclePermissionMode,
+        );
         threads.insert(KeyCombo::plain(KeyCode::Char('q')), Command::Quit);
         threads.insert(KeyCombo::plain(KeyCode::Char('d')), Command::DismissError);
-        threads.insert(KeyCombo::plain(KeyCode::Char('t')), Command::ToggleReasoning);
+        threads.insert(
+            KeyCombo::plain(KeyCode::Char('t')),
+            Command::ToggleReasoning,
+        );
         threads.insert(KeyCombo::plain(KeyCode::Char('o')), Command::OpenOAuthUrl);
-        threads.insert(KeyCombo::plain(KeyCode::Esc), Command::NavigateToCommandDeck);
+        threads.insert(
+            KeyCombo::plain(KeyCode::Esc),
+            Command::NavigateToCommandDeck,
+        );
         self.focus.insert(Focus::Threads, threads);
     }
 
     /// Sets up input editing keybindings.
     fn setup_input_editing_bindings(&mut self) {
         // Navigation
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Left), Command::MoveCursorLeft);
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Right), Command::MoveCursorRight);
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Up), Command::MoveCursorUp);
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Down), Command::MoveCursorDown);
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Home), Command::MoveCursorHome);
-        self.input_editing.insert(KeyCombo::plain(KeyCode::End), Command::MoveCursorEnd);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Left), Command::MoveCursorLeft);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Right), Command::MoveCursorRight);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Up), Command::MoveCursorUp);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Down), Command::MoveCursorDown);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Home), Command::MoveCursorHome);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::End), Command::MoveCursorEnd);
 
         // Word navigation (Alt+Arrow)
-        self.input_editing.insert(KeyCombo::alt(KeyCode::Left), Command::MoveCursorWordLeft);
-        self.input_editing.insert(KeyCombo::alt(KeyCode::Right), Command::MoveCursorWordRight);
+        self.input_editing
+            .insert(KeyCombo::alt(KeyCode::Left), Command::MoveCursorWordLeft);
+        self.input_editing
+            .insert(KeyCombo::alt(KeyCode::Right), Command::MoveCursorWordRight);
 
         // Line navigation (Cmd/Super+Arrow)
-        self.input_editing.insert(KeyCombo::super_key(KeyCode::Left), Command::MoveCursorHome);
-        self.input_editing.insert(KeyCombo::super_key(KeyCode::Right), Command::MoveCursorEnd);
+        self.input_editing
+            .insert(KeyCombo::super_key(KeyCode::Left), Command::MoveCursorHome);
+        self.input_editing
+            .insert(KeyCombo::super_key(KeyCode::Right), Command::MoveCursorEnd);
 
         // Deletion
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Backspace), Command::Backspace);
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Delete), Command::DeleteChar);
-        self.input_editing.insert(KeyCombo::alt(KeyCode::Backspace), Command::DeleteWordBackward);
-        self.input_editing.insert(KeyCombo::super_key(KeyCode::Backspace), Command::DeleteToLineStart);
-        self.input_editing.insert(KeyCombo::ctrl(KeyCode::Char('u')), Command::DeleteToLineStart);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Backspace), Command::Backspace);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Delete), Command::DeleteChar);
+        self.input_editing.insert(
+            KeyCombo::alt(KeyCode::Backspace),
+            Command::DeleteWordBackward,
+        );
+        self.input_editing.insert(
+            KeyCombo::super_key(KeyCode::Backspace),
+            Command::DeleteToLineStart,
+        );
+        self.input_editing.insert(
+            KeyCombo::ctrl(KeyCode::Char('u')),
+            Command::DeleteToLineStart,
+        );
 
         // Newline insertion
-        self.input_editing.insert(KeyCombo::shift(KeyCode::Enter), Command::InsertNewline);
-        self.input_editing.insert(KeyCombo::alt(KeyCode::Enter), Command::InsertNewline);
-        self.input_editing.insert(KeyCombo::ctrl(KeyCode::Enter), Command::InsertNewline);
-        self.input_editing.insert(KeyCombo::ctrl(KeyCode::Char('j')), Command::InsertNewline);
+        self.input_editing
+            .insert(KeyCombo::shift(KeyCode::Enter), Command::InsertNewline);
+        self.input_editing
+            .insert(KeyCombo::alt(KeyCode::Enter), Command::InsertNewline);
+        self.input_editing
+            .insert(KeyCombo::ctrl(KeyCode::Enter), Command::InsertNewline);
+        self.input_editing
+            .insert(KeyCombo::ctrl(KeyCode::Char('j')), Command::InsertNewline);
 
         // Submit
         self.input_editing.insert(
@@ -231,10 +281,14 @@ impl KeybindingConfig {
         );
 
         // Escape handling (context-dependent, will be resolved in registry)
-        self.input_editing.insert(KeyCombo::plain(KeyCode::Esc), Command::UnfocusInput);
+        self.input_editing
+            .insert(KeyCombo::plain(KeyCode::Esc), Command::UnfocusInput);
 
         // Shift+Tab for permission mode cycling
-        self.input_editing.insert(KeyCombo::plain(KeyCode::BackTab), Command::CyclePermissionMode);
+        self.input_editing.insert(
+            KeyCombo::plain(KeyCode::BackTab),
+            Command::CyclePermissionMode,
+        );
     }
 
     /// Gets the command for a key combo in the current context.

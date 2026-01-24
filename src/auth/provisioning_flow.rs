@@ -563,7 +563,10 @@ fn run_managed_vps_flow(
     println!("║              Payment Required                       ║");
     println!("╚═════════════════════════════════════════════════════╝");
     println!("\n  Plan:  {}", selected_plan.name);
-    println!("  Price: ${:.2}/month", selected_plan.price_cents as f64 / 100.0);
+    println!(
+        "  Price: ${:.2}/month",
+        selected_plan.price_cents as f64 / 100.0
+    );
     println!("  Email: {}", checkout_response.customer_email);
     println!("\n  Opening payment page in your browser...");
     println!("  URL: {}", checkout_response.checkout_url);
@@ -577,12 +580,8 @@ fn run_managed_vps_flow(
 
     // Poll for payment completion
     println!("\n  Waiting for payment...");
-    let _payment_status = poll_payment_completion(
-        runtime,
-        &client,
-        &checkout_response.session_id,
-        interrupted,
-    )?;
+    let _payment_status =
+        poll_payment_completion(runtime, &client, &checkout_response.session_id, interrupted)?;
 
     println!("\n\n✓ Payment successful!");
 
@@ -724,13 +723,7 @@ enum ByovpsRetryAction {
 
 /// Check if an error is an authentication error (401 Unauthorized).
 fn is_auth_error(error: &CentralApiError) -> bool {
-    matches!(
-        error,
-        CentralApiError::ServerError {
-            status: 401,
-            ..
-        }
-    )
+    matches!(error, CentralApiError::ServerError { status: 401, .. })
 }
 
 /// Check if an error message indicates an SSH connection error.
@@ -759,7 +752,10 @@ fn is_timeout_error(error: &CentralApiError) -> bool {
             // 522: Connection timed out
             // 504: Gateway timeout
             // 502: Bad gateway (sometimes indicates timeout)
-            *status == 524 || *status == 522 || *status == 504 || *status == 502
+            *status == 524
+                || *status == 522
+                || *status == 504
+                || *status == 502
                 || message.to_lowercase().contains("timeout")
                 || message.to_lowercase().contains("error code: 524")
         }
@@ -870,14 +866,25 @@ fn run_byovps_flow_with_retry(
 
                     // STEP 3: HEALTH CHECK (recovery mode)
                     cli_output::print_step_start(3, "HEALTH CHECK");
-                    cli_output::print_step_line(icons::WARNING, "Request timed out, checking health...");
+                    cli_output::print_step_line(
+                        icons::WARNING,
+                        "Request timed out, checking health...",
+                    );
 
                     // Use hostname (HTTPS via Cloudflare)
                     let hostname = format!("{}.spoq.dev", byovps_creds.ssh_username);
                     let health_url = format!("https://{}", hostname);
-                    match wait_for_health_with_ui(runtime, &health_url, HEALTH_CHECK_TIMEOUT_SECS, interrupted) {
+                    match wait_for_health_with_ui(
+                        runtime,
+                        &health_url,
+                        HEALTH_CHECK_TIMEOUT_SECS,
+                        interrupted,
+                    ) {
                         Ok(()) => {
-                            cli_output::print_step_spinner_done(icons::SUCCESS, &format!("Conductor healthy at {}", health_url));
+                            cli_output::print_step_spinner_done(
+                                icons::SUCCESS,
+                                &format!("Conductor healthy at {}", health_url),
+                            );
                             cli_output::print_step_end();
 
                             // STEP 4: CREDENTIAL SYNC
@@ -890,17 +897,26 @@ fn run_byovps_flow_with_retry(
                             )) {
                                 Ok(sync_result) => {
                                     if sync_result.claude_synced {
-                                        cli_output::print_step_line(icons::SUCCESS, "Claude Code synced");
+                                        cli_output::print_step_line(
+                                            icons::SUCCESS,
+                                            "Claude Code synced",
+                                        );
                                     }
                                     if sync_result.github_synced {
-                                        cli_output::print_step_line(icons::SUCCESS, "GitHub CLI synced");
+                                        cli_output::print_step_line(
+                                            icons::SUCCESS,
+                                            "GitHub CLI synced",
+                                        );
                                     }
                                     if sync_result.codex_synced {
                                         cli_output::print_step_line(icons::SUCCESS, "Codex synced");
                                     }
                                 }
                                 Err(e) => {
-                                    cli_output::print_step_line(icons::WARNING, &format!("Sync failed: {}", e));
+                                    cli_output::print_step_line(
+                                        icons::WARNING,
+                                        &format!("Sync failed: {}", e),
+                                    );
                                 }
                             }
                             cli_output::print_step_end();
@@ -915,37 +931,64 @@ fn run_byovps_flow_with_retry(
                             ) {
                                 Ok(verification) => {
                                     if verification.claude_code_works {
-                                        cli_output::print_step_line(icons::SUCCESS, "Claude Code verified on VPS");
+                                        cli_output::print_step_line(
+                                            icons::SUCCESS,
+                                            "Claude Code verified on VPS",
+                                        );
                                     } else {
                                         has_warnings = true;
-                                        cli_output::print_step_line(icons::FAILURE, "Claude Code verification failed");
+                                        cli_output::print_step_line(
+                                            icons::FAILURE,
+                                            "Claude Code verification failed",
+                                        );
                                     }
                                     if verification.github_cli_works {
-                                        cli_output::print_step_line(icons::SUCCESS, "GitHub CLI verified on VPS");
+                                        cli_output::print_step_line(
+                                            icons::SUCCESS,
+                                            "GitHub CLI verified on VPS",
+                                        );
                                     } else {
                                         has_warnings = true;
-                                        cli_output::print_step_line(icons::FAILURE, "GitHub CLI verification failed");
+                                        cli_output::print_step_line(
+                                            icons::FAILURE,
+                                            "GitHub CLI verification failed",
+                                        );
                                     }
                                 }
                                 Err(e) => {
                                     has_warnings = true;
-                                    cli_output::print_step_line(icons::FAILURE, &format!("Verification error: {}", e));
+                                    cli_output::print_step_line(
+                                        icons::FAILURE,
+                                        &format!("Verification error: {}", e),
+                                    );
                                 }
                             }
                             cli_output::print_step_end();
 
                             // Final footer
-                            let conductor_url = format!("https://{}.spoq.dev", byovps_creds.ssh_username);
+                            let conductor_url =
+                                format!("https://{}.spoq.dev", byovps_creds.ssh_username);
                             if has_warnings {
-                                cli_output::print_footer_warning(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
+                                cli_output::print_footer_warning(
+                                    &byovps_creds.vps_ip,
+                                    &conductor_url,
+                                    &byovps_creds.ssh_username,
+                                );
                             } else {
-                                cli_output::print_footer_success(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
+                                cli_output::print_footer_success(
+                                    &byovps_creds.vps_ip,
+                                    &conductor_url,
+                                    &byovps_creds.ssh_username,
+                                );
                             }
 
                             return Ok(());
                         }
                         Err(health_err) => {
-                            cli_output::print_step_spinner_done(icons::FAILURE, &format!("Health check failed: {}", health_err));
+                            cli_output::print_step_spinner_done(
+                                icons::FAILURE,
+                                &format!("Health check failed: {}", health_err),
+                            );
                             cli_output::print_step_end();
                             // Fall through to normal error handling
                         }
@@ -1048,7 +1091,9 @@ fn run_byovps_flow(
                         chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
                             .unwrap_or_else(|| "unknown".to_string())
-                    } else if let Some(expires_in) = super::central_api::get_jwt_expires_in(&token_response.access_token) {
+                    } else if let Some(expires_in) =
+                        super::central_api::get_jwt_expires_in(&token_response.access_token)
+                    {
                         let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
                         credentials.expires_at = Some(expires_at);
                         chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
@@ -1059,7 +1104,10 @@ fn run_byovps_flow(
                     };
 
                     save_credentials(credentials);
-                    cli_output::print_step_line(icons::SUCCESS, &format!("Token valid until {}", expiration_str));
+                    cli_output::print_step_line(
+                        icons::SUCCESS,
+                        &format!("Token valid until {}", expiration_str),
+                    );
                 }
                 Err(e) => {
                     cli_output::print_step_line(icons::FAILURE, "Token refresh failed");
@@ -1086,23 +1134,28 @@ fn run_byovps_flow(
         }
     } else {
         // Token is valid
-        let expiration_str = credentials.expires_at
+        let expiration_str = credentials
+            .expires_at
             .and_then(|ts| chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0))
             .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|| "unknown".to_string());
         cli_output::print_step_line(icons::SUCCESS, "Authenticated");
-        cli_output::print_step_line(icons::SUCCESS, &format!("Token valid until {}", expiration_str));
+        cli_output::print_step_line(
+            icons::SUCCESS,
+            &format!("Token valid until {}", expiration_str),
+        );
     }
     cli_output::print_step_end();
 
     // Get access token for API calls
-    let access_token = credentials
-        .access_token
-        .as_ref()
-        .ok_or_else(|| CentralApiError::ServerError {
-            status: 401,
-            message: "No access token available".to_string(),
-        })?;
+    let access_token =
+        credentials
+            .access_token
+            .as_ref()
+            .ok_or_else(|| CentralApiError::ServerError {
+                status: 401,
+                message: "No access token available".to_string(),
+            })?;
 
     let mut client = CentralApiClient::new().with_auth(access_token);
     if let Some(ref refresh_token) = credentials.refresh_token {
@@ -1141,8 +1194,13 @@ fn run_byovps_flow(
         "failed" | "error" => {
             cli_output::print_step_line(icons::FAILURE, "Provisioning failed");
             cli_output::print_step_end();
-            let msg = provision_response.message.unwrap_or_else(|| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError { status: 500, message: msg });
+            let msg = provision_response
+                .message
+                .unwrap_or_else(|| "Unknown error".to_string());
+            return Err(CentralApiError::ServerError {
+                status: 500,
+                message: msg,
+            });
         }
         "ready" | "running" | "active" => {
             cli_output::print_step_line(icons::SUCCESS, "VPS provisioned successfully");
@@ -1150,7 +1208,8 @@ fn run_byovps_flow(
         _ => {
             // Need to poll for status
             check_interrupt(interrupted);
-            let _final_status = poll_byovps_status_with_interrupt(runtime, &mut client, interrupted)?;
+            let _final_status =
+                poll_byovps_status_with_interrupt(runtime, &mut client, interrupted)?;
             cli_output::print_step_line(icons::SUCCESS, "VPS provisioned successfully");
         }
     }
@@ -1170,12 +1229,21 @@ fn run_byovps_flow(
     };
     match wait_for_health_with_ui(runtime, &health_url, HEALTH_CHECK_TIMEOUT_SECS, interrupted) {
         Ok(()) => {
-            cli_output::print_step_spinner_done(icons::SUCCESS, &format!("Conductor healthy at {}", health_url));
+            cli_output::print_step_spinner_done(
+                icons::SUCCESS,
+                &format!("Conductor healthy at {}", health_url),
+            );
         }
         Err(e) => {
-            cli_output::print_step_spinner_done(icons::FAILURE, &format!("Health check failed: {}", e));
+            cli_output::print_step_spinner_done(
+                icons::FAILURE,
+                &format!("Health check failed: {}", e),
+            );
             cli_output::print_troubleshoot(&[
-                &format!("1. SSH to VPS: ssh {}@{}", byovps_creds.ssh_username, byovps_creds.vps_ip),
+                &format!(
+                    "1. SSH to VPS: ssh {}@{}",
+                    byovps_creds.ssh_username, byovps_creds.vps_ip
+                ),
                 "2. Check logs: journalctl -u conductor -f",
                 "3. Restart:    systemctl restart conductor",
             ]);
@@ -1251,7 +1319,10 @@ fn run_byovps_flow(
 
             if !verification.claude_code_works || !verification.github_cli_works {
                 cli_output::print_troubleshoot(&[
-                    &format!("1. SSH to VPS: ssh {}@{}", byovps_creds.ssh_username, byovps_creds.vps_ip),
+                    &format!(
+                        "1. SSH to VPS: ssh {}@{}",
+                        byovps_creds.ssh_username, byovps_creds.vps_ip
+                    ),
                     "2. Run: claude, then type /login (if Claude failed)",
                     "3. Run: gh auth login (if GitHub failed)",
                 ]);
@@ -1273,9 +1344,17 @@ fn run_byovps_flow(
         format!("http://{}:8080", byovps_creds.vps_ip)
     };
     if has_warnings {
-        cli_output::print_footer_warning(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
+        cli_output::print_footer_warning(
+            &byovps_creds.vps_ip,
+            &conductor_url,
+            &byovps_creds.ssh_username,
+        );
     } else {
-        cli_output::print_footer_success(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
+        cli_output::print_footer_success(
+            &byovps_creds.vps_ip,
+            &conductor_url,
+            &byovps_creds.ssh_username,
+        );
     }
 
     Ok(())
@@ -1303,7 +1382,10 @@ fn wait_for_health_with_ui(
 
         // Show spinner
         let spinner = SPINNER_CHARS[frame % SPINNER_CHARS.len()];
-        cli_output::print_step_spinner(spinner, &format!("Waiting for conductor... ({}s)", elapsed));
+        cli_output::print_step_spinner(
+            spinner,
+            &format!("Waiting for conductor... ({}s)", elapsed),
+        );
         frame += 1;
 
         // Try health check
@@ -1313,7 +1395,8 @@ fn wait_for_health_with_ui(
                 .build()
                 .map_err(|e| e.to_string())?;
 
-            let resp = client.get(format!("{}/health", url))
+            let resp = client
+                .get(format!("{}/health", url))
                 .send()
                 .await
                 .map_err(|e| e.to_string())?;
@@ -2064,7 +2147,10 @@ mod tests {
 
         // Empty password should fail
         let empty_password = "";
-        assert!(empty_password.len() < 12, "Empty password should be rejected");
+        assert!(
+            empty_password.len() < 12,
+            "Empty password should be rejected"
+        );
 
         // Unicode characters should be counted by length (not bytes)
         let unicode_password = "p@$$wörd123!"; // 12 chars
@@ -2182,10 +2268,7 @@ mod tests {
             ssh_password: "securepass".to_string(),
         };
 
-        assert_eq!(
-            ipv6_creds.vps_ip,
-            "2001:0db8:85a3:0000:0000:8a2e:0370:7334"
-        );
+        assert_eq!(ipv6_creds.vps_ip, "2001:0db8:85a3:0000:0000:8a2e:0370:7334");
         assert!(ipv6_creds.vps_ip.contains(":"));
     }
 
@@ -2401,7 +2484,9 @@ mod tests {
         // Test SSH-related error messages
         assert!(is_ssh_connection_error("SSH connection failed"));
         assert!(is_ssh_connection_error("ssh: Connection refused"));
-        assert!(is_ssh_connection_error("Failed to establish SSH connection"));
+        assert!(is_ssh_connection_error(
+            "Failed to establish SSH connection"
+        ));
         assert!(is_ssh_connection_error("SSH authentication failed"));
     }
 
@@ -2420,7 +2505,9 @@ mod tests {
         // Test authentication error messages
         assert!(is_ssh_connection_error("Authentication failed"));
         assert!(is_ssh_connection_error("Permission denied"));
-        assert!(is_ssh_connection_error("permission denied (publickey,password)"));
+        assert!(is_ssh_connection_error(
+            "permission denied (publickey,password)"
+        ));
     }
 
     #[test]
@@ -2747,10 +2834,7 @@ mod tests {
         // Test TokenMigrationResult with successful migration
         let result = TokenMigrationResult {
             archive_path: Some(PathBuf::from("/home/user/.spoq-migration/archive.tar.gz")),
-            detected_tokens: vec![
-                "GitHub CLI".to_string(),
-                "Claude Code".to_string(),
-            ],
+            detected_tokens: vec!["GitHub CLI".to_string(), "Claude Code".to_string()],
             success: true,
             warning: None,
         };
@@ -2846,5 +2930,4 @@ mod tests {
 
         assert_eq!(path_string, "/home/user/.spoq-migration/archive.tar.gz");
     }
-
 }

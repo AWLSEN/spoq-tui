@@ -138,10 +138,7 @@ fn test_local_verification_clone() {
     assert_eq!(cloned.claude_code_present, original.claude_code_present);
     assert_eq!(cloned.github_cli_present, original.github_cli_present);
     assert_eq!(cloned.codex_present, original.codex_present);
-    assert_eq!(
-        cloned.all_required_present,
-        original.all_required_present
-    );
+    assert_eq!(cloned.all_required_present, original.all_required_present);
 }
 
 /// Test Clone trait for VpsTokenVerification

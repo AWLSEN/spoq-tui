@@ -49,7 +49,10 @@ impl ConnectionState {
 
     /// Check if the WebSocket is in a reconnecting state.
     pub fn is_ws_reconnecting(&self) -> bool {
-        matches!(self.ws_connection_state, WsConnectionState::Reconnecting { .. })
+        matches!(
+            self.ws_connection_state,
+            WsConnectionState::Reconnecting { .. }
+        )
     }
 
     /// Get the current reconnection attempt number, if reconnecting.
@@ -297,7 +300,8 @@ mod tests {
         use crate::websocket::WsCancelPermission;
 
         let state = ConnectionState::new();
-        let msg = WsOutgoingMessage::CancelPermission(WsCancelPermission::new("test-123".to_string()));
+        let msg =
+            WsOutgoingMessage::CancelPermission(WsCancelPermission::new("test-123".to_string()));
         let result = state.send_ws_message(msg).await;
         assert!(!result);
     }
@@ -310,7 +314,8 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(10);
         state.ws_sender = Some(tx);
 
-        let msg = WsOutgoingMessage::CancelPermission(WsCancelPermission::new("test-456".to_string()));
+        let msg =
+            WsOutgoingMessage::CancelPermission(WsCancelPermission::new("test-456".to_string()));
         let result = state.send_ws_message(msg).await;
         assert!(result);
 

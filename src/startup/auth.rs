@@ -113,9 +113,10 @@ pub fn attempt_token_refresh(
     manager: &CredentialsManager,
 ) -> Result<Credentials, AuthError> {
     // Check for refresh token availability
-    let refresh_token = credentials.refresh_token.as_ref().ok_or_else(|| {
-        AuthError::RefreshFailed("No refresh token available".to_string())
-    })?;
+    let refresh_token = credentials
+        .refresh_token
+        .as_ref()
+        .ok_or_else(|| AuthError::RefreshFailed("No refresh token available".to_string()))?;
 
     let client = CentralApiClient::new();
 

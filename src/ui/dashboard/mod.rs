@@ -15,10 +15,10 @@ pub mod thread_row;
 
 // Re-export types from view_state for backward compatibility
 // This allows existing code using `crate::ui::dashboard::*` to keep working
+pub use crate::models::ThreadMode;
 pub use crate::view_state::{
     FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
-pub use crate::models::ThreadMode;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -84,11 +84,11 @@ pub fn render_dashboard(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),          // Header (3 rows for better vertical alignment)
+            Constraint::Length(3), // Header (3 rows for better vertical alignment)
             Constraint::Length(margin_rows), // Margin between header and status bar
-            Constraint::Length(2),          // Status bar
-            Constraint::Min(5),             // Thread list
-            Constraint::Length(1),          // Footer hint
+            Constraint::Length(2), // Status bar
+            Constraint::Min(5),    // Thread list
+            Constraint::Length(1), // Footer hint
         ])
         .split(area);
 

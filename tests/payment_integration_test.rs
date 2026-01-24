@@ -19,10 +19,12 @@ fn test_checkout_session_response_deserialization() {
         "customer_email": "test@example.com"
     }"#;
 
-    let response: CheckoutSessionResponse =
-        serde_json::from_str(json).expect("Should deserialize");
+    let response: CheckoutSessionResponse = serde_json::from_str(json).expect("Should deserialize");
 
-    assert_eq!(response.checkout_url, "https://checkout.stripe.com/session123");
+    assert_eq!(
+        response.checkout_url,
+        "https://checkout.stripe.com/session123"
+    );
     assert_eq!(response.session_id, "cs_test_abc123");
     assert_eq!(response.customer_email, "test@example.com");
 }
@@ -36,8 +38,7 @@ fn test_payment_status_response_completed() {
         "customer_id": "cus_abc123"
     }"#;
 
-    let response: PaymentStatusResponse =
-        serde_json::from_str(json).expect("Should deserialize");
+    let response: PaymentStatusResponse = serde_json::from_str(json).expect("Should deserialize");
 
     assert_eq!(response.status, "complete");
     assert_eq!(response.subscription_id, Some("sub_1234567890".to_string()));
@@ -49,8 +50,7 @@ fn test_payment_status_response_completed() {
 fn test_payment_status_response_pending() {
     let json = r#"{"status": "pending"}"#;
 
-    let response: PaymentStatusResponse =
-        serde_json::from_str(json).expect("Should deserialize");
+    let response: PaymentStatusResponse = serde_json::from_str(json).expect("Should deserialize");
 
     assert_eq!(response.status, "pending");
     assert_eq!(response.subscription_id, None);
@@ -88,12 +88,14 @@ fn test_subscription_status_active() {
         "customer_portal_url": "https://billing.stripe.com/portal123"
     }"#;
 
-    let status: SubscriptionStatus =
-        serde_json::from_str(json).expect("Should deserialize");
+    let status: SubscriptionStatus = serde_json::from_str(json).expect("Should deserialize");
 
     assert_eq!(status.status, "active");
     assert_eq!(status.plan, Some("plan_enterprise".to_string()));
-    assert_eq!(status.current_period_end, Some("2026-12-31T23:59:59Z".to_string()));
+    assert_eq!(
+        status.current_period_end,
+        Some("2026-12-31T23:59:59Z".to_string())
+    );
     assert_eq!(status.cancel_at_period_end, Some(false));
     assert!(status.customer_portal_url.is_some());
 }
@@ -103,8 +105,7 @@ fn test_subscription_status_active() {
 fn test_subscription_status_inactive() {
     let json = r#"{"status": "inactive"}"#;
 
-    let status: SubscriptionStatus =
-        serde_json::from_str(json).expect("Should deserialize");
+    let status: SubscriptionStatus = serde_json::from_str(json).expect("Should deserialize");
 
     assert_eq!(status.status, "inactive");
     assert_eq!(status.plan, None);
@@ -142,7 +143,10 @@ fn test_payment_status_polling_workflow() {
         serde_json::from_str(complete_json).expect("Should deserialize");
 
     assert_eq!(complete_response.status, "complete");
-    assert_eq!(complete_response.subscription_id, Some("sub_success123".to_string()));
+    assert_eq!(
+        complete_response.subscription_id,
+        Some("sub_success123".to_string())
+    );
 }
 
 /// Test subscription_id extraction from payment status
@@ -153,8 +157,7 @@ fn test_subscription_id_extraction() {
         "subscription_id": "sub_extracted123"
     }"#;
 
-    let response: PaymentStatusResponse =
-        serde_json::from_str(json).expect("Should deserialize");
+    let response: PaymentStatusResponse = serde_json::from_str(json).expect("Should deserialize");
 
     if let Some(sub_id) = response.subscription_id {
         assert_eq!(sub_id, "sub_extracted123");
@@ -198,8 +201,7 @@ fn test_checkout_session_minimal() {
         "customer_email": "user@example.com"
     }"#;
 
-    let response: CheckoutSessionResponse =
-        serde_json::from_str(json).expect("Should deserialize");
+    let response: CheckoutSessionResponse = serde_json::from_str(json).expect("Should deserialize");
 
     assert!(!response.checkout_url.is_empty());
     assert!(!response.session_id.is_empty());
@@ -216,8 +218,7 @@ fn test_subscription_status_canceled() {
         "cancel_at_period_end": true
     }"#;
 
-    let status: SubscriptionStatus =
-        serde_json::from_str(json).expect("Should deserialize");
+    let status: SubscriptionStatus = serde_json::from_str(json).expect("Should deserialize");
 
     assert_eq!(status.status, "canceled");
     assert_eq!(status.plan, Some("plan_basic".to_string()));
@@ -232,8 +233,7 @@ fn test_payment_status_failed() {
         "customer_id": "cus_failed123"
     }"#;
 
-    let response: PaymentStatusResponse =
-        serde_json::from_str(json).expect("Should deserialize");
+    let response: PaymentStatusResponse = serde_json::from_str(json).expect("Should deserialize");
 
     assert_eq!(response.status, "failed");
     assert_eq!(response.subscription_id, None);

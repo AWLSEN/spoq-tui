@@ -47,7 +47,10 @@ fn test_cli_parse_args_default() {
 #[test]
 fn test_cli_run_tui_returns_none() {
     let result = run_cli_command(CliCommand::RunTui);
-    assert!(result.is_none(), "RunTui should return None to continue to TUI");
+    assert!(
+        result.is_none(),
+        "RunTui should return None to continue to TUI"
+    );
 }
 
 // =============================================================================
@@ -103,7 +106,10 @@ fn test_command_registry_creation() {
 
     // Verify essential bindings exist
     assert!(config.global.len() > 0, "Should have global bindings");
-    assert!(config.input_editing.len() > 0, "Should have input editing bindings");
+    assert!(
+        config.input_editing.len() > 0,
+        "Should have input editing bindings"
+    );
 }
 
 #[test]
@@ -296,11 +302,7 @@ async fn test_mock_http_client_integration() {
     use spoq::traits::{Headers, HttpClient};
 
     let client = MockHttpConfig::new()
-        .with_json_response(
-            "https://api.test.com/status",
-            200,
-            r#"{"status": "ok"}"#,
-        )
+        .with_json_response("https://api.test.com/status", 200, r#"{"status": "ok"}"#)
         .build();
 
     let response = client

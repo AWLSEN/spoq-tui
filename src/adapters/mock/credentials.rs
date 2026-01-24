@@ -110,7 +110,9 @@ impl Default for InMemoryCredentials {
 impl CredentialsProvider for InMemoryCredentials {
     async fn load(&self) -> Result<Option<Credentials>, CredentialsError> {
         if *self.load_should_fail.lock().unwrap() {
-            return Err(CredentialsError::LoadFailed("Mock load failure".to_string()));
+            return Err(CredentialsError::LoadFailed(
+                "Mock load failure".to_string(),
+            ));
         }
 
         Ok(self.credentials.lock().unwrap().clone())
@@ -118,7 +120,9 @@ impl CredentialsProvider for InMemoryCredentials {
 
     async fn save(&self, creds: &Credentials) -> Result<(), CredentialsError> {
         if *self.save_should_fail.lock().unwrap() {
-            return Err(CredentialsError::SaveFailed("Mock save failure".to_string()));
+            return Err(CredentialsError::SaveFailed(
+                "Mock save failure".to_string(),
+            ));
         }
 
         *self.credentials.lock().unwrap() = Some(creds.clone());
@@ -127,7 +131,9 @@ impl CredentialsProvider for InMemoryCredentials {
 
     async fn clear(&self) -> Result<(), CredentialsError> {
         if *self.clear_should_fail.lock().unwrap() {
-            return Err(CredentialsError::ClearFailed("Mock clear failure".to_string()));
+            return Err(CredentialsError::ClearFailed(
+                "Mock clear failure".to_string(),
+            ));
         }
 
         *self.credentials.lock().unwrap() = None;

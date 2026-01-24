@@ -14,10 +14,7 @@ use std::path::PathBuf;
 fn test_token_migration_result_structure() {
     // Create a mock result structure
     let archive_path = Some(PathBuf::from("/home/user/.spoq-migration/archive.tar.gz"));
-    let detected_tokens = vec![
-        "GitHub CLI".to_string(),
-        "Claude Code".to_string(),
-    ];
+    let detected_tokens = vec!["GitHub CLI".to_string(), "Claude Code".to_string()];
 
     assert!(archive_path.is_some());
     assert_eq!(detected_tokens.len(), 2);
@@ -190,10 +187,7 @@ fn test_archive_path_conversion() {
 /// Test token migration summary message generation
 #[test]
 fn test_token_migration_summary_message() {
-    let detected_tokens = vec![
-        "GitHub CLI".to_string(),
-        "Claude Code".to_string(),
-    ];
+    let detected_tokens = vec!["GitHub CLI".to_string(), "Claude Code".to_string()];
 
     let summary = if detected_tokens.is_empty() {
         "Token migration prepared. No tokens detected.".to_string()
@@ -232,7 +226,10 @@ fn test_token_migration_summary_no_tokens() {
 fn test_token_detection_error_handling() {
     // Simulate an error message
     let error = "Failed to execute migration script: No such file or directory";
-    let warning = format!("Token detection failed: {}. VPS setup will continue.", error);
+    let warning = format!(
+        "Token detection failed: {}. VPS setup will continue.",
+        error
+    );
 
     assert!(warning.contains("Token detection failed"));
     assert!(warning.contains("VPS setup will continue"));

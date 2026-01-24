@@ -246,8 +246,7 @@ impl DashboardState {
     ///
     /// Called when receiving phase progress updates from WebSocket.
     pub fn update_phase_progress(&mut self, thread_id: &str, progress: PhaseProgressData) {
-        self.phase_progress
-            .insert(thread_id.to_string(), progress);
+        self.phase_progress.insert(thread_id.to_string(), progress);
         self.thread_views_dirty = true;
     }
 
@@ -502,44 +501,44 @@ impl DashboardState {
     fn build_thread_views(&self) -> Vec<ThreadView> {
         // Progress is now imported at the top from view_state
 
-        let mut views: Vec<ThreadView> = self
-            .threads
-            .values()
-            .map(|thread| {
-                let status = thread.effective_status(&self.agent_states);
-                let waiting_for = self.waiting_for.get(&thread.id).cloned();
+        let mut views: Vec<ThreadView> =
+            self.threads
+                .values()
+                .map(|thread| {
+                    let status = thread.effective_status(&self.agent_states);
+                    let waiting_for = self.waiting_for.get(&thread.id).cloned();
 
-                // Use thread.mode directly from the Thread model
-                let mode = thread.mode;
+                    // Use thread.mode directly from the Thread model
+                    let mode = thread.mode;
 
-                // Look up phase progress and create Progress if status is Running or Starting
-                let progress = self.get_phase_progress(&thread.id).and_then(|phase_data| {
-                    match phase_data.status {
-                        PhaseStatus::Running | PhaseStatus::Starting => {
-                            Some(Progress::new(phase_data.phase_index, phase_data.total_phases))
-                        }
-                        _ => None,
-                    }
-                });
+                    // Look up phase progress and create Progress if status is Running or Starting
+                    let progress =
+                        self.get_phase_progress(&thread.id)
+                            .and_then(|phase_data| match phase_data.status {
+                                PhaseStatus::Running | PhaseStatus::Starting => Some(
+                                    Progress::new(phase_data.phase_index, phase_data.total_phases),
+                                ),
+                                _ => None,
+                            });
 
-                // Get current_operation from agent state
-                let current_operation = thread
-                    .current_operation(&self.agent_states)
-                    .map(|s| s.to_string());
+                    // Get current_operation from agent state
+                    let current_operation = thread
+                        .current_operation(&self.agent_states)
+                        .map(|s| s.to_string());
 
-                ThreadView::new(
-                    thread.id.clone(),
-                    thread.title.clone(),
-                    thread.display_repository(),
-                )
-                .with_mode(mode)
-                .with_status(status)
-                .with_waiting_for(waiting_for)
-                .with_progress(progress)
-                .with_duration(thread.display_duration())
-                .with_current_operation(current_operation)
-            })
-            .collect();
+                    ThreadView::new(
+                        thread.id.clone(),
+                        thread.title.clone(),
+                        thread.display_repository(),
+                    )
+                    .with_mode(mode)
+                    .with_status(status)
+                    .with_waiting_for(waiting_for)
+                    .with_progress(progress)
+                    .with_duration(thread.display_duration())
+                    .with_current_operation(current_operation)
+                })
+                .collect();
 
         // Sort: needs_action first, then by updated_at (most recent first)
         views.sort_by(|a, b| {
@@ -971,10 +970,7 @@ mod tests {
         assert_eq!(p.status, PhaseStatus::Running);
         assert_eq!(p.tool_count, 10);
         assert_eq!(p.last_tool, "Edit");
-        assert_eq!(
-            p.last_file,
-            Some("/src/websocket/handlers.rs".to_string())
-        );
+        assert_eq!(p.last_file, Some("/src/websocket/handlers.rs".to_string()));
     }
 
     #[test]

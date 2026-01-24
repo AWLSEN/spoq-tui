@@ -65,7 +65,10 @@ impl std::fmt::Display for InstallError {
             InstallError::BackupNotFound(path) => {
                 write!(f, "Backup file not found: {}", path.display())
             }
-            InstallError::InstallFailedRestored { cause, restored_from } => {
+            InstallError::InstallFailedRestored {
+                cause,
+                restored_from,
+            } => {
                 write!(
                     f,
                     "Installation failed ({}), backup restored from: {}",
@@ -593,7 +596,10 @@ pub fn install_update_logged_with_config(
         }
         Err(e) if config.auto_rollback => {
             // Installation failed, attempt rollback
-            log_update_debug(&format!("Installation failed: {:?}, attempting rollback", e));
+            log_update_debug(&format!(
+                "Installation failed: {:?}, attempting rollback",
+                e
+            ));
 
             let install_err = convert_install_error(e);
 
@@ -695,12 +701,13 @@ fn convert_install_error(err: InstallError) -> UpdateError {
             operation: msg,
         },
         InstallError::BackupNotFound(path) => UpdateError::BackupNotFound { path },
-        InstallError::InstallFailedRestored { cause, restored_from } => {
-            UpdateError::InstallFailedRestored {
-                cause: format!("{}", cause),
-                restored_from,
-            }
-        }
+        InstallError::InstallFailedRestored {
+            cause,
+            restored_from,
+        } => UpdateError::InstallFailedRestored {
+            cause: format!("{}", cause),
+            restored_from,
+        },
         InstallError::InstallFailedNoRestore {
             install_error,
             restore_error,

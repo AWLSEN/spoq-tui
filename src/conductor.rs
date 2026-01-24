@@ -253,11 +253,9 @@ fn read_claude_keychain_credentials() -> Option<String> {
 /// # Returns
 /// JSON object containing token data to send to Conductor
 fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorError> {
-    let home = std::env::var("HOME").map_err(|_| {
-        ConductorError::ServerError {
-            status: 500,
-            message: "HOME environment variable not set".to_string(),
-        }
+    let home = std::env::var("HOME").map_err(|_| ConductorError::ServerError {
+        status: 500,
+        message: "HOME environment variable not set".to_string(),
     })?;
 
     let mut data = serde_json::Map::new();
@@ -278,13 +276,19 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
         let claude_json_path = PathBuf::from(&home).join(".claude.json");
         if claude_json_path.exists() {
             if let Ok(contents) = fs::read_to_string(&claude_json_path) {
-                claude_data.insert("claude_json".to_string(), serde_json::Value::String(contents));
+                claude_data.insert(
+                    "claude_json".to_string(),
+                    serde_json::Value::String(contents),
+                );
             }
         }
 
         // Only add if we have something to sync
         if !claude_data.is_empty() {
-            data.insert("claude_code".to_string(), serde_json::Value::Object(claude_data));
+            data.insert(
+                "claude_code".to_string(),
+                serde_json::Value::Object(claude_data),
+            );
         }
     }
 
@@ -294,12 +298,11 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
         let hosts_yml_path = gh_dir.join("hosts.yml");
 
         if hosts_yml_path.exists() {
-            let contents = fs::read_to_string(&hosts_yml_path).map_err(|e| {
-                ConductorError::ServerError {
+            let contents =
+                fs::read_to_string(&hosts_yml_path).map_err(|e| ConductorError::ServerError {
                     status: 500,
                     message: format!("Failed to read ~/.config/gh/hosts.yml: {}", e),
-                }
-            })?;
+                })?;
 
             let mut gh_data = serde_json::Map::new();
             gh_data.insert("hosts_yml".to_string(), serde_json::Value::String(contents));
@@ -308,7 +311,10 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
             let config_yml_path = gh_dir.join("config.yml");
             if config_yml_path.exists() {
                 if let Ok(config_contents) = fs::read_to_string(&config_yml_path) {
-                    gh_data.insert("config_yml".to_string(), serde_json::Value::String(config_contents));
+                    gh_data.insert(
+                        "config_yml".to_string(),
+                        serde_json::Value::String(config_contents),
+                    );
                 }
             }
 
@@ -321,12 +327,11 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
         let codex_auth_path = PathBuf::from(&home).join(".codex").join("auth.json");
 
         if codex_auth_path.exists() {
-            let contents = fs::read_to_string(&codex_auth_path).map_err(|e| {
-                ConductorError::ServerError {
+            let contents =
+                fs::read_to_string(&codex_auth_path).map_err(|e| ConductorError::ServerError {
                     status: 500,
                     message: format!("Failed to read ~/.codex/auth.json: {}", e),
-                }
-            })?;
+                })?;
 
             let mut codex_data = serde_json::Map::new();
             codex_data.insert("auth_json".to_string(), serde_json::Value::String(contents));
@@ -437,12 +442,13 @@ impl ConductorClient {
     ///
     /// Calls the central API's refresh endpoint and updates the stored tokens.
     async fn refresh_access_token(&mut self) -> Result<(), ConductorError> {
-        let refresh_token = self.refresh_token.as_ref().ok_or_else(|| {
-            ConductorError::ServerError {
-                status: 401,
-                message: "No refresh token available".to_string(),
-            }
-        })?;
+        let refresh_token =
+            self.refresh_token
+                .as_ref()
+                .ok_or_else(|| ConductorError::ServerError {
+                    status: 401,
+                    message: "No refresh token available".to_string(),
+                })?;
 
         let url = format!("{}/auth/refresh", self.central_api_url);
         let body = serde_json::json!({

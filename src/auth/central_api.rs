@@ -479,7 +479,6 @@ impl CentralApiClient {
         }
     }
 
-
     /// Initiate the device code authentication flow.
     ///
     /// POST /auth/device
@@ -741,16 +740,26 @@ impl CentralApiClient {
                         // Log successful refresh with expiration time
                         if let Some(expires_in) = token_response.expires_in {
                             let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                                .map(|dt| dt.to_rfc3339())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            println!("Token refresh successful, new expiration: {}", expiration_time);
-                        } else if let Some(expires_in) = get_jwt_expires_in(&token_response.access_token) {
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
+                        } else if let Some(expires_in) =
+                            get_jwt_expires_in(&token_response.access_token)
+                        {
                             let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                                .map(|dt| dt.to_rfc3339())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
                         } else {
                             println!("Token refresh successful");
                         }
@@ -822,16 +831,26 @@ impl CentralApiClient {
                         // Log successful refresh with expiration time
                         if let Some(expires_in) = token_response.expires_in {
                             let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                                .map(|dt| dt.to_rfc3339())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            println!("Token refresh successful, new expiration: {}", expiration_time);
-                        } else if let Some(expires_in) = get_jwt_expires_in(&token_response.access_token) {
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
+                        } else if let Some(expires_in) =
+                            get_jwt_expires_in(&token_response.access_token)
+                        {
                             let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                                .map(|dt| dt.to_rfc3339())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
                         } else {
                             println!("Token refresh successful");
                         }
@@ -1149,16 +1168,26 @@ impl CentralApiClient {
                         // Log successful refresh with expiration time
                         if let Some(expires_in) = token_response.expires_in {
                             let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                                .map(|dt| dt.to_rfc3339())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            println!("Token refresh successful, new expiration: {}", expiration_time);
-                        } else if let Some(expires_in) = get_jwt_expires_in(&token_response.access_token) {
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
+                        } else if let Some(expires_in) =
+                            get_jwt_expires_in(&token_response.access_token)
+                        {
                             let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                                .map(|dt| dt.to_rfc3339())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            println!("Token refresh successful, new expiration: {}", expiration_time);
+                            let expiration_time =
+                                chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                                    .map(|dt| dt.to_rfc3339())
+                                    .unwrap_or_else(|| "unknown".to_string());
+                            println!(
+                                "Token refresh successful, new expiration: {}",
+                                expiration_time
+                            );
                         } else {
                             println!("Token refresh successful");
                         }
@@ -1720,7 +1749,10 @@ mod tests {
             response.access_token,
             "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3MzY4NzI0MDB9.sig"
         );
-        assert_eq!(response.refresh_token, Some("spoq_refresh_token".to_string()));
+        assert_eq!(
+            response.refresh_token,
+            Some("spoq_refresh_token".to_string())
+        );
         assert_eq!(response.token_type, Some("Bearer".to_string()));
     }
 
@@ -2047,10 +2079,16 @@ mod tests {
         assert!(response.credentials.is_some());
         let creds = response.credentials.unwrap();
         assert_eq!(creds.jwt_token, Some("token123".to_string()));
-        assert_eq!(response.message, Some("BYOVPS provisioning started".to_string()));
+        assert_eq!(
+            response.message,
+            Some("BYOVPS provisioning started".to_string())
+        );
         assert_eq!(response.vps_id, Some("byovps-uuid-123".to_string()));
         assert_eq!(response.ip, Some("192.168.1.100".to_string()));
-        assert_eq!(response.url, Some("https://user-byovps.spoq.dev:8000".to_string()));
+        assert_eq!(
+            response.url,
+            Some("https://user-byovps.spoq.dev:8000".to_string())
+        );
     }
 
     #[test]
@@ -2121,8 +2159,8 @@ mod tests {
     #[tokio::test]
     async fn test_provision_byovps_refresh_error_handling() {
         // Test that refresh error is properly captured and returned
-        use wiremock::{MockServer, Mock, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -2148,7 +2186,9 @@ mod tests {
             .with_auth("expired-token")
             .with_refresh_token("invalid-refresh-token");
 
-        let result = client.provision_byovps("192.168.1.100", "root", "password").await;
+        let result = client
+            .provision_byovps("192.168.1.100", "root", "password")
+            .await;
 
         assert!(result.is_err());
         if let Err(CentralApiError::ServerError { status, message }) = result {
@@ -2163,8 +2203,8 @@ mod tests {
     #[tokio::test]
     async fn test_provision_vps_refresh_error_handling() {
         // Test that refresh error is properly captured and returned
-        use wiremock::{MockServer, Mock, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 
@@ -2190,7 +2230,9 @@ mod tests {
             .with_auth("expired-token")
             .with_refresh_token("invalid-refresh-token");
 
-        let result = client.provision_vps("password", Some("plan-small"), None).await;
+        let result = client
+            .provision_vps("password", Some("plan-small"), None)
+            .await;
 
         assert!(result.is_err());
         if let Err(CentralApiError::ServerError { status, message }) = result {
@@ -2205,8 +2247,8 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_vps_status_refresh_error_handling() {
         // Test that refresh error is properly captured and returned
-        use wiremock::{MockServer, Mock, ResponseTemplate};
         use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
 

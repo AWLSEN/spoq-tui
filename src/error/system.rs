@@ -13,26 +13,16 @@ use std::path::PathBuf;
 #[derive(Debug, Clone)]
 pub enum SystemError {
     /// File not found.
-    FileNotFound {
-        path: PathBuf,
-    },
+    FileNotFound { path: PathBuf },
 
     /// Directory not found.
-    DirectoryNotFound {
-        path: PathBuf,
-    },
+    DirectoryNotFound { path: PathBuf },
 
     /// Permission denied for file/directory operation.
-    PermissionDenied {
-        path: PathBuf,
-        operation: String,
-    },
+    PermissionDenied { path: PathBuf, operation: String },
 
     /// Failed to create directory.
-    DirectoryCreationFailed {
-        path: PathBuf,
-        message: String,
-    },
+    DirectoryCreationFailed { path: PathBuf, message: String },
 
     /// Insufficient disk space.
     InsufficientDiskSpace {
@@ -42,9 +32,7 @@ pub enum SystemError {
     },
 
     /// Disk quota exceeded.
-    QuotaExceeded {
-        path: PathBuf,
-    },
+    QuotaExceeded { path: PathBuf },
 
     /// Generic I/O error.
     IoError {
@@ -63,21 +51,13 @@ pub enum SystemError {
     NoCacheDirectory,
 
     /// Resource not available (e.g., file locked).
-    ResourceBusy {
-        resource: String,
-        message: String,
-    },
+    ResourceBusy { resource: String, message: String },
 
     /// Environment variable not set or invalid.
-    EnvironmentError {
-        variable: String,
-        message: String,
-    },
+    EnvironmentError { variable: String, message: String },
 
     /// Generic system error.
-    Other {
-        message: String,
-    },
+    Other { message: String },
 }
 
 impl SystemError {
@@ -193,9 +173,18 @@ impl fmt::Display for SystemError {
                 write!(f, "Permission denied: {} '{}'", operation, path.display())
             }
             SystemError::DirectoryCreationFailed { path, message } => {
-                write!(f, "Failed to create directory '{}': {}", path.display(), message)
+                write!(
+                    f,
+                    "Failed to create directory '{}': {}",
+                    path.display(),
+                    message
+                )
             }
-            SystemError::InsufficientDiskSpace { path, required_bytes, available_bytes } => {
+            SystemError::InsufficientDiskSpace {
+                path,
+                required_bytes,
+                available_bytes,
+            } => {
                 write!(f, "Insufficient disk space at '{}'", path.display())?;
                 if let (Some(req), Some(avail)) = (required_bytes, available_bytes) {
                     write!(f, " (need {} bytes, have {} bytes)", req, avail)?;
@@ -205,12 +194,20 @@ impl fmt::Display for SystemError {
             SystemError::QuotaExceeded { path } => {
                 write!(f, "Disk quota exceeded at '{}'", path.display())
             }
-            SystemError::IoError { operation, path, message } => {
-                match path {
-                    Some(p) => write!(f, "I/O error during {} at '{}': {}", operation, p.display(), message),
-                    None => write!(f, "I/O error during {}: {}", operation, message),
-                }
-            }
+            SystemError::IoError {
+                operation,
+                path,
+                message,
+            } => match path {
+                Some(p) => write!(
+                    f,
+                    "I/O error during {} at '{}': {}",
+                    operation,
+                    p.display(),
+                    message
+                ),
+                None => write!(f, "I/O error during {}: {}", operation, message),
+            },
             SystemError::NoHomeDirectory => {
                 write!(f, "Could not determine home directory")
             }
@@ -236,63 +233,59 @@ impl fmt::Display for SystemError {
 impl std::error::Error for SystemError {}
 
 /// Classify an I/O error into a SystemError.
-pub fn classify_io_error(err: std::io::Error, path: Option<PathBuf>, operation: &str) -> SystemError {
+pub fn classify_io_error(
+    err: std::io::Error,
+    path: Option<PathBuf>,
+    operation: &str,
+) -> SystemError {
     use std::io::ErrorKind;
 
     match err.kind() {
-        ErrorKind::NotFound => {
-            match &path {
-                Some(p) => {
-                    if p.is_dir() || operation.contains("dir") {
-                        SystemError::DirectoryNotFound { path: p.clone() }
-                    } else {
-                        SystemError::FileNotFound { path: p.clone() }
-                    }
+        ErrorKind::NotFound => match &path {
+            Some(p) => {
+                if p.is_dir() || operation.contains("dir") {
+                    SystemError::DirectoryNotFound { path: p.clone() }
+                } else {
+                    SystemError::FileNotFound { path: p.clone() }
                 }
-                None => SystemError::IoError {
-                    operation: operation.to_string(),
-                    path: None,
-                    message: err.to_string(),
-                },
             }
-        }
-        ErrorKind::PermissionDenied => {
-            match &path {
-                Some(p) => SystemError::PermissionDenied {
-                    path: p.clone(),
-                    operation: operation.to_string(),
-                },
-                None => SystemError::IoError {
-                    operation: operation.to_string(),
-                    path: None,
-                    message: "Permission denied".to_string(),
-                },
-            }
-        }
-        _ if is_disk_space_error(&err) => {
-            match &path {
-                Some(p) => SystemError::InsufficientDiskSpace {
-                    path: p.clone(),
-                    required_bytes: None,
-                    available_bytes: None,
-                },
-                None => SystemError::IoError {
-                    operation: operation.to_string(),
-                    path: None,
-                    message: "No space left on device".to_string(),
-                },
-            }
-        }
-        _ if is_quota_error(&err) => {
-            match &path {
-                Some(p) => SystemError::QuotaExceeded { path: p.clone() },
-                None => SystemError::IoError {
-                    operation: operation.to_string(),
-                    path: None,
-                    message: "Disk quota exceeded".to_string(),
-                },
-            }
-        }
+            None => SystemError::IoError {
+                operation: operation.to_string(),
+                path: None,
+                message: err.to_string(),
+            },
+        },
+        ErrorKind::PermissionDenied => match &path {
+            Some(p) => SystemError::PermissionDenied {
+                path: p.clone(),
+                operation: operation.to_string(),
+            },
+            None => SystemError::IoError {
+                operation: operation.to_string(),
+                path: None,
+                message: "Permission denied".to_string(),
+            },
+        },
+        _ if is_disk_space_error(&err) => match &path {
+            Some(p) => SystemError::InsufficientDiskSpace {
+                path: p.clone(),
+                required_bytes: None,
+                available_bytes: None,
+            },
+            None => SystemError::IoError {
+                operation: operation.to_string(),
+                path: None,
+                message: "No space left on device".to_string(),
+            },
+        },
+        _ if is_quota_error(&err) => match &path {
+            Some(p) => SystemError::QuotaExceeded { path: p.clone() },
+            None => SystemError::IoError {
+                operation: operation.to_string(),
+                path: None,
+                message: "Disk quota exceeded".to_string(),
+            },
+        },
         _ => SystemError::IoError {
             operation: operation.to_string(),
             path,

@@ -11,9 +11,11 @@ use spoq::models::dashboard::{
     compute_local_aggregate, infer_status_from_agent_state, Aggregate, PlanSummary, ThreadStatus,
     WaitingFor,
 };
-use spoq::models::{Thread, ThreadType, ThreadMode};
+use spoq::models::{Thread, ThreadMode, ThreadType};
 use spoq::state::DashboardState;
-use spoq::ui::dashboard::{FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadView};
+use spoq::ui::dashboard::{
+    FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadView,
+};
 use spoq::ui::interaction::{ClickAction, HitAreaRegistry};
 use std::collections::HashMap;
 
@@ -40,7 +42,6 @@ fn make_test_thread(id: &str, title: &str, status: Option<ThreadStatus>) -> Thre
         verified_at: None,
     }
 }
-
 
 // ============================================================================
 // Dashboard Renders - Zero Threads (All Clear State)
@@ -99,7 +100,11 @@ fn test_dashboard_renders_with_many_threads() {
             3 => Some(ThreadStatus::Error),
             _ => Some(ThreadStatus::Idle),
         };
-        threads.push(make_test_thread(&format!("t{}", i), &format!("Thread {}", i), status));
+        threads.push(make_test_thread(
+            &format!("t{}", i),
+            &format!("Thread {}", i),
+            status,
+        ));
     }
 
     let agent_states = HashMap::new();
@@ -180,7 +185,11 @@ fn test_dashboard_agent_state_overrides_stored_status() {
     let mut state = DashboardState::new();
 
     // Thread has stored status of Idle
-    let threads = vec![make_test_thread("t1", "Agent Override Test", Some(ThreadStatus::Idle))];
+    let threads = vec![make_test_thread(
+        "t1",
+        "Agent Override Test",
+        Some(ThreadStatus::Idle),
+    )];
 
     // But agent events say it's thinking (Running)
     let mut agent_states = HashMap::new();
@@ -293,7 +302,11 @@ fn test_filter_state_matches_status() {
 fn test_overlay_opens_on_thread_expand() {
     let mut state = DashboardState::new();
 
-    let threads = vec![make_test_thread("t1", "Test Thread", Some(ThreadStatus::Idle))];
+    let threads = vec![make_test_thread(
+        "t1",
+        "Test Thread",
+        Some(ThreadStatus::Idle),
+    )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
 
@@ -305,7 +318,12 @@ fn test_overlay_opens_on_thread_expand() {
 
     // Overlay should be open
     assert!(state.overlay().is_some());
-    if let Some(OverlayState::Question { thread_id, anchor_y, .. }) = state.overlay() {
+    if let Some(OverlayState::Question {
+        thread_id,
+        anchor_y,
+        ..
+    }) = state.overlay()
+    {
         assert_eq!(thread_id, "t1");
         assert_eq!(*anchor_y, 10);
     } else {
@@ -317,7 +335,11 @@ fn test_overlay_opens_on_thread_expand() {
 fn test_overlay_opens_plan_for_plan_approval() {
     let mut state = DashboardState::new();
 
-    let threads = vec![make_test_thread("t1", "Plan Thread", Some(ThreadStatus::Waiting))];
+    let threads = vec![make_test_thread(
+        "t1",
+        "Plan Thread",
+        Some(ThreadStatus::Waiting),
+    )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
 
@@ -347,7 +369,13 @@ fn test_overlay_opens_plan_for_plan_approval() {
 
     // Should open Plan overlay
     assert!(state.overlay().is_some());
-    if let Some(OverlayState::Plan { thread_id, request_id, summary, .. }) = state.overlay() {
+    if let Some(OverlayState::Plan {
+        thread_id,
+        request_id,
+        summary,
+        ..
+    }) = state.overlay()
+    {
         assert_eq!(thread_id, "t1");
         assert_eq!(request_id, "req-123");
         assert_eq!(summary.title, "Add dark mode");
@@ -361,7 +389,11 @@ fn test_overlay_opens_plan_for_plan_approval() {
 fn test_overlay_does_not_open_for_permission() {
     let mut state = DashboardState::new();
 
-    let threads = vec![make_test_thread("t1", "Permission Thread", Some(ThreadStatus::Waiting))];
+    let threads = vec![make_test_thread(
+        "t1",
+        "Permission Thread",
+        Some(ThreadStatus::Waiting),
+    )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
 
@@ -390,7 +422,11 @@ fn test_overlay_does_not_open_for_permission() {
 fn test_overlay_closes_on_escape() {
     let mut state = DashboardState::new();
 
-    let threads = vec![make_test_thread("t1", "Test Thread", Some(ThreadStatus::Idle))];
+    let threads = vec![make_test_thread(
+        "t1",
+        "Test Thread",
+        Some(ThreadStatus::Idle),
+    )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
 
@@ -407,7 +443,11 @@ fn test_overlay_closes_on_escape() {
 fn test_overlay_free_form_transition() {
     let mut state = DashboardState::new();
 
-    let threads = vec![make_test_thread("t1", "Test Thread", Some(ThreadStatus::Idle))];
+    let threads = vec![make_test_thread(
+        "t1",
+        "Test Thread",
+        Some(ThreadStatus::Idle),
+    )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
 
@@ -417,7 +457,13 @@ fn test_overlay_free_form_transition() {
     // Transition to FreeForm
     state.show_free_form("t1");
 
-    if let Some(OverlayState::FreeForm { thread_id, input, cursor_pos, .. }) = state.overlay() {
+    if let Some(OverlayState::FreeForm {
+        thread_id,
+        input,
+        cursor_pos,
+        ..
+    }) = state.overlay()
+    {
         assert_eq!(thread_id, "t1");
         assert!(input.is_empty());
         assert_eq!(*cursor_pos, 0);
@@ -428,7 +474,10 @@ fn test_overlay_free_form_transition() {
     // Update input
     state.update_free_form_input("Hello world".to_string(), 5);
 
-    if let Some(OverlayState::FreeForm { input, cursor_pos, .. }) = state.overlay() {
+    if let Some(OverlayState::FreeForm {
+        input, cursor_pos, ..
+    }) = state.overlay()
+    {
         assert_eq!(input, "Hello world");
         assert_eq!(*cursor_pos, 5);
     } else {
@@ -438,7 +487,10 @@ fn test_overlay_free_form_transition() {
     // Go back to options
     state.back_to_options("t1");
 
-    assert!(matches!(state.overlay(), Some(OverlayState::Question { .. })));
+    assert!(matches!(
+        state.overlay(),
+        Some(OverlayState::Question { .. })
+    ));
 }
 
 // ============================================================================
@@ -468,7 +520,10 @@ fn test_hit_area_filter_click_actions() {
 
     // Test hit testing
     assert_eq!(registry.hit_test(5, 1), Some(ClickAction::FilterWorking));
-    assert_eq!(registry.hit_test(15, 1), Some(ClickAction::FilterReadyToTest));
+    assert_eq!(
+        registry.hit_test(15, 1),
+        Some(ClickAction::FilterReadyToTest)
+    );
     assert_eq!(registry.hit_test(30, 1), Some(ClickAction::FilterIdle));
     assert_eq!(registry.hit_test(50, 1), None); // Outside all areas
 }
@@ -553,7 +608,10 @@ fn test_hit_area_overlay_priority() {
     );
 
     // Click in overlay area should hit overlay action (last registered wins)
-    assert_eq!(registry.hit_test(50, 25), Some(ClickAction::CollapseOverlay));
+    assert_eq!(
+        registry.hit_test(50, 25),
+        Some(ClickAction::CollapseOverlay)
+    );
 
     // Click outside overlay should hit background
     assert_eq!(registry.hit_test(5, 5), Some(ClickAction::ClearFilter));
@@ -681,10 +739,7 @@ fn test_infer_status_from_various_agent_states() {
         infer_status_from_agent_state("finished"),
         ThreadStatus::Done
     );
-    assert_eq!(
-        infer_status_from_agent_state("success"),
-        ThreadStatus::Done
-    );
+    assert_eq!(infer_status_from_agent_state("success"), ThreadStatus::Done);
 
     // Error states
     assert_eq!(infer_status_from_agent_state("error"), ThreadStatus::Error);
@@ -727,9 +782,13 @@ fn test_infer_status_case_insensitive() {
 
 #[test]
 fn test_thread_view_builder() {
-    let view = ThreadView::new("t1".to_string(), "Test Thread".to_string(), "~/project".to_string())
-        .with_status(ThreadStatus::Running)
-        .with_duration("5m".to_string());
+    let view = ThreadView::new(
+        "t1".to_string(),
+        "Test Thread".to_string(),
+        "~/project".to_string(),
+    )
+    .with_status(ThreadStatus::Running)
+    .with_duration("5m".to_string());
 
     assert_eq!(view.id, "t1");
     assert_eq!(view.title, "Test Thread");
@@ -742,9 +801,12 @@ fn test_thread_view_builder() {
 #[test]
 fn test_thread_view_needs_action() {
     // Waiting needs action
-    let waiting_view =
-        ThreadView::new("t1".to_string(), "Waiting".to_string(), "~/repo".to_string())
-            .with_status(ThreadStatus::Waiting);
+    let waiting_view = ThreadView::new(
+        "t1".to_string(),
+        "Waiting".to_string(),
+        "~/repo".to_string(),
+    )
+    .with_status(ThreadStatus::Waiting);
     assert!(waiting_view.needs_action);
 
     // Error needs action
@@ -753,9 +815,12 @@ fn test_thread_view_needs_action() {
     assert!(error_view.needs_action);
 
     // Running doesn't need action
-    let running_view =
-        ThreadView::new("t3".to_string(), "Running".to_string(), "~/repo".to_string())
-            .with_status(ThreadStatus::Running);
+    let running_view = ThreadView::new(
+        "t3".to_string(),
+        "Running".to_string(),
+        "~/repo".to_string(),
+    )
+    .with_status(ThreadStatus::Running);
     assert!(!running_view.needs_action);
 
     // WaitingFor also triggers needs_action

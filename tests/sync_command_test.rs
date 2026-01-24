@@ -41,8 +41,7 @@ fn test_sync_command_detects_flag() {
     assert!(
         recognized,
         "Sync command should be recognized. stdout: {}, stderr: {}",
-        stdout,
-        stderr
+        stdout, stderr
     );
 }
 
@@ -65,8 +64,7 @@ fn test_sync_command_alternate_flag() {
     assert!(
         recognized,
         "--sync flag should be recognized. stdout: {}, stderr: {}",
-        stdout,
-        stderr
+        stdout, stderr
     );
 }
 
@@ -76,7 +74,9 @@ fn test_sync_requires_credentials() {
 
     // First, backup any existing credentials
     let home = std::env::var("HOME").expect("HOME should be set");
-    let creds_path = std::path::Path::new(&home).join(".spoq").join("credentials.json");
+    let creds_path = std::path::Path::new(&home)
+        .join(".spoq")
+        .join("credentials.json");
     let backup_path = creds_path.with_extension("json.test_backup");
 
     // Backup credentials if they exist
@@ -108,8 +108,7 @@ fn test_sync_requires_credentials() {
     assert!(
         has_auth_error,
         "Sync should fail without credentials. stdout: {}, stderr: {}",
-        stdout,
-        stderr
+        stdout, stderr
     );
 }
 
@@ -151,11 +150,7 @@ fn test_sync_step_messages() {
     // We can't run the full flow without a real VPS,
     // but we document the expected output format here
     for (i, step) in expected_steps.iter().enumerate() {
-        assert!(
-            !step.is_empty(),
-            "Step {} should have a message",
-            i + 1
-        );
+        assert!(!step.is_empty(), "Step {} should have a message", i + 1);
     }
 }
 
@@ -163,8 +158,14 @@ fn test_sync_step_messages() {
 fn test_sync_error_messages() {
     // Test that error messages are clear and actionable
     let error_cases = vec![
-        ("not authenticated", "Not authenticated. Please run spoq to authenticate first"),
-        ("no vps", "No VPS configured. Please run spoq to provision a VPS first"),
+        (
+            "not authenticated",
+            "Not authenticated. Please run spoq to authenticate first",
+        ),
+        (
+            "no vps",
+            "No VPS configured. Please run spoq to provision a VPS first",
+        ),
         ("token detection", "Error detecting tokens"),
         ("token export", "Error exporting tokens"),
         ("ssh transfer", "SCP transfer failed"),
@@ -192,7 +193,9 @@ fn test_sync_command_exit_codes() {
 
     // Without credentials, should exit with 1
     let home = std::env::var("HOME").expect("HOME should be set");
-    let creds_path = std::path::Path::new(&home).join(".spoq").join("credentials.json");
+    let creds_path = std::path::Path::new(&home)
+        .join(".spoq")
+        .join("credentials.json");
     let backup_path = creds_path.with_extension("json.test_backup2");
 
     // Backup and remove credentials
@@ -244,19 +247,13 @@ fn test_sync_cleanup_on_error() {
         let archive_path = export_result.archive_path;
 
         // Verify archive exists
-        assert!(
-            archive_path.exists(),
-            "Archive should exist after export"
-        );
+        assert!(archive_path.exists(), "Archive should exist after export");
 
         // Simulate cleanup (what sync does after transfer)
         std::fs::remove_file(&archive_path).ok();
 
         // Verify cleanup worked
-        assert!(
-            !archive_path.exists(),
-            "Archive should be cleaned up"
-        );
+        assert!(!archive_path.exists(), "Archive should be cleaned up");
     }
 }
 
@@ -319,10 +316,7 @@ fn test_sync_ssh_transfer_logic() {
 fn test_sync_extraction_command() {
     // Test the SSH extraction command construction
     let remote_path = "/tmp/spoq-tokens.tar.gz";
-    let extract_cmd = format!(
-        "cd /tmp && tar -xzf {} && rm {}",
-        remote_path, remote_path
-    );
+    let extract_cmd = format!("cd /tmp && tar -xzf {} && rm {}", remote_path, remote_path);
 
     assert!(extract_cmd.contains("tar -xzf"));
     assert!(extract_cmd.contains("rm"));

@@ -59,7 +59,10 @@ fn create_no_refresh_token_credentials() -> Credentials {
 fn test_expired_token_detection() {
     let creds = create_expired_credentials();
 
-    assert!(creds.is_expired(), "Credentials should be detected as expired");
+    assert!(
+        creds.is_expired(),
+        "Credentials should be detected as expired"
+    );
     assert!(!creds.is_valid(), "Expired credentials should not be valid");
 
     let now = chrono::Utc::now().timestamp();
@@ -80,7 +83,10 @@ fn test_expiring_soon_detection() {
     let expires_at = creds.expires_at.unwrap();
     let time_remaining = expires_at - now;
 
-    assert!(time_remaining < 300, "Token should expire in less than 5 minutes (300s)");
+    assert!(
+        time_remaining < 300,
+        "Token should expire in less than 5 minutes (300s)"
+    );
     assert!(time_remaining > 0, "Token should not be expired yet");
 }
 
@@ -89,8 +95,14 @@ fn test_no_refresh_token_scenario() {
     let creds = create_no_refresh_token_credentials();
 
     assert!(creds.is_expired(), "Credentials should be expired");
-    assert!(creds.refresh_token.is_none(), "Should have no refresh token");
-    assert!(!creds.is_valid(), "Expired credentials without refresh token should not be valid");
+    assert!(
+        creds.refresh_token.is_none(),
+        "Should have no refresh token"
+    );
+    assert!(
+        !creds.is_valid(),
+        "Expired credentials without refresh token should not be valid"
+    );
 }
 
 #[test]
@@ -159,7 +171,10 @@ fn test_credentials_reload_after_refresh() {
     let reloaded_creds: Credentials = serde_json::from_str(&reloaded_json).unwrap();
 
     // Verify refreshed state persisted
-    assert!(!reloaded_creds.is_expired(), "Reloaded credentials should not be expired");
+    assert!(
+        !reloaded_creds.is_expired(),
+        "Reloaded credentials should not be expired"
+    );
     assert_eq!(reloaded_creds.access_token.unwrap(), "refreshed-token");
 }
 
@@ -173,20 +188,26 @@ fn test_proactive_refresh_threshold() {
     // Case 1: Token expires in 6 minutes (360s) - should NOT trigger proactive refresh
     let expires_at_safe = now + 360;
     let time_remaining_safe = expires_at_safe - now;
-    assert!(time_remaining_safe >= PROACTIVE_REFRESH_THRESHOLD,
-        "Token with 6 minutes remaining should not trigger proactive refresh");
+    assert!(
+        time_remaining_safe >= PROACTIVE_REFRESH_THRESHOLD,
+        "Token with 6 minutes remaining should not trigger proactive refresh"
+    );
 
     // Case 2: Token expires in 4 minutes (240s) - SHOULD trigger proactive refresh
     let expires_at_soon = now + 240;
     let time_remaining_soon = expires_at_soon - now;
-    assert!(time_remaining_soon < PROACTIVE_REFRESH_THRESHOLD,
-        "Token with 4 minutes remaining should trigger proactive refresh");
+    assert!(
+        time_remaining_soon < PROACTIVE_REFRESH_THRESHOLD,
+        "Token with 4 minutes remaining should trigger proactive refresh"
+    );
 
     // Case 3: Token expires in exactly 5 minutes (300s) - edge case
     let expires_at_edge = now + 300;
     let time_remaining_edge = expires_at_edge - now;
-    assert!(time_remaining_edge <= PROACTIVE_REFRESH_THRESHOLD,
-        "Token with exactly 5 minutes should trigger proactive refresh (inclusive threshold)");
+    assert!(
+        time_remaining_edge <= PROACTIVE_REFRESH_THRESHOLD,
+        "Token with exactly 5 minutes should trigger proactive refresh (inclusive threshold)"
+    );
 }
 
 #[test]
@@ -199,7 +220,10 @@ fn test_missing_expires_at_treated_as_expired() {
     };
 
     // From investigation report: missing expires_at is treated as expired
-    assert!(creds.is_expired(), "Missing expires_at should be treated as expired");
+    assert!(
+        creds.is_expired(),
+        "Missing expires_at should be treated as expired"
+    );
 }
 
 #[test]
@@ -229,7 +253,10 @@ fn test_health_check_timing() {
     let health_check_creds: Credentials = serde_json::from_str(&health_check_json).unwrap();
 
     // Health check should see the refreshed credentials
-    assert!(!health_check_creds.is_expired(), "Health check should see refreshed credentials");
+    assert!(
+        !health_check_creds.is_expired(),
+        "Health check should see refreshed credentials"
+    );
     assert_eq!(health_check_creds.access_token.unwrap(), "new-token");
 }
 

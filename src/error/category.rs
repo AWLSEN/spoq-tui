@@ -78,27 +78,15 @@ impl ErrorCategory {
     /// Returns suggested recovery actions for this category.
     pub fn recovery_hint(&self) -> &'static str {
         match self {
-            ErrorCategory::Network => {
-                "Check your internet connection and try again"
-            }
-            ErrorCategory::Auth => {
-                "Try signing out and signing back in"
-            }
+            ErrorCategory::Network => "Check your internet connection and try again",
+            ErrorCategory::Auth => "Try signing out and signing back in",
             ErrorCategory::Server => {
                 "The server may be experiencing issues. Please try again later"
             }
-            ErrorCategory::Client => {
-                "This may be a bug. Please report this issue if it persists"
-            }
-            ErrorCategory::User => {
-                "Please check your input and try again"
-            }
-            ErrorCategory::System => {
-                "Check file permissions and available disk space"
-            }
-            ErrorCategory::Configuration => {
-                "Check your configuration settings"
-            }
+            ErrorCategory::Client => "This may be a bug. Please report this issue if it persists",
+            ErrorCategory::User => "Please check your input and try again",
+            ErrorCategory::System => "Check file permissions and available disk space",
+            ErrorCategory::Configuration => "Check your configuration settings",
         }
     }
 }

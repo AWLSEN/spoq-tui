@@ -4,7 +4,7 @@
 //! `SseParser` and implements the [`SseParserTrait`].
 
 use crate::sse::{SseEvent, SseParser};
-use crate::traits::{TraitSseParseError as SseParseError, SseParserTrait};
+use crate::traits::{SseParserTrait, TraitSseParseError as SseParseError};
 
 /// Default SSE parser adapter.
 ///

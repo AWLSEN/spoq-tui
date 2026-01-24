@@ -282,7 +282,10 @@ impl std::fmt::Debug for AuthenticationState {
         f.debug_struct("AuthenticationState")
             .field("credentials", &self.credentials)
             .field("has_central_api", &self.central_api.is_some())
-            .field("has_credentials_manager", &self.credentials_manager.is_some())
+            .field(
+                "has_credentials_manager",
+                &self.credentials_manager.is_some(),
+            )
             .field("vps_url", &self.vps_url)
             .finish()
     }
@@ -294,7 +297,10 @@ mod tests {
 
     #[test]
     fn test_auth_error_display() {
-        assert_eq!(AuthError::NoCredentials.to_string(), "No credentials stored");
+        assert_eq!(
+            AuthError::NoCredentials.to_string(),
+            "No credentials stored"
+        );
         assert_eq!(
             AuthError::NoRefreshToken.to_string(),
             "No refresh token available"
@@ -348,7 +354,10 @@ mod tests {
         let mut creds = Credentials::default();
         creds.access_token = Some("test-token".to_string());
 
-        let state = AuthenticationState::from_credentials(creds, Some("http://vps.example.com".to_string()));
+        let state = AuthenticationState::from_credentials(
+            creds,
+            Some("http://vps.example.com".to_string()),
+        );
 
         assert!(state.credentials.access_token.is_some());
         assert!(state.central_api.is_some());

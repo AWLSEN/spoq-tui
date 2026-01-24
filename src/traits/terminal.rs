@@ -149,9 +149,7 @@ mod tests {
     #[test]
     fn test_terminal_error_display() {
         let io_err = io::Error::new(io::ErrorKind::Other, "test error");
-        assert!(TerminalError::Io(io_err)
-            .to_string()
-            .contains("IO error"));
+        assert!(TerminalError::Io(io_err).to_string().contains("IO error"));
 
         assert_eq!(
             TerminalError::NotAvailable("no tty".to_string()).to_string(),

@@ -163,7 +163,10 @@ mod tests {
     fn test_sse_parse_error_from_sse_module() {
         let sse_err = crate::sse::SseParseError::UnknownEventType("test".to_string());
         let trait_err: SseParseError = sse_err.into();
-        assert_eq!(trait_err, SseParseError::UnknownEventType("test".to_string()));
+        assert_eq!(
+            trait_err,
+            SseParseError::UnknownEventType("test".to_string())
+        );
 
         let sse_err = crate::sse::SseParseError::InvalidJson {
             event_type: "content".to_string(),

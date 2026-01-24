@@ -9,9 +9,9 @@
 //! 3. Fetches VPS state from server API (not from local credentials)
 //! 4. Takes appropriate action based on server response
 
+use serial_test::serial;
 use spoq::auth::credentials::{Credentials, CredentialsManager};
 use tempfile::TempDir;
-use serial_test::serial;
 
 /// Scenario 1: Fresh install (no credentials.json)
 #[test]

@@ -236,7 +236,10 @@ fn test_transfer_tokens_with_credentials_uses_default_username() {
 
     // Should fail at staging check, not at username parsing
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), SshTransferError::StagingNotFound(_)));
+    assert!(matches!(
+        result.unwrap_err(),
+        SshTransferError::StagingNotFound(_)
+    ));
 }
 
 #[test]
@@ -251,7 +254,10 @@ fn test_transfer_tokens_with_credentials_uses_custom_username() {
 
     // Should fail at staging check
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), SshTransferError::StagingNotFound(_)));
+    assert!(matches!(
+        result.unwrap_err(),
+        SshTransferError::StagingNotFound(_)
+    ));
 }
 
 // ===========================================
@@ -260,10 +266,7 @@ fn test_transfer_tokens_with_credentials_uses_custom_username() {
 
 #[test]
 fn test_vps_connection_info_ipv6() {
-    let conn = VpsConnectionInfo::new(
-        "2001:db8::1".to_string(),
-        "password".to_string(),
-    );
+    let conn = VpsConnectionInfo::new("2001:db8::1".to_string(), "password".to_string());
 
     assert_eq!(conn.vps_ip, "2001:db8::1");
     assert_eq!(conn.ssh_username, "root");

@@ -68,9 +68,8 @@ impl SpoqError {
                     StreamError::BackendError { .. } | StreamError::ServerClosed { .. } => {
                         ErrorCategory::Server
                     }
-                    StreamError::PermissionDenied { .. } | StreamError::PermissionTimeout { .. } => {
-                        ErrorCategory::User
-                    }
+                    StreamError::PermissionDenied { .. }
+                    | StreamError::PermissionTimeout { .. } => ErrorCategory::User,
                     StreamError::ParseError { .. }
                     | StreamError::InvalidJson { .. }
                     | StreamError::UnknownEventType { .. } => ErrorCategory::Client,

@@ -40,7 +40,9 @@ impl std::fmt::Display for DeviceFlowError {
             DeviceFlowError::CredentialsManager(msg) => {
                 write!(f, "Credentials manager error: {}", msg)
             }
-            DeviceFlowError::SaveCredentials(msg) => write!(f, "Failed to save credentials: {}", msg),
+            DeviceFlowError::SaveCredentials(msg) => {
+                write!(f, "Failed to save credentials: {}", msg)
+            }
             DeviceFlowError::Cancelled => write!(f, "Authentication cancelled by user"),
         }
     }

@@ -136,9 +136,7 @@ async fn check_health(client: &Client, vps_url: &str) -> HealthCheckStatus {
 /// }
 /// ```
 pub async fn wait_for_health(vps_url: &str, timeout_secs: u64) -> Result<(), HealthWaitError> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(15)).build()?;
 
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
@@ -201,9 +199,7 @@ pub async fn wait_for_health_with_progress<F>(
 where
     F: FnMut(u32, u64, &str),
 {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(15)).build()?;
 
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);

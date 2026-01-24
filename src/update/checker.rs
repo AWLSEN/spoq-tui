@@ -378,9 +378,7 @@ pub async fn check_for_update_logged_with_url(url: &str) -> Result<UpdateCheckRe
 impl From<UpdateCheckError> for UpdateError {
     fn from(e: UpdateCheckError) -> Self {
         match e {
-            UpdateCheckError::Http(req_err) => {
-                classify_reqwest_error(req_err, VERSION_API_URL)
-            }
+            UpdateCheckError::Http(req_err) => classify_reqwest_error(req_err, VERSION_API_URL),
             UpdateCheckError::Json(json_err) => UpdateError::InvalidResponse {
                 message: format!("JSON parsing error: {}", json_err),
             },
@@ -446,10 +444,7 @@ mod tests {
 
     #[test]
     fn test_compare_versions_equal() {
-        assert_eq!(
-            compare_versions("1.0.0", "1.0.0").unwrap(),
-            Ordering::Equal
-        );
+        assert_eq!(compare_versions("1.0.0", "1.0.0").unwrap(), Ordering::Equal);
         assert_eq!(compare_versions("0.1.4", "0.1.4").unwrap(), Ordering::Equal);
     }
 
@@ -504,7 +499,10 @@ mod tests {
 
     #[test]
     fn test_compare_versions_with_v_prefix() {
-        assert_eq!(compare_versions("v1.0.0", "1.0.0").unwrap(), Ordering::Equal);
+        assert_eq!(
+            compare_versions("v1.0.0", "1.0.0").unwrap(),
+            Ordering::Equal
+        );
         assert_eq!(compare_versions("1.0.0", "v1.0.1").unwrap(), Ordering::Less);
     }
 
@@ -656,7 +654,10 @@ mod tests {
         // Test InvalidVersion conversion
         let check_err = UpdateCheckError::InvalidVersion("bad-version".to_string());
         let update_err: UpdateError = check_err.into();
-        assert!(matches!(update_err, UpdateError::InvalidVersionFormat { .. }));
+        assert!(matches!(
+            update_err,
+            UpdateError::InvalidVersionFormat { .. }
+        ));
 
         // Test ServerError conversion
         let check_err = UpdateCheckError::ServerError {

@@ -8,7 +8,9 @@ use spoq::ui;
 use spoq::websocket::WsClientConfig;
 
 use color_eyre::Result;
-use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
+use crossterm::event::{
+    Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 use futures::StreamExt;
 use ratatui::Terminal;
 use std::thread;
@@ -25,9 +27,7 @@ use tokio::sync::mpsc;
 ///
 /// Errors are silently ignored to avoid disrupting the user experience.
 async fn check_and_download_update() {
-    use spoq::update::{
-        check_for_update, detect_platform, download_binary, UpdateStateManager,
-    };
+    use spoq::update::{check_for_update, detect_platform, download_binary, UpdateStateManager};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     // Load update state to check when we last checked
@@ -106,14 +106,15 @@ fn main() -> Result<()> {
             .open("/tmp/spoq_debug.log")
             .expect("Failed to open /tmp/spoq_debug.log");
 
-        let filter = EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("info"));
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
         tracing_subscriber::registry()
-            .with(fmt::layer()
-                .with_writer(std::sync::Mutex::new(log_file))
-                .with_ansi(false)
-                .with_target(false))
+            .with(
+                fmt::layer()
+                    .with_writer(std::sync::Mutex::new(log_file))
+                    .with_ansi(false)
+                    .with_target(false),
+            )
             .with(filter)
             .init();
     }
@@ -197,7 +198,11 @@ fn main() -> Result<()> {
                 StateChangeData::new(
                     StateType::WebSocket,
                     "WS_CONNECTING",
-                    format!("Connecting to {} (has_token={})", ws_config.host, ws_config.auth_token.is_some()),
+                    format!(
+                        "Connecting to {} (has_token={})",
+                        ws_config.host,
+                        ws_config.auth_token.is_some()
+                    ),
                 ),
             )));
         }
@@ -207,7 +212,11 @@ fn main() -> Result<()> {
             Ok(sender) => {
                 if let Some(ref tx) = app.debug_tx {
                     let _ = tx.send(DebugEvent::new(DebugEventKind::StateChange(
-                        StateChangeData::new(StateType::WebSocket, "WS_INIT", "WebSocket connected successfully"),
+                        StateChangeData::new(
+                            StateType::WebSocket,
+                            "WS_INIT",
+                            "WebSocket connected successfully",
+                        ),
                     )));
                 }
                 app.ws_sender = Some(sender);
@@ -215,7 +224,11 @@ fn main() -> Result<()> {
             Err(e) => {
                 if let Some(ref tx) = app.debug_tx {
                     let _ = tx.send(DebugEvent::new(DebugEventKind::StateChange(
-                        StateChangeData::new(StateType::WebSocket, "WS_INIT_FAILED", format!("WebSocket connection failed: {}", e)),
+                        StateChangeData::new(
+                            StateType::WebSocket,
+                            "WS_INIT_FAILED",
+                            format!("WebSocket connection failed: {}", e),
+                        ),
                     )));
                 }
                 app.ws_sender = None;

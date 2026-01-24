@@ -35,7 +35,10 @@ fn test_token_detection_returns_valid_structure() {
         result.claude_code || !result.claude_code,
         "claude_code should be a valid boolean"
     );
-    assert!(result.codex || !result.codex, "codex should be a valid boolean");
+    assert!(
+        result.codex || !result.codex,
+        "codex should be a valid boolean"
+    );
 }
 
 #[test]
@@ -123,10 +126,7 @@ fn test_export_tokens_creates_staging_directory() {
         "Staging directory should exist at {:?}",
         staging_dir
     );
-    assert!(
-        staging_dir.is_dir(),
-        "Staging path should be a directory"
-    );
+    assert!(staging_dir.is_dir(), "Staging path should be a directory");
 }
 
 #[test]
@@ -144,7 +144,10 @@ fn test_export_tokens_result_structure() {
         },
     };
 
-    assert_eq!(result.archive_path, PathBuf::from("/tmp/test_archive.tar.gz"));
+    assert_eq!(
+        result.archive_path,
+        PathBuf::from("/tmp/test_archive.tar.gz")
+    );
     assert_eq!(result.size_bytes, 1024);
     assert!(result.tokens_included.claude_code);
     assert!(!result.tokens_included.github_cli);
@@ -300,10 +303,7 @@ fn test_export_tokens_archive_structure() {
 
     if let Ok(export_result) = result {
         // Verify archive path
-        assert!(
-            export_result.archive_path.exists(),
-            "Archive should exist"
-        );
+        assert!(export_result.archive_path.exists(), "Archive should exist");
 
         // Verify archive is in staging directory
         let home = env::var("HOME").expect("HOME should be set");
@@ -384,7 +384,10 @@ fn test_ssh_transfer_missing_staging_directory() {
     let conn = VpsConnectionInfo::new("192.168.1.1".to_string(), "password".to_string());
     let result = transfer_tokens_to_vps(&conn);
 
-    assert!(result.is_err(), "Should fail when staging directory missing");
+    assert!(
+        result.is_err(),
+        "Should fail when staging directory missing"
+    );
     if let Err(e) = result {
         assert!(
             matches!(e, SshTransferError::StagingNotFound(_)),
@@ -459,9 +462,8 @@ fn test_export_error_handling_no_home() {
     // Test export handles missing HOME environment variable gracefully
     // We can't easily test this without modifying environment,
     // but we verify the error type is correct
-    let err = Err::<TokenExportResult, String>(
-        "Failed to get HOME environment variable".to_string(),
-    );
+    let err =
+        Err::<TokenExportResult, String>("Failed to get HOME environment variable".to_string());
 
     assert!(err.is_err());
     assert!(err
@@ -480,10 +482,7 @@ fn test_export_error_message_format() {
     ];
 
     for error in test_errors {
-        assert!(
-            !error.is_empty(),
-            "Error message should not be empty"
-        );
+        assert!(!error.is_empty(), "Error message should not be empty");
         assert!(
             error.len() > 10,
             "Error message should be descriptive: {}",
@@ -551,9 +550,7 @@ fn test_archive_path_naming() {
         .join("archive.tar.gz");
 
     assert!(expected_path.ends_with("archive.tar.gz"));
-    assert!(expected_path
-        .to_string_lossy()
-        .contains(".spoq-migration"));
+    assert!(expected_path.to_string_lossy().contains(".spoq-migration"));
 }
 
 #[test]
@@ -592,10 +589,7 @@ fn test_sync_command_error_messages() {
     ];
 
     for error in errors {
-        assert!(
-            !error.is_empty(),
-            "Error message should not be empty"
-        );
+        assert!(!error.is_empty(), "Error message should not be empty");
         assert!(
             error.starts_with("Error") || error.contains("Error"),
             "Error message should indicate error: {}",
@@ -611,10 +605,7 @@ fn test_sync_command_error_messages() {
     ];
 
     for message in info_messages {
-        assert!(
-            !message.is_empty(),
-            "Message should not be empty"
-        );
+        assert!(!message.is_empty(), "Message should not be empty");
         assert!(
             message.len() > 10,
             "Message should be descriptive: {}",
@@ -668,8 +659,7 @@ fn test_ssh_password_escaping() {
     ];
 
     for password in special_chars {
-        let conn =
-            VpsConnectionInfo::new("192.168.1.1".to_string(), password.to_string());
+        let conn = VpsConnectionInfo::new("192.168.1.1".to_string(), password.to_string());
         assert_eq!(conn.ssh_password, password);
     }
 }

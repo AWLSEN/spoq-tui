@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::dashboard::{compute_duration, derive_repository, infer_status_from_agent_state, ThreadStatus};
+use super::dashboard::{
+    compute_duration, derive_repository, infer_status_from_agent_state, ThreadStatus,
+};
 use super::{deserialize_id, deserialize_nullable_string, deserialize_thread_type, ServerMessage};
 
 /// Type of thread - determines UI behavior and available features
@@ -115,7 +117,6 @@ pub struct Thread {
     // -------------------- Dashboard Extension Fields --------------------
     // These fields are added for dashboard view support with #[serde(default)]
     // for backward compatibility with existing API responses.
-
     /// Dashboard status (optional, for dashboard view)
     #[serde(default)]
     pub status: Option<ThreadStatus>,
@@ -158,9 +159,7 @@ impl Thread {
         &self,
         agent_events: &'a HashMap<String, (String, Option<String>)>,
     ) -> Option<&'a str> {
-        agent_events
-            .get(&self.id)
-            .and_then(|(_, op)| op.as_deref())
+        agent_events.get(&self.id).and_then(|(_, op)| op.as_deref())
     }
 
     /// Get display-friendly repository name

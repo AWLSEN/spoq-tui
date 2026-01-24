@@ -246,7 +246,11 @@ mod integration_tests {
         ];
 
         for err in reauth_errors {
-            assert!(err.requires_reauth(), "Expected {:?} to require reauth", err);
+            assert!(
+                err.requires_reauth(),
+                "Expected {:?} to require reauth",
+                err
+            );
         }
 
         let no_reauth_errors: Vec<SpoqError> = vec![

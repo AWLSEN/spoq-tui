@@ -323,13 +323,13 @@ impl Default for Theme {
         use ratatui::style::Color;
         // Using same colors as crate::ui::theme
         Self {
-            active: Color::LightGreen,           // COLOR_ACTIVE
-            success: Color::Rgb(4, 181, 117),    // COLOR_TOOL_SUCCESS
-            error: Color::Red,                   // COLOR_TOOL_ERROR
+            active: Color::LightGreen,        // COLOR_ACTIVE
+            success: Color::Rgb(4, 181, 117), // COLOR_TOOL_SUCCESS
+            error: Color::Red,                // COLOR_TOOL_ERROR
             waiting: Color::Yellow,
-            dim: Color::DarkGray,                // COLOR_DIM
-            border: Color::DarkGray,             // COLOR_BORDER
-            accent: Color::White,                // COLOR_ACCENT
+            dim: Color::DarkGray,    // COLOR_DIM
+            border: Color::DarkGray, // COLOR_BORDER
+            accent: Color::White,    // COLOR_ACCENT
         }
     }
 }
@@ -534,7 +534,11 @@ mod tests {
 
     #[test]
     fn test_thread_view_new() {
-        let view = ThreadView::new("id-1".to_string(), "Test".to_string(), "~/project".to_string());
+        let view = ThreadView::new(
+            "id-1".to_string(),
+            "Test".to_string(),
+            "~/project".to_string(),
+        );
         assert_eq!(view.id, "id-1");
         assert_eq!(view.title, "Test");
         assert_eq!(view.repository, "~/project");
@@ -545,11 +549,14 @@ mod tests {
 
     #[test]
     fn test_thread_view_builder() {
-        let view =
-            ThreadView::new("id-2".to_string(), "Builder Test".to_string(), "~/app".to_string())
-                .with_mode(ThreadMode::Exec)
-                .with_status(ThreadStatus::Running)
-                .with_duration("5m".to_string());
+        let view = ThreadView::new(
+            "id-2".to_string(),
+            "Builder Test".to_string(),
+            "~/app".to_string(),
+        )
+        .with_mode(ThreadMode::Exec)
+        .with_status(ThreadStatus::Running)
+        .with_duration("5m".to_string());
 
         assert_eq!(view.mode, ThreadMode::Exec);
         assert_eq!(view.status, ThreadStatus::Running);
@@ -558,30 +565,43 @@ mod tests {
 
     #[test]
     fn test_thread_view_needs_action() {
-        let view =
-            ThreadView::new("id-3".to_string(), "Action Test".to_string(), "~/repo".to_string())
-                .with_status(ThreadStatus::Waiting);
+        let view = ThreadView::new(
+            "id-3".to_string(),
+            "Action Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Waiting);
         assert!(view.needs_action);
 
-        let view =
-            ThreadView::new("id-4".to_string(), "No Action".to_string(), "~/repo".to_string())
-                .with_status(ThreadStatus::Running);
+        let view = ThreadView::new(
+            "id-4".to_string(),
+            "No Action".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Running);
         assert!(!view.needs_action);
     }
 
     #[test]
     fn test_thread_view_with_waiting_for() {
-        let view =
-            ThreadView::new("id-5".to_string(), "Waiting Test".to_string(), "~/repo".to_string())
-                .with_waiting_for(Some(WaitingFor::UserInput));
+        let view = ThreadView::new(
+            "id-5".to_string(),
+            "Waiting Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_waiting_for(Some(WaitingFor::UserInput));
         assert!(view.needs_action);
         assert_eq!(view.status_line(), "User input");
     }
 
     #[test]
     fn test_thread_view_status_line() {
-        let view = ThreadView::new("id-6".to_string(), "Status".to_string(), "~/repo".to_string())
-            .with_status(ThreadStatus::Running);
+        let view = ThreadView::new(
+            "id-6".to_string(),
+            "Status".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Running);
         assert_eq!(view.status_line(), "Running");
 
         let view = view.with_waiting_for(Some(WaitingFor::Permission {
@@ -594,8 +614,12 @@ mod tests {
     #[test]
     fn test_thread_view_current_operation() {
         // When running without current_operation, show "Running"
-        let view = ThreadView::new("id-7".to_string(), "Op Test".to_string(), "~/repo".to_string())
-            .with_status(ThreadStatus::Running);
+        let view = ThreadView::new(
+            "id-7".to_string(),
+            "Op Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Running);
         assert_eq!(view.status_line(), "Running");
 
         // When running with current_operation, show the operation
@@ -632,7 +656,12 @@ mod tests {
             thread_title: "Plan Thread".to_string(),
             repository: "~/project".to_string(),
             request_id: "req-plan-1".to_string(),
-            summary: PlanSummary::new("Test Plan".to_string(), vec!["Phase 1".to_string()], 3, 1000),
+            summary: PlanSummary::new(
+                "Test Plan".to_string(),
+                vec!["Phase 1".to_string()],
+                3,
+                1000,
+            ),
             scroll_offset: 0,
             anchor_y: 5,
         };
@@ -653,8 +682,7 @@ mod tests {
 
     #[test]
     fn test_dashboard_view_state_with_values() {
-        let state =
-            DashboardViewState::with_values(Some(FilterState::Working), true, 10, 3);
+        let state = DashboardViewState::with_values(Some(FilterState::Working), true, 10, 3);
         assert_eq!(state.filter, Some(FilterState::Working));
         assert!(state.has_overlay);
         assert_eq!(state.thread_count, 10);

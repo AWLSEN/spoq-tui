@@ -68,15 +68,10 @@ impl fmt::Display for UpdateErrorCategory {
 pub enum UpdateError {
     // ========== Network Errors ==========
     /// Connection failed (network unreachable, connection refused)
-    ConnectionFailed {
-        url: String,
-        message: String,
-    },
+    ConnectionFailed { url: String, message: String },
 
     /// DNS resolution failed
-    DnsResolutionFailed {
-        host: String,
-    },
+    DnsResolutionFailed { host: String },
 
     /// Request timed out
     Timeout {
@@ -85,43 +80,27 @@ pub enum UpdateError {
     },
 
     /// TLS/SSL error
-    TlsError {
-        message: String,
-    },
+    TlsError { message: String },
 
     // ========== Server Errors ==========
     /// Server returned an error status code
-    ServerError {
-        status: u16,
-        message: String,
-    },
+    ServerError { status: u16, message: String },
 
     /// Server returned invalid or unexpected response
-    InvalidResponse {
-        message: String,
-    },
+    InvalidResponse { message: String },
 
     /// Rate limited by server
-    RateLimited {
-        retry_after_secs: Option<u64>,
-    },
+    RateLimited { retry_after_secs: Option<u64> },
 
     // ========== Permission Errors ==========
     /// Insufficient permissions to read/write file
-    PermissionDenied {
-        path: PathBuf,
-        operation: String,
-    },
+    PermissionDenied { path: PathBuf, operation: String },
 
     /// Cannot modify the running executable
-    ExecutableInUse {
-        path: PathBuf,
-    },
+    ExecutableInUse { path: PathBuf },
 
     /// Need elevated privileges (sudo/admin)
-    ElevationRequired {
-        path: PathBuf,
-    },
+    ElevationRequired { path: PathBuf },
 
     // ========== Disk Space Errors ==========
     /// Not enough disk space for download
@@ -132,26 +111,17 @@ pub enum UpdateError {
     },
 
     /// Disk quota exceeded
-    QuotaExceeded {
-        path: PathBuf,
-    },
+    QuotaExceeded { path: PathBuf },
 
     // ========== File System Errors ==========
     /// File not found
-    FileNotFound {
-        path: PathBuf,
-    },
+    FileNotFound { path: PathBuf },
 
     /// Directory not found
-    DirectoryNotFound {
-        path: PathBuf,
-    },
+    DirectoryNotFound { path: PathBuf },
 
     /// Failed to create directory
-    DirectoryCreationFailed {
-        path: PathBuf,
-        message: String,
-    },
+    DirectoryCreationFailed { path: PathBuf, message: String },
 
     /// Generic I/O error
     IoError {
@@ -162,21 +132,14 @@ pub enum UpdateError {
 
     // ========== Version Errors ==========
     /// Invalid version format
-    InvalidVersionFormat {
-        version: String,
-    },
+    InvalidVersionFormat { version: String },
 
     /// No update available (already on latest)
-    AlreadyUpToDate {
-        current_version: String,
-    },
+    AlreadyUpToDate { current_version: String },
 
     // ========== Platform Errors ==========
     /// Unsupported operating system or architecture
-    UnsupportedPlatform {
-        os: String,
-        arch: String,
-    },
+    UnsupportedPlatform { os: String, arch: String },
 
     /// Could not determine home directory
     NoHomeDirectory,
@@ -186,30 +149,20 @@ pub enum UpdateError {
 
     // ========== Verification Errors ==========
     /// Downloaded file size doesn't match expected
-    SizeMismatch {
-        expected: u64,
-        actual: u64,
-    },
+    SizeMismatch { expected: u64, actual: u64 },
 
     /// Downloaded file is empty or too small
     EmptyDownload,
 
     /// Checksum verification failed
-    ChecksumMismatch {
-        expected: String,
-        actual: String,
-    },
+    ChecksumMismatch { expected: String, actual: String },
 
     // ========== Installation Errors ==========
     /// Update file not found for installation
-    UpdateFileNotFound {
-        path: PathBuf,
-    },
+    UpdateFileNotFound { path: PathBuf },
 
     /// Backup not found for rollback
-    BackupNotFound {
-        path: PathBuf,
-    },
+    BackupNotFound { path: PathBuf },
 
     /// Installation failed but backup was restored
     InstallFailedRestored {
@@ -494,12 +447,7 @@ impl fmt::Display for UpdateError {
                 None => write!(f, "Rate limited"),
             },
             UpdateError::PermissionDenied { path, operation } => {
-                write!(
-                    f,
-                    "Permission denied: {} '{}'",
-                    operation,
-                    path.display()
-                )
+                write!(f, "Permission denied: {} '{}'", operation, path.display())
             }
             UpdateError::ExecutableInUse { path } => {
                 write!(f, "Executable in use: '{}'", path.display())
@@ -530,14 +478,25 @@ impl fmt::Display for UpdateError {
                 write!(f, "Directory not found: '{}'", path.display())
             }
             UpdateError::DirectoryCreationFailed { path, message } => {
-                write!(f, "Failed to create directory '{}': {}", path.display(), message)
+                write!(
+                    f,
+                    "Failed to create directory '{}': {}",
+                    path.display(),
+                    message
+                )
             }
             UpdateError::IoError {
                 operation,
                 path,
                 message,
             } => match path {
-                Some(p) => write!(f, "I/O error during {} at '{}': {}", operation, p.display(), message),
+                Some(p) => write!(
+                    f,
+                    "I/O error during {} at '{}': {}",
+                    operation,
+                    p.display(),
+                    message
+                ),
                 None => write!(f, "I/O error during {}: {}", operation, message),
             },
             UpdateError::InvalidVersionFormat { version } => {
@@ -606,7 +565,11 @@ impl fmt::Display for UpdateError {
 impl std::error::Error for UpdateError {}
 
 /// Helper function to classify an I/O error into a more specific UpdateError.
-pub fn classify_io_error(err: std::io::Error, path: Option<PathBuf>, operation: &str) -> UpdateError {
+pub fn classify_io_error(
+    err: std::io::Error,
+    path: Option<PathBuf>,
+    operation: &str,
+) -> UpdateError {
     use std::io::ErrorKind;
 
     match err.kind() {
@@ -823,7 +786,7 @@ mod tests {
     fn test_disk_space_error() {
         let err = UpdateError::InsufficientDiskSpace {
             required_bytes: 100 * 1024 * 1024, // 100 MB
-            available_bytes: 10 * 1024 * 1024,  // 10 MB
+            available_bytes: 10 * 1024 * 1024, // 10 MB
             path: PathBuf::from("/tmp"),
         };
 

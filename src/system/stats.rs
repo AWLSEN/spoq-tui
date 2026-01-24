@@ -3,10 +3,10 @@
 //! This module provides functionality to periodically poll system stats (CPU, RAM)
 //! and send updates to the application for display in the dashboard header.
 
-use sysinfo::System;
-use std::time::Duration;
-use tokio::time::interval;
 use crate::ui::dashboard::SystemStats;
+use std::time::Duration;
+use sysinfo::System;
+use tokio::time::interval;
 
 /// Polls system CPU and RAM stats at 1-second intervals.
 ///
@@ -108,7 +108,11 @@ mod tests {
         // CPU should be in valid range (0-100 per core, so max ~800% on 8-core systems)
         // We allow up to 1600% to cover high-end systems
         assert!(stats.cpu_percent >= 0.0);
-        assert!(stats.cpu_percent <= 1600.0, "CPU percent is unreasonably high: {}", stats.cpu_percent);
+        assert!(
+            stats.cpu_percent <= 1600.0,
+            "CPU percent is unreasonably high: {}",
+            stats.cpu_percent
+        );
 
         // RAM values should be positive
         assert!(stats.ram_used_gb >= 0.0);
@@ -151,10 +155,7 @@ mod tests {
         let mut stats_rx = spawn_stats_poller();
 
         // Should receive a stats update within 2 seconds
-        let result = tokio::time::timeout(
-            Duration::from_secs(2),
-            stats_rx.recv()
-        ).await;
+        let result = tokio::time::timeout(Duration::from_secs(2), stats_rx.recv()).await;
 
         assert!(result.is_ok());
         let stats = result.unwrap();
@@ -170,17 +171,11 @@ mod tests {
         let mut stats_rx = spawn_stats_poller();
 
         // Receive first update
-        let stats1 = tokio::time::timeout(
-            Duration::from_secs(2),
-            stats_rx.recv()
-        ).await;
+        let stats1 = tokio::time::timeout(Duration::from_secs(2), stats_rx.recv()).await;
         assert!(stats1.is_ok());
 
         // Receive second update
-        let stats2 = tokio::time::timeout(
-            Duration::from_secs(2),
-            stats_rx.recv()
-        ).await;
+        let stats2 = tokio::time::timeout(Duration::from_secs(2), stats_rx.recv()).await;
         assert!(stats2.is_ok());
 
         // Both should be valid

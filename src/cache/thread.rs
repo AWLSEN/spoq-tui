@@ -551,7 +551,7 @@ mod tests {
                 preview: "Preview".to_string(),
                 updated_at: Utc::now(),
                 thread_type: ThreadType::default(),
-            mode: crate::models::ThreadMode::default(),
+                mode: crate::models::ThreadMode::default(),
                 model: None,
                 permission_mode: None,
                 message_count: 0,

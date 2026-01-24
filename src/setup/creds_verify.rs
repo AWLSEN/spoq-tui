@@ -153,7 +153,12 @@ fn verify_claude_code(session: &Session) -> Result<bool, VerifyError> {
 }
 
 /// Create an SSH session to the VPS.
-fn create_ssh_session(host: &str, user: &str, password: &str, port: u16) -> Result<Session, VerifyError> {
+fn create_ssh_session(
+    host: &str,
+    user: &str,
+    password: &str,
+    port: u16,
+) -> Result<Session, VerifyError> {
     let tcp = TcpStream::connect(format!("{}:{}", host, port))?;
 
     let mut session = Session::new()?;

@@ -12,7 +12,10 @@ fn test_version_flag() {
         .expect("Failed to execute binary");
 
     // Verify exit code is 0
-    assert!(output.status.success(), "Version flag should exit with code 0");
+    assert!(
+        output.status.success(),
+        "Version flag should exit with code 0"
+    );
 
     // Verify output format
     let stdout = String::from_utf8_lossy(&output.stdout);

@@ -12,47 +12,28 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum UiError {
     /// Terminal initialization failed.
-    TerminalInitFailed {
-        message: String,
-    },
+    TerminalInitFailed { message: String },
 
     /// Terminal restore failed.
-    TerminalRestoreFailed {
-        message: String,
-    },
+    TerminalRestoreFailed { message: String },
 
     /// Failed to get terminal size.
-    TerminalSizeFailed {
-        message: String,
-    },
+    TerminalSizeFailed { message: String },
 
     /// Rendering error.
-    RenderFailed {
-        component: String,
-        message: String,
-    },
+    RenderFailed { component: String, message: String },
 
     /// Input handling error.
-    InputError {
-        message: String,
-    },
+    InputError { message: String },
 
     /// Clipboard operation failed.
-    ClipboardError {
-        operation: String,
-        message: String,
-    },
+    ClipboardError { operation: String, message: String },
 
     /// Browser launch failed.
-    BrowserLaunchFailed {
-        url: String,
-        message: String,
-    },
+    BrowserLaunchFailed { url: String, message: String },
 
     /// Event channel error.
-    ChannelError {
-        message: String,
-    },
+    ChannelError { message: String },
 
     /// Component state error.
     InvalidState {
@@ -62,14 +43,10 @@ pub enum UiError {
     },
 
     /// Animation or transition error.
-    AnimationError {
-        message: String,
-    },
+    AnimationError { message: String },
 
     /// Generic UI error.
-    Other {
-        message: String,
-    },
+    Other { message: String },
 }
 
 impl UiError {
@@ -87,10 +64,12 @@ impl UiError {
     pub fn user_message(&self) -> String {
         match self {
             UiError::TerminalInitFailed { .. } => {
-                "Failed to initialize the terminal. Please check your terminal settings.".to_string()
+                "Failed to initialize the terminal. Please check your terminal settings."
+                    .to_string()
             }
             UiError::TerminalRestoreFailed { .. } => {
-                "Failed to restore terminal. You may need to reset your terminal settings.".to_string()
+                "Failed to restore terminal. You may need to reset your terminal settings."
+                    .to_string()
             }
             UiError::TerminalSizeFailed { .. } => {
                 "Could not determine terminal size. Please resize your terminal window.".to_string()
@@ -176,7 +155,11 @@ impl fmt::Display for UiError {
             UiError::ChannelError { message } => {
                 write!(f, "Event channel error: {}", message)
             }
-            UiError::InvalidState { component, expected, actual } => {
+            UiError::InvalidState {
+                component,
+                expected,
+                actual,
+            } => {
                 write!(
                     f,
                     "Invalid state for '{}': expected {}, got {}",

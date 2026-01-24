@@ -121,8 +121,8 @@ mod tests {
             anchor_y: 10,
         };
 
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_overlay(Some(&overlay));
+        let ctx =
+            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }
@@ -144,8 +144,8 @@ mod tests {
             anchor_y: 8,
         };
 
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_overlay(Some(&overlay));
+        let ctx =
+            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }
@@ -174,8 +174,8 @@ mod tests {
             anchor_y: 15,
         };
 
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_overlay(Some(&overlay));
+        let ctx =
+            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }

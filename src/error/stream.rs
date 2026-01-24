@@ -12,36 +12,22 @@ use std::fmt;
 #[derive(Debug, Clone)]
 pub enum StreamError {
     /// Stream connection was lost unexpectedly.
-    ConnectionLost {
-        message: String,
-    },
+    ConnectionLost { message: String },
 
     /// Failed to parse SSE event.
-    ParseError {
-        event_type: String,
-        message: String,
-    },
+    ParseError { event_type: String, message: String },
 
     /// Unknown event type received.
-    UnknownEventType {
-        event_type: String,
-    },
+    UnknownEventType { event_type: String },
 
     /// Invalid JSON in stream data.
-    InvalidJson {
-        event_type: String,
-        message: String,
-    },
+    InvalidJson { event_type: String, message: String },
 
     /// Stream was closed by the server.
-    ServerClosed {
-        reason: Option<String>,
-    },
+    ServerClosed { reason: Option<String> },
 
     /// Stream timeout (no data received).
-    Timeout {
-        duration_secs: u64,
-    },
+    Timeout { duration_secs: u64 },
 
     /// Backend reported an error via SSE.
     BackendError {
@@ -56,27 +42,19 @@ pub enum StreamError {
     },
 
     /// Permission request timed out.
-    PermissionTimeout {
-        permission_id: String,
-    },
+    PermissionTimeout { permission_id: String },
 
     /// Thread not found or invalid.
-    ThreadNotFound {
-        thread_id: String,
-    },
+    ThreadNotFound { thread_id: String },
 
     /// Message not found or invalid.
-    MessageNotFound {
-        message_id: i64,
-    },
+    MessageNotFound { message_id: i64 },
 
     /// Session was invalidated.
     SessionInvalidated,
 
     /// Generic stream error.
-    Other {
-        message: String,
-    },
+    Other { message: String },
 }
 
 impl StreamError {
@@ -107,20 +85,24 @@ impl StreamError {
                 "Connection to the server was lost. Attempting to reconnect...".to_string()
             }
             StreamError::ParseError { event_type, .. } => {
-                format!("Failed to process server message ({}). Please try again.", event_type)
+                format!(
+                    "Failed to process server message ({}). Please try again.",
+                    event_type
+                )
             }
             StreamError::UnknownEventType { event_type } => {
-                format!("Received unknown message type: {}. Your client may need to be updated.", event_type)
+                format!(
+                    "Received unknown message type: {}. Your client may need to be updated.",
+                    event_type
+                )
             }
             StreamError::InvalidJson { .. } => {
                 "Received invalid data from server. Please try again.".to_string()
             }
-            StreamError::ServerClosed { reason } => {
-                match reason {
-                    Some(r) => format!("Server closed the connection: {}", r),
-                    None => "Server closed the connection.".to_string(),
-                }
-            }
+            StreamError::ServerClosed { reason } => match reason {
+                Some(r) => format!("Server closed the connection: {}", r),
+                None => "Server closed the connection.".to_string(),
+            },
             StreamError::Timeout { duration_secs } => {
                 format!(
                     "No response from server for {} seconds. The connection may have been lost.",
@@ -177,32 +159,41 @@ impl fmt::Display for StreamError {
             StreamError::ConnectionLost { message } => {
                 write!(f, "Stream connection lost: {}", message)
             }
-            StreamError::ParseError { event_type, message } => {
+            StreamError::ParseError {
+                event_type,
+                message,
+            } => {
                 write!(f, "Failed to parse {} event: {}", event_type, message)
             }
             StreamError::UnknownEventType { event_type } => {
                 write!(f, "Unknown event type: {}", event_type)
             }
-            StreamError::InvalidJson { event_type, message } => {
+            StreamError::InvalidJson {
+                event_type,
+                message,
+            } => {
                 write!(f, "Invalid JSON for {} event: {}", event_type, message)
             }
-            StreamError::ServerClosed { reason } => {
-                match reason {
-                    Some(r) => write!(f, "Server closed stream: {}", r),
-                    None => write!(f, "Server closed stream"),
-                }
-            }
+            StreamError::ServerClosed { reason } => match reason {
+                Some(r) => write!(f, "Server closed stream: {}", r),
+                None => write!(f, "Server closed stream"),
+            },
             StreamError::Timeout { duration_secs } => {
                 write!(f, "Stream timeout after {} seconds", duration_secs)
             }
-            StreamError::BackendError { code, message } => {
-                match code {
-                    Some(c) => write!(f, "Backend error [{}]: {}", c, message),
-                    None => write!(f, "Backend error: {}", message),
-                }
-            }
-            StreamError::PermissionDenied { tool_name, permission_id } => {
-                write!(f, "Permission denied for '{}' ({})", tool_name, permission_id)
+            StreamError::BackendError { code, message } => match code {
+                Some(c) => write!(f, "Backend error [{}]: {}", c, message),
+                None => write!(f, "Backend error: {}", message),
+            },
+            StreamError::PermissionDenied {
+                tool_name,
+                permission_id,
+            } => {
+                write!(
+                    f,
+                    "Permission denied for '{}' ({})",
+                    tool_name, permission_id
+                )
             }
             StreamError::PermissionTimeout { permission_id } => {
                 write!(f, "Permission timeout for {}", permission_id)

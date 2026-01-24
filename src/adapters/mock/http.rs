@@ -163,11 +163,14 @@ impl HttpClient for MockHttpClient {
         match self.get_response(url) {
             Some(MockResponse::Success(response)) => Ok(response),
             Some(MockResponse::Error(err)) => Err(err),
-            Some(MockResponse::Stream(_)) => {
-                Err(HttpError::Other("Stream response on non-stream request".to_string()))
-            }
+            Some(MockResponse::Stream(_)) => Err(HttpError::Other(
+                "Stream response on non-stream request".to_string(),
+            )),
             Some(MockResponse::StreamError(err)) => Err(err),
-            None => Err(HttpError::Other(format!("No mock response for URL: {}", url))),
+            None => Err(HttpError::Other(format!(
+                "No mock response for URL: {}",
+                url
+            ))),
         }
     }
 
@@ -177,11 +180,14 @@ impl HttpClient for MockHttpClient {
         match self.get_response(url) {
             Some(MockResponse::Success(response)) => Ok(response),
             Some(MockResponse::Error(err)) => Err(err),
-            Some(MockResponse::Stream(_)) => {
-                Err(HttpError::Other("Stream response on non-stream request".to_string()))
-            }
+            Some(MockResponse::Stream(_)) => Err(HttpError::Other(
+                "Stream response on non-stream request".to_string(),
+            )),
             Some(MockResponse::StreamError(err)) => Err(err),
-            None => Err(HttpError::Other(format!("No mock response for URL: {}", url))),
+            None => Err(HttpError::Other(format!(
+                "No mock response for URL: {}",
+                url
+            ))),
         }
     }
 
@@ -199,11 +205,14 @@ impl HttpClient for MockHttpClient {
                 Ok(Box::pin(stream))
             }
             Some(MockResponse::StreamError(err)) => Err(err),
-            Some(MockResponse::Success(_)) => {
-                Err(HttpError::Other("Non-stream response on stream request".to_string()))
-            }
+            Some(MockResponse::Success(_)) => Err(HttpError::Other(
+                "Non-stream response on stream request".to_string(),
+            )),
             Some(MockResponse::Error(err)) => Err(err),
-            None => Err(HttpError::Other(format!("No mock response for URL: {}", url))),
+            None => Err(HttpError::Other(format!(
+                "No mock response for URL: {}",
+                url
+            ))),
         }
     }
 }
@@ -280,7 +289,11 @@ mod tests {
         );
 
         let response = client
-            .post("https://example.com/api", r#"{"name": "test"}"#, &Headers::new())
+            .post(
+                "https://example.com/api",
+                r#"{"name": "test"}"#,
+                &Headers::new(),
+            )
             .await
             .unwrap();
 

@@ -58,7 +58,12 @@ pub fn extract_claude_credentials() -> KeychainResult {
     // Service name: "Claude Code-credentials"
     // -w flag outputs only the password (credential data)
     let output = Command::new("security")
-        .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+        .args([
+            "find-generic-password",
+            "-s",
+            "Claude Code-credentials",
+            "-w",
+        ])
         .output();
 
     match output {

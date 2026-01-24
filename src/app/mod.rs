@@ -31,12 +31,12 @@ use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
 use crate::models::{Folder, PermissionMode};
-use crate::ui::dashboard::SystemStats;
-use crate::ui::interaction::HitAreaRegistry;
 use crate::state::{
     AskUserQuestionState, DashboardState, SessionState, SubagentTracker, Task, Thread, Todo,
     ToolTracker,
 };
+use crate::ui::dashboard::SystemStats;
+use crate::ui::interaction::HitAreaRegistry;
 use crate::websocket::WsConnectionState;
 use crate::widgets::textarea_input::TextAreaInput;
 use chrono::Utc;
@@ -288,7 +288,10 @@ impl App {
     ///
     /// VPS URL is now passed explicitly rather than read from credentials,
     /// since VPS state is always fetched from the server at startup.
-    pub fn with_debug_and_vps(debug_tx: Option<DebugEventSender>, vps_url: Option<String>) -> Result<Self> {
+    pub fn with_debug_and_vps(
+        debug_tx: Option<DebugEventSender>,
+        vps_url: Option<String>,
+    ) -> Result<Self> {
         // Load credentials to get the auth tokens
         let credentials_manager = CredentialsManager::new();
         let credentials = credentials_manager
@@ -298,14 +301,17 @@ impl App {
 
         // Create client with VPS URL and credentials if available
         let client = match (&vps_url, &credentials.access_token) {
-            (Some(url), Some(token)) => {
-                ConductorClient::with_url(url).with_auth(token)
-            }
+            (Some(url), Some(token)) => ConductorClient::with_url(url).with_auth(token),
             (Some(url), None) => ConductorClient::with_url(url),
             _ => ConductorClient::new(),
         };
 
-        Self::with_client_and_debug_and_credentials(Arc::new(client), debug_tx, credentials, vps_url)
+        Self::with_client_and_debug_and_credentials(
+            Arc::new(client),
+            debug_tx,
+            credentials,
+            vps_url,
+        )
     }
 
     /// Create a new App instance with a custom ConductorClient

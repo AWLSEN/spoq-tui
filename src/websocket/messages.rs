@@ -690,7 +690,10 @@ mod tests {
                 assert_eq!(update.status, ThreadStatus::Waiting);
                 assert!(update.waiting_for.is_some());
                 match update.waiting_for.unwrap() {
-                    WaitingFor::Permission { request_id, tool_name } => {
+                    WaitingFor::Permission {
+                        request_id,
+                        tool_name,
+                    } => {
                         assert_eq!(request_id, "req-789");
                         assert_eq!(tool_name, "Bash");
                     }
@@ -774,7 +777,10 @@ mod tests {
         assert_eq!(parsed["request_id"], "plan-req-456");
         assert_eq!(parsed["plan_summary"]["title"], "Refactor module");
         assert_eq!(parsed["timestamp"], 1705315800000_i64);
-        assert_eq!(parsed["plan_summary"]["phases"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            parsed["plan_summary"]["phases"].as_array().unwrap().len(),
+            2
+        );
     }
 
     // -------------------- Plan Approval Response Tests --------------------
@@ -910,7 +916,10 @@ mod tests {
                 assert_eq!(progress.status, PhaseStatus::Running);
                 assert_eq!(progress.tool_count, 15);
                 assert_eq!(progress.last_tool, "Edit");
-                assert_eq!(progress.last_file, Some("/src/websocket/handlers.rs".to_string()));
+                assert_eq!(
+                    progress.last_file,
+                    Some("/src/websocket/handlers.rs".to_string())
+                );
                 assert_eq!(progress.started_at, 1705315700000);
                 assert_eq!(progress.updated_at, 1705315800000);
                 assert_eq!(progress.timestamp, 1705315800000);
@@ -1126,7 +1135,10 @@ mod tests {
                 assert_eq!(status.state, "idle");
                 assert_eq!(status.model, "claude-opus-4-5");
                 assert!(status.tool.is_none());
-                assert_eq!(status.current_operation, Some("Analyzing codebase".to_string()));
+                assert_eq!(
+                    status.current_operation,
+                    Some("Analyzing codebase".to_string())
+                );
                 assert_eq!(status.timestamp, 1705315800000);
             }
             _ => panic!("Expected AgentStatus"),

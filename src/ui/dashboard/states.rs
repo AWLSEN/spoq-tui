@@ -182,9 +182,7 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let full_text: String = (0..buffer.area.height)
-            .flat_map(|y| {
-                (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string())
-            })
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
             .collect();
 
         assert!(

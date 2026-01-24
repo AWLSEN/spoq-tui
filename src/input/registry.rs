@@ -90,9 +90,10 @@ impl CommandRegistry {
 
                 // Handle character input for filter (no modifiers)
                 if let KeyCode::Char(c) = key.code {
-                    if !key.modifiers.intersects(
-                        KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
-                    ) {
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+                    {
                         return Some(Command::FolderPickerTypeChar(c));
                     }
                 }
@@ -137,7 +138,10 @@ impl CommandRegistry {
 
             ModalType::AskUserQuestionOther => {
                 // Check modal-specific bindings
-                if let Some(cmd) = self.config.get_modal(ModalType::AskUserQuestionOther, &combo) {
+                if let Some(cmd) = self
+                    .config
+                    .get_modal(ModalType::AskUserQuestionOther, &combo)
+                {
                     return Some(cmd.clone());
                 }
 
@@ -162,7 +166,8 @@ impl CommandRegistry {
         let combo = KeyCombo::new(key.code, key.modifiers);
 
         // Check for Shift+Escape first (navigate to command deck)
-        if key.code == KeyCode::Esc && key.modifiers.contains(KeyModifiers::SHIFT)
+        if key.code == KeyCode::Esc
+            && key.modifiers.contains(KeyModifiers::SHIFT)
             && context.is_conversation_screen()
         {
             return Some(Command::NavigateToCommandDeck);
@@ -340,7 +345,10 @@ mod tests {
     #[test]
     fn test_registry_default() {
         let registry = CommandRegistry::new();
-        assert!(registry.config().global.contains_key(&KeyCombo::ctrl(KeyCode::Char('c'))));
+        assert!(registry
+            .config()
+            .global
+            .contains_key(&KeyCombo::ctrl(KeyCode::Char('c'))));
     }
 
     #[test]
@@ -584,7 +592,10 @@ mod tests {
         let key = make_key_event(KeyCode::Enter, KeyModifiers::NONE);
         let cmd = registry.dispatch(key, &context);
 
-        assert!(matches!(cmd, Some(Command::SubmitInput(ThreadType::Conversation))));
+        assert!(matches!(
+            cmd,
+            Some(Command::SubmitInput(ThreadType::Conversation))
+        ));
     }
 
     #[test]

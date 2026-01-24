@@ -127,7 +127,10 @@ mod tests {
 
     // Helper to create an UpdateStateManager with a custom path
     fn create_test_manager(temp_dir: &TempDir) -> UpdateStateManager {
-        let state_path = temp_dir.path().join(UPDATE_STATE_DIR).join(UPDATE_STATE_FILE);
+        let state_path = temp_dir
+            .path()
+            .join(UPDATE_STATE_DIR)
+            .join(UPDATE_STATE_FILE);
         UpdateStateManager { state_path }
     }
 

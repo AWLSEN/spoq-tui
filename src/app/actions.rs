@@ -140,7 +140,10 @@ impl App {
         let client = Arc::clone(&self.client);
 
         tokio::spawn(async move {
-            debug!("Attempting to verify thread {} via REST endpoint", thread_id);
+            debug!(
+                "Attempting to verify thread {} via REST endpoint",
+                thread_id
+            );
 
             match client.verify_thread(&thread_id).await {
                 Ok(verified) => {
@@ -467,7 +470,8 @@ mod tests {
             verified_at: None,
         };
 
-        app.dashboard.set_threads(vec![thread], &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(vec![thread], &std::collections::HashMap::new());
         app.dashboard.update_thread_status(
             "t1",
             ThreadStatus::Waiting,
@@ -520,7 +524,8 @@ mod tests {
             verified_at: None,
         };
 
-        app.dashboard.set_threads(vec![thread], &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(vec![thread], &std::collections::HashMap::new());
         app.dashboard.update_thread_status(
             "t2",
             ThreadStatus::Waiting,
@@ -531,7 +536,12 @@ mod tests {
         app.dashboard.set_plan_request(
             "t2",
             "plan-t2".to_string(),
-            PlanSummary::new("Test Plan".to_string(), vec!["Phase 1".to_string()], 3, 1000),
+            PlanSummary::new(
+                "Test Plan".to_string(),
+                vec!["Phase 1".to_string()],
+                3,
+                1000,
+            ),
         );
 
         let result = app.handle_thread_approval("t2");
@@ -577,7 +587,8 @@ mod tests {
             verified_at: None,
         };
 
-        app.dashboard.set_threads(vec![thread], &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(vec![thread], &std::collections::HashMap::new());
         app.dashboard.update_thread_status(
             "t3",
             ThreadStatus::Waiting,
@@ -633,7 +644,8 @@ mod tests {
             verified_at: None,
         };
 
-        app.dashboard.set_threads(vec![thread], &std::collections::HashMap::new());
+        app.dashboard
+            .set_threads(vec![thread], &std::collections::HashMap::new());
 
         // Verify the thread
         app.handle_thread_verification("t4");

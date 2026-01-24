@@ -46,10 +46,11 @@ impl MockHttpConfig {
 
     /// Configures a default success response for unmatched URLs.
     pub fn with_default_success(self, status: u16, body: &str) -> Self {
-        self.client.set_default_response(MockResponse::Success(Response::new(
-            status,
-            Bytes::from(body.to_string()),
-        )));
+        self.client
+            .set_default_response(MockResponse::Success(Response::new(
+                status,
+                Bytes::from(body.to_string()),
+            )));
         self
     }
 
@@ -150,11 +151,7 @@ mod tests {
     #[test]
     fn test_mock_http_config() {
         let client = MockHttpConfig::new()
-            .with_json_response(
-                "https://api.example.com/test",
-                200,
-                r#"{"status": "ok"}"#,
-            )
+            .with_json_response("https://api.example.com/test", 200, r#"{"status": "ok"}"#)
             .build();
 
         // Verify the client was configured

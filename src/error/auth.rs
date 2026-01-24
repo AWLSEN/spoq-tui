@@ -24,43 +24,28 @@ pub enum AuthError {
     TokenExpired,
 
     /// Refresh token has expired or is invalid.
-    RefreshTokenInvalid {
-        message: String,
-    },
+    RefreshTokenInvalid { message: String },
 
     /// Failed to refresh the access token.
-    RefreshFailed {
-        message: String,
-    },
+    RefreshFailed { message: String },
 
     /// Credentials could not be loaded.
-    CredentialsLoadFailed {
-        message: String,
-    },
+    CredentialsLoadFailed { message: String },
 
     /// Credentials could not be saved.
-    CredentialsSaveFailed {
-        message: String,
-    },
+    CredentialsSaveFailed { message: String },
 
     /// No credentials available (user not logged in).
     NotAuthenticated,
 
     /// Authorization was denied by the server.
-    AccessDenied {
-        resource: Option<String>,
-    },
+    AccessDenied { resource: Option<String> },
 
     /// Invalid credentials format.
-    InvalidCredentials {
-        message: String,
-    },
+    InvalidCredentials { message: String },
 
     /// API returned an authentication error.
-    ApiError {
-        status: u16,
-        message: String,
-    },
+    ApiError { status: u16, message: String },
 }
 
 impl AuthError {
@@ -89,14 +74,13 @@ impl AuthError {
     /// Get a user-friendly error message.
     pub fn user_message(&self) -> String {
         match self {
-            AuthError::DeviceFlowCancelled => {
-                "Authentication was cancelled.".to_string()
-            }
+            AuthError::DeviceFlowCancelled => "Authentication was cancelled.".to_string(),
             AuthError::DeviceFlowExpired => {
                 "The authentication request expired. Please try again.".to_string()
             }
             AuthError::DeviceFlowDenied => {
-                "Access was denied. Please try again and grant the necessary permissions.".to_string()
+                "Access was denied. Please try again and grant the necessary permissions."
+                    .to_string()
             }
             AuthError::TokenExpired => {
                 "Your session has expired. Please sign in again.".to_string()
@@ -116,22 +100,18 @@ impl AuthError {
             AuthError::NotAuthenticated => {
                 "You are not signed in. Please sign in to continue.".to_string()
             }
-            AuthError::AccessDenied { resource } => {
-                match resource {
-                    Some(r) => format!("Access denied to {}.", r),
-                    None => "Access denied. You don't have permission for this action.".to_string(),
-                }
-            }
+            AuthError::AccessDenied { resource } => match resource {
+                Some(r) => format!("Access denied to {}.", r),
+                None => "Access denied. You don't have permission for this action.".to_string(),
+            },
             AuthError::InvalidCredentials { .. } => {
                 "Your credentials are invalid. Please sign in again.".to_string()
             }
-            AuthError::ApiError { status, message } => {
-                match *status {
-                    401 => "Your session has expired. Please sign in again.".to_string(),
-                    403 => "Access denied. You don't have permission for this action.".to_string(),
-                    _ => format!("Authentication error: {}", message),
-                }
-            }
+            AuthError::ApiError { status, message } => match *status {
+                401 => "Your session has expired. Please sign in again.".to_string(),
+                403 => "Access denied. You don't have permission for this action.".to_string(),
+                _ => format!("Authentication error: {}", message),
+            },
         }
     }
 
@@ -184,12 +164,10 @@ impl fmt::Display for AuthError {
             AuthError::NotAuthenticated => {
                 write!(f, "Not authenticated")
             }
-            AuthError::AccessDenied { resource } => {
-                match resource {
-                    Some(r) => write!(f, "Access denied to '{}'", r),
-                    None => write!(f, "Access denied"),
-                }
-            }
+            AuthError::AccessDenied { resource } => match resource {
+                Some(r) => write!(f, "Access denied to '{}'", r),
+                None => write!(f, "Access denied"),
+            },
             AuthError::InvalidCredentials { message } => {
                 write!(f, "Invalid credentials: {}", message)
             }

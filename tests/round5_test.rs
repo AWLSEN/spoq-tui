@@ -1,10 +1,10 @@
 //! Integration tests for Round 5 features
 //! Tests ThreadModeUpdate and ThreadVerified message handlers
 
+use chrono::Utc;
 use spoq::app::{App, AppMessage};
 use spoq::models::{Thread, ThreadMode, ThreadType};
 use spoq::state::dashboard::DashboardState;
-use chrono::Utc;
 
 // ============================================================================
 // Helper Functions
@@ -336,9 +336,12 @@ fn test_multiple_thread_updates() {
     let mut app = App::default();
 
     // Add multiple threads
-    app.dashboard.add_thread(create_test_thread("thread-1", "First"));
-    app.dashboard.add_thread(create_test_thread("thread-2", "Second"));
-    app.dashboard.add_thread(create_test_thread("thread-3", "Third"));
+    app.dashboard
+        .add_thread(create_test_thread("thread-1", "First"));
+    app.dashboard
+        .add_thread(create_test_thread("thread-2", "Second"));
+    app.dashboard
+        .add_thread(create_test_thread("thread-3", "Third"));
 
     // Update mode for first thread
     let msg1 = AppMessage::ThreadModeUpdate {
@@ -362,9 +365,18 @@ fn test_multiple_thread_updates() {
     app.handle_message(msg3);
 
     // Verify all updates
-    assert_eq!(app.dashboard.get_thread("thread-1").unwrap().mode, ThreadMode::Plan);
-    assert_eq!(app.dashboard.get_thread("thread-2").unwrap().verified, Some(true));
-    assert_eq!(app.dashboard.get_thread("thread-3").unwrap().mode, ThreadMode::Exec);
+    assert_eq!(
+        app.dashboard.get_thread("thread-1").unwrap().mode,
+        ThreadMode::Plan
+    );
+    assert_eq!(
+        app.dashboard.get_thread("thread-2").unwrap().verified,
+        Some(true)
+    );
+    assert_eq!(
+        app.dashboard.get_thread("thread-3").unwrap().mode,
+        ThreadMode::Exec
+    );
 }
 
 #[test]

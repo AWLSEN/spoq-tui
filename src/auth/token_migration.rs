@@ -38,7 +38,7 @@ fn strip_ansi_codes(input: &str) -> String {
             // Skip ANSI escape sequence
             if chars.peek() == Some(&'[') {
                 chars.next(); // consume '['
-                // Skip until we find a letter (the command character)
+                              // Skip until we find a letter (the command character)
                 while let Some(&next_ch) = chars.peek() {
                     chars.next();
                     if next_ch.is_ascii_alphabetic() {
@@ -151,7 +151,10 @@ pub fn wait_for_claude_code_token() -> Result<(), String> {
         // Check if Claude Code token is present
         if result.claude_code {
             println!("✓ Claude Code token detected");
-            info!("Claude Code token successfully detected on attempt {}", attempts);
+            info!(
+                "Claude Code token successfully detected on attempt {}",
+                attempts
+            );
             return Ok(());
         }
 
@@ -223,14 +226,17 @@ pub fn export_tokens() -> Result<TokenExportResult, String> {
     );
 
     // Step 2: Create staging directory ~/.spoq-migration/
-    let home_dir = std::env::var("HOME")
-        .map_err(|_| "Failed to get HOME environment variable".to_string())?;
+    let home_dir =
+        std::env::var("HOME").map_err(|_| "Failed to get HOME environment variable".to_string())?;
     let staging_dir = Path::new(&home_dir).join(".spoq-migration");
 
     debug!("Creating staging directory: {:?}", staging_dir);
     fs::create_dir_all(&staging_dir).map_err(|e| {
         error!("Failed to create staging directory: {}", e);
-        format!("Failed to create staging directory {:?}: {}. Check disk space and permissions.", staging_dir, e)
+        format!(
+            "Failed to create staging directory {:?}: {}. Check disk space and permissions.",
+            staging_dir, e
+        )
     })?;
 
     // Step 3: Define archive path
@@ -252,7 +258,10 @@ pub fn export_tokens() -> Result<TokenExportResult, String> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        error!("Migration script failed. stdout: {}, stderr: {}", stdout, stderr);
+        error!(
+            "Migration script failed. stdout: {}, stderr: {}",
+            stdout, stderr
+        );
         return Err(format!(
             "Migration script failed with exit code {:?}. Output: {}{}",
             output.status.code(),
@@ -263,7 +272,10 @@ pub fn export_tokens() -> Result<TokenExportResult, String> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    debug!("Migration script output:\nstdout: {}\nstderr: {}", stdout, stderr);
+    debug!(
+        "Migration script output:\nstdout: {}\nstderr: {}",
+        stdout, stderr
+    );
 
     // Step 5: Verify archive was created and is readable
     if !archive_path.exists() {
@@ -276,7 +288,10 @@ pub fn export_tokens() -> Result<TokenExportResult, String> {
 
     let metadata = fs::metadata(&archive_path).map_err(|e| {
         error!("Failed to read archive metadata: {}", e);
-        format!("Archive exists but cannot read metadata: {}. Check file permissions.", e)
+        format!(
+            "Archive exists but cannot read metadata: {}. Check file permissions.",
+            e
+        )
     })?;
 
     if !metadata.is_file() {
@@ -289,7 +304,10 @@ pub fn export_tokens() -> Result<TokenExportResult, String> {
     // Verify the file is readable by attempting to open it
     fs::File::open(&archive_path).map_err(|e| {
         error!("Archive file is not readable: {}", e);
-        format!("Archive file created but is not readable: {}. Check file permissions.", e)
+        format!(
+            "Archive file created but is not readable: {}. Check file permissions.",
+            e
+        )
     })?;
 
     // Step 6: Log export details
@@ -889,10 +907,7 @@ mod tests {
             "Staging directory should exist at {:?}",
             staging_dir
         );
-        assert!(
-            staging_dir.is_dir(),
-            "Staging path should be a directory"
-        );
+        assert!(staging_dir.is_dir(), "Staging path should be a directory");
     }
 
     // ===========================================
@@ -1002,7 +1017,10 @@ mod tests {
 
     #[test]
     fn test_parse_ssh_error_connection_refused() {
-        let error = parse_ssh_error("ssh: connect to host 192.168.1.1 port 22: Connection refused", None);
+        let error = parse_ssh_error(
+            "ssh: connect to host 192.168.1.1 port 22: Connection refused",
+            None,
+        );
         assert!(matches!(error, SshTransferError::ConnectionRefused(_)));
     }
 

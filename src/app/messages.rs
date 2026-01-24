@@ -159,10 +159,7 @@ pub enum AppMessage {
     /// Allows dashboard to immediately add new threads without polling.
     WsThreadCreated { thread: Thread },
     /// Thread mode update from WebSocket (normal, plan, exec)
-    ThreadModeUpdate {
-        thread_id: String,
-        mode: ThreadMode,
-    },
+    ThreadModeUpdate { thread_id: String, mode: ThreadMode },
     /// Phase progress update during plan execution
     PhaseProgressUpdate {
         thread_id: Option<String>,

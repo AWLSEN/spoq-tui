@@ -68,7 +68,10 @@ impl ReqwestHttpClient {
         headers
             .iter()
             .filter_map(|(name, value)| {
-                value.to_str().ok().map(|v| (name.to_string(), v.to_string()))
+                value
+                    .to_str()
+                    .ok()
+                    .map(|v| (name.to_string(), v.to_string()))
             })
             .collect()
     }
@@ -133,7 +136,10 @@ impl HttpClient for ReqwestHttpClient {
 
         if !response.status().is_success() {
             let status = response.status().as_u16();
-            let message = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(HttpError::ServerError { status, message });
         }
 
@@ -204,13 +210,13 @@ mod tests {
             reqwest::header::CONTENT_TYPE,
             "application/json".parse().unwrap(),
         );
-        header_map.insert(
-            reqwest::header::CONTENT_LENGTH,
-            "100".parse().unwrap(),
-        );
+        header_map.insert(reqwest::header::CONTENT_LENGTH, "100".parse().unwrap());
 
         let headers = ReqwestHttpClient::convert_headers(&header_map);
-        assert_eq!(headers.get("content-type"), Some(&"application/json".to_string()));
+        assert_eq!(
+            headers.get("content-type"),
+            Some(&"application/json".to_string())
+        );
         assert_eq!(headers.get("content-length"), Some(&"100".to_string()));
     }
 
@@ -231,7 +237,10 @@ mod tests {
         assert!(result.is_err());
         if let Err(e) = result {
             // Should be a connection error
-            assert!(matches!(e, HttpError::ConnectionFailed(_) | HttpError::Other(_)));
+            assert!(matches!(
+                e,
+                HttpError::ConnectionFailed(_) | HttpError::Other(_)
+            ));
         }
     }
 

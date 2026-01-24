@@ -346,22 +346,10 @@ fn test_provision_response_get_domain_returns_none() {
 #[test]
 fn test_provision_error_display_messages() {
     let errors = [
-        (
-            ProvisionError::AlreadyHasVps,
-            "already have a VPS",
-        ),
-        (
-            ProvisionError::QuotaExceeded,
-            "quota",
-        ),
-        (
-            ProvisionError::Unauthorized,
-            "sign in",
-        ),
-        (
-            ProvisionError::PaymentRequired,
-            "subscribe",
-        ),
+        (ProvisionError::AlreadyHasVps, "already have a VPS"),
+        (ProvisionError::QuotaExceeded, "quota"),
+        (ProvisionError::Unauthorized, "sign in"),
+        (ProvisionError::PaymentRequired, "subscribe"),
         (
             ProvisionError::ServerError {
                 status: 500,
@@ -535,17 +523,21 @@ async fn test_wait_for_health_with_progress_callback() {
     use spoq::setup::health_wait::wait_for_health_with_progress;
 
     let mut progress_calls = 0;
-    let result = wait_for_health_with_progress("http://127.0.0.1:1", 1, |attempt, elapsed, status| {
-        progress_calls += 1;
-        // Verify callback parameters are reasonable
-        assert!(attempt >= 1);
-        assert!(elapsed <= 10);
-        assert!(!status.is_empty());
-    })
-    .await;
+    let result =
+        wait_for_health_with_progress("http://127.0.0.1:1", 1, |attempt, elapsed, status| {
+            progress_calls += 1;
+            // Verify callback parameters are reasonable
+            assert!(attempt >= 1);
+            assert!(elapsed <= 10);
+            assert!(!status.is_empty());
+        })
+        .await;
 
     assert!(matches!(result, Err(HealthWaitError::Timeout { .. })));
-    assert!(progress_calls >= 1, "Progress callback should be called at least once");
+    assert!(
+        progress_calls >= 1,
+        "Progress callback should be called at least once"
+    );
 }
 
 #[tokio::test]
@@ -649,18 +641,35 @@ fn test_creds_sync_result_none_synced() {
 fn test_creds_sync_error_display() {
     let errors = [
         (CredsSyncError::NoHomeDirectory, "home directory"),
-        (CredsSyncError::SshConnection("timeout".to_string()), "SSH connection"),
-        (CredsSyncError::SshAuth("invalid password".to_string()), "SSH authentication"),
-        (CredsSyncError::Sftp("permission denied".to_string()), "SFTP"),
-        (CredsSyncError::SshCommand("command failed".to_string()), "SSH command"),
+        (
+            CredsSyncError::SshConnection("timeout".to_string()),
+            "SSH connection",
+        ),
+        (
+            CredsSyncError::SshAuth("invalid password".to_string()),
+            "SSH authentication",
+        ),
+        (
+            CredsSyncError::Sftp("permission denied".to_string()),
+            "SFTP",
+        ),
+        (
+            CredsSyncError::SshCommand("command failed".to_string()),
+            "SSH command",
+        ),
         (CredsSyncError::NoCredentialsFound, "No credentials found"),
-        (CredsSyncError::FileRead("file not found".to_string()), "read file"),
+        (
+            CredsSyncError::FileRead("file not found".to_string()),
+            "read file",
+        ),
     ];
 
     for (error, expected_substr) in errors {
         let display = format!("{}", error);
         assert!(
-            display.to_lowercase().contains(&expected_substr.to_lowercase()),
+            display
+                .to_lowercase()
+                .contains(&expected_substr.to_lowercase()),
             "Error display '{}' should contain '{}'",
             display,
             expected_substr
@@ -798,17 +807,35 @@ fn test_setup_step_description() {
     assert_eq!(SetupStep::Provision.description(), "Provisioning VPS");
     assert_eq!(SetupStep::HealthWait.description(), "Waiting for VPS");
     assert_eq!(SetupStep::CredsSync.description(), "Syncing credentials");
-    assert_eq!(SetupStep::CredsVerify.description(), "Verifying credentials");
+    assert_eq!(
+        SetupStep::CredsVerify.description(),
+        "Verifying credentials"
+    );
 }
 
 #[test]
 fn test_setup_step_display() {
     assert_eq!(format!("{}", SetupStep::Auth), "Step 0: Authenticating");
-    assert_eq!(format!("{}", SetupStep::PreCheck), "Step 1: Checking VPS status");
-    assert_eq!(format!("{}", SetupStep::Provision), "Step 2: Provisioning VPS");
-    assert_eq!(format!("{}", SetupStep::HealthWait), "Step 3: Waiting for VPS");
-    assert_eq!(format!("{}", SetupStep::CredsSync), "Step 4: Syncing credentials");
-    assert_eq!(format!("{}", SetupStep::CredsVerify), "Step 5: Verifying credentials");
+    assert_eq!(
+        format!("{}", SetupStep::PreCheck),
+        "Step 1: Checking VPS status"
+    );
+    assert_eq!(
+        format!("{}", SetupStep::Provision),
+        "Step 2: Provisioning VPS"
+    );
+    assert_eq!(
+        format!("{}", SetupStep::HealthWait),
+        "Step 3: Waiting for VPS"
+    );
+    assert_eq!(
+        format!("{}", SetupStep::CredsSync),
+        "Step 4: Syncing credentials"
+    );
+    assert_eq!(
+        format!("{}", SetupStep::CredsVerify),
+        "Step 5: Verifying credentials"
+    );
 }
 
 #[test]
@@ -820,7 +847,7 @@ fn test_setup_step_equality() {
 #[test]
 fn test_setup_step_clone_and_copy() {
     let step = SetupStep::Provision;
-    let cloned = step;  // Copy trait
+    let cloned = step; // Copy trait
     assert_eq!(step, cloned);
 }
 
@@ -1055,15 +1082,24 @@ fn test_provision_error_messages_are_helpful() {
 #[test]
 fn test_credentials_is_valid_with_token() {
     let creds = create_test_credentials();
-    assert!(creds.is_valid(), "Credentials with valid token should be valid");
-    assert!(creds.has_token(), "Credentials with access_token should have token");
+    assert!(
+        creds.is_valid(),
+        "Credentials with valid token should be valid"
+    );
+    assert!(
+        creds.has_token(),
+        "Credentials with access_token should have token"
+    );
 }
 
 #[test]
 fn test_credentials_is_invalid_without_token() {
     let creds = Credentials::default();
     assert!(!creds.is_valid(), "Empty credentials should not be valid");
-    assert!(!creds.has_token(), "Empty credentials should not have token");
+    assert!(
+        !creds.has_token(),
+        "Empty credentials should not have token"
+    );
 }
 
 #[test]
@@ -1074,7 +1110,10 @@ fn test_credentials_is_expired() {
         expires_at: Some(0), // Expired (Unix epoch)
         user_id: Some("user".to_string()),
     };
-    assert!(creds.is_expired(), "Credentials with past expiry should be expired");
+    assert!(
+        creds.is_expired(),
+        "Credentials with past expiry should be expired"
+    );
     assert!(!creds.is_valid(), "Expired credentials should not be valid");
 }
 
@@ -1113,7 +1152,10 @@ fn test_vps_status_transitions_are_valid() {
     let provisioning_status = VpsStatus::Provisioning {
         vps_id: "vps-123".to_string(),
     };
-    assert!(matches!(provisioning_status, VpsStatus::Provisioning { .. }));
+    assert!(matches!(
+        provisioning_status,
+        VpsStatus::Provisioning { .. }
+    ));
 
     let ready_status = VpsStatus::Ready {
         vps_id: "vps-123".to_string(),

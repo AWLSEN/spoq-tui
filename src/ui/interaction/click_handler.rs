@@ -65,7 +65,10 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
             if sent {
                 // Collapse overlay after successful approval
                 app.dashboard.collapse_overlay();
-                tracing::info!("Click: ApproveThread(thread_id={}) - response sent", thread_id);
+                tracing::info!(
+                    "Click: ApproveThread(thread_id={}) - response sent",
+                    thread_id
+                );
             } else {
                 tracing::debug!(
                     "Click: ApproveThread(thread_id={}) - no action needed",
@@ -79,7 +82,10 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
             if sent {
                 // Collapse overlay after successful rejection
                 app.dashboard.collapse_overlay();
-                tracing::info!("Click: RejectThread(thread_id={}) - response sent", thread_id);
+                tracing::info!(
+                    "Click: RejectThread(thread_id={}) - response sent",
+                    thread_id
+                );
             } else {
                 tracing::debug!(
                     "Click: RejectThread(thread_id={}) - no action needed",
@@ -90,7 +96,10 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
         ClickAction::VerifyThread(thread_id) => {
             // Handle verification via REST endpoint with local fallback
             app.handle_thread_verification(&thread_id);
-            tracing::info!("Click: VerifyThread(thread_id={}) - verification initiated", thread_id);
+            tracing::info!(
+                "Click: VerifyThread(thread_id={}) - verification initiated",
+                thread_id
+            );
         }
         ClickAction::ArchiveThread(thread_id) => {
             // TODO: Implement when thread archiving is added

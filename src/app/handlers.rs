@@ -827,7 +827,11 @@ impl App {
                 waiting_for,
             } => {
                 // Log for terminal debugging
-                tracing::info!("WS_THREAD_STATUS: thread={}, status={:?}", thread_id, status);
+                tracing::info!(
+                    "WS_THREAD_STATUS: thread={}, status={:?}",
+                    thread_id,
+                    status
+                );
                 // Update dashboard state with thread status
                 self.dashboard
                     .update_thread_status(&thread_id, status, waiting_for.clone());
@@ -877,8 +881,11 @@ impl App {
                         plan_summary: plan_summary.title.clone(),
                     }),
                 );
-                self.dashboard
-                    .set_plan_request(&thread_id, request_id.clone(), plan_summary.clone());
+                self.dashboard.set_plan_request(
+                    &thread_id,
+                    request_id.clone(),
+                    plan_summary.clone(),
+                );
                 // Emit StateChange for plan approval request
                 emit_debug(
                     &self.debug_tx,
@@ -912,7 +919,11 @@ impl App {
             }
             AppMessage::ThreadModeUpdate { thread_id, mode } => {
                 // Log for terminal debugging
-                tracing::info!("THREAD_MODE_UPDATE: thread_id={}, mode={:?}", thread_id, mode);
+                tracing::info!(
+                    "THREAD_MODE_UPDATE: thread_id={}, mode={:?}",
+                    thread_id,
+                    mode
+                );
                 // Update thread mode in dashboard state
                 self.dashboard.update_thread_mode(&thread_id, mode);
                 // Emit StateChange for thread mode update
@@ -985,11 +996,17 @@ impl App {
                 verified_at,
             } => {
                 // Log for terminal debugging
-                tracing::info!("THREAD_VERIFIED: thread_id={}, verified_at={}", thread_id, verified_at);
+                tracing::info!(
+                    "THREAD_VERIFIED: thread_id={}, verified_at={}",
+                    thread_id,
+                    verified_at
+                );
                 // Parse verified_at string and update dashboard state
                 if let Ok(verified_dt) = chrono::DateTime::parse_from_rfc3339(&verified_at) {
-                    self.dashboard
-                        .update_thread_verified(&thread_id, verified_dt.with_timezone(&chrono::Utc));
+                    self.dashboard.update_thread_verified(
+                        &thread_id,
+                        verified_dt.with_timezone(&chrono::Utc),
+                    );
                 } else {
                     // Fallback to current time if parsing fails
                     self.dashboard

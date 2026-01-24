@@ -24,13 +24,13 @@
 //! }
 //! ```
 
-use crate::auth::{ensure_authenticated, Credentials};
-use crate::auth::central_api::CentralApiClient;
-use super::precheck::{precheck, VpsStatus};
-use super::provision::{provision, ProvisionError};
-use super::health_wait::{wait_for_health, HealthWaitError, DEFAULT_HEALTH_TIMEOUT_SECS};
 use super::creds_sync::sync_credentials;
 use super::creds_verify::verify_credentials;
+use super::health_wait::{wait_for_health, HealthWaitError, DEFAULT_HEALTH_TIMEOUT_SECS};
+use super::precheck::{precheck, VpsStatus};
+use super::provision::{provision, ProvisionError};
+use crate::auth::central_api::CentralApiClient;
+use crate::auth::{ensure_authenticated, Credentials};
 
 use std::fmt;
 use std::io::{self, Write};
@@ -247,41 +247,51 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
 
     let mut client = CentralApiClient::new().with_auth(access_token);
 
-    let vps_status = runtime
-        .block_on(precheck(&mut client))
-        .map_err(|e| SetupError::blocking(SetupStep::PreCheck, format!("VPS check failed: {}", e)))?;
+    let vps_status = runtime.block_on(precheck(&mut client)).map_err(|e| {
+        SetupError::blocking(SetupStep::PreCheck, format!("VPS check failed: {}", e))
+    })?;
 
     // Determine if we need to provision or just continue with existing VPS
-    let (vps_id, vps_hostname, vps_ip, vps_url, needs_provision, needs_health_wait) = match &vps_status {
-        VpsStatus::None => {
-            print_step_complete(SetupStep::PreCheck, TOTAL_STEPS);
-            (None, None, None, None, true, true)
-        }
-        VpsStatus::Provisioning { vps_id } => {
-            print_step_complete(SetupStep::PreCheck, TOTAL_STEPS);
-            println!("  VPS {} is currently provisioning...", vps_id);
-            // VPS exists but still provisioning - skip provision step, wait for health
-            (Some(vps_id.clone()), None, None, None, false, true)
-        }
-        VpsStatus::Ready { vps_id, hostname, ip, url, .. } => {
-            print_step_skipped(SetupStep::PreCheck, TOTAL_STEPS, "VPS already exists");
-            // VPS is ready - skip both provision and health wait
-            (
-                Some(vps_id.clone()),
-                hostname.clone(),
-                ip.clone(),
-                url.clone(),
-                false,
-                false,
-            )
-        }
-        VpsStatus::Other { vps_id, status } => {
-            // Unknown status - try to continue with health wait
-            print_step_complete(SetupStep::PreCheck, TOTAL_STEPS);
-            println!("  VPS {} has status '{}', checking health...", vps_id, status);
-            (Some(vps_id.clone()), None, None, None, false, true)
-        }
-    };
+    let (vps_id, vps_hostname, vps_ip, vps_url, needs_provision, needs_health_wait) =
+        match &vps_status {
+            VpsStatus::None => {
+                print_step_complete(SetupStep::PreCheck, TOTAL_STEPS);
+                (None, None, None, None, true, true)
+            }
+            VpsStatus::Provisioning { vps_id } => {
+                print_step_complete(SetupStep::PreCheck, TOTAL_STEPS);
+                println!("  VPS {} is currently provisioning...", vps_id);
+                // VPS exists but still provisioning - skip provision step, wait for health
+                (Some(vps_id.clone()), None, None, None, false, true)
+            }
+            VpsStatus::Ready {
+                vps_id,
+                hostname,
+                ip,
+                url,
+                ..
+            } => {
+                print_step_skipped(SetupStep::PreCheck, TOTAL_STEPS, "VPS already exists");
+                // VPS is ready - skip both provision and health wait
+                (
+                    Some(vps_id.clone()),
+                    hostname.clone(),
+                    ip.clone(),
+                    url.clone(),
+                    false,
+                    false,
+                )
+            }
+            VpsStatus::Other { vps_id, status } => {
+                // Unknown status - try to continue with health wait
+                print_step_complete(SetupStep::PreCheck, TOTAL_STEPS);
+                println!(
+                    "  VPS {} has status '{}', checking health...",
+                    vps_id, status
+                );
+                (Some(vps_id.clone()), None, None, None, false, true)
+            }
+        };
 
     // Track VPS info for later steps
     let mut final_vps_id = vps_id;
@@ -303,7 +313,8 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
                         "Session expired - please restart and sign in again".to_string()
                     }
                     ProvisionError::PaymentRequired => {
-                        "Payment required - please subscribe at https://spoq.dev/subscribe".to_string()
+                        "Payment required - please subscribe at https://spoq.dev/subscribe"
+                            .to_string()
                     }
                     ProvisionError::AlreadyHasVps => {
                         "You already have a VPS provisioned".to_string()
@@ -384,11 +395,17 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
 
     // At this point we must have VPS info
     let vps_id = final_vps_id.ok_or_else(|| {
-        SetupError::blocking(SetupStep::HealthWait, "No VPS ID available after health check")
+        SetupError::blocking(
+            SetupStep::HealthWait,
+            "No VPS ID available after health check",
+        )
     })?;
 
     let vps_url = final_url.ok_or_else(|| {
-        SetupError::blocking(SetupStep::HealthWait, "No VPS URL available after health check")
+        SetupError::blocking(
+            SetupStep::HealthWait,
+            "No VPS URL available after health check",
+        )
     })?;
 
     // Get VPS IP for SSH operations - need to fetch from API if not available
@@ -398,9 +415,17 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
         // Try to fetch VPS info from API to get IP
         let vps_response = runtime
             .block_on(client.fetch_user_vps())
-            .map_err(|e| SetupError::blocking(SetupStep::CredsSync, format!("Failed to get VPS info: {}", e)))?
+            .map_err(|e| {
+                SetupError::blocking(
+                    SetupStep::CredsSync,
+                    format!("Failed to get VPS info: {}", e),
+                )
+            })?
             .ok_or_else(|| {
-                SetupError::blocking(SetupStep::CredsSync, "VPS not found in API after provisioning")
+                SetupError::blocking(
+                    SetupStep::CredsSync,
+                    "VPS not found in API after provisioning",
+                )
             })?;
 
         vps_response.ip.ok_or_else(|| {
@@ -434,19 +459,31 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
             .block_on(sync_credentials(&vps_ip, "root", &ssh_password, SSH_PORT))
             .map_err(|e| {
                 // Credential sync failure is blocking
-                SetupError::blocking(SetupStep::CredsSync, format!("Credential sync failed: {}", e))
+                SetupError::blocking(
+                    SetupStep::CredsSync,
+                    format!("Credential sync failed: {}", e),
+                )
             })?;
 
         if sync_result.any_synced() {
             print_step_complete(SetupStep::CredsSync, TOTAL_STEPS);
             if sync_result.claude_synced {
-                println!("  Claude credentials synced ({} bytes)", sync_result.claude_bytes);
+                println!(
+                    "  Claude credentials synced ({} bytes)",
+                    sync_result.claude_bytes
+                );
             }
             if sync_result.github_synced {
-                println!("  GitHub credentials synced ({} bytes)", sync_result.github_bytes);
+                println!(
+                    "  GitHub credentials synced ({} bytes)",
+                    sync_result.github_bytes
+                );
             }
             if sync_result.codex_synced {
-                println!("  Codex credentials synced ({} bytes)", sync_result.codex_bytes);
+                println!(
+                    "  Codex credentials synced ({} bytes)",
+                    sync_result.codex_bytes
+                );
             }
         } else {
             // No credentials found locally to sync
@@ -550,13 +587,19 @@ mod tests {
         assert_eq!(SetupStep::Provision.description(), "Provisioning VPS");
         assert_eq!(SetupStep::HealthWait.description(), "Waiting for VPS");
         assert_eq!(SetupStep::CredsSync.description(), "Syncing credentials");
-        assert_eq!(SetupStep::CredsVerify.description(), "Verifying credentials");
+        assert_eq!(
+            SetupStep::CredsVerify.description(),
+            "Verifying credentials"
+        );
     }
 
     #[test]
     fn test_setup_step_display() {
         assert_eq!(format!("{}", SetupStep::Auth), "Step 0: Authenticating");
-        assert_eq!(format!("{}", SetupStep::CredsVerify), "Step 5: Verifying credentials");
+        assert_eq!(
+            format!("{}", SetupStep::CredsVerify),
+            "Step 5: Verifying credentials"
+        );
     }
 
     #[test]

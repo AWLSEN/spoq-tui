@@ -76,7 +76,9 @@ impl TestAppBuilder {
         let mut app = App::default();
 
         if self.with_thread {
-            let title = self.thread_title.unwrap_or_else(|| "Test Thread".to_string());
+            let title = self
+                .thread_title
+                .unwrap_or_else(|| "Test Thread".to_string());
             for c in title.chars() {
                 app.textarea.insert_char(c);
             }

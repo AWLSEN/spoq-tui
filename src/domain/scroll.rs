@@ -72,7 +72,10 @@ impl ScrollState {
     /// Returns true if the scroll position changed.
     pub fn scroll_up(&mut self, lines: u16) -> bool {
         let old_scroll = self.unified_scroll;
-        self.unified_scroll = self.unified_scroll.saturating_add(lines).min(self.max_scroll);
+        self.unified_scroll = self
+            .unified_scroll
+            .saturating_add(lines)
+            .min(self.max_scroll);
         self.scroll_position = self.unified_scroll as f32;
         self.user_has_scrolled = true;
 
@@ -291,7 +294,10 @@ mod tests {
         state.scroll_up(100);
         assert_eq!(state.unified_scroll, 50);
         assert!(state.is_at_top());
-        assert!(matches!(state.scroll_boundary_hit, Some(ScrollBoundary::Top)));
+        assert!(matches!(
+            state.scroll_boundary_hit,
+            Some(ScrollBoundary::Top)
+        ));
     }
 
     #[test]
@@ -317,7 +323,10 @@ mod tests {
         state.scroll_down(50);
         assert_eq!(state.unified_scroll, 0);
         assert!(state.is_at_bottom());
-        assert!(matches!(state.scroll_boundary_hit, Some(ScrollBoundary::Bottom)));
+        assert!(matches!(
+            state.scroll_boundary_hit,
+            Some(ScrollBoundary::Bottom)
+        ));
     }
 
     #[test]
@@ -418,7 +427,10 @@ mod tests {
         assert!(state.get_boundary_hit().is_none());
 
         state.record_boundary_hit(ScrollBoundary::Top, 100);
-        assert!(matches!(state.get_boundary_hit(), Some(ScrollBoundary::Top)));
+        assert!(matches!(
+            state.get_boundary_hit(),
+            Some(ScrollBoundary::Top)
+        ));
         assert_eq!(state.boundary_hit_tick, 100);
 
         // Should not clear before duration

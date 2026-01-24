@@ -120,7 +120,10 @@ mod tests {
             WsError::ConnectionFailed("timeout".to_string()).to_string(),
             "Connection failed: timeout"
         );
-        assert_eq!(WsError::Disconnected.to_string(), "Disconnected from server");
+        assert_eq!(
+            WsError::Disconnected.to_string(),
+            "Disconnected from server"
+        );
         assert_eq!(
             WsError::SendFailed("channel closed".to_string()).to_string(),
             "Send failed: channel closed"

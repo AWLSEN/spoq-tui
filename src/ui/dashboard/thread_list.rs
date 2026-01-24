@@ -5,9 +5,9 @@
 
 use ratatui::{layout::Rect, style::Style, text::Span, Frame};
 
-use super::{FilterState, RenderContext, ThreadView};
 use super::states;
 use super::thread_row;
+use super::{FilterState, RenderContext, ThreadView};
 use crate::models::dashboard::ThreadStatus;
 use crate::ui::interaction::HitAreaRegistry;
 
@@ -91,7 +91,9 @@ fn render_split_view(
     let need_action_height = need_action.len().min(MAX_NEED_ACTION_DISPLAY) as u16;
     let separator_height: u16 = 1;
     // Note: autonomous_height is computed dynamically based on actual separator position
-    let _autonomous_height = area.height.saturating_sub(need_action_height + separator_height);
+    let _autonomous_height = area
+        .height
+        .saturating_sub(need_action_height + separator_height);
 
     // Render need_action threads
     for (i, thread) in need_action.iter().take(MAX_NEED_ACTION_DISPLAY).enumerate() {
@@ -228,7 +230,6 @@ fn render_filtered_view(
         );
     }
 }
-
 
 // ============================================================================
 // Tests
