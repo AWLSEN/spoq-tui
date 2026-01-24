@@ -253,6 +253,25 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
         }
     }
 
+    // Read Codex tokens
+    if sync_type == "codex" || sync_type == "all" {
+        let codex_auth_path = PathBuf::from(&home).join(".codex").join("auth.json");
+
+        if codex_auth_path.exists() {
+            let contents = fs::read_to_string(&codex_auth_path).map_err(|e| {
+                ConductorError::ServerError {
+                    status: 500,
+                    message: format!("Failed to read ~/.codex/auth.json: {}", e),
+                }
+            })?;
+
+            let mut codex_data = serde_json::Map::new();
+            codex_data.insert("auth_json".to_string(), serde_json::Value::String(contents));
+
+            data.insert("codex".to_string(), serde_json::Value::Object(codex_data));
+        }
+    }
+
     Ok(serde_json::Value::Object(data))
 }
 
