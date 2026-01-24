@@ -15,6 +15,7 @@ mod state_methods;
 mod stream;
 mod types;
 mod utils;
+mod view;
 mod websocket;
 
 pub use messages::AppMessage;
