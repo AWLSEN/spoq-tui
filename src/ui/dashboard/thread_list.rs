@@ -63,7 +63,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
         return;
     }
 
-    // Calculate centered area with max width
+    // Calculate centered area with 84% width
     let centered_area = calculate_centered_area(area);
 
     match ctx.filter {
