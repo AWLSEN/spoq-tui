@@ -569,4 +569,91 @@ mod tests {
         let expected_x = area.x + (area.width - expected_width) / 2;
         assert_eq!(centered.x, expected_x);
     }
+
+    // -------------------- All Clear Condition Tests --------------------
+
+    #[test]
+    fn test_all_clear_condition_both_empty() {
+        // Test that "all clear" is shown when BOTH need_action AND autonomous are empty
+        let threads: Vec<ThreadView> = vec![];
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
+
+        // Both lists should be empty
+        assert!(need_action.is_empty());
+        assert!(autonomous.is_empty());
+
+        // This condition should trigger "all clear"
+        let should_show_all_clear = need_action.is_empty() && autonomous.is_empty();
+        assert!(
+            should_show_all_clear,
+            "Expected all clear to show when both lists are empty"
+        );
+    }
+
+    #[test]
+    fn test_all_clear_condition_only_need_action_empty() {
+        // Test that "all clear" is NOT shown when only need_action is empty
+        let threads = vec![
+            make_thread("1", "Running", false, ThreadStatus::Running),
+            make_thread("2", "Idle", false, ThreadStatus::Idle),
+        ];
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
+
+        // need_action is empty, but autonomous has threads
+        assert!(need_action.is_empty());
+        assert!(!autonomous.is_empty());
+
+        // This condition should NOT trigger "all clear"
+        let should_show_all_clear = need_action.is_empty() && autonomous.is_empty();
+        assert!(
+            !should_show_all_clear,
+            "Expected all clear to NOT show when autonomous threads exist"
+        );
+    }
+
+    #[test]
+    fn test_all_clear_condition_only_autonomous_empty() {
+        // Test that "all clear" is NOT shown when only autonomous is empty
+        let threads = vec![
+            make_thread("1", "Waiting", true, ThreadStatus::Waiting),
+            make_thread("2", "Error", true, ThreadStatus::Error),
+        ];
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
+
+        // autonomous is empty, but need_action has threads
+        assert!(!need_action.is_empty());
+        assert!(autonomous.is_empty());
+
+        // This condition should NOT trigger "all clear"
+        let should_show_all_clear = need_action.is_empty() && autonomous.is_empty();
+        assert!(
+            !should_show_all_clear,
+            "Expected all clear to NOT show when need_action threads exist"
+        );
+    }
+
+    #[test]
+    fn test_all_clear_condition_both_have_threads() {
+        // Test that "all clear" is NOT shown when both lists have threads
+        let threads = vec![
+            make_thread("1", "Waiting", true, ThreadStatus::Waiting),
+            make_thread("2", "Running", false, ThreadStatus::Running),
+        ];
+        let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
+            threads.iter().partition(|t| t.needs_action);
+
+        // Both lists have threads
+        assert!(!need_action.is_empty());
+        assert!(!autonomous.is_empty());
+
+        // This condition should NOT trigger "all clear"
+        let should_show_all_clear = need_action.is_empty() && autonomous.is_empty();
+        assert!(
+            !should_show_all_clear,
+            "Expected all clear to NOT show when both lists have threads"
+        );
+    }
 }
