@@ -220,7 +220,8 @@ fn route_ws_message(
                     phase_name: progress.phase_name,
                     status: progress.status,
                     tool_count: progress.tool_count,
-                    last_tool: progress.last_tool,
+                    // Convert Option<String> to String, using empty string if None
+                    last_tool: progress.last_tool.unwrap_or_default(),
                     last_file: progress.last_file,
                 })
                 .map_err(|e| format!("Failed to send PhaseProgressUpdate: {}", e))

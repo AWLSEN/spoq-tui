@@ -159,17 +159,19 @@ pub struct WsPhaseProgressUpdate {
     pub status: PhaseStatus,
     /// Number of tools used in this phase
     pub tool_count: u32,
-    /// Name of the last tool used
-    pub last_tool: String,
+    /// Name of the last tool used (optional - may be null if no tools used yet)
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_tool: Option<String>,
     /// Last file modified (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_file: Option<String>,
     /// When the phase started (Unix milliseconds)
-    pub started_at: u64,
+    pub started_at: i64,
     /// When this update was generated (Unix milliseconds)
-    pub updated_at: u64,
+    pub updated_at: i64,
     /// Message timestamp (Unix milliseconds)
-    pub timestamp: u64,
+    pub timestamp: i64,
 }
 
 /// Thread verification notification
@@ -935,7 +937,7 @@ mod tests {
                 assert_eq!(progress.phase_name, "Add WebSocket handlers");
                 assert_eq!(progress.status, PhaseStatus::Running);
                 assert_eq!(progress.tool_count, 15);
-                assert_eq!(progress.last_tool, "Edit");
+                assert_eq!(progress.last_tool, Some("Edit".to_string()));
                 assert_eq!(
                     progress.last_file,
                     Some("/src/websocket/handlers.rs".to_string())
@@ -971,6 +973,62 @@ mod tests {
                 assert_eq!(progress.plan_id, "plan-789");
                 assert_eq!(progress.status, PhaseStatus::Starting);
                 assert!(progress.last_file.is_none());
+                // Empty string deserializes as Some("")
+                assert_eq!(progress.last_tool, Some("".to_string()));
+            }
+            _ => panic!("Expected PhaseProgressUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_phase_progress_update_null_last_tool() {
+        // This is the critical test case: backend sends null for last_tool
+        let json = r#"{
+            "type": "phase_progress_update",
+            "plan_id": "plan-null-tool",
+            "phase_index": 0,
+            "total_phases": 3,
+            "phase_name": "Starting",
+            "status": "starting",
+            "tool_count": 0,
+            "last_tool": null,
+            "started_at": 1705315700000,
+            "updated_at": 1705315700000,
+            "timestamp": 1705315700000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PhaseProgressUpdate(progress) => {
+                assert_eq!(progress.plan_id, "plan-null-tool");
+                assert_eq!(progress.status, PhaseStatus::Starting);
+                assert!(progress.last_tool.is_none());
+            }
+            _ => panic!("Expected PhaseProgressUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_phase_progress_update_missing_last_tool() {
+        // Test that missing last_tool field defaults to None
+        let json = r#"{
+            "type": "phase_progress_update",
+            "plan_id": "plan-missing-tool",
+            "phase_index": 0,
+            "total_phases": 3,
+            "phase_name": "Starting",
+            "status": "starting",
+            "tool_count": 0,
+            "started_at": 1705315700000,
+            "updated_at": 1705315700000,
+            "timestamp": 1705315700000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PhaseProgressUpdate(progress) => {
+                assert_eq!(progress.plan_id, "plan-missing-tool");
+                assert!(progress.last_tool.is_none());
             }
             _ => panic!("Expected PhaseProgressUpdate"),
         }
@@ -1003,7 +1061,7 @@ mod tests {
             phase_name: "Test Phase".to_string(),
             status: PhaseStatus::Completed,
             tool_count: 10,
-            last_tool: "Bash".to_string(),
+            last_tool: Some("Bash".to_string()),
             last_file: None,
             started_at: 1705315700000,
             updated_at: 1705315800000,
@@ -1018,8 +1076,60 @@ mod tests {
         assert_eq!(parsed["phase_index"], 1);
         assert_eq!(parsed["total_phases"], 4);
         assert_eq!(parsed["status"], "completed");
+        assert_eq!(parsed["last_tool"], "Bash");
         // last_file should not be present when None
         assert!(parsed.get("last_file").is_none() || parsed["last_file"].is_null());
+    }
+
+    #[test]
+    fn test_serialize_phase_progress_update_none_last_tool() {
+        let progress = WsPhaseProgressUpdate {
+            thread_id: None,
+            plan_id: "plan-no-tool".to_string(),
+            phase_index: 0,
+            total_phases: 1,
+            phase_name: "Setup".to_string(),
+            status: PhaseStatus::Starting,
+            tool_count: 0,
+            last_tool: None,
+            last_file: None,
+            started_at: 1705315700000,
+            updated_at: 1705315700000,
+            timestamp: 1705315700000,
+        };
+
+        let json = serde_json::to_string(&progress).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // last_tool should not be present when None (skip_serializing_if)
+        assert!(parsed.get("last_tool").is_none() || parsed["last_tool"].is_null());
+    }
+
+    #[test]
+    fn test_deserialize_phase_progress_update_i64_timestamps() {
+        // Test that i64 timestamps work (including negative values and large values)
+        let json = r#"{
+            "type": "phase_progress_update",
+            "plan_id": "plan-i64",
+            "phase_index": 0,
+            "total_phases": 1,
+            "phase_name": "Test",
+            "status": "running",
+            "tool_count": 0,
+            "started_at": -1000,
+            "updated_at": 9223372036854775807,
+            "timestamp": 1705315700000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PhaseProgressUpdate(progress) => {
+                assert_eq!(progress.started_at, -1000);
+                assert_eq!(progress.updated_at, 9223372036854775807_i64);
+                assert_eq!(progress.timestamp, 1705315700000);
+            }
+            _ => panic!("Expected PhaseProgressUpdate"),
+        }
     }
 
     // -------------------- Thread Verified Tests --------------------
