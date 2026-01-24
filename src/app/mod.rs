@@ -142,6 +142,9 @@ pub enum AuthError {
     RefreshFailed,
 }
 
+/// Maximum number of threads to display in the dashboard
+const MAX_DASHBOARD_THREADS: usize = 20;
+
 /// Main application state
 pub struct App {
     /// List of conversation threads (legacy - for storage compatibility)
@@ -622,19 +625,36 @@ impl App {
         // Fetch threads from server
         match self.client.fetch_threads().await {
             Ok(threads) => {
+                // Limit to most recent threads for dashboard display
+                let total_threads = threads.len();
+                let threads = threads.into_iter().take(MAX_DASHBOARD_THREADS).collect::<Vec<_>>();
+
                 // Populate cache with threads from server
                 // Iterate in reverse because upsert_thread() inserts at front,
                 // so we process oldest first to end up with newest at front
+                log_thread_update(&format!(
+                    "fetch_threads SUCCESS: {} threads (limited to {} for dashboard)",
+                    total_threads, threads.len()
+                ));
+
+                // Also populate dashboard state for UI rendering
+                self.dashboard
+                    .set_threads(threads.clone(), &std::collections::HashMap::new());
+                // Compute thread views so they're ready for rendering
+                self.dashboard.compute_thread_views();
+
                 for thread in threads.into_iter().rev() {
                     self.cache.upsert_thread(thread);
                 }
                 self.connection_status = true;
+                self.system_stats.connected = true;
             }
             Err(e) => {
                 // Server unreachable - start with empty state
                 // Log the error for debugging
-                log_thread_update(&format!("fetch_threads failed: {:?}", e));
+                log_thread_update(&format!("fetch_threads FAILED: {:?}", e));
                 self.connection_status = false;
+                self.system_stats.connected = false;
             }
         }
 
