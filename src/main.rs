@@ -1,35 +1,22 @@
 use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary};
 use spoq::websocket::WsClientConfig;
-use spoq::auth::{run_auth_flow, run_provisioning_flow, start_stopped_vps, CredentialsManager};
+use spoq::auth::CredentialsManager;
 use spoq::auth::central_api::{CentralApiClient, VpsStatusResponse};
 use spoq::auth::credentials::Credentials;
-use spoq::debug::{
-    create_debug_channel, start_debug_server, DebugEvent, DebugEventKind, StateChangeData, StateType,
-};
+use spoq::cli::{parse_args, run_cli_command};
+use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
 use spoq::models;
+use spoq::startup::{run_preflight_checks, StartupConfig};
+use spoq::terminal::{setup_panic_hook, TerminalManager};
 use spoq::ui;
 
 use color_eyre::Result;
-use crossterm::{
-    cursor::Show,
-    event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
-        MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
-    },
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use futures::StreamExt;
-use ratatui::{backend::CrosstermBackend, Terminal};
-use std::io;
-use std::sync::Arc;
+use ratatui::Terminal;
 use std::thread;
 use std::time::Duration;
-use tokio::sync::{mpsc, RwLock};
-use tokio::task::JoinHandle;
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
+use tokio::sync::mpsc;
 
 /// Background update check and download on startup.
 ///
@@ -102,270 +89,6 @@ async fn check_and_download_update() {
 
     // Update is now ready for installation on next launch
     // User will see notification in TUI or can run `spoq --update` manually
-}
-
-/// Handle the /sync or --sync command for token migration to VPS.
-///
-/// This function runs the complete token migration flow:
-/// 1. Verify credentials are loaded and VPS exists (via API)
-/// 2. Detect available tokens (GitHub CLI, Claude Code, Codex)
-/// 3. Check for Claude Code token (retry loop if missing)
-/// 4. Export tokens to archive
-/// 5. Transfer archive to VPS via SSH
-/// 6. Exit with success or error message
-fn handle_sync_command() -> Result<()> {
-    use spoq::auth::{detect_tokens, export_tokens, wait_for_claude_code_token, CredentialsManager};
-    use std::process::Command;
-
-    println!("Running token synchronization...\n");
-
-    // Step 1: Load credentials and verify VPS exists
-    println!("[1/5] Verifying credentials and VPS...");
-    let manager = CredentialsManager::new().expect("Failed to initialize credentials manager");
-    let credentials = manager.load();
-
-    if !credentials.has_token() {
-        eprintln!("Error: Not authenticated. Please run spoq to authenticate first.");
-        std::process::exit(1);
-    }
-
-    // Fetch VPS state from API (single source of truth)
-    let runtime = tokio::runtime::Runtime::new()?;
-    let vps_state = match fetch_vps_from_api(&runtime, &credentials) {
-        Ok(Some(vps)) => vps,
-        Ok(None) => {
-            eprintln!("Error: No VPS configured. Please run spoq to provision a VPS first.");
-            std::process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("Error: Cannot verify VPS status: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    let vps_ip = vps_state.ip.as_ref().expect("VPS must have IP address");
-    println!("✓ Credentials loaded");
-    println!("✓ VPS found: {}", vps_ip);
-
-    // Step 2: Detect tokens
-    println!("\n[2/5] Detecting tokens...");
-    let detection = match detect_tokens() {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("Error detecting tokens: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    let mut tokens_found = Vec::new();
-    if detection.github_cli {
-        tokens_found.push("GitHub CLI");
-    }
-    if detection.claude_code {
-        tokens_found.push("Claude Code");
-    }
-    if detection.codex {
-        tokens_found.push("Codex");
-    }
-
-    if tokens_found.is_empty() {
-        println!("⚠ No tokens detected");
-    } else {
-        println!("✓ Tokens detected: {}", tokens_found.join(", "));
-    }
-
-    // Step 3: Check for Claude Code token with retry loop
-    if !detection.claude_code {
-        println!("\n[3/5] Waiting for Claude Code token...");
-        if let Err(e) = wait_for_claude_code_token() {
-            eprintln!("Error: {}", e);
-            eprintln!("Token sync requires Claude Code token. Please login and try again.");
-            std::process::exit(1);
-        }
-        println!("✓ Claude Code token detected");
-    } else {
-        println!("\n[3/5] Claude Code token verified");
-    }
-
-    // Step 4: Export tokens to archive
-    println!("\n[4/5] Exporting tokens...");
-    let export_result = match export_tokens() {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error exporting tokens: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    println!(
-        "✓ Archive created: {} ({} bytes)",
-        export_result.archive_path.display(),
-        export_result.size_bytes
-    );
-
-    // Step 5: Transfer to VPS via SSH
-    println!("\n[5/5] Transferring to VPS...");
-    let archive_path = export_result.archive_path;
-    let remote_path = "/tmp/spoq-tokens.tar.gz";
-
-    // Use scp to transfer the archive
-    let scp_output = Command::new("scp")
-        .arg("-o")
-        .arg("StrictHostKeyChecking=no")
-        .arg("-o")
-        .arg("UserKnownHostsFile=/dev/null")
-        .arg(&archive_path)
-        .arg(format!("root@{}:{}", vps_ip, remote_path))
-        .output();
-
-    match scp_output {
-        Ok(output) if output.status.success() => {
-            println!("✓ Archive transferred to VPS: {}", remote_path);
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("Error: SCP transfer failed");
-            eprintln!("{}", stderr);
-            std::process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("Error: Failed to execute scp: {}", e);
-            eprintln!("Make sure scp is installed and SSH access to the VPS is configured.");
-            std::process::exit(1);
-        }
-    }
-
-    // Extract the archive on the VPS
-    println!("Extracting archive on VPS...");
-    let ssh_output = Command::new("ssh")
-        .arg("-o")
-        .arg("StrictHostKeyChecking=no")
-        .arg("-o")
-        .arg("UserKnownHostsFile=/dev/null")
-        .arg(format!("root@{}", vps_ip))
-        .arg("bash")
-        .arg("-c")
-        .arg(format!(
-            "cd /tmp && tar -xzf {} && rm {}",
-            remote_path, remote_path
-        ))
-        .output();
-
-    match ssh_output {
-        Ok(output) if output.status.success() => {
-            println!("✓ Archive extracted successfully");
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!("Warning: Archive extraction had issues");
-            eprintln!("{}", stderr);
-        }
-        Err(e) => {
-            eprintln!("Warning: Failed to extract archive: {}", e);
-        }
-    }
-
-    // Clean up local archive
-    if let Err(e) = std::fs::remove_file(&archive_path) {
-        eprintln!("Warning: Failed to clean up local archive: {}", e);
-    }
-
-    println!("\n✓ Token synchronization complete!");
-    println!("Tokens have been transferred to your VPS at {}", vps_ip);
-
-    Ok(())
-}
-
-/// Handle the --update flag for manual update check and installation.
-///
-/// This function runs the complete update flow:
-/// 1. Check for available updates
-/// 2. Download the update if available
-/// 3. Install the update
-/// 4. Exit with success or error message
-fn handle_manual_update() -> Result<()> {
-    use spoq::update::{
-        check_for_update, cleanup_backup, detect_platform, download_binary, install_update,
-    };
-
-    // Create a runtime for async operations
-    let runtime = tokio::runtime::Runtime::new()?;
-
-    runtime.block_on(async {
-        // Step 1: Check for updates
-        println!("Checking for updates...");
-        let check_result = match check_for_update().await {
-            Ok(result) => result,
-            Err(e) => {
-                eprintln!("Error checking for updates: {}", e);
-                std::process::exit(1);
-            }
-        };
-
-        if !check_result.update_available {
-            println!(
-                "You are already running the latest version ({}).",
-                check_result.current_version
-            );
-            std::process::exit(0);
-        }
-
-        println!(
-            "Update available: {} -> {}",
-            check_result.current_version, check_result.latest_version
-        );
-
-        // Step 2: Download the update
-        println!("Downloading update...");
-        let platform = match detect_platform() {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Error detecting platform: {}", e);
-                std::process::exit(1);
-            }
-        };
-
-        let download_result =
-            match download_binary(platform, Some(&check_result.latest_version)).await {
-                Ok(result) => result,
-                Err(e) => {
-                    eprintln!("Error downloading update: {}", e);
-                    std::process::exit(1);
-                }
-            };
-
-        println!(
-            "Downloaded {} bytes to {}",
-            download_result.file_size,
-            download_result.file_path.display()
-        );
-
-        // Step 3: Install the update
-        println!("Installing update...");
-        let install_result = match install_update(
-            &download_result.file_path,
-            Some(&check_result.latest_version),
-        ) {
-            Ok(result) => result,
-            Err(e) => {
-                eprintln!("Error installing update: {}", e);
-                eprintln!("The downloaded update is still available for manual installation.");
-                std::process::exit(1);
-            }
-        };
-
-        println!(
-            "Successfully updated to version {}!",
-            check_result.latest_version
-        );
-        println!("Backup saved to: {}", install_result.backup_path.display());
-        println!("\nRestart spoq to use the new version.");
-
-        // Clean up old backups (optional - keep the most recent)
-        let _ = cleanup_backup();
-
-        std::process::exit(0);
-    })
 }
 
 /// Attempt to refresh an expired access token using the refresh token.
@@ -453,20 +176,10 @@ fn fetch_vps_from_api(
 }
 
 fn main() -> Result<()> {
-    // Handle --version flag before any initialization
-    if std::env::args().any(|arg| arg == "--version") {
-        println!("spoq {}", VERSION);
-        std::process::exit(0);
-    }
-
-    // Handle --update flag for manual update check
-    if std::env::args().any(|arg| arg == "--update") {
-        return handle_manual_update();
-    }
-
-    // Handle /sync or --sync flag for token migration
-    if std::env::args().any(|arg| arg == "/sync" || arg == "--sync") {
-        return handle_sync_command();
+    // Handle CLI commands before any TUI initialization
+    let command = parse_args(std::env::args());
+    if let Some(result) = run_cli_command(command) {
+        return result;
     }
 
     // Initialize tracing to write to /tmp/spoq_debug.log
@@ -783,38 +496,12 @@ fn main() -> Result<()> {
 
     // Debug dashboard available at http://localhost:3030 if debug_tx is Some
 
-    // Setup terminal
+    // Setup terminal using RAII pattern
     // Small delay to let PTY fully initialize (needed for some terminal emulators)
     thread::sleep(Duration::from_millis(100));
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
 
-    // Enable keyboard enhancement for modern terminals (Kitty protocol)
-    // This allows Ctrl+Enter and Shift+Enter to work properly
-    // Silently fails on unsupported terminals (Terminal.app, Warp, etc.)
-    let _ = execute!(
-        stdout,
-        PushKeyboardEnhancementFlags(
-            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
-        )
-    );
-
-    // Enter alternate screen, enable bracketed paste, and mouse capture for scroll events
-    // Note: Mouse capture is enabled but click events are ignored in the handler,
-    // allowing scroll wheel to work while terminal handles text selection natively
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableBracketedPaste,
-        EnableMouseCapture
-    )?;
-
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-
-    // Clear the terminal
-    terminal.clear()?;
+    // Create terminal manager - handles all setup and cleanup via RAII
+    let mut term_manager = TerminalManager::new()?;
 
     // Build VPS URL from state for app initialization
     let app_vps_url = vps_state.as_ref().and_then(|vps| {
@@ -831,7 +518,7 @@ fn main() -> Result<()> {
     app.log_initial_auth_state();
 
     // Capture initial terminal dimensions
-    let size = terminal.size()?;
+    let size = term_manager.size()?;
     app.update_terminal_dimensions(size.width, size.height);
 
     // Initialize server connection - user is already authenticated with ready VPS
@@ -884,13 +571,13 @@ fn main() -> Result<()> {
     });
 
     // Main event loop
-    let result = runtime.block_on(run_app(&mut terminal, &mut app));
+    let result = runtime.block_on(run_app(term_manager.terminal(), &mut app));
 
     // Before exiting, save input history
     app.input_history.save();
 
-    // Restore terminal
-    restore_terminal(&mut terminal)?;
+    // Restore terminal explicitly (also happens via Drop, but this shows intent)
+    term_manager.restore()?;
 
     // Cleanup debug server if it was started
     if let Some(handle) = debug_server_handle {
@@ -923,63 +610,6 @@ async fn start_debug_system() -> (
             (None, None)
         }
     }
-}
-
-/// Setup panic hook to restore terminal on panic
-fn setup_panic_hook() {
-    use std::io::Write;
-    let original_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |panic_info| {
-        // Try to restore terminal state
-        // Pop keyboard enhancement flags BEFORE disabling raw mode
-        let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
-
-        let _ = disable_raw_mode();
-        let _ = execute!(
-            io::stdout(),
-            DisableMouseCapture,
-            DisableBracketedPaste,
-            LeaveAlternateScreen
-        );
-        let _ = execute!(io::stdout(), Show);
-
-        // CRITICAL: Hard reset Kitty keyboard protocol AFTER leaving alternate screen
-        // Ghostty (and potentially other terminals) need this sent after leaving alternate screen
-        // CSI = 0 u sets all keyboard enhancement flags to zero (non-stack based reset)
-        let _ = write!(io::stdout(), "\x1b[=0u");
-        let _ = io::stdout().flush();
-
-        // Call the original panic hook
-        original_hook(panic_info);
-    }));
-}
-
-/// Restore terminal to normal mode
-fn restore_terminal<B: ratatui::backend::Backend + std::io::Write>(
-    terminal: &mut Terminal<B>,
-) -> Result<()>
-where
-    B::Error: Send + Sync + 'static,
-{
-    // Pop keyboard enhancement flags (crossterm's standard approach)
-    let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
-
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        DisableMouseCapture,
-        DisableBracketedPaste,
-        LeaveAlternateScreen
-    )?;
-
-    // CRITICAL: Hard reset Kitty keyboard protocol AFTER leaving alternate screen
-    // Some terminals (Ghostty) need this sent after leaving alternate screen
-    // CSI = 0 u sets all keyboard enhancement flags to zero (non-stack based reset)
-    let _ = write!(terminal.backend_mut(), "\x1b[=0u");
-    let _ = io::Write::flush(terminal.backend_mut());
-
-    terminal.show_cursor()?;
-    Ok(())
 }
 
 async fn run_app<B: ratatui::backend::Backend>(
