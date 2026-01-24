@@ -1084,20 +1084,6 @@ impl CentralApiClient {
         }
 
         let data: ByovpsProvisionResponse = response.json().await?;
-
-        // Debug: Print the full response
-        eprintln!("\n[DEBUG] Provision response:");
-        eprintln!("  Status: {}", data.status);
-        eprintln!("  Hostname: {:?}", data.hostname);
-        eprintln!("  Message: {:?}", data.message);
-        if let Some(ref install_script) = data.install_script {
-            eprintln!("  Install script status: {}", install_script.status);
-            if let Some(ref output) = install_script.output {
-                eprintln!("  Install script output (first 500 chars): {}",
-                    &output.chars().take(500).collect::<String>());
-            }
-        }
-
         Ok(data)
     }
 

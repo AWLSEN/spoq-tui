@@ -500,7 +500,7 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
                 SetupStep::CredsVerify,
                 format!(
                     "Credential verification failed: {}. \
-                     Please run 'gh auth login' and 'claude login' locally, \
+                     Please run 'gh auth login' and 'claude' (then /login) locally, \
                      then run 'spoq --sync' to sync credentials.",
                     failures.join(", ")
                 ),

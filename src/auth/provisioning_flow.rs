@@ -17,7 +17,7 @@ use super::central_api::{
 };
 use super::credentials::{Credentials, CredentialsManager};
 use super::token_migration::{detect_tokens, export_tokens, wait_for_claude_code_token};
-use crate::setup::health_wait::wait_for_health;
+use crate::cli_output::{self, icons, SPINNER_CHARS};
 
 /// VPS type selection.
 #[derive(Debug, Clone, PartialEq)]
@@ -59,9 +59,6 @@ const PAYMENT_POLL_INTERVAL_SECS: u64 = 5;
 
 /// Maximum number of payment poll attempts before timing out.
 const PAYMENT_MAX_POLL_ATTEMPTS: u32 = 120; // 10 minutes at 5 second intervals
-
-/// Spinner characters for loading animation.
-const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 /// Set up Ctrl+C handler that sets the interrupted flag.
 /// Returns the Arc<AtomicBool> that will be set to true on interrupt.
@@ -867,43 +864,73 @@ fn run_byovps_flow_with_retry(
                 // request timed out. Instead of retrying provisioning, we should
                 // poll the conductor health endpoint to check if it came up.
                 if is_timeout_error(&error) {
-                    println!("\nProvisioning request timed out.");
-                    println!("The backend may still be setting up your VPS.");
-                    println!("Checking if conductor is healthy...\n");
+                    // Use clean UI for timeout recovery
+                    cli_output::print_header("SPOQ VPS SETUP (Recovery)");
 
-                    // Construct the health URL from the VPS IP
-                    let health_url = format!("http://{}:8000", byovps_creds.vps_ip);
+                    // STEP 3: HEALTH CHECK (recovery mode)
+                    cli_output::print_step_start(3, "HEALTH CHECK");
+                    cli_output::print_step_line(icons::WARNING, "Request timed out, checking health...");
 
-                    // Poll health endpoint for 2 minutes
-                    match runtime.block_on(wait_for_health(&health_url, HEALTH_CHECK_TIMEOUT_SECS)) {
+                    // Use hostname (HTTPS via Cloudflare)
+                    let hostname = format!("{}.spoq.dev", byovps_creds.ssh_username);
+                    let health_url = format!("https://{}", hostname);
+                    match wait_for_health_with_ui(runtime, &health_url, HEALTH_CHECK_TIMEOUT_SECS, interrupted) {
                         Ok(()) => {
-                            println!("\nVPS is healthy! Provisioning succeeded.");
+                            cli_output::print_step_spinner_done(icons::SUCCESS, &format!("Conductor healthy at {}", health_url));
+                            cli_output::print_step_end();
 
-                            // Run token migration now that VPS is ready
-                            println!("Running token migration...");
-                            run_token_migration();
+                            // STEP 4: CREDENTIAL SYNC
+                            cli_output::print_step_start(4, "CREDENTIAL SYNC");
+                            let migration_result = run_token_migration();
+                            if migration_result.success {
+                                for token_type in &migration_result.detected_tokens {
+                                    cli_output::print_step_line(icons::SUCCESS, &format!("{} synced", token_type));
+                                }
+                            }
+                            cli_output::print_step_end();
 
-                            // Verify tokens work on VPS
-                            println!("\nVerifying tokens on VPS...");
+                            // STEP 5: VERIFICATION
+                            cli_output::print_step_start(5, "VERIFICATION");
+                            let mut has_warnings = false;
                             match super::token_verification::verify_vps_tokens(
                                 &byovps_creds.vps_ip,
                                 &byovps_creds.ssh_username,
                                 &byovps_creds.ssh_password,
                             ) {
                                 Ok(verification) => {
-                                    super::token_verification::display_vps_verification_results(&verification);
+                                    if verification.claude_code_works {
+                                        cli_output::print_step_line(icons::SUCCESS, "Claude Code verified on VPS");
+                                    } else {
+                                        has_warnings = true;
+                                        cli_output::print_step_line(icons::FAILURE, "Claude Code verification failed");
+                                    }
+                                    if verification.github_cli_works {
+                                        cli_output::print_step_line(icons::SUCCESS, "GitHub CLI verified on VPS");
+                                    } else {
+                                        has_warnings = true;
+                                        cli_output::print_step_line(icons::FAILURE, "GitHub CLI verification failed");
+                                    }
                                 }
                                 Err(e) => {
-                                    eprintln!("Warning: Could not verify tokens on VPS: {}", e);
-                                    eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
+                                    has_warnings = true;
+                                    cli_output::print_step_line(icons::FAILURE, &format!("Verification error: {}", e));
                                 }
+                            }
+                            cli_output::print_step_end();
+
+                            // Final footer
+                            let conductor_url = format!("https://{}.spoq.dev", byovps_creds.ssh_username);
+                            if has_warnings {
+                                cli_output::print_footer_warning(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
+                            } else {
+                                cli_output::print_footer_success(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
                             }
 
                             return Ok(());
                         }
                         Err(health_err) => {
-                            println!("\nHealth check failed: {}", health_err);
-                            println!("VPS did not become healthy within {} seconds.", HEALTH_CHECK_TIMEOUT_SECS);
+                            cli_output::print_step_spinner_done(icons::FAILURE, &format!("Health check failed: {}", health_err));
+                            cli_output::print_step_end();
                             // Fall through to normal error handling
                         }
                     }
@@ -961,91 +988,98 @@ fn run_byovps_flow_with_retry(
     }
 }
 
-/// Run the BYOVPS provisioning flow.
+/// Run the BYOVPS provisioning flow with clean ASCII UI.
 ///
-/// This flow:
-/// 1. Checks if token is expired and proactively refreshes if needed
-/// 2. Calls the BYOVPS provision endpoint with spinner animation
-/// 3. Polls VPS status every 5 seconds until ready or failed
-/// 4. Updates and saves credentials with VPS info
+/// 5-Step Flow:
+/// 1. AUTHENTICATION - Check token, refresh if needed
+/// 2. VPS PROVISIONING - Call provision API
+/// 3. HEALTH CHECK - Wait for conductor health
+/// 4. CREDENTIAL SYNC - Migrate tokens
+/// 5. VERIFICATION - Verify tokens work on VPS
 fn run_byovps_flow(
     runtime: &tokio::runtime::Runtime,
     credentials: &mut Credentials,
     byovps_creds: &ByovpsCredentials,
     interrupted: &Arc<AtomicBool>,
 ) -> Result<(), CentralApiError> {
-    // Proactive token expiration check
-    println!("Checking token expiration...");
+    // Print header
+    cli_output::print_header("SPOQ VPS SETUP");
+
+    // Track if any verification failed for final status
+    let mut has_warnings = false;
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 1: AUTHENTICATION
+    // ═══════════════════════════════════════════════════════════════════
+    cli_output::print_step_start(1, "AUTHENTICATION");
+
     if credentials.is_expired() {
-        println!("Token is expired");
+        cli_output::print_step_line(icons::WARNING, "Token expired, refreshing...");
+
         if let Some(ref refresh_token) = credentials.refresh_token {
-            println!("Proactively refreshing expired token...");
-
-            // Create temporary client to refresh token
             let temp_client = CentralApiClient::new();
-
-            // Call refresh endpoint
             match runtime.block_on(temp_client.refresh_token(refresh_token)) {
                 Ok(token_response) => {
-                    // Update credentials with new tokens
                     credentials.access_token = Some(token_response.access_token.clone());
-                    // If server returns new refresh_token, use it; otherwise keep the old one
                     if let Some(new_refresh_token) = token_response.refresh_token {
                         credentials.refresh_token = Some(new_refresh_token);
                     }
 
-                    // Calculate and save new expiration time
-                    if let Some(expires_in) = token_response.expires_in {
+                    // Calculate expiration
+                    let expiration_str = if let Some(expires_in) = token_response.expires_in {
                         let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
                         credentials.expires_at = Some(expires_at);
-                        let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                            .map(|dt| dt.to_rfc3339())
-                            .unwrap_or_else(|| "unknown".to_string());
-                        println!("Token refresh successful, new expiration: {}", expiration_time);
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| "unknown".to_string())
+                    } else if let Some(expires_in) = super::central_api::get_jwt_expires_in(&token_response.access_token) {
+                        let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
+                        credentials.expires_at = Some(expires_at);
+                        chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
+                            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| "unknown".to_string())
                     } else {
-                        // Extract expiration from JWT if not provided in response
-                        if let Some(expires_in) = super::central_api::get_jwt_expires_in(&token_response.access_token) {
-                            let expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-                            credentials.expires_at = Some(expires_at);
-                            let expiration_time = chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
-                                .map(|dt| dt.to_rfc3339())
-                                .unwrap_or_else(|| "unknown".to_string());
-                            println!("Token refresh successful, new expiration: {}", expiration_time);
-                        } else {
-                            println!("Token refresh successful");
-                        }
-                    }
+                        "unknown".to_string()
+                    };
 
-                    // Save updated credentials to disk
                     save_credentials(credentials);
+                    cli_output::print_step_line(icons::SUCCESS, &format!("Token valid until {}", expiration_str));
                 }
-                Err(refresh_error) => {
-                    // Refresh failed - clear credentials and return error
-                    println!("Token refresh failed: {}", refresh_error);
+                Err(e) => {
+                    cli_output::print_step_line(icons::FAILURE, "Token refresh failed");
+                    cli_output::print_step_end();
                     credentials.access_token = None;
                     credentials.refresh_token = None;
                     save_credentials(credentials);
                     return Err(CentralApiError::ServerError {
                         status: 401,
-                        message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
+                        message: format!("Token refresh failed: {}", e),
                     });
                 }
             }
         } else {
-            // No refresh token available - clear credentials and return error
+            cli_output::print_step_line(icons::FAILURE, "No refresh token available");
+            cli_output::print_step_end();
             credentials.access_token = None;
             credentials.refresh_token = None;
             save_credentials(credentials);
             return Err(CentralApiError::ServerError {
                 status: 401,
-                message: "No refresh token available. Please sign in again.".to_string(),
+                message: "Please sign in again".to_string(),
             });
         }
     } else {
-        println!("Token is valid");
+        // Token is valid
+        let expiration_str = credentials.expires_at
+            .and_then(|ts| chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0))
+            .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        cli_output::print_step_line(icons::SUCCESS, "Authenticated");
+        cli_output::print_step_line(icons::SUCCESS, &format!("Token valid until {}", expiration_str));
     }
+    cli_output::print_step_end();
 
-    // Get the (potentially refreshed) access token
+    // Get access token for API calls
     let access_token = credentials
         .access_token
         .as_ref()
@@ -1055,15 +1089,17 @@ fn run_byovps_flow(
         })?;
 
     let mut client = CentralApiClient::new().with_auth(access_token);
-
-    // Set refresh token if available for auto-refresh
     if let Some(ref refresh_token) = credentials.refresh_token {
         client.set_refresh_token(Some(refresh_token.clone()));
     }
 
-    // Step 1: Call provision_byovps with spinner
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 2: VPS PROVISIONING
+    // ═══════════════════════════════════════════════════════════════════
+    cli_output::print_step_start(2, "VPS PROVISIONING");
     check_interrupt(interrupted);
-    let provision_response = provision_byovps_with_spinner(
+
+    let provision_response = provision_byovps_with_spinner_ui(
         runtime,
         &mut client,
         &byovps_creds.vps_ip,
@@ -1072,11 +1108,10 @@ fn run_byovps_flow(
         interrupted,
     )?;
 
-    // Check if tokens were refreshed during the API call and update credentials
+    // Update credentials if tokens were refreshed
     let (new_access_token, new_refresh_token) = client.get_tokens();
     if let Some(access_token) = new_access_token {
         if credentials.access_token.as_ref() != Some(&access_token) {
-            // Token was refreshed, update and save credentials
             credentials.access_token = Some(access_token);
             if let Some(refresh_token) = new_refresh_token {
                 credentials.refresh_token = Some(refresh_token);
@@ -1085,113 +1120,190 @@ fn run_byovps_flow(
         }
     }
 
-    // Check initial provision status
+    // Check provision status
     match provision_response.status.to_lowercase().as_str() {
         "failed" | "error" => {
-            let mut msg = provision_response
-                .message
-                .unwrap_or_else(|| "BYOVPS provisioning failed".to_string());
-
-            // Include install script output if available
-            if let Some(ref install_script) = provision_response.install_script {
-                if let Some(ref output) = install_script.output {
-                    msg = format!("{}\n\nScript output:\n{}", msg, output);
-                }
-            }
-
-            return Err(CentralApiError::ServerError {
-                status: 500,
-                message: msg,
-            });
+            cli_output::print_step_line(icons::FAILURE, "Provisioning failed");
+            cli_output::print_step_end();
+            let msg = provision_response.message.unwrap_or_else(|| "Unknown error".to_string());
+            return Err(CentralApiError::ServerError { status: 500, message: msg });
         }
         "ready" | "running" | "active" => {
-            // Already ready - run token migration
-            println!("Running token migration...");
-            run_token_migration();
-
-            // Verify tokens work on VPS
-            println!("\nVerifying tokens on VPS...");
-            match super::token_verification::verify_vps_tokens(
-                &byovps_creds.vps_ip,
-                &byovps_creds.ssh_username,
-                &byovps_creds.ssh_password,
-            ) {
-                Ok(verification) => {
-                    super::token_verification::display_vps_verification_results(&verification);
-                }
-                Err(e) => {
-                    eprintln!("Warning: Could not verify tokens on VPS: {}", e);
-                    eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
-                }
-            }
-
-            display_byovps_result(&provision_response);
-            return Ok(());
+            cli_output::print_step_line(icons::SUCCESS, "VPS provisioned successfully");
         }
         _ => {
             // Need to poll for status
+            check_interrupt(interrupted);
+            let _final_status = poll_byovps_status_with_interrupt(runtime, &mut client, interrupted)?;
+            cli_output::print_step_line(icons::SUCCESS, "VPS provisioned successfully");
         }
     }
+    cli_output::print_step_end();
 
-    // Display initial status
-    if let Some(msg) = &provision_response.message {
-        println!("\n{}", msg);
-    }
-
-    // Step 2: Poll VPS status until ready or failed
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 3: HEALTH CHECK
+    // ═══════════════════════════════════════════════════════════════════
+    cli_output::print_step_start(3, "HEALTH CHECK");
     check_interrupt(interrupted);
-    let final_status = poll_byovps_status_with_interrupt(runtime, &mut client, interrupted)?;
 
-    // Check if tokens were refreshed during status polling and update credentials
-    let (new_access_token, new_refresh_token) = client.get_tokens();
-    if let Some(access_token) = new_access_token {
-        if credentials.access_token.as_ref() != Some(&access_token) {
-            credentials.access_token = Some(access_token);
-            if let Some(refresh_token) = new_refresh_token {
-                credentials.refresh_token = Some(refresh_token);
-            }
-            save_credentials(credentials);
+    // Use hostname (HTTPS via Cloudflare) if available, otherwise fall back to IP
+    let health_url = if let Some(ref hostname) = provision_response.hostname {
+        format!("https://{}", hostname)
+    } else {
+        format!("http://{}:8080", byovps_creds.vps_ip)
+    };
+    match wait_for_health_with_ui(runtime, &health_url, HEALTH_CHECK_TIMEOUT_SECS, interrupted) {
+        Ok(()) => {
+            cli_output::print_step_spinner_done(icons::SUCCESS, &format!("Conductor healthy at {}", health_url));
+        }
+        Err(e) => {
+            cli_output::print_step_spinner_done(icons::FAILURE, &format!("Health check failed: {}", e));
+            cli_output::print_troubleshoot(&[
+                &format!("1. SSH to VPS: ssh {}@{}", byovps_creds.ssh_username, byovps_creds.vps_ip),
+                "2. Check logs: journalctl -u conductor -f",
+                "3. Restart:    systemctl restart conductor",
+            ]);
+            cli_output::print_step_end();
+            return Err(CentralApiError::ServerError {
+                status: 503,
+                message: format!("Health check failed: {}", e),
+            });
         }
     }
+    cli_output::print_step_end();
 
-    // Display final result
-    println!("\nBYOVPS provisioning complete!");
-    println!("  Status: {}", final_status.status);
-    if let Some(hostname) = &final_status.hostname {
-        println!("  Hostname: {}", hostname);
-    }
-    if let Some(ip) = &final_status.ip {
-        println!("  IP: {}", ip);
-    }
-    if let Some(url) = &final_status.url {
-        println!("  URL: {}", url);
-    }
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 4: CREDENTIAL SYNC
+    // ═══════════════════════════════════════════════════════════════════
+    cli_output::print_step_start(4, "CREDENTIAL SYNC");
+    check_interrupt(interrupted);
 
-    // Run token migration after BYOVPS is ready
-    println!("Running token migration...");
-    run_token_migration();
+    let migration_result = run_token_migration();
+    if migration_result.success {
+        for token_type in &migration_result.detected_tokens {
+            cli_output::print_step_line(icons::SUCCESS, &format!("{} synced", token_type));
+        }
+    } else {
+        has_warnings = true;
+        cli_output::print_step_line(icons::WARNING, "Token sync had issues");
+        if let Some(warning) = &migration_result.warning {
+            cli_output::print_step_line(icons::WARNING, warning);
+        }
+    }
+    cli_output::print_step_end();
 
-    // Verify tokens work on VPS
-    println!("\nVerifying tokens on VPS...");
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 5: VERIFICATION
+    // ═══════════════════════════════════════════════════════════════════
+    cli_output::print_step_start(5, "VERIFICATION");
+    check_interrupt(interrupted);
+
     match super::token_verification::verify_vps_tokens(
         &byovps_creds.vps_ip,
         &byovps_creds.ssh_username,
         &byovps_creds.ssh_password,
     ) {
         Ok(verification) => {
-            super::token_verification::display_vps_verification_results(&verification);
+            if verification.claude_code_works {
+                cli_output::print_step_line(icons::SUCCESS, "Claude Code verified on VPS");
+            } else {
+                has_warnings = true;
+                cli_output::print_step_line(icons::FAILURE, "Claude Code verification failed");
+            }
+
+            if verification.github_cli_works {
+                cli_output::print_step_line(icons::SUCCESS, "GitHub CLI verified on VPS");
+            } else {
+                has_warnings = true;
+                cli_output::print_step_line(icons::FAILURE, "GitHub CLI verification failed");
+            }
+
+            if !verification.claude_code_works || !verification.github_cli_works {
+                cli_output::print_troubleshoot(&[
+                    &format!("1. SSH to VPS: ssh {}@{}", byovps_creds.ssh_username, byovps_creds.vps_ip),
+                    "2. Run: claude, then type /login (if Claude failed)",
+                    "3. Run: gh auth login (if GitHub failed)",
+                ]);
+            }
         }
         Err(e) => {
-            eprintln!("Warning: Could not verify tokens on VPS: {}", e);
-            eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
+            has_warnings = true;
+            cli_output::print_step_line(icons::FAILURE, &format!("Verification error: {}", e));
         }
+    }
+    cli_output::print_step_end();
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FINAL SUMMARY
+    // ═══════════════════════════════════════════════════════════════════
+    let conductor_url = if let Some(ref hostname) = provision_response.hostname {
+        format!("https://{}", hostname)
+    } else {
+        format!("http://{}:8080", byovps_creds.vps_ip)
+    };
+    if has_warnings {
+        cli_output::print_footer_warning(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
+    } else {
+        cli_output::print_footer_success(&byovps_creds.vps_ip, &conductor_url, &byovps_creds.ssh_username);
     }
 
     Ok(())
 }
 
-/// Call provision_byovps with spinner animation.
-fn provision_byovps_with_spinner(
+/// Wait for health with UI spinner.
+fn wait_for_health_with_ui(
+    runtime: &tokio::runtime::Runtime,
+    url: &str,
+    timeout_secs: u64,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+    let mut frame = 0usize;
+
+    loop {
+        check_interrupt(interrupted);
+
+        let elapsed = start.elapsed().as_secs();
+        if elapsed >= timeout_secs {
+            return Err(format!("Timeout after {}s", timeout_secs));
+        }
+
+        // Show spinner
+        let spinner = SPINNER_CHARS[frame % SPINNER_CHARS.len()];
+        cli_output::print_step_spinner(spinner, &format!("Waiting for conductor... ({}s)", elapsed));
+        frame += 1;
+
+        // Try health check
+        match runtime.block_on(async {
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .map_err(|e| e.to_string())?;
+
+            let resp = client.get(&format!("{}/health", url))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+
+            if resp.status().is_success() {
+                Ok(())
+            } else {
+                Err(format!("Status: {}", resp.status()))
+            }
+        }) {
+            Ok(()) => return Ok(()),
+            Err(_) => {
+                // Wait before next attempt
+                thread::sleep(Duration::from_secs(3));
+            }
+        }
+    }
+}
+
+/// Provision BYOVPS with spinner in step box.
+fn provision_byovps_with_spinner_ui(
     runtime: &tokio::runtime::Runtime,
     client: &mut CentralApiClient,
     vps_ip: &str,
@@ -1202,50 +1314,32 @@ fn provision_byovps_with_spinner(
     use std::sync::mpsc;
     use std::time::Instant;
 
-    // Start spinner in separate thread
     let (tx, rx) = mpsc::channel();
     let spinner_interrupted = Arc::clone(interrupted);
 
     let spinner_handle = thread::spawn(move || {
-        let mut frame = 0;
+        let mut frame = 0usize;
         let start = Instant::now();
 
         loop {
-            // Check for completion signal
-            if rx.try_recv().is_ok() {
+            if rx.try_recv().is_ok() || spinner_interrupted.load(Ordering::SeqCst) {
                 break;
             }
 
-            // Check for interrupt
-            if spinner_interrupted.load(Ordering::SeqCst) {
-                break;
-            }
-
-            // Display spinner
             let spinner = SPINNER_CHARS[frame % SPINNER_CHARS.len()];
             let elapsed = start.elapsed().as_secs();
-            print!("\r{} Provisioning VPS... ({}s)", spinner, elapsed);
-            io::stdout().flush().ok();
-
+            cli_output::print_step_spinner(spinner, &format!("Provisioning VPS... ({}s)", elapsed));
             frame += 1;
             thread::sleep(Duration::from_millis(100));
         }
-
-        // Clear spinner line
-        print!("\r                                        \r");
-        io::stdout().flush().ok();
     });
 
-    // Execute the async provision call
     let result = runtime.block_on(client.provision_byovps(vps_ip, ssh_username, ssh_password));
 
-    // Stop the spinner
     let _ = tx.send(());
     let _ = spinner_handle.join();
 
-    // Check for interrupt
     check_interrupt(interrupted);
-
     result
 }
 
@@ -1304,21 +1398,6 @@ fn poll_byovps_status_with_interrupt(
         // Check interrupt before sleeping
         check_interrupt(interrupted);
         thread::sleep(Duration::from_secs(BYOVPS_POLL_INTERVAL_SECS));
-    }
-}
-
-/// Display BYOVPS provisioning result.
-fn display_byovps_result(response: &ByovpsProvisionResponse) {
-    println!("\nBYOVPS provisioning complete!");
-    println!("  Status: {}", response.status);
-    if let Some(hostname) = &response.hostname {
-        println!("  Hostname: {}", hostname);
-    }
-    if let Some(ip) = &response.ip {
-        println!("  IP: {}", ip);
-    }
-    if let Some(url) = &response.url {
-        println!("  URL: {}", url);
     }
 }
 

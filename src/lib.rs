@@ -5,6 +5,7 @@
 pub mod app;
 pub mod auth;
 pub mod cache;
+pub mod cli_output;
 pub mod conductor;
 pub mod debug;
 pub mod events;

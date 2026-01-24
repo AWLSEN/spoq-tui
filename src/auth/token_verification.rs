@@ -264,7 +264,7 @@ pub fn display_missing_tokens_error(verification: &LocalTokenVerification) {
     println!("\nTo continue, please login:");
 
     if !verification.claude_code_present {
-        println!("  1. Claude Code: Run 'claude login'");
+        println!("  1. Claude Code: Run 'claude', then type /login");
     }
     if !verification.github_cli_present {
         println!("  2. GitHub CLI: Run 'gh auth login'");
@@ -303,7 +303,7 @@ pub fn display_vps_verification_results(verification: &VpsTokenVerification) {
 
         if !verification.claude_code_works {
             println!("  1. SSH to VPS: ssh spoq@[VPS_IP]");
-            println!("  2. Run: claude login");
+            println!("  2. Run: claude, then type /login");
             println!("  3. Verify: claude -p \"test\"");
         }
 

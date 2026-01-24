@@ -552,7 +552,7 @@ fn main() -> Result<()> {
             } else {
                 eprintln!("\n⚠️  Warning: Required tokens missing on local machine:");
                 if !verification.claude_code_present {
-                    eprintln!("  ✗ Claude Code - not found. Run: claude login");
+                    eprintln!("  ✗ Claude Code - not found. Run: claude, then type /login");
                 }
                 if !verification.github_cli_present {
                     eprintln!("  ✗ GitHub CLI - not found. Run: gh auth login");

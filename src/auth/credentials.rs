@@ -1,7 +1,7 @@
 //! Credentials storage and management for Spoq TUI.
 //!
 //! This module provides functionality for storing and loading
-//! authentication credentials from `~/.spoq/credentials.json`.
+//! authentication credentials from `~/.spoq/.credentials.json`.
 
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
@@ -12,7 +12,7 @@ use std::path::PathBuf;
 const CREDENTIALS_DIR: &str = ".spoq";
 
 /// The credentials file name.
-const CREDENTIALS_FILE: &str = "credentials.json";
+const CREDENTIALS_FILE: &str = ".credentials.json";
 
 /// Authentication credentials for the Spoq platform.
 ///

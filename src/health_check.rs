@@ -139,7 +139,7 @@ pub fn display_health_check_results(result: &HealthCheckResult, vps_ip: Option<&
 
         if !result.claude_code_works {
             println!("  2. Authenticate Claude Code:");
-            println!("     claude login");
+            println!("     Run: claude, then type /login");
         }
 
         if !result.github_cli_works {
