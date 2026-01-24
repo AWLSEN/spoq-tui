@@ -14,6 +14,7 @@ pub mod domain;
 pub mod error;
 pub mod events;
 pub mod health_check;
+pub mod input;
 pub mod input_history;
 pub mod markdown;
 pub mod models;

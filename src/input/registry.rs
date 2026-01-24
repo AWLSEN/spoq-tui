@@ -1,0 +1,612 @@
+//! Command registry for dispatching keyboard input to commands.
+//!
+//! The [`CommandRegistry`] provides a centralized place for mapping key events
+//! to commands based on the current application context. It handles:
+//! - Global bindings (always active)
+//! - Modal bindings (folder picker, thread switcher, permissions)
+//! - Focus-specific bindings (input vs threads panel)
+//! - Screen-specific bindings (conversation vs command deck)
+
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+use super::command::Command;
+use super::context::{InputContext, ModalType};
+use super::keybindings::{KeyCombo, KeybindingConfig};
+
+/// Registry for dispatching key events to commands.
+///
+/// The registry uses a priority system to determine which command to dispatch:
+/// 1. Global bindings (Ctrl+C, etc.) - checked first
+/// 2. Modal bindings (when a modal is active) - highest priority when modal is open
+/// 3. Focus bindings (input vs threads) - depends on current focus
+/// 4. Screen bindings (conversation vs command deck) - screen-specific commands
+/// 5. Character input (when focused on input) - lowest priority, catches all printable chars
+#[derive(Debug, Clone)]
+pub struct CommandRegistry {
+    /// The keybinding configuration
+    config: KeybindingConfig,
+}
+
+impl Default for CommandRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommandRegistry {
+    /// Creates a new command registry with default keybindings.
+    pub fn new() -> Self {
+        Self {
+            config: KeybindingConfig::new(),
+        }
+    }
+
+    /// Creates a command registry with a custom keybinding configuration.
+    pub fn with_config(config: KeybindingConfig) -> Self {
+        Self { config }
+    }
+
+    /// Dispatches a key event to a command based on the current context.
+    ///
+    /// Returns `Some(Command)` if the key event maps to a command,
+    /// or `None` if the key should be ignored.
+    pub fn dispatch(&self, key: KeyEvent, context: &InputContext) -> Option<Command> {
+        let combo = KeyCombo::new(key.code, key.modifiers);
+
+        // Priority 1: Global bindings (Ctrl+C always works)
+        // But check Ctrl+C specifically because it should always quit
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            return Some(Command::Quit);
+        }
+
+        // Priority 2: Modal bindings (modal takes over all input)
+        if context.is_modal_active() {
+            return self.dispatch_modal(key, context);
+        }
+
+        // Priority 3: Check remaining global bindings
+        if let Some(cmd) = self.config.get_global(&combo) {
+            return Some(self.resolve_global_command(cmd, context));
+        }
+
+        // Priority 4: Focus-specific bindings
+        if context.is_input_focused() {
+            return self.dispatch_input(key, context);
+        } else {
+            return self.dispatch_navigation(key, context);
+        }
+    }
+
+    /// Dispatches input when a modal is active.
+    fn dispatch_modal(&self, key: KeyEvent, context: &InputContext) -> Option<Command> {
+        let combo = KeyCombo::new(key.code, key.modifiers);
+
+        match context.modal {
+            ModalType::FolderPicker => {
+                // Check modal-specific bindings first
+                if let Some(cmd) = self.config.get_modal(ModalType::FolderPicker, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Handle character input for filter (no modifiers)
+                if let KeyCode::Char(c) = key.code {
+                    if !key.modifiers.intersects(
+                        KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                    ) {
+                        return Some(Command::FolderPickerTypeChar(c));
+                    }
+                }
+
+                // Ignore other keys in folder picker
+                Some(Command::Noop)
+            }
+
+            ModalType::ThreadSwitcher => {
+                // Check modal-specific bindings first
+                if let Some(cmd) = self.config.get_modal(ModalType::ThreadSwitcher, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Any other key confirms selection
+                Some(Command::ConfirmSwitcherSelection)
+            }
+
+            ModalType::Permission => {
+                // Permission prompt: check for Y/N/A keys
+                if let KeyCode::Char(c) = key.code {
+                    return Some(Command::HandlePermissionKey(c));
+                }
+                // Ignore other keys during permission prompt
+                Some(Command::Noop)
+            }
+
+            ModalType::AskUserQuestion => {
+                // Check modal-specific bindings
+                if let Some(cmd) = self.config.get_modal(ModalType::AskUserQuestion, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Handle N/n to deny
+                if let KeyCode::Char('n') | KeyCode::Char('N') = key.code {
+                    return Some(Command::DenyPermission);
+                }
+
+                // Ignore other keys
+                Some(Command::Noop)
+            }
+
+            ModalType::AskUserQuestionOther => {
+                // Check modal-specific bindings
+                if let Some(cmd) = self.config.get_modal(ModalType::AskUserQuestionOther, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Handle character input
+                if let KeyCode::Char(c) = key.code {
+                    return Some(Command::QuestionTypeChar(c));
+                }
+
+                // Ignore other keys
+                Some(Command::Noop)
+            }
+
+            ModalType::None => {
+                // Should not reach here, but handle gracefully
+                None
+            }
+        }
+    }
+
+    /// Dispatches input when the input field is focused.
+    fn dispatch_input(&self, key: KeyEvent, context: &InputContext) -> Option<Command> {
+        let combo = KeyCombo::new(key.code, key.modifiers);
+
+        // Check for Shift+Escape first (navigate to command deck)
+        if key.code == KeyCode::Esc && key.modifiers.contains(KeyModifiers::SHIFT) {
+            if context.is_conversation_screen() {
+                return Some(Command::NavigateToCommandDeck);
+            }
+        }
+
+        // Check input editing bindings
+        if let Some(cmd) = self.config.get_input_editing(&combo) {
+            return Some(self.resolve_input_command(cmd, context));
+        }
+
+        // Handle character input (no modifiers except SHIFT for uppercase)
+        if let KeyCode::Char(c) = key.code {
+            if !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+            {
+                // Check for @ trigger for folder picker (only on CommandDeck)
+                if c == '@' && context.is_command_deck_screen() {
+                    // The actual trigger check is context-dependent, handled by App
+                    return Some(Command::InsertChar(c));
+                }
+
+                return Some(Command::InsertChar(c));
+            }
+        }
+
+        // Fall through to screen-specific bindings for things like PageUp/Down
+        if let Some(cmd) = self.config.get_screen(context.screen, &combo) {
+            return Some(cmd.clone());
+        }
+
+        None
+    }
+
+    /// Dispatches input when navigating (not in input field).
+    fn dispatch_navigation(&self, key: KeyEvent, context: &InputContext) -> Option<Command> {
+        let combo = KeyCombo::new(key.code, key.modifiers);
+
+        // Check focus-specific bindings (Threads panel)
+        if let Some(cmd) = self.config.get_focus(context.focus, &combo) {
+            return Some(self.resolve_navigation_command(cmd, context));
+        }
+
+        // Check screen-specific bindings
+        if let Some(cmd) = self.config.get_screen(context.screen, &combo) {
+            return Some(cmd.clone());
+        }
+
+        // Auto-focus to input when user starts typing
+        if let KeyCode::Char(c) = key.code {
+            if !key.modifiers.contains(KeyModifiers::CONTROL) {
+                return Some(Command::InsertChar(c));
+            }
+        }
+
+        None
+    }
+
+    /// Resolves a global command based on context.
+    fn resolve_global_command(&self, cmd: &Command, context: &InputContext) -> Command {
+        match cmd {
+            Command::NavigateToCommandDeck => {
+                if context.is_conversation_screen() {
+                    Command::NavigateToCommandDeck
+                } else {
+                    Command::Noop
+                }
+            }
+            Command::SubmitAsProgramming => {
+                if context.is_command_deck_screen() && !context.input_is_empty {
+                    Command::SubmitAsProgramming
+                } else {
+                    Command::Noop
+                }
+            }
+            _ => cmd.clone(),
+        }
+    }
+
+    /// Resolves an input command based on context.
+    fn resolve_input_command(&self, cmd: &Command, context: &InputContext) -> Command {
+        match cmd {
+            Command::MoveCursorUp => {
+                // If on first line, navigate history up
+                if context.cursor_on_first_line {
+                    Command::HistoryUp
+                } else {
+                    Command::MoveCursorUp
+                }
+            }
+            Command::MoveCursorDown => {
+                // If on last line and navigating history, go forward in history
+                if context.cursor_on_last_line && context.is_navigating_history {
+                    Command::HistoryDown
+                } else if context.cursor_on_last_line {
+                    // On last line but not navigating - noop
+                    Command::Noop
+                } else {
+                    Command::MoveCursorDown
+                }
+            }
+            Command::UnfocusInput => {
+                // Escape behavior depends on screen and input state
+                if context.is_conversation_screen() {
+                    if context.input_is_empty {
+                        Command::NavigateToCommandDeck
+                    } else {
+                        Command::UnfocusInput
+                    }
+                } else {
+                    Command::UnfocusInput
+                }
+            }
+            _ => cmd.clone(),
+        }
+    }
+
+    /// Resolves a navigation command based on context.
+    fn resolve_navigation_command(&self, cmd: &Command, context: &InputContext) -> Command {
+        match cmd {
+            Command::DismissError => {
+                if context.is_conversation_screen() && context.has_errors {
+                    Command::DismissError
+                } else {
+                    Command::Noop
+                }
+            }
+            Command::ToggleReasoning => {
+                if context.is_conversation_screen() {
+                    Command::ToggleReasoning
+                } else {
+                    Command::Noop
+                }
+            }
+            Command::OpenOAuthUrl => {
+                if context.has_oauth_url {
+                    Command::OpenOAuthUrl
+                } else {
+                    Command::Noop
+                }
+            }
+            Command::NavigateToCommandDeck => {
+                if context.is_conversation_screen() {
+                    Command::NavigateToCommandDeck
+                } else {
+                    Command::Noop
+                }
+            }
+            _ => cmd.clone(),
+        }
+    }
+
+    /// Gets the keybinding configuration (for UI display).
+    pub fn config(&self) -> &KeybindingConfig {
+        &self.config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{Focus, Screen};
+    use crate::models::ThreadType;
+    use crossterm::event::KeyEventKind;
+
+    fn make_key_event(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn test_registry_default() {
+        let registry = CommandRegistry::new();
+        assert!(registry.config().global.contains_key(&KeyCombo::ctrl(KeyCode::Char('c'))));
+    }
+
+    #[test]
+    fn test_dispatch_ctrl_c_always_quits() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new();
+
+        let key = make_key_event(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::Quit)));
+    }
+
+    #[test]
+    fn test_dispatch_ctrl_c_quits_even_in_modal() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_modal(ModalType::FolderPicker);
+
+        let key = make_key_event(KeyCode::Char('c'), KeyModifiers::CONTROL);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::Quit)));
+    }
+
+    #[test]
+    fn test_dispatch_folder_picker_escape() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_modal(ModalType::FolderPicker);
+
+        let key = make_key_event(KeyCode::Esc, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::CloseFolderPicker)));
+    }
+
+    #[test]
+    fn test_dispatch_folder_picker_char() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_modal(ModalType::FolderPicker);
+
+        let key = make_key_event(KeyCode::Char('a'), KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::FolderPickerTypeChar('a'))));
+    }
+
+    #[test]
+    fn test_dispatch_thread_switcher_tab() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_modal(ModalType::ThreadSwitcher);
+
+        let key = make_key_event(KeyCode::Tab, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::CycleSwitcherForward)));
+    }
+
+    #[test]
+    fn test_dispatch_thread_switcher_any_key_confirms() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_modal(ModalType::ThreadSwitcher);
+
+        let key = make_key_event(KeyCode::Char('x'), KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::ConfirmSwitcherSelection)));
+    }
+
+    #[test]
+    fn test_dispatch_permission_handles_char() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_modal(ModalType::Permission);
+
+        let key = make_key_event(KeyCode::Char('y'), KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::HandlePermissionKey('y'))));
+    }
+
+    #[test]
+    fn test_dispatch_input_focused_char() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Input);
+
+        let key = make_key_event(KeyCode::Char('a'), KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::InsertChar('a'))));
+    }
+
+    #[test]
+    fn test_dispatch_input_focused_backspace() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Input);
+
+        let key = make_key_event(KeyCode::Backspace, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::Backspace)));
+    }
+
+    #[test]
+    fn test_dispatch_input_focused_alt_backspace() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Input);
+
+        let key = make_key_event(KeyCode::Backspace, KeyModifiers::ALT);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::DeleteWordBackward)));
+    }
+
+    #[test]
+    fn test_dispatch_input_up_on_first_line_navigates_history() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new()
+            .with_focus(Focus::Input)
+            .with_cursor_position(true, false);
+
+        let key = make_key_event(KeyCode::Up, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::HistoryUp)));
+    }
+
+    #[test]
+    fn test_dispatch_input_up_not_on_first_line_moves_cursor() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new()
+            .with_focus(Focus::Input)
+            .with_cursor_position(false, false);
+
+        let key = make_key_event(KeyCode::Up, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::MoveCursorUp)));
+    }
+
+    #[test]
+    fn test_dispatch_threads_panel_up() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Threads);
+
+        let key = make_key_event(KeyCode::Up, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::MoveUp)));
+    }
+
+    #[test]
+    fn test_dispatch_threads_panel_q_quits() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Threads);
+
+        let key = make_key_event(KeyCode::Char('q'), KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::Quit)));
+    }
+
+    #[test]
+    fn test_dispatch_conversation_page_up() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new()
+            .with_screen(Screen::Conversation)
+            .with_focus(Focus::Input);
+
+        let key = make_key_event(KeyCode::PageUp, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::ScrollPageUp)));
+    }
+
+    #[test]
+    fn test_dispatch_escape_in_input_unfocuses() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new()
+            .with_focus(Focus::Input)
+            .with_screen(Screen::CommandDeck);
+
+        let key = make_key_event(KeyCode::Esc, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::UnfocusInput)));
+    }
+
+    #[test]
+    fn test_dispatch_escape_in_input_empty_navigates_back() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new()
+            .with_focus(Focus::Input)
+            .with_screen(Screen::Conversation)
+            .with_input_empty(true);
+
+        let key = make_key_event(KeyCode::Esc, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::NavigateToCommandDeck)));
+    }
+
+    #[test]
+    fn test_dispatch_shift_escape_navigates_back() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new()
+            .with_focus(Focus::Input)
+            .with_screen(Screen::Conversation);
+
+        let key = make_key_event(KeyCode::Esc, KeyModifiers::SHIFT);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::NavigateToCommandDeck)));
+    }
+
+    #[test]
+    fn test_dispatch_ctrl_n_creates_thread() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new();
+
+        let key = make_key_event(KeyCode::Char('n'), KeyModifiers::CONTROL);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::CreateNewThread)));
+    }
+
+    #[test]
+    fn test_dispatch_shift_n_creates_thread() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new();
+
+        let key = make_key_event(KeyCode::Char('N'), KeyModifiers::SHIFT);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::CreateNewThread)));
+    }
+
+    #[test]
+    fn test_dispatch_enter_submits() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Input);
+
+        let key = make_key_event(KeyCode::Enter, KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::SubmitInput(ThreadType::Conversation))));
+    }
+
+    #[test]
+    fn test_dispatch_shift_enter_inserts_newline() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Input);
+
+        let key = make_key_event(KeyCode::Enter, KeyModifiers::SHIFT);
+        let cmd = registry.dispatch(key, &context);
+
+        assert!(matches!(cmd, Some(Command::InsertNewline)));
+    }
+
+    #[test]
+    fn test_dispatch_auto_focus_on_typing() {
+        let registry = CommandRegistry::new();
+        let context = InputContext::new().with_focus(Focus::Threads);
+
+        let key = make_key_event(KeyCode::Char('h'), KeyModifiers::NONE);
+        let cmd = registry.dispatch(key, &context);
+
+        // Should insert the character (which will trigger auto-focus in handler)
+        assert!(matches!(cmd, Some(Command::InsertChar('h'))));
+    }
+}

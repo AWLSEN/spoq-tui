@@ -7,7 +7,7 @@
 //! - [`ThreadSwitcher`] - Thread switcher dialog state
 
 /// Represents which screen is currently active
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Screen {
     #[default]
     CommandDeck,
@@ -15,7 +15,7 @@ pub enum Screen {
 }
 
 /// Represents which UI component has focus
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Focus {
     #[default]
     Threads,
