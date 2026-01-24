@@ -12,8 +12,8 @@ use std::time::Duration;
 use std::path::PathBuf;
 
 use super::central_api::{
-    ByovpsProvisionResponse, CentralApiClient, CentralApiError, DataCenter, VpsPlan,
-    VpsStatusResponse,
+    ByovpsProvisionResponse, CentralApiClient, CentralApiError, ConfirmVpsRequest, DataCenter,
+    VpsPlan, VpsStatusResponse,
 };
 use super::credentials::{Credentials, CredentialsManager};
 use super::token_migration::{detect_tokens, export_tokens, wait_for_claude_code_token};
@@ -618,10 +618,10 @@ fn run_managed_vps_flow(
     let selected_datacenter_id =
         prompt_datacenter_selection_with_interrupt(&ordered_dcs, interrupted)?;
 
-    // Step 7: Provision the VPS
+    // Step 7: Provision the VPS (health-first approach - no DB record yet)
     check_interrupt(interrupted);
     println!("\nProvisioning your VPS...");
-    let provision_result = runtime.block_on(client.provision_vps(
+    let provision_result = runtime.block_on(client.provision_vps_pending(
         &ssh_password,
         Some(&selected_plan.id),
         Some(selected_datacenter_id),
@@ -640,7 +640,7 @@ fn run_managed_vps_flow(
     }
 
     // Handle 409 Conflict - user already has an active VPS
-    let provision_response = match provision_result {
+    let pending_response = match provision_result {
         Ok(response) => response,
         Err(CentralApiError::ServerError { status: 409, .. }) => {
             println!("\nYou already have an active VPS.");
@@ -656,15 +656,42 @@ fn run_managed_vps_flow(
     };
 
     println!("VPS provisioning started!");
-    if let Some(msg) = &provision_response.message {
-        println!("  {}", msg);
+    println!("  {}", pending_response.message);
+    println!("  Hostname: {}", pending_response.hostname);
+
+    // Step 8: Poll health endpoint directly (instead of /api/vps/status)
+    println!("\nWaiting for conductor to be ready...");
+    let health_url = format!("https://{}", pending_response.hostname);
+
+    match wait_for_health_with_ui(runtime, &health_url, MAX_POLL_ATTEMPTS as u64 * POLL_INTERVAL_SECS, interrupted) {
+        Ok(()) => {
+            println!("\n  Conductor is healthy!");
+        }
+        Err(e) => {
+            return Err(CentralApiError::ServerError {
+                status: 503,
+                message: format!("Health check failed: {}", e),
+            });
+        }
     }
 
-    // Step 8: Poll for VPS to be ready
-    println!("\nWaiting for VPS to be ready...");
-    let status = poll_vps_status_with_interrupt(runtime, &mut client, interrupted)?;
+    // Step 9: Confirm VPS with backend (creates DB record)
+    println!("\nConfirming VPS with backend...");
+    let confirm_request = ConfirmVpsRequest {
+        hostname: pending_response.hostname.clone(),
+        ip_address: pending_response.ip_address.clone().unwrap_or_default(),
+        provider_instance_id: pending_response.provider_instance_id,
+        provider_order_id: pending_response.provider_order_id.clone(),
+        plan_id: pending_response.plan_id,
+        template_id: pending_response.template_id,
+        data_center_id: pending_response.data_center_id,
+        jwt_secret: pending_response.jwt_secret.clone(),
+        ssh_password: pending_response.ssh_password.clone(),
+    };
 
-    // Check if tokens were refreshed during status polling and update credentials
+    let status = runtime.block_on(client.confirm_vps(confirm_request))?;
+
+    // Check if tokens were refreshed during confirmation and update credentials
     let (new_access_token, new_refresh_token) = client.get_tokens();
     if let Some(access_token) = new_access_token {
         if credentials.access_token.as_ref() != Some(&access_token) {
@@ -1817,6 +1844,11 @@ pub fn start_stopped_vps(
 }
 
 /// Poll the VPS status with interrupt support.
+///
+/// Note: This function is kept for backwards compatibility but is no longer used
+/// in the main provisioning flow. The new health-first approach polls the conductor's
+/// health endpoint directly instead of /api/vps/status.
+#[allow(dead_code)]
 fn poll_vps_status_with_interrupt(
     runtime: &tokio::runtime::Runtime,
     client: &mut CentralApiClient,

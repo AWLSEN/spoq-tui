@@ -836,6 +836,174 @@ impl CentralApiClient {
         Ok(data)
     }
 
+    /// Provision a VPS and return pending data (no DB record created yet).
+    ///
+    /// POST /api/vps/provision
+    ///
+    /// This is the new "health-first" provisioning flow. The server provisions the VPS
+    /// with the cloud provider but does NOT create a DB record. Returns pending data
+    /// including hostname, jwt_secret, etc. that the client uses to:
+    /// 1. Poll the health endpoint directly
+    /// 2. Call confirm_vps() after health check passes
+    ///
+    /// # Arguments
+    /// * `ssh_password` - The SSH password for the VPS (required)
+    /// * `plan_id` - Optional plan ID for the VPS
+    /// * `data_center_id` - Optional data center ID for VPS location
+    pub async fn provision_vps_pending(
+        &mut self,
+        ssh_password: &str,
+        plan_id: Option<&str>,
+        data_center_id: Option<u32>,
+    ) -> Result<ProvisionPendingResponse, CentralApiError> {
+        let url = format!("{}/api/vps/provision", self.base_url);
+
+        let mut body = serde_json::json!({
+            "ssh_password": ssh_password,
+        });
+
+        if let Some(plan) = plan_id {
+            body["plan_id"] = serde_json::json!(plan);
+        }
+        if let Some(dc_id) = data_center_id {
+            body["data_center_id"] = serde_json::json!(dc_id);
+        }
+
+        // First attempt
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                println!("Token expired (401), attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+                        println!("Token refresh successful");
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&body);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(refresh_error) => {
+                        println!("Token refresh failed: {}", refresh_error);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
+                        });
+                    }
+                }
+            } else {
+                println!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: ProvisionPendingResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Confirm a VPS after health check passes (creates DB record).
+    ///
+    /// POST /api/vps/confirm
+    ///
+    /// This is called after the client has verified the conductor is healthy.
+    /// The server creates the DB record with status "ready".
+    ///
+    /// # Arguments
+    /// * `request` - The confirmation request containing all VPS details
+    pub async fn confirm_vps(
+        &mut self,
+        request: ConfirmVpsRequest,
+    ) -> Result<VpsStatusResponse, CentralApiError> {
+        let url = format!("{}/api/vps/confirm", self.base_url);
+
+        // First attempt
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                println!("Token expired (401), attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+                        println!("Token refresh successful");
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&request);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(refresh_error) => {
+                        println!("Token refresh failed: {}", refresh_error);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
+                        });
+                    }
+                }
+            } else {
+                println!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: VpsStatusResponse = response.json().await?;
+        Ok(data)
+    }
+
     /// Get the status of the user's VPS.
     ///
     /// GET /api/vps/status
