@@ -32,6 +32,9 @@ pub enum WsIncomingMessage {
     /// Thread verification notification
     #[serde(rename = "thread_verified")]
     ThreadVerified(WsThreadVerified),
+    /// System metrics update (CPU, RAM usage)
+    #[serde(rename = "system_metrics_update")]
+    SystemMetricsUpdate(WsSystemMetricsUpdate),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -179,6 +182,23 @@ pub struct WsThreadVerified {
     /// When the verification occurred (Unix milliseconds)
     pub verified_at: u64,
     /// When this notification was sent (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// System metrics update from backend
+///
+/// Sent periodically by the backend with current system resource usage
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsSystemMetricsUpdate {
+    /// CPU usage percentage (0-100)
+    pub cpu_percent: f32,
+    /// Memory used in megabytes
+    pub memory_used_mb: u64,
+    /// Total memory in megabytes
+    pub memory_total_mb: u64,
+    /// Memory usage percentage (0-100)
+    pub memory_percent: f32,
+    /// When this update was generated (Unix milliseconds)
     pub timestamp: u64,
 }
 
@@ -1189,5 +1209,76 @@ mod tests {
         assert_eq!(parsed["state"], "thinking");
         assert!(parsed.get("tool").is_none());
         assert!(parsed.get("current_operation").is_none());
+    }
+
+    // -------------------- System Metrics Update Tests --------------------
+
+    #[test]
+    fn test_deserialize_system_metrics_update() {
+        let json = r#"{
+            "type": "system_metrics_update",
+            "cpu_percent": 45.5,
+            "memory_used_mb": 8192,
+            "memory_total_mb": 16384,
+            "memory_percent": 50.0,
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::SystemMetricsUpdate(metrics) => {
+                assert_eq!(metrics.cpu_percent, 45.5);
+                assert_eq!(metrics.memory_used_mb, 8192);
+                assert_eq!(metrics.memory_total_mb, 16384);
+                assert_eq!(metrics.memory_percent, 50.0);
+                assert_eq!(metrics.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected SystemMetricsUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_system_metrics_update() {
+        let metrics = WsSystemMetricsUpdate {
+            cpu_percent: 75.0,
+            memory_used_mb: 12288,
+            memory_total_mb: 16384,
+            memory_percent: 75.0,
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&metrics).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["cpu_percent"], 75.0);
+        assert_eq!(parsed["memory_used_mb"], 12288);
+        assert_eq!(parsed["memory_total_mb"], 16384);
+        assert_eq!(parsed["memory_percent"], 75.0);
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+    }
+
+    #[test]
+    fn test_roundtrip_system_metrics_update() {
+        let original = WsIncomingMessage::SystemMetricsUpdate(WsSystemMetricsUpdate {
+            cpu_percent: 60.0,
+            memory_used_mb: 4096,
+            memory_total_mb: 8192,
+            memory_percent: 50.0,
+            timestamp: 1705315800000,
+        });
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: WsIncomingMessage = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            WsIncomingMessage::SystemMetricsUpdate(metrics) => {
+                assert_eq!(metrics.cpu_percent, 60.0);
+                assert_eq!(metrics.memory_used_mb, 4096);
+                assert_eq!(metrics.memory_total_mb, 8192);
+                assert_eq!(metrics.memory_percent, 50.0);
+                assert_eq!(metrics.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected SystemMetricsUpdate"),
+        }
     }
 }

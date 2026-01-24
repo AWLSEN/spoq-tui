@@ -237,6 +237,19 @@ fn route_ws_message(
                 })
                 .map_err(|e| format!("Failed to send ThreadVerified: {}", e))
         }
+        WsIncomingMessage::SystemMetricsUpdate(metrics) => {
+            // System metrics update - convert MB to GB for SystemStats
+            use crate::view_state::SystemStats;
+            let stats = SystemStats::new(
+                true, // WebSocket is connected if we're receiving this
+                metrics.cpu_percent,
+                metrics.memory_used_mb as f32 / 1024.0, // Convert MB to GB
+                metrics.memory_total_mb as f32 / 1024.0, // Convert MB to GB
+            );
+            message_tx
+                .send(AppMessage::SystemStatsUpdate(stats))
+                .map_err(|e| format!("Failed to send SystemStatsUpdate: {}", e))
+        }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })
             .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),
