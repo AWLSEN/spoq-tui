@@ -1,5 +1,8 @@
 //! Tests for payment integration with Central API.
 //!
+//! NOTE: Credentials now only contain auth fields (access_token, refresh_token,
+//! expires_at, user_id). Subscription state is managed server-side.
+//!
 //! These tests verify the payment-related API client methods including
 //! checkout session creation, payment status polling, and subscription management.
 
@@ -184,61 +187,6 @@ fn test_subscription_status_backward_compatibility() {
     assert_eq!(status.status, "active");
     assert_eq!(status.plan, None); // Should default to None
     assert_eq!(status.current_period_end, None); // Should default to None
-}
-
-/// Test payment flow integration with credentials update
-#[test]
-fn test_payment_flow_credentials_update() {
-    use spoq::auth::Credentials;
-
-    let mut creds = Credentials::default();
-    assert!(creds.subscription_id.is_none());
-
-    // Simulate successful payment
-    let json = r#"{
-        "status": "complete",
-        "subscription_id": "sub_new123"
-    }"#;
-    let payment_response: PaymentStatusResponse =
-        serde_json::from_str(json).expect("Should deserialize");
-
-    // Update credentials with subscription_id
-    if payment_response.status == "complete" {
-        creds.subscription_id = payment_response.subscription_id.clone();
-    }
-
-    assert_eq!(creds.subscription_id, Some("sub_new123".to_string()));
-}
-
-/// Test credentials serialization with subscription_id
-#[test]
-fn test_credentials_with_subscription_id() {
-    use spoq::auth::Credentials;
-
-    let creds = Credentials {
-        access_token: Some("token".to_string()),
-        refresh_token: Some("refresh".to_string()),
-        expires_at: Some(9999999999),
-        user_id: Some("user".to_string()),
-        username: Some("testuser".to_string()),
-        vps_id: Some("vps".to_string()),
-        vps_url: Some("https://vps.example.com".to_string()),
-        vps_hostname: Some("hostname".to_string()),
-        vps_ip: Some("192.168.1.1".to_string()),
-        vps_status: Some("ready".to_string()),
-        datacenter_id: Some(1),
-        token_archive_path: None,
-        subscription_id: Some("sub_saved456".to_string()),
-    };
-
-    let json = serde_json::to_string(&creds).expect("Should serialize");
-    assert!(json.contains("sub_saved456"));
-
-    let deserialized: Credentials = serde_json::from_str(&json).expect("Should deserialize");
-    assert_eq!(
-        deserialized.subscription_id,
-        Some("sub_saved456".to_string())
-    );
 }
 
 /// Test CheckoutSessionResponse with minimal fields

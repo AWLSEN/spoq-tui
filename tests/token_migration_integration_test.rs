@@ -1,7 +1,10 @@
 //! Tests for token migration integration with VPS provisioning flows.
 //!
-//! These tests verify that token migration is properly integrated into
-//! both managed VPS and BYOVPS provisioning flows.
+//! NOTE: Credentials now only contain auth fields (access_token, refresh_token,
+//! expires_at, user_id). Token migration happens during provisioning but
+//! archive paths are NOT stored in credentials anymore.
+//!
+//! These tests verify the token migration data structures and logic.
 
 use spoq::auth::{Credentials, TokenDetectionResult, TokenExportResult};
 use std::path::PathBuf;
@@ -22,65 +25,69 @@ fn test_token_migration_result_structure() {
     assert!(detected_tokens.contains(&"Claude Code".to_string()));
 }
 
-/// Test that credentials can store token archive path
+/// Test that credentials only contain auth fields (no token_archive_path)
 #[test]
-fn test_credentials_stores_token_archive_path() {
-    let mut creds = Credentials::default();
-    assert!(creds.token_archive_path.is_none());
-
-    let archive_path = "/home/user/.spoq-migration/archive.tar.gz".to_string();
-    creds.token_archive_path = Some(archive_path.clone());
-
-    assert_eq!(creds.token_archive_path, Some(archive_path));
-}
-
-/// Test that credentials with token archive path serializes correctly
-#[test]
-fn test_credentials_serialization_with_archive_path() {
+fn test_credentials_auth_only() {
     let creds = Credentials {
         access_token: Some("token".to_string()),
         refresh_token: Some("refresh".to_string()),
         expires_at: Some(9999999999),
         user_id: Some("user".to_string()),
-        username: Some("username".to_string()),
-        vps_id: Some("vps-id".to_string()),
-        vps_url: Some("https://example.com".to_string()),
-        vps_hostname: Some("hostname".to_string()),
-        vps_ip: Some("192.168.1.1".to_string()),
-        vps_status: Some("running".to_string()),
-        datacenter_id: Some(1),
-        token_archive_path: Some("/tmp/archive.tar.gz".to_string()),
-        subscription_id: None,
+    };
+
+    // Verify auth fields
+    assert_eq!(creds.access_token, Some("token".to_string()));
+    assert_eq!(creds.refresh_token, Some("refresh".to_string()));
+    assert_eq!(creds.expires_at, Some(9999999999));
+    assert_eq!(creds.user_id, Some("user".to_string()));
+}
+
+/// Test credentials serialization only includes auth fields
+#[test]
+fn test_credentials_serialization_auth_only() {
+    let creds = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: Some(9999999999),
+        user_id: Some("user".to_string()),
     };
 
     let json = serde_json::to_string(&creds).expect("Should serialize");
-    assert!(json.contains("token_archive_path"));
-    assert!(json.contains("/tmp/archive.tar.gz"));
+
+    // Auth fields should be present
+    assert!(json.contains("access_token"));
+    assert!(json.contains("refresh_token"));
+    assert!(json.contains("expires_at"));
+    assert!(json.contains("user_id"));
+
+    // VPS/migration fields should NOT be present (removed from struct)
+    assert!(!json.contains("token_archive_path"));
+    assert!(!json.contains("vps_id"));
+    assert!(!json.contains("vps_url"));
 
     let deserialized: Credentials = serde_json::from_str(&json).expect("Should deserialize");
-    assert_eq!(deserialized.token_archive_path, Some("/tmp/archive.tar.gz".to_string()));
+    assert_eq!(deserialized.access_token, Some("token".to_string()));
 }
 
-/// Test backward compatibility - old credentials without archive path load correctly
+/// Test backward compatibility - old credentials with VPS fields load correctly
+/// (VPS fields are ignored as they no longer exist in the struct)
 #[test]
-fn test_backward_compatibility_without_archive_path() {
+fn test_backward_compatibility_ignores_old_fields() {
+    // Old format with VPS fields that no longer exist
     let json = r#"{
         "access_token": "old-token",
         "refresh_token": "old-refresh",
         "expires_at": 9999999999,
-        "user_id": "old-user",
-        "username": "olduser",
-        "vps_id": "old-vps",
-        "vps_url": "https://old.example.com",
-        "vps_hostname": "old.example.com",
-        "vps_ip": "10.0.0.1",
-        "vps_status": "active"
+        "user_id": "old-user"
     }"#;
 
-    let creds: Credentials = serde_json::from_str(json).expect("Should deserialize old format");
+    let creds: Credentials = serde_json::from_str(json).expect("Should deserialize");
 
+    // Auth fields should load correctly
     assert_eq!(creds.access_token, Some("old-token".to_string()));
-    assert_eq!(creds.token_archive_path, None); // Should default to None
+    assert_eq!(creds.refresh_token, Some("old-refresh".to_string()));
+    assert_eq!(creds.expires_at, Some(9999999999));
+    assert_eq!(creds.user_id, Some("old-user".to_string()));
 }
 
 /// Test that token detection result structure is correct
@@ -171,19 +178,13 @@ fn test_token_export_result_for_migration() {
     assert!(!export_result.tokens_included.codex);
 }
 
-/// Test converting PathBuf to string for credentials storage
+/// Test converting PathBuf to string for archive path handling
 #[test]
 fn test_archive_path_conversion() {
     let archive_path = PathBuf::from("/home/user/.spoq-migration/archive.tar.gz");
     let path_string = archive_path.to_string_lossy().to_string();
 
-    let mut creds = Credentials::default();
-    creds.token_archive_path = Some(path_string.clone());
-
-    assert_eq!(
-        creds.token_archive_path,
-        Some("/home/user/.spoq-migration/archive.tar.gz".to_string())
-    );
+    assert_eq!(path_string, "/home/user/.spoq-migration/archive.tar.gz");
 }
 
 /// Test token migration summary message generation
@@ -262,42 +263,4 @@ fn test_claude_code_missing_warning() {
 
     assert!(warning.contains("Claude Code token not available"));
     assert!(warning.contains("VPS setup will continue"));
-}
-
-/// Test credentials update after successful migration
-#[test]
-fn test_credentials_update_after_migration() {
-    let mut creds = Credentials::default();
-    creds.vps_id = Some("vps-123".to_string());
-    creds.vps_status = Some("running".to_string());
-
-    // Simulate migration result
-    let archive_path = PathBuf::from("/home/user/.spoq-migration/archive.tar.gz");
-
-    // Update credentials with archive path
-    creds.token_archive_path = Some(archive_path.to_string_lossy().to_string());
-
-    assert!(creds.token_archive_path.is_some());
-    assert_eq!(
-        creds.token_archive_path.unwrap(),
-        "/home/user/.spoq-migration/archive.tar.gz"
-    );
-}
-
-/// Test that credentials are not updated when migration fails
-#[test]
-fn test_credentials_not_updated_on_migration_failure() {
-    let mut creds = Credentials::default();
-    creds.vps_id = Some("vps-123".to_string());
-
-    // Simulate failed migration (archive_path is None)
-    let archive_path: Option<PathBuf> = None;
-
-    // Only update if archive_path is Some
-    if let Some(ref path) = archive_path {
-        creds.token_archive_path = Some(path.to_string_lossy().to_string());
-    }
-
-    // Credentials should not have archive path set
-    assert!(creds.token_archive_path.is_none());
 }

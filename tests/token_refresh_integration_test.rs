@@ -1,5 +1,8 @@
 //! Integration tests for complete token refresh flow (Phase 6).
 //!
+//! NOTE: Credentials now only contain auth fields (access_token, refresh_token,
+//! expires_at, user_id). VPS state is fetched from the server API.
+//!
 //! These tests verify the complete token refresh behavior including:
 //! 1. Token expired + valid refresh token → silent refresh (no auth prompt)
 //! 2. Token expires soon (< 5 min) → proactive refresh
@@ -23,36 +26,33 @@ fn setup_test_credentials_dir() -> (TempDir, PathBuf) {
 
 /// Helper to create expired credentials
 fn create_expired_credentials() -> Credentials {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("expired-access-token".to_string());
-    creds.refresh_token = Some("valid-refresh-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() - 3600); // Expired 1 hour ago
-    creds.user_id = Some("user-123".to_string());
-    creds.username = Some("testuser".to_string());
-    creds
+    Credentials {
+        access_token: Some("expired-access-token".to_string()),
+        refresh_token: Some("valid-refresh-token".to_string()),
+        expires_at: Some(chrono::Utc::now().timestamp() - 3600), // Expired 1 hour ago
+        user_id: Some("user-123".to_string()),
+    }
 }
 
 /// Helper to create credentials expiring soon (< 5 minutes)
 fn create_expiring_soon_credentials() -> Credentials {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("soon-to-expire-token".to_string());
-    creds.refresh_token = Some("valid-refresh-token".to_string());
-    // Expires in 4 minutes (240 seconds) - below the 300s threshold
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 240);
-    creds.user_id = Some("user-123".to_string());
-    creds.username = Some("testuser".to_string());
-    creds
+    Credentials {
+        access_token: Some("soon-to-expire-token".to_string()),
+        refresh_token: Some("valid-refresh-token".to_string()),
+        // Expires in 4 minutes (240 seconds) - below the 300s threshold
+        expires_at: Some(chrono::Utc::now().timestamp() + 240),
+        user_id: Some("user-123".to_string()),
+    }
 }
 
 /// Helper to create credentials with no refresh token
 fn create_no_refresh_token_credentials() -> Credentials {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("expired-token".to_string());
-    creds.refresh_token = None;
-    creds.expires_at = Some(chrono::Utc::now().timestamp() - 3600);
-    creds.user_id = Some("user-123".to_string());
-    creds.username = Some("testuser".to_string());
-    creds
+    Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: None,
+        expires_at: Some(chrono::Utc::now().timestamp() - 3600),
+        user_id: Some("user-123".to_string()),
+    }
 }
 
 #[test]
@@ -98,8 +98,7 @@ fn test_credentials_persistence() {
     let (_temp_dir, creds_path) = setup_test_credentials_dir();
 
     // Create and save credentials
-    let mut creds = create_expired_credentials();
-    creds.vps_id = Some("test-vps-123".to_string());
+    let creds = create_expired_credentials();
 
     let json = serde_json::to_string_pretty(&creds).unwrap();
     fs::write(&creds_path, json).unwrap();
@@ -111,7 +110,7 @@ fn test_credentials_persistence() {
     assert_eq!(loaded_creds.access_token, creds.access_token);
     assert_eq!(loaded_creds.refresh_token, creds.refresh_token);
     assert_eq!(loaded_creds.expires_at, creds.expires_at);
-    assert_eq!(loaded_creds.vps_id, creds.vps_id);
+    assert_eq!(loaded_creds.user_id, creds.user_id);
 }
 
 #[test]
@@ -139,16 +138,20 @@ fn test_credentials_reload_after_refresh() {
     let (_temp_dir, creds_path) = setup_test_credentials_dir();
 
     // Simulate initial expired credentials
-    let mut creds = create_expired_credentials();
+    let creds = create_expired_credentials();
     let json = serde_json::to_string_pretty(&creds).unwrap();
     fs::write(&creds_path, &json).unwrap();
 
-    // Simulate refresh by updating expires_at
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.access_token = Some("refreshed-token".to_string());
+    // Simulate refresh by creating new credentials with updated values
+    let refreshed_creds = Credentials {
+        access_token: Some("refreshed-token".to_string()),
+        refresh_token: creds.refresh_token.clone(),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: creds.user_id.clone(),
+    };
 
     // Save refreshed credentials
-    let refreshed_json = serde_json::to_string_pretty(&creds).unwrap();
+    let refreshed_json = serde_json::to_string_pretty(&refreshed_creds).unwrap();
     fs::write(&creds_path, refreshed_json).unwrap();
 
     // Reload from disk
@@ -188,10 +191,12 @@ fn test_proactive_refresh_threshold() {
 
 #[test]
 fn test_missing_expires_at_treated_as_expired() {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("token".to_string());
-    creds.refresh_token = Some("refresh".to_string());
-    creds.expires_at = None; // Missing expiration
+    let creds = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: None, // Missing expiration
+        user_id: None,
+    };
 
     // From investigation report: missing expires_at is treated as expired
     assert!(creds.is_expired(), "Missing expires_at should be treated as expired");
@@ -205,14 +210,18 @@ fn test_health_check_timing() {
     let (_temp_dir, creds_path) = setup_test_credentials_dir();
 
     // Initial state: expired credentials
-    let mut creds = create_expired_credentials();
+    let creds = create_expired_credentials();
     let json = serde_json::to_string_pretty(&creds).unwrap();
     fs::write(&creds_path, &json).unwrap();
 
     // Simulate refresh updating the file
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.access_token = Some("new-token".to_string());
-    let new_json = serde_json::to_string_pretty(&creds).unwrap();
+    let refreshed_creds = Credentials {
+        access_token: Some("new-token".to_string()),
+        refresh_token: creds.refresh_token.clone(),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: creds.user_id.clone(),
+    };
+    let new_json = serde_json::to_string_pretty(&refreshed_creds).unwrap();
     fs::write(&creds_path, new_json).unwrap();
 
     // Simulate health check reloading credentials from disk
@@ -228,17 +237,14 @@ fn test_health_check_timing() {
 fn test_all_required_fields_persist() {
     let (_temp_dir, creds_path) = setup_test_credentials_dir();
 
-    let mut creds = Credentials::default();
-    creds.access_token = Some("access".to_string());
-    creds.refresh_token = Some("refresh".to_string());
-    creds.expires_at = Some(12345);
-    creds.user_id = Some("user-1".to_string());
-    creds.username = Some("john".to_string());
-    creds.vps_id = Some("vps-1".to_string());
-    creds.vps_url = Some("https://vps.test".to_string());
-    creds.vps_hostname = Some("vps-host".to_string());
-    creds.vps_ip = Some("1.2.3.4".to_string());
-    creds.vps_status = Some("running".to_string());
+    // Credentials now only have 4 fields (auth tokens only)
+    // VPS state is fetched from the server API
+    let creds = Credentials {
+        access_token: Some("access".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: Some(12345),
+        user_id: Some("user-1".to_string()),
+    };
 
     let json = serde_json::to_string_pretty(&creds).unwrap();
     fs::write(&creds_path, json).unwrap();
@@ -250,10 +256,4 @@ fn test_all_required_fields_persist() {
     assert_eq!(loaded.refresh_token, creds.refresh_token);
     assert_eq!(loaded.expires_at, creds.expires_at);
     assert_eq!(loaded.user_id, creds.user_id);
-    assert_eq!(loaded.username, creds.username);
-    assert_eq!(loaded.vps_id, creds.vps_id);
-    assert_eq!(loaded.vps_url, creds.vps_url);
-    assert_eq!(loaded.vps_hostname, creds.vps_hostname);
-    assert_eq!(loaded.vps_ip, creds.vps_ip);
-    assert_eq!(loaded.vps_status, creds.vps_status);
 }

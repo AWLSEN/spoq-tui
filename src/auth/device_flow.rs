@@ -213,8 +213,6 @@ fn build_credentials_from_tokens(tokens: TokenResponse) -> Credentials {
         refresh_token: tokens.refresh_token,
         expires_at: Some(expires_at),
         user_id: tokens.user_id,
-        username: tokens.username,
-        ..Default::default()
     }
 }
 
@@ -255,7 +253,6 @@ mod tests {
         assert_eq!(creds.refresh_token, Some("refresh-456".to_string()));
         assert!(creds.expires_at.is_some());
         assert_eq!(creds.user_id, Some("user-789".to_string()));
-        assert_eq!(creds.username, Some("testuser".to_string()));
     }
 
     #[test]

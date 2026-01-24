@@ -72,13 +72,12 @@ pub fn run_auth_flow(runtime: &tokio::runtime::Runtime) -> Result<Credentials, C
         .unwrap_or(900); // Default 15 minutes
     let expires_at = Utc::now().timestamp() + expires_in as i64;
 
-    // Build credentials from token response
+    // Build credentials from token response (only auth tokens)
     let mut credentials = Credentials::default();
     credentials.access_token = Some(tokens.access_token);
     credentials.refresh_token = tokens.refresh_token; // Already Option<String>
     credentials.expires_at = Some(expires_at);
     credentials.user_id = tokens.user_id;
-    credentials.username = tokens.username;
 
     // Persist credentials
     let manager = CredentialsManager::new().ok_or_else(|| CentralApiError::ServerError {
@@ -94,7 +93,7 @@ pub fn run_auth_flow(runtime: &tokio::runtime::Runtime) -> Result<Credentials, C
 
     println!(
         "Signed in as {}\n",
-        credentials.username.as_deref().unwrap_or("user")
+        tokens.username.as_deref().unwrap_or("user")
     );
 
     Ok(credentials)
@@ -274,11 +273,9 @@ mod tests {
         credentials.access_token = Some(tokens.access_token.clone());
         credentials.refresh_token = tokens.refresh_token.clone();
         credentials.user_id = tokens.user_id.clone();
-        credentials.username = tokens.username.clone();
 
         assert_eq!(credentials.access_token, Some("access-123".to_string()));
         assert_eq!(credentials.refresh_token, Some("refresh-456".to_string()));
         assert_eq!(credentials.user_id, Some("user-789".to_string()));
-        assert_eq!(credentials.username, Some("testuser".to_string()));
     }
 }

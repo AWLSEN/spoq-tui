@@ -117,20 +117,24 @@ fn test_sync_requires_credentials() {
 fn test_sync_command_structure() {
     // Test that the sync implementation follows expected flow
     // by verifying the step-by-step output structure
+    //
+    // NOTE: Credentials now only contain auth fields (access_token, refresh_token,
+    // expires_at, user_id). VPS state is fetched from the server API.
 
     use spoq::auth::{Credentials, CredentialsManager};
 
-    // Create mock credentials with VPS info
+    // Create mock credentials with auth tokens
     let _manager = CredentialsManager::new().expect("Should create manager");
-    let mut creds = Credentials::new();
-    creds.access_token = Some("test_token".to_string());
-    creds.vps_id = Some("test_vps".to_string());
-    creds.vps_url = Some("http://test.vps".to_string());
-    creds.vps_ip = Some("127.0.0.1".to_string());
+    let creds = Credentials {
+        access_token: Some("test_token".to_string()),
+        refresh_token: Some("test_refresh".to_string()),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: Some("user-123".to_string()),
+    };
 
     // Check that credentials validation works
     assert!(creds.has_token(), "Should have token");
-    assert!(creds.has_vps(), "Should have VPS");
+    assert!(creds.is_valid(), "Should be valid");
 }
 
 #[test]

@@ -1,3 +1,14 @@
+//! Tests for startup flow scenarios.
+//!
+//! NOTE: VPS state is no longer stored in credentials. VPS state is always
+//! fetched from the server API. These tests focus on auth token scenarios only.
+//!
+//! The startup flow now:
+//! 1. Loads credentials (auth tokens only)
+//! 2. Checks if tokens are valid/expired
+//! 3. Fetches VPS state from server API (not from local credentials)
+//! 4. Takes appropriate action based on server response
+
 use spoq::auth::credentials::{Credentials, CredentialsManager};
 use tempfile::TempDir;
 use serial_test::serial;
@@ -11,183 +22,180 @@ fn test_fresh_install_no_credentials() {
 
     let creds = manager.load();
     assert!(!creds.has_token());
-    assert!(!creds.has_vps());
+    // VPS state is now fetched from API, not stored in credentials
 }
 
-/// Scenario 2: Valid credentials + VPS (should skip auth/provision)
+/// Scenario 2: Valid credentials (should proceed to VPS check via API)
 #[test]
 #[serial]
-fn test_valid_credentials_with_vps() {
+fn test_valid_credentials() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
 
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.vps_id = Some("vps-123".to_string());
-    creds.vps_url = Some("https://vps.example.com".to_string());
-    creds.vps_status = Some("ready".to_string());
+    let creds = Credentials {
+        access_token: Some("valid-token".to_string()),
+        refresh_token: Some("valid-refresh".to_string()),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: Some("user-123".to_string()),
+    };
 
     assert!(manager.save(&creds));
 
     let loaded = manager.load();
     assert!(loaded.has_token());
     assert!(!loaded.is_expired());
-    assert!(loaded.has_vps());
-    assert_eq!(loaded.vps_status, Some("ready".to_string()));
+    assert!(loaded.is_valid());
 }
 
-/// Scenario 3: Expired token + VPS (should refresh, not re-auth)
+/// Scenario 3: Expired token with refresh token (should refresh)
 #[test]
 #[serial]
-fn test_expired_token_with_vps() {
+fn test_expired_token_with_refresh() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
 
-    let mut creds = Credentials::default();
-    creds.access_token = Some("expired-token".to_string());
-    creds.refresh_token = Some("valid-refresh".to_string());
-    creds.expires_at = Some(0); // Expired
-    creds.vps_id = Some("vps-123".to_string());
-    creds.vps_url = Some("https://vps.example.com".to_string());
-    creds.vps_status = Some("ready".to_string());
+    let creds = Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: Some("valid-refresh".to_string()),
+        expires_at: Some(0), // Expired
+        user_id: Some("user-123".to_string()),
+    };
 
     assert!(manager.save(&creds));
 
     let loaded = manager.load();
     assert!(loaded.has_token());
     assert!(loaded.is_expired()); // Should detect expiration
-    assert!(loaded.has_vps());
+    assert!(!loaded.is_valid()); // Not valid because expired
+    assert!(loaded.refresh_token.is_some()); // Can refresh
 }
 
-/// Scenario 4: Valid token + no VPS (should provision)
+/// Scenario 4: Valid token, no refresh token
 #[test]
 #[serial]
-fn test_valid_token_no_vps() {
+fn test_valid_token_no_refresh() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
 
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
+    let creds = Credentials {
+        access_token: Some("valid-token".to_string()),
+        refresh_token: None, // No refresh token
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: Some("user-123".to_string()),
+    };
 
     assert!(manager.save(&creds));
 
     let loaded = manager.load();
     assert!(loaded.has_token());
     assert!(!loaded.is_expired());
-    assert!(!loaded.has_vps()); // Should detect no VPS
+    assert!(loaded.is_valid());
+    assert!(loaded.refresh_token.is_none());
 }
 
-/// Scenario 5: Valid token + stopped VPS (should auto-start)
+/// Scenario 5: Expired token without refresh (needs re-auth)
 #[test]
 #[serial]
-fn test_valid_token_stopped_vps() {
+fn test_expired_token_no_refresh() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
 
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.vps_id = Some("vps-123".to_string());
-    creds.vps_url = Some("https://vps.example.com".to_string());
-    creds.vps_status = Some("stopped".to_string());
-
-    assert!(manager.save(&creds));
-
-    let loaded = manager.load();
-    assert_eq!(loaded.vps_status, Some("stopped".to_string()));
-}
-
-/// Scenario 6: Valid token + failed VPS (should error, not reprovision)
-#[test]
-#[serial]
-fn test_valid_token_failed_vps() {
-    let temp_dir = TempDir::new().unwrap();
-    let manager = create_test_manager(&temp_dir);
-
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.vps_id = Some("vps-123".to_string());
-    creds.vps_url = Some("https://vps.example.com".to_string());
-    creds.vps_status = Some("failed".to_string());
-
-    assert!(manager.save(&creds));
-
-    let loaded = manager.load();
-    assert_eq!(loaded.vps_status, Some("failed".to_string()));
-    // Startup should detect this and exit with error, not reprovision
-}
-
-/// Scenario 7: Credentials missing vps_status field (should fetch, not reprovision)
-#[test]
-#[serial]
-fn test_credentials_missing_vps_status_field() {
-    let temp_dir = TempDir::new().unwrap();
-    let manager = create_test_manager(&temp_dir);
-
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.vps_id = Some("vps-123".to_string());
-    creds.vps_url = Some("https://vps.example.com".to_string());
-    creds.vps_status = None; // Missing!
-
-    assert!(manager.save(&creds));
-
-    let loaded = manager.load();
-    assert!(loaded.has_vps()); // VPS exists
-    assert!(loaded.vps_status.is_none()); // But status missing
-    // Startup should fetch status from API, not reprovision
-}
-
-/// Scenario 8: Local has no VPS but server does (sync required)
-#[test]
-#[serial]
-fn test_local_missing_vps_server_has_vps() {
-    let temp_dir = TempDir::new().unwrap();
-    let manager = create_test_manager(&temp_dir);
-
-    // Setup credentials with valid token but no VPS fields
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    // Explicitly set VPS fields to None to simulate state mismatch
-    creds.vps_id = None;
-    creds.vps_url = None;
-    creds.vps_status = None;
+    let creds = Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: None, // No refresh token
+        expires_at: Some(0), // Expired
+        user_id: Some("user-123".to_string()),
+    };
 
     assert!(manager.save(&creds));
 
     let loaded = manager.load();
     assert!(loaded.has_token());
-    assert!(!loaded.is_expired());
-    assert!(!loaded.has_vps()); // Should detect no VPS locally
-    // In actual startup flow, this would trigger sync_vps_state()
-    // which would fetch VPS from server and sync local credentials
+    assert!(loaded.is_expired());
+    assert!(!loaded.is_valid());
+    assert!(loaded.refresh_token.is_none()); // Can't refresh, needs re-auth
 }
 
-/// Scenario 9: Both local and server have no VPS (provisioning needed)
+/// Scenario 6: No access token (needs auth)
 #[test]
 #[serial]
-fn test_no_vps_anywhere() {
+fn test_no_access_token() {
     let temp_dir = TempDir::new().unwrap();
     let manager = create_test_manager(&temp_dir);
 
-    // Setup credentials with valid token but no VPS
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
+    let creds = Credentials {
+        access_token: None,
+        refresh_token: Some("refresh-token".to_string()),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: Some("user-123".to_string()),
+    };
+
+    assert!(manager.save(&creds));
+
+    let loaded = manager.load();
+    assert!(!loaded.has_token()); // No access token
+    assert!(!loaded.is_valid()); // Not valid without token
+}
+
+/// Scenario 7: Missing expires_at (treated as expired)
+#[test]
+#[serial]
+fn test_missing_expires_at() {
+    let temp_dir = TempDir::new().unwrap();
+    let manager = create_test_manager(&temp_dir);
+
+    let creds = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: None, // Missing!
+        user_id: Some("user-123".to_string()),
+    };
 
     assert!(manager.save(&creds));
 
     let loaded = manager.load();
     assert!(loaded.has_token());
-    assert!(!loaded.is_expired());
-    assert!(!loaded.has_vps());
-    // In actual startup flow, sync_vps_state() would return Ok(true)
-    // indicating provisioning is needed, and provisioning flow would run
+    assert!(loaded.is_expired()); // Missing expires_at = expired
+    assert!(!loaded.is_valid());
+}
+
+/// Scenario 8: Empty credentials file
+#[test]
+#[serial]
+fn test_empty_credentials() {
+    let temp_dir = TempDir::new().unwrap();
+    let manager = create_test_manager(&temp_dir);
+
+    let creds = Credentials::default();
+
+    assert!(manager.save(&creds));
+
+    let loaded = manager.load();
+    assert!(!loaded.has_token());
+    assert!(loaded.is_expired());
+    assert!(!loaded.is_valid());
+}
+
+/// Scenario 9: Credentials with user_id only
+#[test]
+#[serial]
+fn test_credentials_with_user_id_only() {
+    let temp_dir = TempDir::new().unwrap();
+    let manager = create_test_manager(&temp_dir);
+
+    let creds = Credentials {
+        access_token: None,
+        refresh_token: None,
+        expires_at: None,
+        user_id: Some("user-123".to_string()),
+    };
+
+    assert!(manager.save(&creds));
+
+    let loaded = manager.load();
+    assert!(!loaded.has_token());
+    assert!(!loaded.is_valid());
+    assert_eq!(loaded.user_id, Some("user-123".to_string()));
 }
 
 // Helper function

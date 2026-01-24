@@ -1,8 +1,9 @@
 //! Integration tests for the authentication credentials.
 //!
+//! NOTE: Credentials now only contain auth fields (access_token, refresh_token,
+//! expires_at, user_id). VPS state is fetched from the server API.
+//!
 //! These tests verify credential persistence and token handling.
-//! Note: Login and Provisioning screens are now handled by pre-flight CLI checks,
-//! so the TUI always starts at CommandDeck.
 
 use spoq::app::{App, Screen};
 use spoq::auth::Credentials;
@@ -30,23 +31,14 @@ fn test_credentials_serialization() {
     assert_eq!(parsed.access_token, credentials.access_token);
 }
 
-/// Test credentials with full VPS info
+/// Test credentials with auth tokens
 #[test]
-fn test_credentials_with_vps_info() {
+fn test_credentials_with_auth_tokens() {
     let credentials = Credentials {
         access_token: Some("test-token".to_string()),
         refresh_token: Some("test-refresh".to_string()),
         expires_at: Some(chrono::Utc::now().timestamp() + 3600),
         user_id: Some("user-123".to_string()),
-        username: Some("testuser".to_string()),
-        vps_id: Some("vps-abc123".to_string()),
-        vps_url: Some("http://192.168.1.100:8000".to_string()),
-        vps_hostname: Some("spoq-abc123.spoq.cloud".to_string()),
-        vps_ip: Some("192.168.1.100".to_string()),
-        vps_status: Some("ready".to_string()),
-        datacenter_id: Some(1),
-        token_archive_path: None,
-        subscription_id: None,
     };
 
     // Serialize and deserialize
@@ -54,8 +46,9 @@ fn test_credentials_with_vps_info() {
     let parsed: Credentials = serde_json::from_str(&json).expect("Should deserialize");
 
     assert_eq!(parsed.access_token, credentials.access_token);
-    assert_eq!(parsed.vps_url, credentials.vps_url);
-    assert_eq!(parsed.vps_status, credentials.vps_status);
+    assert_eq!(parsed.refresh_token, credentials.refresh_token);
+    assert_eq!(parsed.expires_at, credentials.expires_at);
+    assert_eq!(parsed.user_id, credentials.user_id);
 }
 
 /// Test screen enum variants
@@ -132,156 +125,88 @@ fn test_token_expiration_logic() {
 fn test_credentials_default() {
     let creds = Credentials::default();
 
+    // Only auth fields exist now
     assert!(creds.access_token.is_none());
     assert!(creds.refresh_token.is_none());
     assert!(creds.expires_at.is_none());
     assert!(creds.user_id.is_none());
-    assert!(creds.username.is_none());
-    assert!(creds.vps_id.is_none());
-    assert!(creds.vps_url.is_none());
-    assert!(creds.vps_hostname.is_none());
-    assert!(creds.vps_ip.is_none());
-    assert!(creds.vps_status.is_none());
-    assert!(creds.datacenter_id.is_none());
-    assert!(creds.token_archive_path.is_none());
 }
 
-/// Test VPS ready status detection
+/// Test credentials backward compatibility - old JSON format with only auth fields
 #[test]
-fn test_vps_ready_status() {
-    let creds_pending = Credentials {
-        vps_status: Some("pending".to_string()),
-        ..Default::default()
-    };
-
-    let creds_ready = Credentials {
-        vps_status: Some("ready".to_string()),
-        ..Default::default()
-    };
-
-    assert_ne!(creds_pending.vps_status.as_deref(), Some("ready"));
-    assert_eq!(creds_ready.vps_status.as_deref(), Some("ready"));
-}
-
-/// Test credentials backward compatibility - old JSON format without datacenter_id
-#[test]
-fn test_credentials_backward_compatibility_no_datacenter() {
-    // Simulate old credentials file format (pre-API v2)
-    let old_json = r#"{
+fn test_credentials_backward_compatibility_auth_only() {
+    // JSON with only auth fields
+    let json = r#"{
         "access_token": "old-access-token",
         "refresh_token": "old-refresh-token",
         "expires_at": 1999999999,
-        "user_id": "user-old",
-        "username": "olduser",
-        "vps_id": "vps-old",
-        "vps_url": "https://old.spoq.dev",
-        "vps_hostname": "old.spoq.dev",
-        "vps_ip": "10.0.0.1",
-        "vps_status": "ready"
+        "user_id": "user-old"
     }"#;
 
-    // Should successfully deserialize without datacenter_id field
-    let creds: Credentials = serde_json::from_str(old_json).expect("Should parse old format");
+    // Should successfully deserialize
+    let creds: Credentials = serde_json::from_str(json).expect("Should parse format");
 
     // All fields should be populated
     assert_eq!(creds.access_token, Some("old-access-token".to_string()));
     assert_eq!(creds.refresh_token, Some("old-refresh-token".to_string()));
     assert_eq!(creds.expires_at, Some(1999999999));
     assert_eq!(creds.user_id, Some("user-old".to_string()));
-    assert_eq!(creds.username, Some("olduser".to_string()));
-    assert_eq!(creds.vps_id, Some("vps-old".to_string()));
-    assert_eq!(creds.vps_url, Some("https://old.spoq.dev".to_string()));
-    assert_eq!(creds.vps_hostname, Some("old.spoq.dev".to_string()));
-    assert_eq!(creds.vps_ip, Some("10.0.0.1".to_string()));
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-
-    // datacenter_id should default to None
-    assert_eq!(creds.datacenter_id, None);
 }
 
-/// Test credentials with new datacenter_id field
+/// Test credentials serialization only includes auth fields
 #[test]
-fn test_credentials_with_datacenter_id() {
-    let new_json = r#"{
-        "access_token": "new-token",
-        "refresh_token": "new-refresh",
-        "expires_at": 2999999999,
-        "user_id": "user-new",
-        "username": "newuser",
-        "vps_id": "vps-new",
-        "vps_url": "https://new.spoq.dev",
-        "vps_hostname": "new.spoq.dev",
-        "vps_ip": "192.168.1.100",
-        "vps_status": "running",
-        "datacenter_id": 9
-    }"#;
-
-    let creds: Credentials = serde_json::from_str(new_json).expect("Should parse new format");
-
-    // datacenter_id should be present
-    assert_eq!(creds.datacenter_id, Some(9));
-
-    // Other fields should also be correct
-    assert_eq!(creds.access_token, Some("new-token".to_string()));
-    assert_eq!(creds.vps_status, Some("running".to_string()));
-}
-
-/// Test credentials serialization includes datacenter_id
-#[test]
-fn test_credentials_serialization_with_datacenter() {
+fn test_credentials_serialization_auth_only() {
     let creds = Credentials {
         access_token: Some("token".to_string()),
         refresh_token: Some("refresh".to_string()),
         expires_at: Some(1234567890),
         user_id: Some("user".to_string()),
-        username: Some("testuser".to_string()),
-        vps_id: Some("vps".to_string()),
-        vps_url: Some("https://vps.example.com".to_string()),
-        vps_hostname: Some("hostname".to_string()),
-        vps_ip: Some("1.2.3.4".to_string()),
-        vps_status: Some("ready".to_string()),
-        datacenter_id: Some(42),
-        token_archive_path: None,
-        subscription_id: None,
     };
 
     let json = serde_json::to_string(&creds).expect("Should serialize");
 
-    // Should contain datacenter_id in output
-    assert!(json.contains("datacenter_id"));
-    assert!(json.contains("42"));
+    // Auth fields should be present
+    assert!(json.contains("access_token"));
+    assert!(json.contains("refresh_token"));
+    assert!(json.contains("expires_at"));
+    assert!(json.contains("user_id"));
+
+    // VPS fields should NOT be present (removed from struct)
+    assert!(!json.contains("vps_id"));
+    assert!(!json.contains("vps_url"));
+    assert!(!json.contains("vps_status"));
+    assert!(!json.contains("datacenter_id"));
 
     // Deserialize back and verify roundtrip
     let parsed: Credentials = serde_json::from_str(&json).expect("Should deserialize");
-    assert_eq!(parsed.datacenter_id, Some(42));
+    assert_eq!(parsed.access_token, Some("token".to_string()));
 }
 
-/// Test that VPS is considered configured when both id and url are present
+/// Test is_valid and is_expired methods
 #[test]
-fn test_vps_has_vps_requires_both_id_and_url() {
-    // Missing both - no VPS
-    let creds_none = Credentials::default();
-    assert!(!creds_none.has_vps());
-
-    // Only vps_id - no VPS
-    let creds_id_only = Credentials {
-        vps_id: Some("vps-123".to_string()),
-        ..Default::default()
+fn test_credentials_validity_methods() {
+    // Valid credentials
+    let valid_creds = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: Some("user".to_string()),
     };
-    assert!(!creds_id_only.has_vps());
+    assert!(valid_creds.is_valid());
+    assert!(!valid_creds.is_expired());
 
-    // Only vps_url - no VPS
-    let creds_url_only = Credentials {
-        vps_url: Some("https://vps.example.com".to_string()),
-        ..Default::default()
+    // Expired credentials
+    let expired_creds = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: Some(0), // Unix epoch
+        user_id: Some("user".to_string()),
     };
-    assert!(!creds_url_only.has_vps());
+    assert!(!expired_creds.is_valid());
+    assert!(expired_creds.is_expired());
 
-    // Both present - has VPS
-    let creds_both = Credentials {
-        vps_id: Some("vps-123".to_string()),
-        vps_url: Some("https://vps.example.com".to_string()),
-        ..Default::default()
-    };
-    assert!(creds_both.has_vps());
+    // No token
+    let no_token = Credentials::default();
+    assert!(!no_token.is_valid());
+    assert!(!no_token.has_token());
 }

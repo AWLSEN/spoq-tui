@@ -19,11 +19,12 @@ pub struct HealthCheckResult {
 /// Run comprehensive health checks on VPS via Conductor
 ///
 /// # Arguments
-/// * `credentials` - User credentials containing VPS URL
+/// * `vps_url` - URL of the VPS to check
+/// * `credentials` - User credentials for auth tokens
 ///
 /// # Returns
 /// Health check results including conductor status and token verification
-pub async fn run_health_checks(credentials: &Credentials) -> HealthCheckResult {
+pub async fn run_health_checks(vps_url: &str, credentials: &Credentials) -> HealthCheckResult {
     let mut result = HealthCheckResult {
         conductor_healthy: false,
         conductor_response_time_ms: None,
@@ -34,21 +35,15 @@ pub async fn run_health_checks(credentials: &Credentials) -> HealthCheckResult {
     };
 
     // Create conductor client with authentication
-    let mut conductor = match &credentials.vps_url {
-        Some(url) => {
-            let mut client = ConductorClient::with_url(url);
-            // Add JWT token if available
-            if let Some(ref token) = credentials.access_token {
-                client = client.with_auth(token);
-            }
-            // Add refresh token if available
-            if let Some(ref refresh) = credentials.refresh_token {
-                client = client.with_refresh_token(refresh);
-            }
-            client
-        }
-        None => return result, // No VPS URL
-    };
+    let mut conductor = ConductorClient::with_url(vps_url);
+    // Add JWT token if available
+    if let Some(ref token) = credentials.access_token {
+        conductor = conductor.with_auth(token);
+    }
+    // Add refresh token if available
+    if let Some(ref refresh) = credentials.refresh_token {
+        conductor = conductor.with_refresh_token(refresh);
+    }
 
     // Step 1: Check conductor health
     let start = std::time::Instant::now();

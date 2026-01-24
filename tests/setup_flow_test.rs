@@ -28,25 +28,16 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 // ============================================================================
 
 /// Create test credentials with valid access token
+///
+/// NOTE: Credentials now only contain auth fields (access_token, refresh_token,
+/// expires_at, user_id). VPS state is fetched from the server API.
 fn create_test_credentials() -> Credentials {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("test-access-token".to_string());
-    creds.refresh_token = Some("test-refresh-token".to_string());
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.user_id = Some("user-123".to_string());
-    creds.username = Some("testuser".to_string());
-    creds
-}
-
-/// Create test credentials with VPS info
-fn create_test_credentials_with_vps() -> Credentials {
-    let mut creds = create_test_credentials();
-    creds.vps_id = Some("vps-123".to_string());
-    creds.vps_url = Some("https://test.spoq.dev".to_string());
-    creds.vps_hostname = Some("test.spoq.dev".to_string());
-    creds.vps_ip = Some("192.168.1.100".to_string());
-    creds.vps_status = Some("ready".to_string());
-    creds
+    Credentials {
+        access_token: Some("test-access-token".to_string()),
+        refresh_token: Some("test-refresh-token".to_string()),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: Some("user-123".to_string()),
+    }
 }
 
 /// Create a mock VPS status response for a ready VPS
@@ -1047,44 +1038,53 @@ fn test_provision_error_messages_are_helpful() {
 // ============================================================================
 // Test Group 9: Credentials Integration Tests
 // ============================================================================
+//
+// NOTE: Credentials now only contain auth fields (access_token, refresh_token,
+// expires_at, user_id). VPS state is fetched from the server API via
+// GET /api/vps/status. These tests verify the auth-only credential behavior.
 
 #[test]
-fn test_credentials_with_vps_has_vps() {
-    let creds = create_test_credentials_with_vps();
-    assert!(creds.has_vps());
-}
-
-#[test]
-fn test_credentials_without_vps_does_not_have_vps() {
+fn test_credentials_is_valid_with_token() {
     let creds = create_test_credentials();
-    assert!(!creds.has_vps());
+    assert!(creds.is_valid(), "Credentials with valid token should be valid");
+    assert!(creds.has_token(), "Credentials with access_token should have token");
 }
 
 #[test]
-fn test_credentials_partial_vps_info_does_not_have_vps() {
-    // Only vps_id without vps_url
-    let mut creds = create_test_credentials();
-    creds.vps_id = Some("vps-123".to_string());
-    assert!(!creds.has_vps());
-
-    // Only vps_url without vps_id
-    let mut creds2 = create_test_credentials();
-    creds2.vps_url = Some("https://test.spoq.dev".to_string());
-    assert!(!creds2.has_vps());
+fn test_credentials_is_invalid_without_token() {
+    let creds = Credentials::default();
+    assert!(!creds.is_valid(), "Empty credentials should not be valid");
+    assert!(!creds.has_token(), "Empty credentials should not have token");
 }
 
 #[test]
-fn test_credentials_serialization_preserves_vps_fields() {
-    let creds = create_test_credentials_with_vps();
+fn test_credentials_is_expired() {
+    let creds = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: Some(0), // Expired (Unix epoch)
+        user_id: Some("user".to_string()),
+    };
+    assert!(creds.is_expired(), "Credentials with past expiry should be expired");
+    assert!(!creds.is_valid(), "Expired credentials should not be valid");
+}
+
+#[test]
+fn test_credentials_serialization_preserves_auth_fields() {
+    let creds = create_test_credentials();
 
     let json = serde_json::to_string(&creds).expect("Should serialize");
     let parsed: Credentials = serde_json::from_str(&json).expect("Should deserialize");
 
-    assert_eq!(parsed.vps_id, creds.vps_id);
-    assert_eq!(parsed.vps_url, creds.vps_url);
-    assert_eq!(parsed.vps_hostname, creds.vps_hostname);
-    assert_eq!(parsed.vps_ip, creds.vps_ip);
-    assert_eq!(parsed.vps_status, creds.vps_status);
+    assert_eq!(parsed.access_token, creds.access_token);
+    assert_eq!(parsed.refresh_token, creds.refresh_token);
+    assert_eq!(parsed.expires_at, creds.expires_at);
+    assert_eq!(parsed.user_id, creds.user_id);
+
+    // Verify VPS fields are NOT in the serialization
+    assert!(!json.contains("vps_id"));
+    assert!(!json.contains("vps_url"));
+    assert!(!json.contains("vps_status"));
 }
 
 // ============================================================================

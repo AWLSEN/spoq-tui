@@ -30,12 +30,12 @@ async fn test_token_refresh_saves_credentials_on_success() {
     let manager = create_test_manager(&temp_dir);
 
     // Create expired credentials
-    let mut credentials = Credentials::default();
-    credentials.access_token = Some("expired-token".to_string());
-    credentials.refresh_token = Some("valid-refresh-token".to_string());
-    credentials.expires_at = Some(0); // Expired
-    credentials.user_id = Some("user-123".to_string());
-    credentials.username = Some("testuser".to_string());
+    let credentials = Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: Some("valid-refresh-token".to_string()),
+        expires_at: Some(0), // Expired
+        user_id: Some("user-123".to_string()),
+    };
 
     // Save initial expired credentials
     assert!(manager.save(&credentials));
@@ -93,12 +93,12 @@ async fn test_token_refresh_preserves_credentials_on_failure() {
     let manager = create_test_manager(&temp_dir);
 
     // Create expired credentials
-    let mut credentials = Credentials::default();
-    credentials.access_token = Some("expired-token".to_string());
-    credentials.refresh_token = Some("invalid-refresh-token".to_string());
-    credentials.expires_at = Some(0); // Expired
-    credentials.user_id = Some("user-123".to_string());
-    credentials.username = Some("testuser".to_string());
+    let credentials = Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: Some("invalid-refresh-token".to_string()),
+        expires_at: Some(0), // Expired
+        user_id: Some("user-123".to_string()),
+    };
 
     // Save initial credentials
     assert!(manager.save(&credentials));

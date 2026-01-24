@@ -67,9 +67,6 @@ impl From<serde_json::Error> for CentralApiError {
 /// Parse error response from API.
 /// Tries to extract {"error": "message"} format, falls back to raw body.
 fn parse_error_response(status: u16, body: &str) -> CentralApiError {
-    // Debug: Print the raw response body
-    eprintln!("\n[DEBUG] HTTP {} Response body: {}", status, body);
-
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
         if let Some(msg) = json.get("error").and_then(|e| e.as_str()) {
             return CentralApiError::ServerError {

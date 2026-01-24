@@ -17,6 +17,7 @@ use super::central_api::{
 };
 use super::credentials::{Credentials, CredentialsManager};
 use super::token_migration::{detect_tokens, export_tokens, wait_for_claude_code_token};
+use crate::setup::health_wait::wait_for_health;
 
 /// VPS type selection.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +48,11 @@ const BYOVPS_MAX_POLL_ATTEMPTS: u32 = 120; // 10 minutes at 5 second intervals
 
 /// Maximum number of retry attempts for BYOVPS provisioning.
 const BYOVPS_MAX_RETRY_ATTEMPTS: u32 = 3;
+
+/// Health check timeout after provision timeout (2 minutes).
+/// When provisioning times out (e.g., 524 Cloudflare timeout), we poll
+/// the conductor health endpoint for this duration before giving up.
+const HEALTH_CHECK_TIMEOUT_SECS: u64 = 120;
 
 /// Poll interval for payment status checks (in seconds).
 const PAYMENT_POLL_INTERVAL_SECS: u64 = 5;
@@ -573,7 +579,7 @@ fn run_managed_vps_flow(
 
     // Poll for payment completion
     println!("\n  Waiting for payment...");
-    let payment_status = poll_payment_completion(
+    let _payment_status = poll_payment_completion(
         runtime,
         &client,
         &checkout_response.session_id,
@@ -581,12 +587,6 @@ fn run_managed_vps_flow(
     )?;
 
     println!("\n\n✓ Payment successful!");
-
-    // Store subscription ID in credentials
-    if let Some(ref subscription_id) = payment_status.subscription_id {
-        credentials.subscription_id = Some(subscription_id.clone());
-        save_credentials(credentials);
-    }
 
     // Step 4: Get SSH password from user
     check_interrupt(interrupted);
@@ -599,11 +599,7 @@ fn run_managed_vps_flow(
 
         // Run token migration before exiting
         println!("Running token migration...");
-        let migration_result = run_token_migration();
-        if let Some(ref archive_path) = migration_result.archive_path {
-            credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
-            save_credentials(credentials);
-        }
+        run_token_migration();
 
         return Ok(());
     }
@@ -624,7 +620,6 @@ fn run_managed_vps_flow(
     let ordered_dcs = display_datacenters(&datacenters);
     let selected_datacenter_id =
         prompt_datacenter_selection_with_interrupt(&ordered_dcs, interrupted)?;
-    credentials.datacenter_id = Some(selected_datacenter_id);
 
     // Step 7: Provision the VPS
     check_interrupt(interrupted);
@@ -656,11 +651,7 @@ fn run_managed_vps_flow(
 
             // Run token migration before exiting
             println!("Running token migration...");
-            let migration_result = run_token_migration();
-            if let Some(ref archive_path) = migration_result.archive_path {
-                credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
-                save_credentials(credentials);
-            }
+            run_token_migration();
 
             return Ok(());
         }
@@ -670,13 +661,6 @@ fn run_managed_vps_flow(
     println!("VPS provisioning started!");
     if let Some(msg) = &provision_response.message {
         println!("  {}", msg);
-    }
-
-    // Update credentials with VPS ID
-    credentials.vps_id = Some(provision_response.vps_id.clone());
-    credentials.vps_status = Some(provision_response.status.clone());
-    if let Some(hostname) = &provision_response.hostname {
-        credentials.vps_hostname = Some(hostname.clone());
     }
 
     // Step 8: Poll for VPS to be ready
@@ -695,19 +679,6 @@ fn run_managed_vps_flow(
         }
     }
 
-    // Update credentials with final status
-    credentials.vps_id = Some(status.vps_id.clone());
-    credentials.vps_status = Some(status.status.clone());
-    if let Some(hostname) = &status.hostname {
-        credentials.vps_hostname = Some(hostname.clone());
-    }
-    if let Some(ip) = &status.ip {
-        credentials.vps_ip = Some(ip.clone());
-    }
-    if let Some(url) = &status.url {
-        credentials.vps_url = Some(url.clone());
-    }
-
     println!("\nVPS provisioning complete!");
     println!("  Status: {}", status.status);
     if let Some(hostname) = &status.hostname {
@@ -722,14 +693,10 @@ fn run_managed_vps_flow(
 
     // Run token migration after VPS is ready
     println!("Running token migration...");
-    let migration_result = run_token_migration();
-    if let Some(ref archive_path) = migration_result.archive_path {
-        credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
-        save_credentials(credentials);
-    }
+    run_token_migration();
 
     // Verify tokens work on VPS
-    if let Some(ref vps_ip) = credentials.vps_ip {
+    if let Some(ref vps_ip) = status.ip {
         println!("\nVerifying tokens on VPS...");
         match super::token_verification::verify_vps_tokens(
             vps_ip,
@@ -780,6 +747,30 @@ fn is_ssh_connection_error(message: &str) -> bool {
         || lower.contains("authentication failed")
         || lower.contains("permission denied")
         || lower.contains("port 22")
+}
+
+/// Check if an error is a timeout/gateway error that suggests provisioning may have started.
+///
+/// These errors occur when the backend takes too long (e.g., during SSH setup),
+/// causing Cloudflare or the HTTP client to timeout. In such cases, the backend
+/// may have already created the VPS record and started provisioning.
+fn is_timeout_error(error: &CentralApiError) -> bool {
+    match error {
+        CentralApiError::ServerError { status, message } => {
+            // 524: Cloudflare timeout (backend took too long)
+            // 522: Connection timed out
+            // 504: Gateway timeout
+            // 502: Bad gateway (sometimes indicates timeout)
+            *status == 524 || *status == 522 || *status == 504 || *status == 502
+                || message.to_lowercase().contains("timeout")
+                || message.to_lowercase().contains("error code: 524")
+        }
+        CentralApiError::Http(e) => {
+            let msg = e.to_string().to_lowercase();
+            msg.contains("timeout") || msg.contains("timed out")
+        }
+        _ => false,
+    }
 }
 
 /// Display BYOVPS provisioning error with helpful details.
@@ -850,9 +841,10 @@ fn prompt_byovps_retry_action(
 ///
 /// This flow:
 /// 1. Attempts to provision BYOVPS
-/// 2. On failure, displays error details and prompts for retry
-/// 3. Supports up to 3 retry attempts
-/// 4. User can retry with same credentials, change credentials, or exit
+/// 2. On timeout errors (524, etc.), switches to health polling instead of retrying
+/// 3. On other failures, displays error details and prompts for retry
+/// 4. Supports up to 3 retry attempts
+/// 5. User can retry with same credentials, change credentials, or exit
 fn run_byovps_flow_with_retry(
     runtime: &tokio::runtime::Runtime,
     credentials: &mut Credentials,
@@ -870,6 +862,53 @@ fn run_byovps_flow_with_retry(
         match result {
             Ok(()) => return Ok(()),
             Err(error) => {
+                // Check if this is a timeout error (524, gateway timeout, etc.)
+                // In this case, the backend may have started provisioning but the
+                // request timed out. Instead of retrying provisioning, we should
+                // poll the conductor health endpoint to check if it came up.
+                if is_timeout_error(&error) {
+                    println!("\nProvisioning request timed out.");
+                    println!("The backend may still be setting up your VPS.");
+                    println!("Checking if conductor is healthy...\n");
+
+                    // Construct the health URL from the VPS IP
+                    let health_url = format!("http://{}:8000", byovps_creds.vps_ip);
+
+                    // Poll health endpoint for 2 minutes
+                    match runtime.block_on(wait_for_health(&health_url, HEALTH_CHECK_TIMEOUT_SECS)) {
+                        Ok(()) => {
+                            println!("\nVPS is healthy! Provisioning succeeded.");
+
+                            // Run token migration now that VPS is ready
+                            println!("Running token migration...");
+                            run_token_migration();
+
+                            // Verify tokens work on VPS
+                            println!("\nVerifying tokens on VPS...");
+                            match super::token_verification::verify_vps_tokens(
+                                &byovps_creds.vps_ip,
+                                &byovps_creds.ssh_username,
+                                &byovps_creds.ssh_password,
+                            ) {
+                                Ok(verification) => {
+                                    super::token_verification::display_vps_verification_results(&verification);
+                                }
+                                Err(e) => {
+                                    eprintln!("Warning: Could not verify tokens on VPS: {}", e);
+                                    eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
+                                }
+                            }
+
+                            return Ok(());
+                        }
+                        Err(health_err) => {
+                            println!("\nHealth check failed: {}", health_err);
+                            println!("VPS did not become healthy within {} seconds.", HEALTH_CHECK_TIMEOUT_SECS);
+                            // Fall through to normal error handling
+                        }
+                    }
+                }
+
                 // Display error with helpful details
                 display_byovps_error(&error);
 
@@ -1049,11 +1088,6 @@ fn run_byovps_flow(
     // Check initial provision status
     match provision_response.status.to_lowercase().as_str() {
         "failed" | "error" => {
-            // Update credentials with failed status before returning error
-            update_credentials_from_byovps_response(credentials, &provision_response);
-            println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
-            save_credentials(credentials);
-
             let mut msg = provision_response
                 .message
                 .unwrap_or_else(|| "BYOVPS provisioning failed".to_string());
@@ -1071,18 +1105,9 @@ fn run_byovps_flow(
             });
         }
         "ready" | "running" | "active" => {
-            // Already ready, update credentials and return
-            update_credentials_from_byovps_response(credentials, &provision_response);
-            println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
-            save_credentials(credentials);
-
-            // Run token migration after BYOVPS is ready
-            let migration_result = run_token_migration();
-            if let Some(ref archive_path) = migration_result.archive_path {
-                credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
-                println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
-                save_credentials(credentials);
-            }
+            // Already ready - run token migration
+            println!("Running token migration...");
+            run_token_migration();
 
             // Verify tokens work on VPS
             println!("\nVerifying tokens on VPS...");
@@ -1129,23 +1154,6 @@ fn run_byovps_flow(
         }
     }
 
-    // Step 3: Update credentials with final VPS info
-    credentials.vps_id = Some(final_status.vps_id.clone());
-    credentials.vps_status = Some(final_status.status.clone());
-    if let Some(hostname) = &final_status.hostname {
-        credentials.vps_hostname = Some(hostname.clone());
-    }
-    if let Some(ip) = &final_status.ip {
-        credentials.vps_ip = Some(ip.clone());
-    }
-    if let Some(url) = &final_status.url {
-        credentials.vps_url = Some(url.clone());
-    }
-
-    // Save updated credentials
-    println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
-    save_credentials(credentials);
-
     // Display final result
     println!("\nBYOVPS provisioning complete!");
     println!("  Status: {}", final_status.status);
@@ -1160,12 +1168,8 @@ fn run_byovps_flow(
     }
 
     // Run token migration after BYOVPS is ready
-    let migration_result = run_token_migration();
-    if let Some(ref archive_path) = migration_result.archive_path {
-        credentials.token_archive_path = Some(archive_path.to_string_lossy().to_string());
-        println!("Saving credentials with vps_status: {:?}", credentials.vps_status);
-        save_credentials(credentials);
-    }
+    println!("Running token migration...");
+    run_token_migration();
 
     // Verify tokens work on VPS
     println!("\nVerifying tokens on VPS...");
@@ -1300,27 +1304,6 @@ fn poll_byovps_status_with_interrupt(
         // Check interrupt before sleeping
         check_interrupt(interrupted);
         thread::sleep(Duration::from_secs(BYOVPS_POLL_INTERVAL_SECS));
-    }
-}
-
-/// Update credentials from BYOVPS provision response.
-fn update_credentials_from_byovps_response(
-    credentials: &mut Credentials,
-    response: &ByovpsProvisionResponse,
-) {
-    credentials.vps_status = Some(response.status.clone());
-
-    if let Some(vps_id) = &response.vps_id {
-        credentials.vps_id = Some(vps_id.clone());
-    }
-    if let Some(hostname) = &response.hostname {
-        credentials.vps_hostname = Some(hostname.clone());
-    }
-    if let Some(ip) = &response.ip {
-        credentials.vps_ip = Some(ip.clone());
-    }
-    if let Some(url) = &response.url {
-        credentials.vps_url = Some(url.clone());
     }
 }
 
@@ -1934,10 +1917,10 @@ mod tests {
         // - plan_id: Option<&str>
         // - data_center_id: Option<u32>
 
-        // We can verify the Credentials struct stores datacenter_id
-        let mut creds = Credentials::default();
-        creds.datacenter_id = Some(42);
-        assert_eq!(creds.datacenter_id, Some(42));
+        // Note: datacenter_id is no longer stored in Credentials
+        // VPS state is always fetched from the API
+        let creds = Credentials::default();
+        assert!(creds.access_token.is_none());
     }
 
     #[test]
@@ -2233,59 +2216,6 @@ mod tests {
                 state
             );
         }
-    }
-
-    #[test]
-    fn test_update_credentials_from_byovps_response() {
-        use super::super::central_api::ByovpsProvisionResponse;
-
-        let mut credentials = Credentials::default();
-        let response = ByovpsProvisionResponse {
-            hostname: Some("user.spoq.dev".to_string()),
-            status: "ready".to_string(),
-            install_script: None,
-            credentials: None,
-            message: None,
-            vps_id: Some("byovps-uuid-123".to_string()),
-            ip: Some("192.168.1.100".to_string()),
-            url: Some("https://user.spoq.dev:8000".to_string()),
-        };
-
-        update_credentials_from_byovps_response(&mut credentials, &response);
-
-        assert_eq!(credentials.vps_status, Some("ready".to_string()));
-        assert_eq!(credentials.vps_id, Some("byovps-uuid-123".to_string()));
-        assert_eq!(credentials.vps_hostname, Some("user.spoq.dev".to_string()));
-        assert_eq!(credentials.vps_ip, Some("192.168.1.100".to_string()));
-        assert_eq!(
-            credentials.vps_url,
-            Some("https://user.spoq.dev:8000".to_string())
-        );
-    }
-
-    #[test]
-    fn test_update_credentials_from_byovps_response_partial() {
-        use super::super::central_api::ByovpsProvisionResponse;
-
-        let mut credentials = Credentials::default();
-        let response = ByovpsProvisionResponse {
-            hostname: None,
-            status: "provisioning".to_string(),
-            install_script: None,
-            credentials: None,
-            message: Some("Installing...".to_string()),
-            vps_id: Some("byovps-uuid-456".to_string()),
-            ip: None,
-            url: None,
-        };
-
-        update_credentials_from_byovps_response(&mut credentials, &response);
-
-        assert_eq!(credentials.vps_status, Some("provisioning".to_string()));
-        assert_eq!(credentials.vps_id, Some("byovps-uuid-456".to_string()));
-        assert!(credentials.vps_hostname.is_none());
-        assert!(credentials.vps_ip.is_none());
-        assert!(credentials.vps_url.is_none());
     }
 
     #[test]
@@ -2839,15 +2769,4 @@ mod tests {
         assert_eq!(path_string, "/home/user/.spoq-migration/archive.tar.gz");
     }
 
-    #[test]
-    fn test_credentials_token_archive_path_field() {
-        let mut credentials = Credentials::default();
-        assert!(credentials.token_archive_path.is_none());
-
-        credentials.token_archive_path = Some("/tmp/archive.tar.gz".to_string());
-        assert_eq!(
-            credentials.token_archive_path,
-            Some("/tmp/archive.tar.gz".to_string())
-        );
-    }
 }

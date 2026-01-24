@@ -24,7 +24,7 @@
 //! }
 //! ```
 
-use crate::auth::{ensure_authenticated, Credentials, CredentialsManager};
+use crate::auth::{ensure_authenticated, Credentials};
 use crate::auth::central_api::CentralApiClient;
 use super::precheck::{precheck, VpsStatus};
 use super::provision::{provision, ProvisionError};
@@ -513,29 +513,16 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
     // =========================================================
     println!("\n✓ Setup complete!");
 
-    // Update credentials with VPS info
-    let manager = CredentialsManager::new().ok_or_else(|| {
-        SetupError::blocking(SetupStep::CredsVerify, "Failed to access credentials manager")
-    })?;
-
-    let mut updated_credentials = credentials.clone();
-    updated_credentials.vps_id = Some(vps_id.clone());
-    updated_credentials.vps_url = Some(vps_url.clone());
-    updated_credentials.vps_hostname = final_hostname.clone();
-    updated_credentials.vps_ip = Some(vps_ip.clone());
-    updated_credentials.vps_status = Some("ready".to_string());
-
-    // Save updated credentials
-    if !manager.save(&updated_credentials) {
-        eprintln!("Warning: Failed to save VPS info to credentials");
-    }
+    // NOTE: VPS info is NOT stored in credentials anymore.
+    // VPS state is always fetched from the API (single source of truth).
+    // The SetupSuccess struct contains the VPS info for the current session.
 
     Ok(SetupSuccess {
         vps_url,
         vps_hostname: final_hostname,
         vps_ip: Some(vps_ip),
         vps_id,
-        credentials: updated_credentials,
+        credentials: credentials.clone(),
     })
 }
 

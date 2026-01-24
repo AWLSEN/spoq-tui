@@ -13,36 +13,33 @@ use wiremock::matchers::{method, path, header};
 
 /// Helper to create expired credentials
 fn create_expired_credentials() -> Credentials {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("expired-token".to_string());
-    creds.refresh_token = Some("valid-refresh-token".to_string());
-    creds.expires_at = Some(0); // Expired in the past
-    creds.user_id = Some("user-123".to_string());
-    creds.username = Some("testuser".to_string());
-    creds
+    Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: Some("valid-refresh-token".to_string()),
+        expires_at: Some(0), // Expired in the past
+        user_id: Some("user-123".to_string()),
+    }
 }
 
 /// Helper to create valid (non-expired) credentials
 fn create_valid_credentials() -> Credentials {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.refresh_token = Some("valid-refresh-token".to_string());
-    // Set expiration to 1 hour in the future
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    creds.user_id = Some("user-123".to_string());
-    creds.username = Some("testuser".to_string());
-    creds
+    Credentials {
+        access_token: Some("valid-token".to_string()),
+        refresh_token: Some("valid-refresh-token".to_string()),
+        // Set expiration to 1 hour in the future
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: Some("user-123".to_string()),
+    }
 }
 
 /// Helper to create credentials without refresh token
 fn create_credentials_no_refresh() -> Credentials {
-    let mut creds = Credentials::default();
-    creds.access_token = Some("expired-token".to_string());
-    creds.refresh_token = None;
-    creds.expires_at = Some(0); // Expired
-    creds.user_id = Some("user-123".to_string());
-    creds.username = Some("testuser".to_string());
-    creds
+    Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: None,
+        expires_at: Some(0), // Expired
+        user_id: Some("user-123".to_string()),
+    }
 }
 
 /// Helper to create a mock token refresh response
@@ -459,38 +456,65 @@ async fn test_auto_refresh_with_provision_byovps() {
 #[test]
 fn test_credentials_is_expired_method() {
     // Test expired token
-    let mut creds = Credentials::default();
-    creds.access_token = Some("token".to_string());
-    creds.expires_at = Some(0); // Unix epoch - expired
-    assert!(creds.is_expired());
+    let creds_expired = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: None,
+        expires_at: Some(0), // Unix epoch - expired
+        user_id: None,
+    };
+    assert!(creds_expired.is_expired());
 
     // Test valid token
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    assert!(!creds.is_expired());
+    let creds_valid = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: None,
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: None,
+    };
+    assert!(!creds_valid.is_expired());
 
     // Test no expiration set
-    creds.expires_at = None;
-    assert!(creds.is_expired()); // Should be considered expired
+    let creds_no_expiry = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: None,
+        expires_at: None,
+        user_id: None,
+    };
+    assert!(creds_no_expiry.is_expired()); // Should be considered expired
 }
 
 #[test]
 fn test_credentials_is_valid_method() {
-    let mut creds = Credentials::default();
-
     // No token - invalid
-    assert!(!creds.is_valid());
+    let creds_no_token = Credentials::default();
+    assert!(!creds_no_token.is_valid());
 
     // Token but no expiration - invalid
-    creds.access_token = Some("token".to_string());
-    assert!(!creds.is_valid());
+    let creds_no_expiry = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: None,
+        expires_at: None,
+        user_id: None,
+    };
+    assert!(!creds_no_expiry.is_valid());
 
     // Token with expired time - invalid
-    creds.expires_at = Some(0);
-    assert!(!creds.is_valid());
+    let creds_expired = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: None,
+        expires_at: Some(0),
+        user_id: None,
+    };
+    assert!(!creds_expired.is_valid());
 
     // Token with future expiration - valid
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    assert!(creds.is_valid());
+    let creds_valid = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: None,
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: None,
+    };
+    assert!(creds_valid.is_valid());
 }
 
 // ============================================================================
@@ -675,12 +699,14 @@ fn test_credentials_manager_expired_token_handling() {
     fs::create_dir_all(&credentials_dir).unwrap();
 
     // Save expired credentials manually
-    let mut creds = Credentials::default();
-    creds.access_token = Some("expired-token".to_string());
-    creds.refresh_token = Some("refresh-token".to_string());
-    creds.expires_at = Some(0); // Expired
+    let creds_expired = Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: Some("refresh-token".to_string()),
+        expires_at: Some(0), // Expired
+        user_id: None,
+    };
 
-    let json = serde_json::to_string_pretty(&creds).unwrap();
+    let json = serde_json::to_string_pretty(&creds_expired).unwrap();
     fs::write(&credentials_path, json).unwrap();
 
     // Load and verify they're marked as expired
@@ -691,8 +717,13 @@ fn test_credentials_manager_expired_token_handling() {
     assert!(!loaded.is_valid());
 
     // Save valid credentials
-    creds.expires_at = Some(chrono::Utc::now().timestamp() + 3600);
-    let json_valid = serde_json::to_string_pretty(&creds).unwrap();
+    let creds_valid = Credentials {
+        access_token: Some("expired-token".to_string()),
+        refresh_token: Some("refresh-token".to_string()),
+        expires_at: Some(chrono::Utc::now().timestamp() + 3600),
+        user_id: None,
+    };
+    let json_valid = serde_json::to_string_pretty(&creds_valid).unwrap();
     fs::write(&credentials_path, json_valid).unwrap();
 
     // Load and verify they're valid

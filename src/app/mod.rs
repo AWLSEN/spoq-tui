@@ -262,6 +262,8 @@ pub struct App {
     pub credentials_manager: Option<CredentialsManager>,
     /// Current authentication credentials
     pub credentials: Credentials,
+    /// VPS URL for the current session (fetched from API at startup)
+    pub vps_url: Option<String>,
     /// System statistics (CPU, RAM) for dashboard header
     pub system_stats: SystemStats,
     /// Hit area registry for touch/click interactions
@@ -277,23 +279,32 @@ impl App {
 
     /// Create a new App instance with an optional debug event sender
     pub fn with_debug(debug_tx: Option<DebugEventSender>) -> Result<Self> {
-        // Load credentials to get the token and VPS URL
+        // This constructor is for backwards compatibility - uses default VPS URL
+        Self::with_debug_and_vps(debug_tx, None)
+    }
+
+    /// Create a new App instance with optional debug sender and VPS URL.
+    ///
+    /// VPS URL is now passed explicitly rather than read from credentials,
+    /// since VPS state is always fetched from the server at startup.
+    pub fn with_debug_and_vps(debug_tx: Option<DebugEventSender>, vps_url: Option<String>) -> Result<Self> {
+        // Load credentials to get the auth tokens
         let credentials_manager = CredentialsManager::new();
         let credentials = credentials_manager
             .as_ref()
             .map(|cm| cm.load())
             .unwrap_or_default();
 
-        // Create client with credentials if available
-        let client = match (&credentials.vps_url, &credentials.access_token) {
-            (Some(vps_url), Some(token)) => {
-                ConductorClient::with_url(vps_url).with_auth(token)
+        // Create client with VPS URL and credentials if available
+        let client = match (&vps_url, &credentials.access_token) {
+            (Some(url), Some(token)) => {
+                ConductorClient::with_url(url).with_auth(token)
             }
-            (Some(vps_url), None) => ConductorClient::with_url(vps_url),
+            (Some(url), None) => ConductorClient::with_url(url),
             _ => ConductorClient::new(),
         };
 
-        Self::with_client_and_debug_and_credentials(Arc::new(client), debug_tx, credentials)
+        Self::with_client_and_debug_and_credentials(Arc::new(client), debug_tx, credentials, vps_url)
     }
 
     /// Create a new App instance with a custom ConductorClient
@@ -312,14 +323,15 @@ impl App {
             .as_ref()
             .map(|cm| cm.load())
             .unwrap_or_default();
-        Self::with_client_and_debug_and_credentials(client, debug_tx, credentials)
+        Self::with_client_and_debug_and_credentials(client, debug_tx, credentials, None)
     }
 
-    /// Create a new App instance with pre-loaded credentials
+    /// Create a new App instance with pre-loaded credentials and VPS URL
     fn with_client_and_debug_and_credentials(
         client: Arc<ConductorClient>,
         debug_tx: Option<DebugEventSender>,
         credentials: Credentials,
+        vps_url: Option<String>,
     ) -> Result<Self> {
         // Initialize empty cache - will be populated by initialize()
         let cache = ThreadCache::new();
@@ -397,6 +409,7 @@ impl App {
             central_api: Some(central_api),
             credentials_manager,
             credentials,
+            vps_url,
             system_stats: SystemStats::default(),
             hit_registry: HitAreaRegistry::new(),
         })
@@ -550,7 +563,7 @@ impl App {
 
         // Recreate clients with new token
         // ConductorClient needs the VPS URL
-        if let Some(ref vps_url) = self.credentials.vps_url {
+        if let Some(ref vps_url) = self.vps_url {
             self.client = Arc::new(
                 ConductorClient::with_url(vps_url).with_auth(&token_response.access_token),
             );
@@ -630,9 +643,8 @@ impl App {
         // Log credentials state
         let creds_state = if self.credentials.access_token.is_some() {
             format!(
-                "Token: present, VPS URL: {:?}, VPS Status: {:?}",
-                self.credentials.vps_url.as_deref().unwrap_or("none"),
-                self.credentials.vps_status.as_deref().unwrap_or("none")
+                "Token: present, VPS URL: {:?}",
+                self.vps_url.as_deref().unwrap_or("none")
             )
         } else {
             "No credentials".to_string()
@@ -3757,6 +3769,6 @@ mod tests {
         let _: Option<&String> = creds.access_token.as_ref();
         let _: Option<&String> = creds.refresh_token.as_ref();
         let _: Option<i64> = creds.expires_at;
-        let _: Option<&String> = creds.vps_url.as_ref();
+        let _: Option<&String> = creds.user_id.as_ref();
     }
 }

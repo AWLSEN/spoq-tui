@@ -15,6 +15,9 @@ const CREDENTIALS_DIR: &str = ".spoq";
 const CREDENTIALS_FILE: &str = "credentials.json";
 
 /// Authentication credentials for the Spoq platform.
+///
+/// NOTE: Only authentication tokens are stored locally.
+/// VPS state is always fetched from the server via API.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Credentials {
     /// OAuth access token for API authentication.
@@ -25,27 +28,6 @@ pub struct Credentials {
     pub expires_at: Option<i64>,
     /// The authenticated user's ID.
     pub user_id: Option<String>,
-    /// The authenticated user's username.
-    pub username: Option<String>,
-    /// The user's VPS instance ID.
-    pub vps_id: Option<String>,
-    /// The URL to connect to the user's VPS.
-    pub vps_url: Option<String>,
-    /// The hostname of the user's VPS.
-    pub vps_hostname: Option<String>,
-    /// The IP address of the user's VPS.
-    pub vps_ip: Option<String>,
-    /// The current status of the user's VPS.
-    pub vps_status: Option<String>,
-    /// The datacenter ID where the user's VPS is located.
-    #[serde(default)]
-    pub datacenter_id: Option<u32>,
-    /// Path to the token migration archive file.
-    #[serde(default)]
-    pub token_archive_path: Option<String>,
-    /// The user's Stripe subscription ID.
-    #[serde(default)]
-    pub subscription_id: Option<String>,
 }
 
 impl Credentials {
@@ -76,11 +58,6 @@ impl Credentials {
     /// Check if the credentials are valid (has token and not expired).
     pub fn is_valid(&self) -> bool {
         self.has_token() && !self.is_expired()
-    }
-
-    /// Check if the user has a VPS configured.
-    pub fn has_vps(&self) -> bool {
-        self.vps_id.is_some() && self.vps_url.is_some()
     }
 }
 
@@ -184,15 +161,6 @@ mod tests {
         assert!(creds.refresh_token.is_none());
         assert!(creds.expires_at.is_none());
         assert!(creds.user_id.is_none());
-        assert!(creds.username.is_none());
-        assert!(creds.vps_id.is_none());
-        assert!(creds.vps_url.is_none());
-        assert!(creds.vps_hostname.is_none());
-        assert!(creds.vps_ip.is_none());
-        assert!(creds.vps_status.is_none());
-        assert!(creds.datacenter_id.is_none());
-        assert!(creds.token_archive_path.is_none());
-        assert!(creds.subscription_id.is_none());
     }
 
     #[test]
@@ -244,18 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn test_credentials_has_vps() {
-        let mut creds = Credentials::default();
-        assert!(!creds.has_vps());
-
-        creds.vps_id = Some("vps-123".to_string());
-        assert!(!creds.has_vps()); // Needs both id and url
-
-        creds.vps_url = Some("http://vps.example.com".to_string());
-        assert!(creds.has_vps());
-    }
-
-    #[test]
     fn test_credentials_manager_new() {
         // This test depends on having a home directory, which should be available
         let manager = CredentialsManager::new();
@@ -280,15 +236,6 @@ mod tests {
             refresh_token: Some("test-refresh-token".to_string()),
             expires_at: Some(1234567890),
             user_id: Some("user-123".to_string()),
-            username: Some("testuser".to_string()),
-            vps_id: Some("vps-456".to_string()),
-            vps_url: Some("http://vps.example.com".to_string()),
-            vps_hostname: Some("vps-456.example.com".to_string()),
-            vps_ip: Some("192.168.1.100".to_string()),
-            vps_status: Some("running".to_string()),
-            datacenter_id: Some(1),
-            token_archive_path: Some("/home/user/.spoq-migration/archive.tar.gz".to_string()),
-            subscription_id: None,
         };
 
         assert!(manager.save(&creds));
@@ -353,15 +300,6 @@ mod tests {
             refresh_token: Some("refresh".to_string()),
             expires_at: Some(1234567890),
             user_id: Some("user-id".to_string()),
-            username: Some("username".to_string()),
-            vps_id: Some("vps-id".to_string()),
-            vps_url: Some("http://vps.example.com".to_string()),
-            vps_hostname: Some("hostname".to_string()),
-            vps_ip: Some("192.168.1.1".to_string()),
-            vps_status: Some("running".to_string()),
-            datacenter_id: Some(2),
-            token_archive_path: Some("/tmp/archive.tar.gz".to_string()),
-            subscription_id: Some("sub_1234567890".to_string()),
         };
 
         let json = serde_json::to_string(&creds).unwrap();
@@ -385,58 +323,23 @@ mod tests {
 
     #[test]
     fn test_credentials_backward_compatibility() {
-        // Test that old credentials.json without datacenter_id can still be loaded
-        let json_without_datacenter = r#"{
+        // Test that old credentials.json with extra fields can still be loaded
+        // (serde ignores unknown fields by default)
+        let json_with_extra_fields = r#"{
             "access_token": "old-token",
             "refresh_token": "old-refresh",
             "expires_at": 9999999999,
             "user_id": "old-user",
-            "username": "olduser",
             "vps_id": "old-vps",
-            "vps_url": "http://old.example.com",
-            "vps_hostname": "old.example.com",
-            "vps_ip": "10.0.0.1",
-            "vps_status": "active"
+            "vps_url": "http://old.example.com"
         }"#;
 
-        let creds: Credentials = serde_json::from_str(json_without_datacenter).unwrap();
+        let creds: Credentials = serde_json::from_str(json_with_extra_fields).unwrap();
 
         assert_eq!(creds.access_token, Some("old-token".to_string()));
         assert_eq!(creds.refresh_token, Some("old-refresh".to_string()));
         assert_eq!(creds.expires_at, Some(9999999999));
         assert_eq!(creds.user_id, Some("old-user".to_string()));
-        assert_eq!(creds.username, Some("olduser".to_string()));
-        assert_eq!(creds.vps_id, Some("old-vps".to_string()));
-        assert_eq!(creds.vps_url, Some("http://old.example.com".to_string()));
-        assert_eq!(creds.vps_hostname, Some("old.example.com".to_string()));
-        assert_eq!(creds.vps_ip, Some("10.0.0.1".to_string()));
-        assert_eq!(creds.vps_status, Some("active".to_string()));
-        assert_eq!(creds.datacenter_id, None); // Should default to None
-        assert_eq!(creds.token_archive_path, None); // Should default to None
-        assert_eq!(creds.subscription_id, None); // Should default to None
-    }
-
-    #[test]
-    fn test_credentials_backward_compatibility_with_datacenter() {
-        // Test that credentials.json without token_archive_path can still be loaded
-        let json_without_archive_path = r#"{
-            "access_token": "token",
-            "refresh_token": "refresh",
-            "expires_at": 9999999999,
-            "user_id": "user",
-            "username": "user",
-            "vps_id": "vps",
-            "vps_url": "http://example.com",
-            "vps_hostname": "example.com",
-            "vps_ip": "10.0.0.1",
-            "vps_status": "active",
-            "datacenter_id": 5
-        }"#;
-
-        let creds: Credentials = serde_json::from_str(json_without_archive_path).unwrap();
-
-        assert_eq!(creds.datacenter_id, Some(5));
-        assert_eq!(creds.token_archive_path, None); // Should default to None
-        assert_eq!(creds.subscription_id, None); // Should default to None
+        // Extra fields are ignored
     }
 }

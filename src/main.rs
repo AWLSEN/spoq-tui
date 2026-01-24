@@ -104,7 +104,7 @@ async fn check_and_download_update() {
 /// Handle the /sync or --sync command for token migration to VPS.
 ///
 /// This function runs the complete token migration flow:
-/// 1. Verify credentials are loaded and VPS exists
+/// 1. Verify credentials are loaded and VPS exists (via API)
 /// 2. Detect available tokens (GitHub CLI, Claude Code, Codex)
 /// 3. Check for Claude Code token (retry loop if missing)
 /// 4. Export tokens to archive
@@ -126,12 +126,21 @@ fn handle_sync_command() -> Result<()> {
         std::process::exit(1);
     }
 
-    if !credentials.has_vps() {
-        eprintln!("Error: No VPS configured. Please run spoq to provision a VPS first.");
-        std::process::exit(1);
-    }
+    // Fetch VPS state from API (single source of truth)
+    let runtime = tokio::runtime::Runtime::new()?;
+    let vps_state = match fetch_vps_from_api(&runtime, &credentials) {
+        Ok(Some(vps)) => vps,
+        Ok(None) => {
+            eprintln!("Error: No VPS configured. Please run spoq to provision a VPS first.");
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: Cannot verify VPS status: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    let vps_ip = credentials.vps_ip.as_ref().expect("VPS IP should exist");
+    let vps_ip = vps_state.ip.as_ref().expect("VPS must have IP address");
     println!("✓ Credentials loaded");
     println!("✓ VPS found: {}", vps_ip);
 
@@ -415,45 +424,20 @@ fn attempt_token_refresh(
     Ok(new_credentials)
 }
 
-/// Fetch VPS status from API for cases where vps_status field is missing.
+/// Fetch VPS state from server (always fetch from API - never use local cache).
 ///
 /// # Arguments
 /// * `runtime` - Tokio runtime for async operations
-/// * `credentials` - Current credentials with access token
+/// * `credentials` - Current credentials (for auth token only)
 ///
 /// # Returns
-/// * `Ok(VpsStatusResponse)` - VPS status from API
-/// * `Err(CentralApiError)` - API call failed
-fn fetch_vps_status(
+/// * `Ok(Some(vps))` - VPS exists on server
+/// * `Ok(None)` - No VPS on server (provisioning needed)
+/// * `Err(CentralApiError)` - Server check failed
+fn fetch_vps_from_api(
     runtime: &tokio::runtime::Runtime,
     credentials: &Credentials,
-) -> Result<VpsStatusResponse, spoq::auth::central_api::CentralApiError> {
-    let mut client = if let Some(ref token) = credentials.access_token {
-        CentralApiClient::new().with_auth(token)
-    } else {
-        CentralApiClient::new()
-    };
-    runtime.block_on(client.fetch_vps_status())
-}
-
-/// Sync VPS state between local credentials and server.
-///
-/// Checks if server has a VPS when local credentials don't, and syncs if needed.
-///
-/// # Arguments
-/// * `runtime` - Tokio runtime for async operations
-/// * `credentials` - Current credentials (will be modified if sync needed)
-/// * `manager` - Credentials manager for saving
-///
-/// # Returns
-/// * `Ok(true)` - Provisioning needed (no VPS on server)
-/// * `Ok(false)` - VPS synced from server (no provisioning needed)
-/// * `Err(CentralApiError)` - Server check failed
-fn sync_vps_state(
-    runtime: &tokio::runtime::Runtime,
-    credentials: &mut Credentials,
-    manager: &CredentialsManager,
-) -> Result<bool, spoq::auth::central_api::CentralApiError> {
+) -> Result<Option<VpsStatusResponse>, spoq::auth::central_api::CentralApiError> {
     println!("Checking VPS status...");
 
     let mut client = if let Some(ref token) = credentials.access_token {
@@ -462,33 +446,7 @@ fn sync_vps_state(
         CentralApiClient::new()
     };
 
-    match runtime.block_on(client.fetch_user_vps())? {
-        Some(server_vps) => {
-            // Server has VPS - sync local credentials
-            println!("Found existing VPS on server. Syncing local credentials...");
-            credentials.vps_id = Some(server_vps.vps_id.clone());
-
-            // Always prefer hostname for HTTPS URL (server may return internal :8000 URL)
-            credentials.vps_url = server_vps.hostname.as_ref()
-                .map(|h| format!("https://{}", h))
-                .or_else(|| server_vps.url.clone());
-
-            credentials.vps_hostname = server_vps.hostname.clone();
-            credentials.vps_ip = server_vps.ip.clone();
-            credentials.vps_status = Some(server_vps.status.clone());
-
-            if !manager.save(credentials) {
-                eprintln!("Warning: Failed to save synced VPS credentials");
-            }
-
-            println!("VPS credentials synced successfully.");
-            Ok(false) // No provisioning needed
-        }
-        None => {
-            // Server confirms no VPS
-            Ok(true) // Provisioning needed
-        }
-    }
+    runtime.block_on(client.fetch_user_vps())
 }
 
 fn main() -> Result<()> {
@@ -610,48 +568,58 @@ fn main() -> Result<()> {
     }
 
     // =========================================================
-    // VPS check - ensure VPS exists and is usable
+    // VPS check - always fetch from server (single source of truth)
     // =========================================================
 
-    if !credentials.has_vps() {
-        // Local credentials show no VPS - check server state first
-        match sync_vps_state(&runtime, &mut credentials, &manager) {
-            Ok(true) => {
-                // Provisioning needed (server confirms no VPS)
-                if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
-                    eprintln!("Provisioning failed: {}", e);
-                    std::process::exit(1);
-                }
-                if !manager.save(&credentials) {
-                    eprintln!("Warning: Failed to save credentials after provisioning");
-                }
-            }
-            Ok(false) => {
-                // VPS synced from server - continue to status checks below
-            }
+    // Fetch VPS state from API (never rely on local cache)
+    let mut vps_state: Option<VpsStatusResponse> = match fetch_vps_from_api(&runtime, &credentials) {
+        Ok(vps) => vps,
+        Err(e) => {
+            eprintln!("Error: Cannot verify VPS status: {}", e);
+            eprintln!("Please check your network connection and try again.");
+            std::process::exit(1);
+        }
+    };
+
+    // If no VPS exists, run provisioning flow
+    if vps_state.is_none() {
+        println!("No VPS found. Starting provisioning...");
+        if let Err(e) = run_provisioning_flow(&runtime, &mut credentials) {
+            eprintln!("Provisioning failed: {}", e);
+            std::process::exit(1);
+        }
+        // Save credentials (only auth tokens) after provisioning
+        if !manager.save(&credentials) {
+            eprintln!("Warning: Failed to save credentials after provisioning");
+        }
+        // Fetch VPS state again after provisioning
+        vps_state = match fetch_vps_from_api(&runtime, &credentials) {
+            Ok(vps) => vps,
             Err(e) => {
-                eprintln!("Error: Cannot verify VPS status: {}", e);
-                eprintln!("Please check your network connection and try again.");
+                eprintln!("Error: Cannot verify VPS status after provisioning: {}", e);
                 std::process::exit(1);
             }
-        }
+        };
     }
 
-    if credentials.has_vps() {
-        // VPS exists - check its status
-        match credentials.vps_status.as_deref() {
-            Some("ready") | Some("running") | Some("active") => {
-                // Good to go - launch TUI
+    // Handle VPS state based on API response
+    if let Some(ref vps) = vps_state {
+        match vps.status.as_str() {
+            "ready" | "running" | "active" => {
+                // Good to go - continue to health check
+                println!("  VPS is ready (status: {})", vps.status);
             }
-            Some("stopped") => {
+            "provisioning" | "pending" | "creating" => {
+                // VPS still provisioning - health check loop below will wait
+                println!("  VPS is still provisioning, checking health...");
+            }
+            "stopped" => {
                 // Auto-start existing VPS
+                println!("  VPS is stopped, starting...");
                 match start_stopped_vps(&runtime, &credentials) {
                     Ok(status) => {
-                        credentials.vps_status = Some(status.status);
-                        credentials.vps_ip = status.ip;
-                        if !manager.save(&credentials) {
-                            eprintln!("Warning: Failed to save credentials after starting VPS");
-                        }
+                        // Update vps_state with the new status
+                        vps_state = Some(status);
                     }
                     Err(e) => {
                         eprintln!("Failed to start VPS: {}", e);
@@ -659,68 +627,13 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            Some("failed") | Some("terminated") => {
-                // Failed VPS - don't auto-reprovision, show error
-                eprintln!("Error: VPS is in failed state (status: {}).",
-                    credentials.vps_status.as_deref().unwrap_or("unknown"));
+            "failed" | "terminated" => {
+                eprintln!("Error: VPS is in failed state (status: {}).", vps.status);
                 eprintln!("Your VPS cannot be started automatically.");
                 eprintln!("Please contact support@spoq.dev for assistance.");
                 std::process::exit(1);
             }
-            None => {
-                // VPS exists but status field missing (legacy credentials)
-                // Fetch status from API instead of re-provisioning
-                match fetch_vps_status(&runtime, &credentials) {
-                    Ok(status) => {
-                        credentials.vps_status = Some(status.status.clone());
-                        if let Some(ip) = status.ip {
-                            credentials.vps_ip = Some(ip);
-                        }
-                        if !manager.save(&credentials) {
-                            eprintln!("Warning: Failed to save updated VPS status");
-                        }
-                        // Re-check status after fetching
-                        match status.status.as_str() {
-                            "ready" | "running" | "active" => {
-                                // Good to go
-                            }
-                            "stopped" => {
-                                // Need to start it
-                                match start_stopped_vps(&runtime, &credentials) {
-                                    Ok(status) => {
-                                        credentials.vps_status = Some(status.status);
-                                        credentials.vps_ip = status.ip;
-                                        if !manager.save(&credentials) {
-                                            eprintln!("Warning: Failed to save credentials");
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Failed to start VPS: {}", e);
-                                        std::process::exit(1);
-                                    }
-                                }
-                            }
-                            "failed" | "terminated" => {
-                                eprintln!("Error: VPS is in failed state (status: {}).", status.status);
-                                eprintln!("Your VPS cannot be started automatically.");
-                                eprintln!("Please contact support@spoq.dev for assistance.");
-                                std::process::exit(1);
-                            }
-                            other => {
-                                eprintln!("VPS in unexpected state: {}. Please wait or contact support.", other);
-                                std::process::exit(1);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Error: Cannot determine VPS status: {}", e);
-                        eprintln!("Please check your network connection and try again.");
-                        std::process::exit(1);
-                    }
-                }
-            }
-            Some(other) => {
-                // Unknown state
+            other => {
                 eprintln!("VPS in unexpected state: {}. Please wait or contact support.", other);
                 std::process::exit(1);
             }
@@ -730,7 +643,14 @@ fn main() -> Result<()> {
     // =========================================================
     // VPS health check - verify conductor and tokens
     // =========================================================
-    if credentials.has_vps() {
+    if let Some(ref vps) = vps_state {
+        // Build VPS URL from hostname or IP
+        let vps_url = vps.hostname.as_ref()
+            .map(|h| format!("https://{}", h))
+            .or_else(|| vps.url.clone())
+            .or_else(|| vps.ip.as_ref().map(|ip| format!("http://{}:8000", ip)))
+            .expect("VPS must have hostname, URL, or IP");
+
         print!("\n◐ Connecting to VPS");
         use std::io::Write;
         std::io::stdout().flush().ok();
@@ -741,7 +661,7 @@ fn main() -> Result<()> {
         loop {
             // Run health checks
             let health_result = runtime.block_on(
-                spoq::health_check::run_health_checks(&credentials)
+                spoq::health_check::run_health_checks(&vps_url, &credentials)
             );
 
             // If tokens are missing on first attempt, try to auto-sync
@@ -752,33 +672,28 @@ fn main() -> Result<()> {
                 std::io::stdout().flush().ok();
 
                 // Attempt sync via conductor
-                match &credentials.vps_url {
-                    Some(url) => {
-                        let mut conductor = spoq::conductor::ConductorClient::with_url(url);
-                        if let Some(ref token) = credentials.access_token {
-                            conductor = conductor.with_auth(token);
-                        }
-                        if let Some(ref refresh) = credentials.refresh_token {
-                            conductor = conductor.with_refresh_token(refresh);
-                        }
+                let mut conductor = spoq::conductor::ConductorClient::with_url(&vps_url);
+                if let Some(ref token) = credentials.access_token {
+                    conductor = conductor.with_auth(token);
+                }
+                if let Some(ref refresh) = credentials.refresh_token {
+                    conductor = conductor.with_refresh_token(refresh);
+                }
 
-                        match runtime.block_on(conductor.sync_tokens("all")) {
-                            Ok(_sync_response) => {
-                                print!("\r◒ Verifying credentials...          ");
-                                std::io::stdout().flush().ok();
+                match runtime.block_on(conductor.sync_tokens("all")) {
+                    Ok(_sync_response) => {
+                        print!("\r◒ Verifying credentials...          ");
+                        std::io::stdout().flush().ok();
 
-                                // Reload credentials in case conductor auto-refreshed during sync
-                                credentials = manager.load();
+                        // Reload credentials in case conductor auto-refreshed during sync
+                        credentials = manager.load();
 
-                                std::thread::sleep(std::time::Duration::from_secs(1));
-                                continue; // Recheck immediately
-                            }
-                            Err(_e) => {
-                                println!("\r✗ Credential sync failed              ");
-                            }
-                        }
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        continue; // Recheck immediately
                     }
-                    None => {}
+                    Err(_e) => {
+                        println!("\r✗ Credential sync failed              ");
+                    }
                 }
             }
 
@@ -786,7 +701,7 @@ fn main() -> Result<()> {
             println!("\r                                      ");
 
             // Display results
-            let vps_ip = credentials.vps_ip.as_deref();
+            let vps_ip = vps.ip.as_deref();
             spoq::health_check::display_health_check_results(&health_result, vps_ip);
 
             // If all checks pass, break out of loop
@@ -876,8 +791,16 @@ fn main() -> Result<()> {
     // Clear the terminal
     terminal.clear()?;
 
-    // Initialize application state with debug sender
-    let mut app = App::with_debug(debug_tx)?;
+    // Build VPS URL from state for app initialization
+    let app_vps_url = vps_state.as_ref().and_then(|vps| {
+        vps.hostname.as_ref()
+            .map(|h| format!("https://{}", h))
+            .or_else(|| vps.url.clone())
+            .or_else(|| vps.ip.as_ref().map(|ip| format!("http://{}:8000", ip)))
+    });
+
+    // Initialize application state with debug sender and VPS URL
+    let mut app = App::with_debug_and_vps(debug_tx, app_vps_url)?;
 
     // Log initial auth state for debugging
     app.log_initial_auth_state();

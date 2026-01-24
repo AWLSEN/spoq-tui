@@ -2,6 +2,10 @@
 //!
 //! These tests verify the BYOVPS provisioning flow, credential collection,
 //! input validation, status polling, and error handling.
+//!
+//! NOTE: VPS state is no longer stored in credentials (as of the refactor).
+//! VPS state is always fetched from the server API. These tests focus on
+//! API interactions and validation logic, not credential storage.
 
 use spoq::auth::central_api::{
     ByovpsProvisionResponse, CentralApiClient, CentralApiError, VpsStatusResponse,
@@ -234,7 +238,7 @@ fn test_byovps_provision_response_aliases() {
     assert_eq!(response.ip, Some("10.0.0.1".to_string()));
 }
 
-/// Test BYOVPS status states
+/// Test BYOVPS status ready states
 #[test]
 fn test_byovps_status_ready_states() {
     // Test that various ready states are recognized
@@ -401,54 +405,6 @@ fn test_byovps_requires_access_token() {
         assert_eq!(status, 401);
         assert!(message.contains("access token"));
     }
-}
-
-/// Test credentials update from BYOVPS response
-#[test]
-fn test_credentials_update_from_byovps_response() {
-    let mut credentials = Credentials::default();
-
-    // Simulate updating credentials from BYOVPS response
-    credentials.vps_status = Some("ready".to_string());
-    credentials.vps_id = Some("byovps-uuid-789".to_string());
-    credentials.vps_hostname = Some("myserver.spoq.dev".to_string());
-    credentials.vps_ip = Some("203.0.113.10".to_string());
-    credentials.vps_url = Some("https://myserver.spoq.dev:8000".to_string());
-
-    // Verify all fields were updated
-    assert_eq!(credentials.vps_status, Some("ready".to_string()));
-    assert_eq!(credentials.vps_id, Some("byovps-uuid-789".to_string()));
-    assert_eq!(
-        credentials.vps_hostname,
-        Some("myserver.spoq.dev".to_string())
-    );
-    assert_eq!(credentials.vps_ip, Some("203.0.113.10".to_string()));
-    assert_eq!(
-        credentials.vps_url,
-        Some("https://myserver.spoq.dev:8000".to_string())
-    );
-}
-
-/// Test credentials update from partial BYOVPS response
-#[test]
-fn test_credentials_update_from_partial_byovps_response() {
-    let mut credentials = Credentials::default();
-
-    // Simulate updating credentials from partial BYOVPS response
-    credentials.vps_status = Some("provisioning".to_string());
-    credentials.vps_id = Some("byovps-uuid-partial".to_string());
-
-    // Verify partial fields were updated
-    assert_eq!(credentials.vps_status, Some("provisioning".to_string()));
-    assert_eq!(
-        credentials.vps_id,
-        Some("byovps-uuid-partial".to_string())
-    );
-
-    // Verify optional fields remain None
-    assert!(credentials.vps_hostname.is_none());
-    assert!(credentials.vps_ip.is_none());
-    assert!(credentials.vps_url.is_none());
 }
 
 /// Test SSH connection error detection
@@ -680,9 +636,9 @@ fn test_byovps_conflict_error_handling() {
     }
 }
 
-/// Test BYOVPS credentials serialization for API call
+/// Test BYOVPS SSH credentials serialization for API call
 #[test]
-fn test_byovps_credentials_serialization() {
+fn test_byovps_ssh_credentials_serialization() {
     #[derive(serde::Serialize, serde::Deserialize)]
     struct TestByovpsCredentials {
         vps_ip: String,
@@ -710,36 +666,6 @@ fn test_byovps_credentials_serialization() {
         serde_json::from_str(&json).expect("Should deserialize");
     assert_eq!(parsed.vps_ip, "10.0.0.1");
     assert_eq!(parsed.ssh_username, "admin");
-}
-
-/// Test that BYOVPS has_vps check works correctly
-#[test]
-fn test_byovps_has_vps_check() {
-    // Test credentials without VPS
-    let creds_no_vps = Credentials::default();
-    assert!(!creds_no_vps.has_vps());
-
-    // Test credentials with partial VPS info (only ID)
-    let creds_only_id = Credentials {
-        vps_id: Some("byovps-123".to_string()),
-        ..Default::default()
-    };
-    assert!(!creds_only_id.has_vps());
-
-    // Test credentials with partial VPS info (only URL)
-    let creds_only_url = Credentials {
-        vps_url: Some("https://test.spoq.dev".to_string()),
-        ..Default::default()
-    };
-    assert!(!creds_only_url.has_vps());
-
-    // Test credentials with both ID and URL (has VPS)
-    let creds_with_vps = Credentials {
-        vps_id: Some("byovps-123".to_string()),
-        vps_url: Some("https://test.spoq.dev".to_string()),
-        ..Default::default()
-    };
-    assert!(creds_with_vps.has_vps());
 }
 
 // ============================================================================
@@ -974,9 +900,9 @@ fn test_byovps_credentials_invalid_when_no_expiration() {
     assert!(!creds.is_valid());
 }
 
-/// Test saving and loading credentials with expiration
+/// Test saving and loading credentials with token expiration
 #[test]
-fn test_byovps_credentials_save_load_with_expiration() {
+fn test_byovps_credentials_save_load_with_token_expiration() {
     use tempfile::TempDir;
     use std::fs;
 
@@ -987,13 +913,12 @@ fn test_byovps_credentials_save_load_with_expiration() {
     // Create the credentials directory
     fs::create_dir_all(&credentials_dir).unwrap();
 
-    // Create credentials with expiration
+    // Create credentials with expiration (only auth fields now)
     let mut creds = Credentials::default();
     creds.access_token = Some("test-token".to_string());
     creds.refresh_token = Some("test-refresh".to_string());
     creds.expires_at = Some(chrono::Utc::now().timestamp() + 7200); // 2 hours
-    creds.vps_id = Some("byovps-save-test".to_string());
-    creds.vps_url = Some("https://test.spoq.dev".to_string());
+    creds.user_id = Some("user-123".to_string());
 
     // Save
     let json = serde_json::to_string_pretty(&creds).unwrap();
@@ -1006,15 +931,14 @@ fn test_byovps_credentials_save_load_with_expiration() {
     assert_eq!(loaded.access_token, creds.access_token);
     assert_eq!(loaded.refresh_token, creds.refresh_token);
     assert_eq!(loaded.expires_at, creds.expires_at);
-    assert_eq!(loaded.vps_id, creds.vps_id);
-    assert_eq!(loaded.vps_url, creds.vps_url);
+    assert_eq!(loaded.user_id, creds.user_id);
 
     // Verify expiration status is preserved
     assert!(!loaded.is_expired());
     assert!(loaded.is_valid());
 }
 
-/// Test BYOVPS status response deserialization
+/// Test VPS status response deserialization
 #[test]
 fn test_vps_status_response_deserialization() {
     let json = r#"{
@@ -1084,84 +1008,9 @@ fn test_byovps_validation_comprehensive() {
     assert!(!valid_password.is_empty());
 }
 
-// ============================================================================
-// Token Migration in Early Return Path Tests
-// ============================================================================
-
-/// Test token migration runs when VPS status is immediately ready
-#[test]
-fn test_byovps_early_return_ready_status() {
-    // Test that when BYOVPS returns "ready" immediately, token migration should be triggered
-    let ready_status = "ready";
-    let should_run_migration = matches!(
-        ready_status.to_lowercase().as_str(),
-        "ready" | "running" | "active"
-    );
-    assert!(should_run_migration, "Token migration should run for 'ready' status");
-}
-
-/// Test token migration runs when VPS status is immediately running
-#[test]
-fn test_byovps_early_return_running_status() {
-    let running_status = "running";
-    let should_run_migration = matches!(
-        running_status.to_lowercase().as_str(),
-        "ready" | "running" | "active"
-    );
-    assert!(should_run_migration, "Token migration should run for 'running' status");
-}
-
-/// Test token migration runs when VPS status is immediately active
-#[test]
-fn test_byovps_early_return_active_status() {
-    let active_status = "active";
-    let should_run_migration = matches!(
-        active_status.to_lowercase().as_str(),
-        "ready" | "running" | "active"
-    );
-    assert!(should_run_migration, "Token migration should run for 'active' status");
-}
-
-/// Test archive path is saved to credentials after token migration in early return
-#[test]
-fn test_byovps_early_return_saves_archive_path() {
-    let mut creds = Credentials::default();
-
-    // Simulate token migration returning an archive path
-    let archive_path = "/path/to/token-archive.tar.gz";
-    creds.token_archive_path = Some(archive_path.to_string());
-
-    // Verify archive path was saved
-    assert_eq!(creds.token_archive_path, Some(archive_path.to_string()));
-}
-
-/// Test credentials are updated and saved in early return path
-#[test]
-fn test_byovps_early_return_updates_credentials() {
-    let mut creds = Credentials::default();
-
-    // Simulate updating credentials from a ready BYOVPS response
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-early-ready".to_string());
-    creds.vps_hostname = Some("early.spoq.dev".to_string());
-    creds.vps_ip = Some("10.20.30.40".to_string());
-    creds.vps_url = Some("https://early.spoq.dev:8000".to_string());
-
-    // After token migration
-    creds.token_archive_path = Some("/path/to/archive.tar.gz".to_string());
-
-    // Verify all fields are set
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-    assert_eq!(creds.vps_id, Some("byovps-early-ready".to_string()));
-    assert_eq!(creds.vps_hostname, Some("early.spoq.dev".to_string()));
-    assert_eq!(creds.vps_ip, Some("10.20.30.40".to_string()));
-    assert_eq!(creds.vps_url, Some("https://early.spoq.dev:8000".to_string()));
-    assert_eq!(creds.token_archive_path, Some("/path/to/archive.tar.gz".to_string()));
-}
-
-/// Test BYOVPS early return path with ready status triggers token migration
+/// Test BYOVPS early return with ready status (API response structure)
 #[tokio::test]
-async fn test_byovps_early_return_with_token_migration() {
+async fn test_byovps_early_return_with_ready_response() {
     use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path};
 
@@ -1190,99 +1039,12 @@ async fn test_byovps_early_return_with_token_migration() {
     let response = result.unwrap();
     assert_eq!(response.status, "ready");
     assert_eq!(response.vps_id, Some("byovps-instant-ready".to_string()));
-
-    // This test verifies the API response structure for early return case
-    // The actual run_token_migration() call is tested via integration
+    assert_eq!(response.hostname, Some("instant.spoq.dev".to_string()));
+    assert_eq!(response.ip, Some("192.168.99.99".to_string()));
+    assert_eq!(response.url, Some("https://instant.spoq.dev:8000".to_string()));
 }
 
-// ============================================================================
-// VPS Status Saving Tests (Phase 3)
-// ============================================================================
-
-/// Test vps_status is saved when BYOVPS provision fails
-#[test]
-fn test_vps_status_saved_on_failed_provision() {
-    let mut creds = Credentials::default();
-
-    // Simulate a failed BYOVPS provision response
-    creds.vps_status = Some("failed".to_string());
-    creds.vps_id = Some("byovps-failed-123".to_string());
-
-    // Verify status is set correctly
-    assert_eq!(creds.vps_status, Some("failed".to_string()));
-    assert_eq!(creds.vps_id, Some("byovps-failed-123".to_string()));
-}
-
-/// Test vps_status is saved when BYOVPS provision has error
-#[test]
-fn test_vps_status_saved_on_error_provision() {
-    let mut creds = Credentials::default();
-
-    // Simulate an error BYOVPS provision response
-    creds.vps_status = Some("error".to_string());
-    creds.vps_id = Some("byovps-error-456".to_string());
-
-    // Verify status is set correctly
-    assert_eq!(creds.vps_status, Some("error".to_string()));
-    assert_eq!(creds.vps_id, Some("byovps-error-456".to_string()));
-}
-
-/// Test vps_status is saved when BYOVPS provision returns ready immediately
-#[test]
-fn test_vps_status_saved_on_immediate_ready() {
-    let mut creds = Credentials::default();
-
-    // Simulate ready BYOVPS provision response (early return path)
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-ready-789".to_string());
-    creds.vps_hostname = Some("ready.spoq.dev".to_string());
-
-    // Verify status is set correctly
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-    assert_eq!(creds.vps_id, Some("byovps-ready-789".to_string()));
-}
-
-/// Test vps_status is saved after successful polling
-#[test]
-fn test_vps_status_saved_after_polling() {
-    let mut creds = Credentials::default();
-
-    // Simulate status update after polling completes
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-polled-999".to_string());
-    creds.vps_hostname = Some("polled.spoq.dev".to_string());
-    creds.vps_ip = Some("10.0.0.100".to_string());
-    creds.vps_url = Some("https://polled.spoq.dev:8000".to_string());
-
-    // Verify all fields are set correctly
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-    assert_eq!(creds.vps_id, Some("byovps-polled-999".to_string()));
-    assert_eq!(creds.vps_hostname, Some("polled.spoq.dev".to_string()));
-    assert_eq!(creds.vps_ip, Some("10.0.0.100".to_string()));
-    assert_eq!(creds.vps_url, Some("https://polled.spoq.dev:8000".to_string()));
-}
-
-/// Test vps_status transitions from provisioning to ready
-#[test]
-fn test_vps_status_transition_provisioning_to_ready() {
-    let mut creds = Credentials::default();
-
-    // Initial state: provisioning
-    creds.vps_status = Some("provisioning".to_string());
-    creds.vps_id = Some("byovps-transition-001".to_string());
-    assert_eq!(creds.vps_status, Some("provisioning".to_string()));
-
-    // After polling: ready
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_hostname = Some("transition.spoq.dev".to_string());
-    creds.vps_url = Some("https://transition.spoq.dev:8000".to_string());
-
-    // Verify status transitioned correctly
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-    assert_eq!(creds.vps_hostname, Some("transition.spoq.dev".to_string()));
-}
-
-/// Test BYOVPS provision response with failed status includes error details
+/// Test BYOVPS failed provision response structure
 #[tokio::test]
 async fn test_byovps_failed_provision_response_structure() {
     use wiremock::{MockServer, Mock, ResponseTemplate};
@@ -1314,281 +1076,40 @@ async fn test_byovps_failed_provision_response_structure() {
     assert_eq!(response.message, Some("SSH connection failed: Connection refused".to_string()));
 }
 
-/// Test vps_status is persisted correctly across credential saves
+/// Test Credentials struct has only auth fields (verification test)
 #[test]
-fn test_vps_status_persistence() {
-    use tempfile::TempDir;
-    use std::fs;
+fn test_credentials_only_has_auth_fields() {
+    // This test documents and verifies the new Credentials structure
+    // VPS state is no longer stored in credentials - it's fetched from API
 
-    let temp_dir = TempDir::new().unwrap();
-    let credentials_dir = temp_dir.path().join(".spoq");
-    let credentials_path = credentials_dir.join("credentials.json");
+    let creds = Credentials {
+        access_token: Some("token".to_string()),
+        refresh_token: Some("refresh".to_string()),
+        expires_at: Some(12345),
+        user_id: Some("user-id".to_string()),
+    };
 
-    // Create the credentials directory
-    fs::create_dir_all(&credentials_dir).unwrap();
+    // Verify all fields are set correctly
+    assert_eq!(creds.access_token, Some("token".to_string()));
+    assert_eq!(creds.refresh_token, Some("refresh".to_string()));
+    assert_eq!(creds.expires_at, Some(12345));
+    assert_eq!(creds.user_id, Some("user-id".to_string()));
 
-    // Create credentials with vps_status
-    let mut creds = Credentials::default();
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-persist-test".to_string());
-    creds.vps_hostname = Some("persist.spoq.dev".to_string());
-    creds.access_token = Some("test-token".to_string());
+    // Serialize and verify only these fields are present
+    let json = serde_json::to_string(&creds).unwrap();
+    assert!(json.contains("access_token"));
+    assert!(json.contains("refresh_token"));
+    assert!(json.contains("expires_at"));
+    assert!(json.contains("user_id"));
 
-    // Save
-    let json = serde_json::to_string_pretty(&creds).unwrap();
-    fs::write(&credentials_path, json).unwrap();
-
-    // Load
-    let loaded_json = fs::read_to_string(&credentials_path).unwrap();
-    let loaded: Credentials = serde_json::from_str(&loaded_json).unwrap();
-
-    // Verify vps_status was persisted
-    assert_eq!(loaded.vps_status, Some("ready".to_string()));
-    assert_eq!(loaded.vps_id, Some("byovps-persist-test".to_string()));
-    assert_eq!(loaded.vps_hostname, Some("persist.spoq.dev".to_string()));
-}
-
-// ============================================================================
-// BYOVPS Early Return Path Tests (Phase 4)
-// ============================================================================
-
-/// Test BYOVPS ready immediately runs migration
-/// Verifies that when provision_byovps returns "ready" status immediately,
-/// token migration is called and credentials are saved with token_archive_path
-#[test]
-fn test_byovps_ready_immediately_runs_migration() {
-    // Simulate the early return path when BYOVPS returns ready immediately
-    let mut creds = Credentials::default();
-    creds.access_token = Some("valid-token".to_string());
-    creds.refresh_token = Some("refresh-token".to_string());
-
-    // Step 1: Provision response with status="ready"
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-instant-ready".to_string());
-    creds.vps_hostname = Some("instant.spoq.dev".to_string());
-    creds.vps_ip = Some("192.168.99.99".to_string());
-    creds.vps_url = Some("https://instant.spoq.dev:8000".to_string());
-
-    // Step 2: Save credentials before migration (as done in provisioning_flow.rs line 895)
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-
-    // Step 3: Simulate token migration being called
-    // In real flow: let migration_result = run_token_migration();
-    // For test, we simulate the result
-    let simulated_archive_path = "/home/user/.spoq/tokens/archive-123.tar.gz";
-    creds.token_archive_path = Some(simulated_archive_path.to_string());
-
-    // Step 4: Verify credentials have token_archive_path set
-    assert_eq!(
-        creds.token_archive_path,
-        Some(simulated_archive_path.to_string())
-    );
-
-    // Step 5: Verify credentials are saved with all fields
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-    assert_eq!(creds.vps_id, Some("byovps-instant-ready".to_string()));
-    assert_eq!(creds.vps_hostname, Some("instant.spoq.dev".to_string()));
-    assert_eq!(creds.vps_ip, Some("192.168.99.99".to_string()));
-    assert_eq!(
-        creds.vps_url,
-        Some("https://instant.spoq.dev:8000".to_string())
-    );
-}
-
-/// Test BYOVPS saves vps_status before token migration
-/// Verifies the order of operations: save credentials with status, then run migration
-#[test]
-fn test_byovps_saves_status_before_migration() {
-    use tempfile::TempDir;
-    use std::fs;
-
-    let temp_dir = TempDir::new().unwrap();
-    let credentials_dir = temp_dir.path().join(".spoq");
-    let credentials_path = credentials_dir.join("credentials.json");
-    fs::create_dir_all(&credentials_dir).unwrap();
-
-    // Initial credentials with auth tokens
-    let mut creds = Credentials::default();
-    creds.access_token = Some("test-token".to_string());
-    creds.refresh_token = Some("test-refresh".to_string());
-
-    // Step 1: Update credentials from BYOVPS response
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-order-test".to_string());
-    creds.vps_hostname = Some("order.spoq.dev".to_string());
-    creds.vps_url = Some("https://order.spoq.dev:8000".to_string());
-
-    // Step 2: Save credentials with vps_status (BEFORE migration)
-    let json_before = serde_json::to_string_pretty(&creds).unwrap();
-    fs::write(&credentials_path, &json_before).unwrap();
-
-    // Step 3: Load and verify vps_status was saved (no token_archive_path yet)
-    let loaded_before = fs::read_to_string(&credentials_path).unwrap();
-    let creds_before: Credentials = serde_json::from_str(&loaded_before).unwrap();
-    assert_eq!(creds_before.vps_status, Some("ready".to_string()));
-    assert!(creds_before.token_archive_path.is_none());
-
-    // Step 4: Run token migration (simulated)
-    creds.token_archive_path = Some("/path/to/archive.tar.gz".to_string());
-
-    // Step 5: Save credentials again AFTER migration
-    let json_after = serde_json::to_string_pretty(&creds).unwrap();
-    fs::write(&credentials_path, json_after).unwrap();
-
-    // Step 6: Verify both vps_status and token_archive_path are now saved
-    let loaded_after = fs::read_to_string(&credentials_path).unwrap();
-    let creds_after: Credentials = serde_json::from_str(&loaded_after).unwrap();
-    assert_eq!(creds_after.vps_status, Some("ready".to_string()));
-    assert_eq!(
-        creds_after.token_archive_path,
-        Some("/path/to/archive.tar.gz".to_string())
-    );
-}
-
-/// Test BYOVPS early return with no tokens to migrate
-/// Verifies that when no tokens exist, token_archive_path remains None
-#[test]
-fn test_byovps_early_return_no_tokens_to_migrate() {
-    let mut creds = Credentials::default();
-
-    // BYOVPS returns ready immediately
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-no-tokens".to_string());
-    creds.vps_hostname = Some("notokens.spoq.dev".to_string());
-    creds.vps_url = Some("https://notokens.spoq.dev:8000".to_string());
-
-    // Token migration runs but finds no tokens
-    // In real flow: run_token_migration() returns TokenMigrationResult with archive_path = None
-    // Simulating: no archive path is set
-    // token_archive_path remains None
-
-    // Verify credentials have VPS info but no archive path
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-    assert_eq!(creds.vps_id, Some("byovps-no-tokens".to_string()));
-    assert!(creds.token_archive_path.is_none());
-}
-
-/// Test BYOVPS early return prevents re-provisioning on next CLI start
-/// Verifies that when vps_status="ready" is saved, the CLI won't try to provision again
-#[test]
-fn test_byovps_early_return_prevents_reprovisioning() {
-    let mut creds = Credentials::default();
-
-    // BYOVPS completed successfully
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-complete".to_string());
-    creds.vps_hostname = Some("complete.spoq.dev".to_string());
-    creds.vps_url = Some("https://complete.spoq.dev:8000".to_string());
-    creds.token_archive_path = Some("/archive/path.tar.gz".to_string());
-
-    // Verify has_vps() returns true (prevents re-provisioning)
-    assert!(creds.has_vps());
-
-    // Verify vps_status indicates ready (no need to poll)
-    assert_eq!(creds.vps_status, Some("ready".to_string()));
-
-    // Verify all required fields are present
-    assert!(creds.vps_id.is_some());
-    assert!(creds.vps_url.is_some());
-    assert!(creds.vps_hostname.is_some());
-}
-
-/// Test BYOVPS early return with "running" status also triggers migration
-#[test]
-fn test_byovps_running_status_triggers_migration() {
-    let mut creds = Credentials::default();
-
-    // BYOVPS returns "running" status (another ready state)
-    creds.vps_status = Some("running".to_string());
-    creds.vps_id = Some("byovps-running".to_string());
-    creds.vps_hostname = Some("running.spoq.dev".to_string());
-    creds.vps_url = Some("https://running.spoq.dev:8000".to_string());
-
-    // Verify status is a ready state
-    let is_ready = matches!(
-        creds.vps_status.as_ref().unwrap().to_lowercase().as_str(),
-        "ready" | "running" | "active"
-    );
-    assert!(is_ready);
-
-    // Token migration should be triggered
-    creds.token_archive_path = Some("/archive/running.tar.gz".to_string());
-
-    // Verify archive path is saved
-    assert_eq!(
-        creds.token_archive_path,
-        Some("/archive/running.tar.gz".to_string())
-    );
-}
-
-/// Test BYOVPS early return with "active" status also triggers migration
-#[test]
-fn test_byovps_active_status_triggers_migration() {
-    let mut creds = Credentials::default();
-
-    // BYOVPS returns "active" status (another ready state)
-    creds.vps_status = Some("active".to_string());
-    creds.vps_id = Some("byovps-active".to_string());
-    creds.vps_hostname = Some("active.spoq.dev".to_string());
-    creds.vps_url = Some("https://active.spoq.dev:8000".to_string());
-
-    // Verify status is a ready state
-    let is_ready = matches!(
-        creds.vps_status.as_ref().unwrap().to_lowercase().as_str(),
-        "ready" | "running" | "active"
-    );
-    assert!(is_ready);
-
-    // Token migration should be triggered
-    creds.token_archive_path = Some("/archive/active.tar.gz".to_string());
-
-    // Verify archive path is saved
-    assert_eq!(
-        creds.token_archive_path,
-        Some("/archive/active.tar.gz".to_string())
-    );
-}
-
-/// Test BYOVPS early return saves credentials multiple times correctly
-/// Verifies the two-save pattern: once before migration, once after
-#[test]
-fn test_byovps_early_return_double_save_pattern() {
-    use tempfile::TempDir;
-    use std::fs;
-
-    let temp_dir = TempDir::new().unwrap();
-    let credentials_dir = temp_dir.path().join(".spoq");
-    let credentials_path = credentials_dir.join("credentials.json");
-    fs::create_dir_all(&credentials_dir).unwrap();
-
-    let mut creds = Credentials::default();
-    creds.access_token = Some("token".to_string());
-
-    // First save: after updating from BYOVPS response (line 895)
-    creds.vps_status = Some("ready".to_string());
-    creds.vps_id = Some("byovps-double-save".to_string());
-    creds.vps_url = Some("https://double.spoq.dev:8000".to_string());
-
-    let json1 = serde_json::to_string_pretty(&creds).unwrap();
-    fs::write(&credentials_path, &json1).unwrap();
-
-    // Verify first save
-    let loaded1: Credentials = serde_json::from_str(&json1).unwrap();
-    assert_eq!(loaded1.vps_status, Some("ready".to_string()));
-    assert!(loaded1.token_archive_path.is_none());
-
-    // Second save: after token migration (line 902)
-    creds.token_archive_path = Some("/archive/double.tar.gz".to_string());
-
-    let json2 = serde_json::to_string_pretty(&creds).unwrap();
-    fs::write(&credentials_path, json2).unwrap();
-
-    // Verify second save has both fields
-    let loaded2_str = fs::read_to_string(&credentials_path).unwrap();
-    let loaded2: Credentials = serde_json::from_str(&loaded2_str).unwrap();
-    assert_eq!(loaded2.vps_status, Some("ready".to_string()));
-    assert_eq!(
-        loaded2.token_archive_path,
-        Some("/archive/double.tar.gz".to_string())
-    );
+    // VPS fields should NOT be present (they were removed)
+    assert!(!json.contains("vps_id"));
+    assert!(!json.contains("vps_url"));
+    assert!(!json.contains("vps_status"));
+    assert!(!json.contains("vps_hostname"));
+    assert!(!json.contains("vps_ip"));
+    assert!(!json.contains("datacenter_id"));
+    assert!(!json.contains("token_archive_path"));
+    assert!(!json.contains("subscription_id"));
+    assert!(!json.contains("username"));
 }
