@@ -76,6 +76,14 @@ impl App {
                 self.mark_dirty();
             }
         }
+
+        // Reset Ctrl+C state after 2 seconds
+        if let Some(last_time) = self.last_ctrl_c_time {
+            if last_time.elapsed().as_secs() >= 2 {
+                self.last_ctrl_c_time = None;
+                self.mark_dirty();
+            }
+        }
     }
 
     /// Update smooth scroll position with velocity and friction

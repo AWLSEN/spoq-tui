@@ -273,6 +273,8 @@ pub struct App {
     /// Hit area registry for touch/click interactions
     /// Cleared at the start of each render cycle, populated during rendering
     pub hit_registry: HitAreaRegistry,
+    /// Timestamp of last Ctrl+C press (for double-press exit detection)
+    pub last_ctrl_c_time: Option<std::time::Instant>,
 }
 
 impl App {
@@ -446,6 +448,7 @@ impl App {
             vps_url,
             system_stats: SystemStats::default(),
             hit_registry: HitAreaRegistry::new(),
+            last_ctrl_c_time: None,
         })
     }
 
@@ -3821,5 +3824,74 @@ mod tests {
         let _: Option<&String> = creds.refresh_token.as_ref();
         let _: Option<i64> = creds.expires_at;
         let _: Option<&String> = creds.user_id.as_ref();
+    }
+
+    // ========================================================================
+    // Double Ctrl+C Exit Tests
+    // ========================================================================
+
+    #[test]
+    fn test_ctrl_c_initial_state_is_none() {
+        let app = App::default();
+        assert!(app.last_ctrl_c_time.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_c_timestamp_can_be_set() {
+        let mut app = App::default();
+        let now = std::time::Instant::now();
+        app.last_ctrl_c_time = Some(now);
+        assert!(app.last_ctrl_c_time.is_some());
+    }
+
+    #[test]
+    fn test_ctrl_c_state_resets_after_timeout() {
+        use std::time::Duration;
+
+        let mut app = App::default();
+
+        // Set Ctrl+C timestamp to 3 seconds ago
+        let three_seconds_ago = std::time::Instant::now() - Duration::from_secs(3);
+        app.last_ctrl_c_time = Some(three_seconds_ago);
+
+        // Call tick which should reset the state
+        app.tick();
+
+        // State should be cleared
+        assert!(app.last_ctrl_c_time.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_c_state_persists_within_timeout() {
+        use std::time::Duration;
+
+        let mut app = App::default();
+
+        // Set Ctrl+C timestamp to 1 second ago
+        let one_second_ago = std::time::Instant::now() - Duration::from_secs(1);
+        app.last_ctrl_c_time = Some(one_second_ago);
+
+        // Call tick which should NOT reset the state yet
+        app.tick();
+
+        // State should still be set
+        assert!(app.last_ctrl_c_time.is_some());
+    }
+
+    #[test]
+    fn test_ctrl_c_warning_clears_at_exactly_2_seconds() {
+        use std::time::Duration;
+
+        let mut app = App::default();
+
+        // Set Ctrl+C timestamp to exactly 2 seconds ago
+        let two_seconds_ago = std::time::Instant::now() - Duration::from_secs(2);
+        app.last_ctrl_c_time = Some(two_seconds_ago);
+
+        // Call tick
+        app.tick();
+
+        // State should be cleared (>= 2 seconds)
+        assert!(app.last_ctrl_c_time.is_none());
     }
 }

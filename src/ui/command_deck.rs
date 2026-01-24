@@ -5,6 +5,8 @@
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     Frame,
 };
 
@@ -15,6 +17,24 @@ use super::conversation::{create_mode_indicator_line, render_mode_indicator};
 use super::folder_picker::render_folder_picker;
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Create a Ctrl+C warning indicator line if Ctrl+C was recently pressed
+fn create_ctrl_c_indicator_line(
+    last_ctrl_c_time: Option<std::time::Instant>,
+) -> Option<Line<'static>> {
+    last_ctrl_c_time.map(|_| {
+        Line::from(vec![Span::styled(
+            " Press Ctrl+C again to exit",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )])
+    })
+}
 
 // ============================================================================
 // Main Command Deck Rendering
@@ -31,10 +51,14 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
     let line_count = app.textarea.line_count();
     let input_height = calculate_input_area_height(line_count);
 
-    // Check if we need to show mode indicator
+    // Check if we need to show mode indicator or Ctrl+C warning
     let mode_indicator_line = create_mode_indicator_line(app.permission_mode);
+    let ctrl_c_indicator_line = create_ctrl_c_indicator_line(app.last_ctrl_c_time);
 
-    if let Some(mode_line) = mode_indicator_line {
+    // Prefer Ctrl+C warning over mode indicator (more urgent)
+    let indicator_line = ctrl_c_indicator_line.or(mode_indicator_line);
+
+    if let Some(indicator) = indicator_line {
         // Layout with mode indicator (3 sections)
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -46,7 +70,7 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
             .split(size);
 
         render_main_content(frame, main_chunks[0], app, &ctx);
-        render_mode_indicator(frame, main_chunks[1], mode_line);
+        render_mode_indicator(frame, main_chunks[1], indicator);
         render_input_area(frame, main_chunks[2], app);
 
         // Render folder picker overlay (if visible) - must be last for proper layering
@@ -201,5 +225,33 @@ mod tests {
         let line = indicator.unwrap();
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("EXECUTE"));
+    }
+
+    // ========================================================================
+    // Ctrl+C Indicator Tests
+    // ========================================================================
+
+    #[test]
+    fn test_ctrl_c_indicator_returns_none_when_not_set() {
+        let indicator = create_ctrl_c_indicator_line(None);
+        assert!(indicator.is_none());
+    }
+
+    #[test]
+    fn test_ctrl_c_indicator_returns_some_when_set() {
+        let now = std::time::Instant::now();
+        let indicator = create_ctrl_c_indicator_line(Some(now));
+        assert!(indicator.is_some());
+    }
+
+    #[test]
+    fn test_ctrl_c_indicator_contains_correct_message() {
+        let now = std::time::Instant::now();
+        let indicator = create_ctrl_c_indicator_line(Some(now));
+        assert!(indicator.is_some());
+
+        let line = indicator.unwrap();
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(text.contains("Press Ctrl+C again to exit"));
     }
 }

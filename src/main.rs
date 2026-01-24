@@ -348,8 +348,19 @@ where
                             // Global keybinds (always active)
                             match key.code {
                                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                    app.quit();
-                                    return Ok(());
+                                    // Double Ctrl+C to exit
+                                    let now = std::time::Instant::now();
+                                    if let Some(last_time) = app.last_ctrl_c_time {
+                                        if now.duration_since(last_time).as_secs() < 2 {
+                                            // Second Ctrl+C within 2 seconds - exit
+                                            app.quit();
+                                            return Ok(());
+                                        }
+                                    }
+                                    // First Ctrl+C or timeout expired - set timestamp
+                                    app.last_ctrl_c_time = Some(now);
+                                    app.mark_dirty(); // Force redraw to show warning message
+                                    continue;
                                 }
                                 // Shift+Escape to return to CommandDeck from Conversation
                                 // (kept for terminals that support it)
