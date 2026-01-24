@@ -1,6 +1,7 @@
 use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary};
 use spoq::cli::{parse_args, run_cli_command};
 use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
+use spoq::input::translate_shifted_char;
 use spoq::models;
 use spoq::startup::{run_preflight_checks, StartupConfig};
 use spoq::terminal::{setup_panic_hook, TerminalManager};
@@ -648,8 +649,16 @@ where
                                             app.user_has_scrolled = false;
                                             app.unified_scroll = 0;
                                         }
+
+                                        // Apply shift translation for non-uppercase characters
+                                        let char_to_insert = if key.modifiers.contains(KeyModifiers::SHIFT) && !c.is_uppercase() {
+                                            translate_shifted_char(c)
+                                        } else {
+                                            c
+                                        };
+
                                         // Check for @ trigger for folder picker (only on CommandDeck)
-                                        if c == '@' && app.screen == Screen::CommandDeck {
+                                        if char_to_insert == '@' && app.screen == Screen::CommandDeck {
                                             // Get current line content and cursor position
                                             let (row, col) = app.textarea.cursor();
                                             let lines = app.textarea.lines();
@@ -664,7 +673,7 @@ where
                                             }
                                         }
                                         // Normal character insertion
-                                        app.textarea.insert_char(c);
+                                        app.textarea.insert_char(char_to_insert);
                                         continue;
                                     }
                                     KeyCode::Backspace => {
