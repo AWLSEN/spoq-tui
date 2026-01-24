@@ -805,6 +805,67 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_deserialize_plan_approval_request_null_estimated_tokens() {
+        // Backend may send null for estimated_tokens
+        let json = r#"{
+            "type": "plan_approval_request",
+            "thread_id": "thread-plan-null",
+            "request_id": "plan-req-null",
+            "plan_summary": {
+                "title": "Quick fix",
+                "phases": ["Fix bug"],
+                "file_count": 2,
+                "estimated_tokens": null
+            },
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PlanApprovalRequest(req) => {
+                assert_eq!(req.thread_id, "thread-plan-null");
+                assert_eq!(req.request_id, "plan-req-null");
+                assert_eq!(req.plan_summary.title, "Quick fix");
+                assert_eq!(req.plan_summary.phases.len(), 1);
+                assert_eq!(req.plan_summary.file_count, 2);
+                assert!(req.plan_summary.estimated_tokens.is_none());
+                assert_eq!(req.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected PlanApprovalRequest"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_plan_approval_request_missing_estimated_tokens() {
+        // Backend may omit estimated_tokens field entirely
+        let json = r#"{
+            "type": "plan_approval_request",
+            "thread_id": "thread-plan-missing",
+            "request_id": "plan-req-missing",
+            "plan_summary": {
+                "title": "Small change",
+                "phases": ["Update config"],
+                "file_count": 1
+            },
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PlanApprovalRequest(req) => {
+                assert_eq!(req.thread_id, "thread-plan-missing");
+                assert_eq!(req.request_id, "plan-req-missing");
+                assert_eq!(req.plan_summary.title, "Small change");
+                assert_eq!(req.plan_summary.phases.len(), 1);
+                assert_eq!(req.plan_summary.file_count, 1);
+                assert!(req.plan_summary.estimated_tokens.is_none());
+                assert_eq!(req.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected PlanApprovalRequest"),
+        }
+    }
+
     // -------------------- Plan Approval Response Tests --------------------
 
     #[test]
