@@ -24,6 +24,9 @@ const MAX_NEED_ACTION_DISPLAY: usize = 5;
 /// Separator width as percentage of area width
 const SEPARATOR_WIDTH_PERCENT: f32 = 0.10;
 
+/// Maximum width for thread cards (centered if terminal is wider)
+const MAX_CARD_WIDTH: u16 = 90;
+
 // ============================================================================
 // Public API
 // ============================================================================
@@ -60,16 +63,34 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
         return;
     }
 
+    // Calculate centered area with max width
+    let centered_area = calculate_centered_area(area);
+
     match ctx.filter {
         None | Some(FilterState::All) => {
             // Split mode - separate need_action from autonomous
-            render_split_view(frame, area, ctx, registry);
+            render_split_view(frame, centered_area, ctx, registry);
         }
         Some(_) => {
             // Flat mode - filtered list
-            render_filtered_view(frame, area, ctx, registry);
+            render_filtered_view(frame, centered_area, ctx, registry);
         }
     }
+}
+
+/// Calculate a horizontally centered area with maximum card width
+///
+/// If the provided area is wider than MAX_CARD_WIDTH, returns a centered
+/// rectangle of MAX_CARD_WIDTH. Otherwise, returns the original area unchanged.
+fn calculate_centered_area(area: Rect) -> Rect {
+    if area.width <= MAX_CARD_WIDTH {
+        return area;
+    }
+
+    let card_width = MAX_CARD_WIDTH;
+    let x_offset = (area.width - card_width) / 2;
+
+    Rect::new(area.x + x_offset, area.y, card_width, area.height)
 }
 
 // ============================================================================
@@ -460,5 +481,76 @@ mod tests {
 
         // The render function should show max 5 and "+ 5 more"
         // This is verified by the constant MAX_NEED_ACTION_DISPLAY = 5
+    }
+
+    // -------------------- Centering Tests --------------------
+
+    #[test]
+    fn test_calculate_centered_area_narrow_terminal() {
+        use super::calculate_centered_area;
+        use ratatui::layout::Rect;
+
+        // Terminal narrower than MAX_CARD_WIDTH should return unchanged
+        let area = Rect::new(0, 5, 60, 20);
+        let centered = calculate_centered_area(area);
+
+        assert_eq!(centered.x, area.x);
+        assert_eq!(centered.y, area.y);
+        assert_eq!(centered.width, area.width);
+        assert_eq!(centered.height, area.height);
+    }
+
+    #[test]
+    fn test_calculate_centered_area_wide_terminal() {
+        use super::calculate_centered_area;
+        use super::MAX_CARD_WIDTH;
+        use ratatui::layout::Rect;
+
+        // Terminal wider than MAX_CARD_WIDTH should be centered
+        let area = Rect::new(0, 5, 150, 20);
+        let centered = calculate_centered_area(area);
+
+        // Width should be capped at MAX_CARD_WIDTH
+        assert_eq!(centered.width, MAX_CARD_WIDTH);
+
+        // Should be horizontally centered
+        let expected_x = (area.width - MAX_CARD_WIDTH) / 2;
+        assert_eq!(centered.x, expected_x);
+
+        // Y and height should be unchanged
+        assert_eq!(centered.y, area.y);
+        assert_eq!(centered.height, area.height);
+    }
+
+    #[test]
+    fn test_calculate_centered_area_exact_max_width() {
+        use super::calculate_centered_area;
+        use super::MAX_CARD_WIDTH;
+        use ratatui::layout::Rect;
+
+        // Terminal exactly at MAX_CARD_WIDTH should return unchanged
+        let area = Rect::new(5, 10, MAX_CARD_WIDTH, 15);
+        let centered = calculate_centered_area(area);
+
+        assert_eq!(centered.x, area.x);
+        assert_eq!(centered.y, area.y);
+        assert_eq!(centered.width, area.width);
+        assert_eq!(centered.height, area.height);
+    }
+
+    #[test]
+    fn test_calculate_centered_area_with_offset() {
+        use super::calculate_centered_area;
+        use super::MAX_CARD_WIDTH;
+        use ratatui::layout::Rect;
+
+        // Area with non-zero x should center relative to area
+        let area = Rect::new(10, 5, 200, 30);
+        let centered = calculate_centered_area(area);
+
+        // X offset should be area.x + centering offset
+        let expected_x = area.x + (area.width - MAX_CARD_WIDTH) / 2;
+        assert_eq!(centered.x, expected_x);
+        assert_eq!(centered.width, MAX_CARD_WIDTH);
     }
 }
