@@ -31,6 +31,8 @@ pub enum ClickAction {
     ApproveThread(String),
     /// Reject a thread's work
     RejectThread(String),
+    /// Allow a tool permission always (auto-approve this tool in future)
+    AllowToolAlways(String),
     /// Verify a thread's work
     VerifyThread(String),
     /// Archive a thread

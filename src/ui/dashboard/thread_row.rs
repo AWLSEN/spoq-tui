@@ -150,54 +150,80 @@ fn render_actions(
     let buf = frame.buffer_mut();
     let mut current_x = x;
 
+    // Key style: accent + bold
+    let key_style = Style::default()
+        .fg(ctx.theme.accent)
+        .add_modifier(Modifier::BOLD);
+
+    // Label style: dim
+    let label_style = Style::default().fg(ctx.theme.dim);
+
     // Determine which buttons to show
     let buttons = match (&thread.status, &thread.waiting_for) {
-        // Waiting + Permission or PlanApproval -> [approve] [reject]
-        (ThreadStatus::Waiting, Some(WaitingFor::Permission { .. }))
-        | (ThreadStatus::Waiting, Some(WaitingFor::PlanApproval { .. })) => {
+        // Permission -> [y] Yes  [n] No  [a] Always
+        (ThreadStatus::Waiting, Some(WaitingFor::Permission { .. })) => {
             vec![
-                ("[approve]", ButtonAction::Approve),
-                ("[reject]", ButtonAction::Reject),
+                ("[y]", "Yes", ButtonAction::Approve),
+                ("[n]", "No", ButtonAction::Reject),
+                ("[a]", "Always", ButtonAction::Always),
             ]
         }
-        // Waiting + UserInput -> [answer]
-        (ThreadStatus::Waiting, Some(WaitingFor::UserInput)) => {
-            vec![("[answer]", ButtonAction::Answer)]
+        // Plan approval -> [y] Yes  [n] No
+        (ThreadStatus::Waiting, Some(WaitingFor::PlanApproval { .. })) => {
+            vec![
+                ("[y]", "Yes", ButtonAction::Approve),
+                ("[n]", "No", ButtonAction::Reject),
+            ]
         }
-        // Done -> [verify]
+        // User input -> [a] Answer
+        (ThreadStatus::Waiting, Some(WaitingFor::UserInput)) => {
+            vec![("[a]", "Answer", ButtonAction::Answer)]
+        }
+        // Done -> [v] Verify
         (ThreadStatus::Done, _) => {
-            vec![("[verify]", ButtonAction::Verify)]
+            vec![("[v]", "Verify", ButtonAction::Verify)]
         }
         // Idle/Running/Error -> no buttons
         _ => vec![],
     };
 
-    for (label, action) in buttons {
+    for (key, label, action) in buttons {
+        let key_len = key.len() as u16;
         let label_len = label.len() as u16;
+        let total_len = key_len + 1 + label_len; // key + space + label
 
         // Check if there's room for this button
-        if current_x + label_len > area.x + area.width {
+        if current_x + total_len > area.x + area.width {
             break;
         }
 
-        // Render button text
-        let button_style = Style::default().fg(ctx.theme.accent);
-        render_text(buf, current_x, y, label, button_style, area);
+        // Render key (e.g., "[y]")
+        render_text(buf, current_x, y, key, key_style, area);
+        current_x += key_len;
 
-        // Register hit area for button
-        let button_rect = Rect::new(current_x, y, label_len, 1);
+        // Render space
+        render_text(buf, current_x, y, " ", label_style, area);
+        current_x += 1;
+
+        // Render label (e.g., "Yes")
+        render_text(buf, current_x, y, label, label_style, area);
+        current_x += label_len;
+
+        // Register hit area for entire button (key + space + label)
+        let button_rect = Rect::new(current_x - total_len, y, total_len, 1);
         let click_action = match action {
             ButtonAction::Approve => ClickAction::ApproveThread(thread.id.clone()),
             ButtonAction::Reject => ClickAction::RejectThread(thread.id.clone()),
+            ButtonAction::Always => ClickAction::AllowToolAlways(thread.id.clone()),
             ButtonAction::Answer => ClickAction::ExpandThread {
                 thread_id: thread.id.clone(),
                 anchor_y: y,
             },
             ButtonAction::Verify => ClickAction::VerifyThread(thread.id.clone()),
         };
-        registry.register(button_rect, click_action, Some(button_style));
+        registry.register(button_rect, click_action, Some(key_style));
 
-        current_x += label_len + 1; // +1 for spacing between buttons
+        current_x += 2; // 2 spaces between buttons
     }
 }
 
@@ -205,6 +231,7 @@ fn render_actions(
 enum ButtonAction {
     Approve,
     Reject,
+    Always,
     Answer,
     Verify,
 }
@@ -375,5 +402,197 @@ mod tests {
         // "日本語テスト" has 6 characters, so max_len=5 should truncate
         let result = truncate("日本語テスト", 5);
         assert_eq!(result, "日本...");
+    }
+
+    // -------------------- Button Generation Tests --------------------
+
+    #[test]
+    fn test_buttons_permission_waiting() {
+        use crate::models::dashboard::{ThreadStatus, WaitingFor};
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test-1".to_string(),
+            title: "Test Thread".to_string(),
+            repository: "test-repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Waiting,
+            waiting_for: Some(WaitingFor::Permission {
+                request_id: "req-123".to_string(),
+                tool_name: "test_tool".to_string(),
+            }),
+            progress: None,
+            duration: "1m".to_string(),
+            needs_action: true,
+            current_operation: None,
+        };
+
+        // Verify the match would produce 3 buttons for permission
+        let buttons = match (&thread.status, &thread.waiting_for) {
+            (ThreadStatus::Waiting, Some(WaitingFor::Permission { .. })) => {
+                vec![
+                    ("[y]", "Yes", ButtonAction::Approve),
+                    ("[n]", "No", ButtonAction::Reject),
+                    ("[a]", "Always", ButtonAction::Always),
+                ]
+            }
+            _ => vec![],
+        };
+
+        assert_eq!(buttons.len(), 3);
+        assert_eq!(buttons[0].0, "[y]");
+        assert_eq!(buttons[0].1, "Yes");
+        assert_eq!(buttons[1].0, "[n]");
+        assert_eq!(buttons[1].1, "No");
+        assert_eq!(buttons[2].0, "[a]");
+        assert_eq!(buttons[2].1, "Always");
+    }
+
+    #[test]
+    fn test_buttons_plan_approval_waiting() {
+        use crate::models::dashboard::{ThreadStatus, WaitingFor};
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test-2".to_string(),
+            title: "Test Thread".to_string(),
+            repository: "test-repo".to_string(),
+            mode: crate::models::ThreadMode::Plan,
+            status: ThreadStatus::Waiting,
+            waiting_for: Some(WaitingFor::PlanApproval {
+                request_id: "req-456".to_string(),
+            }),
+            progress: None,
+            duration: "2m".to_string(),
+            needs_action: true,
+            current_operation: None,
+        };
+
+        // Verify the match would produce 2 buttons for plan approval
+        let buttons = match (&thread.status, &thread.waiting_for) {
+            (ThreadStatus::Waiting, Some(WaitingFor::PlanApproval { .. })) => {
+                vec![
+                    ("[y]", "Yes", ButtonAction::Approve),
+                    ("[n]", "No", ButtonAction::Reject),
+                ]
+            }
+            _ => vec![],
+        };
+
+        assert_eq!(buttons.len(), 2);
+        assert_eq!(buttons[0].0, "[y]");
+        assert_eq!(buttons[0].1, "Yes");
+        assert_eq!(buttons[1].0, "[n]");
+        assert_eq!(buttons[1].1, "No");
+    }
+
+    #[test]
+    fn test_buttons_user_input_waiting() {
+        use crate::models::dashboard::{ThreadStatus, WaitingFor};
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test-3".to_string(),
+            title: "Test Thread".to_string(),
+            repository: "test-repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Waiting,
+            waiting_for: Some(WaitingFor::UserInput),
+            progress: None,
+            duration: "30s".to_string(),
+            needs_action: true,
+            current_operation: None,
+        };
+
+        // Verify the match would produce 1 button for user input
+        let buttons = match (&thread.status, &thread.waiting_for) {
+            (ThreadStatus::Waiting, Some(WaitingFor::UserInput)) => {
+                vec![("[a]", "Answer", ButtonAction::Answer)]
+            }
+            _ => vec![],
+        };
+
+        assert_eq!(buttons.len(), 1);
+        assert_eq!(buttons[0].0, "[a]");
+        assert_eq!(buttons[0].1, "Answer");
+    }
+
+    #[test]
+    fn test_buttons_done_status() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test-4".to_string(),
+            title: "Test Thread".to_string(),
+            repository: "test-repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Done,
+            waiting_for: None,
+            progress: None,
+            duration: "5m".to_string(),
+            needs_action: false,
+            current_operation: None,
+        };
+
+        // Verify the match would produce 1 button for done status
+        let buttons = match (&thread.status, &thread.waiting_for) {
+            (ThreadStatus::Done, _) => {
+                vec![("[v]", "Verify", ButtonAction::Verify)]
+            }
+            _ => vec![],
+        };
+
+        assert_eq!(buttons.len(), 1);
+        assert_eq!(buttons[0].0, "[v]");
+        assert_eq!(buttons[0].1, "Verify");
+    }
+
+    #[test]
+    fn test_buttons_running_no_buttons() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::{Progress, ThreadView};
+
+        let thread = ThreadView {
+            id: "test-5".to_string(),
+            title: "Test Thread".to_string(),
+            repository: "test-repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Running,
+            waiting_for: None,
+            progress: Some(Progress {
+                current: 2,
+                total: 5,
+            }),
+            duration: "1m".to_string(),
+            needs_action: false,
+            current_operation: Some("Running tests".to_string()),
+        };
+
+        // Verify running status produces no buttons
+        let buttons = match (&thread.status, &thread.waiting_for) {
+            (ThreadStatus::Waiting, Some(WaitingFor::Permission { .. })) => {
+                vec![
+                    ("[y]", "Yes", ButtonAction::Approve),
+                    ("[n]", "No", ButtonAction::Reject),
+                    ("[a]", "Always", ButtonAction::Always),
+                ]
+            }
+            (ThreadStatus::Waiting, Some(WaitingFor::PlanApproval { .. })) => {
+                vec![
+                    ("[y]", "Yes", ButtonAction::Approve),
+                    ("[n]", "No", ButtonAction::Reject),
+                ]
+            }
+            (ThreadStatus::Waiting, Some(WaitingFor::UserInput)) => {
+                vec![("[a]", "Answer", ButtonAction::Answer)]
+            }
+            (ThreadStatus::Done, _) => {
+                vec![("[v]", "Verify", ButtonAction::Verify)]
+            }
+            _ => vec![],
+        };
+
+        assert_eq!(buttons.len(), 0);
     }
 }

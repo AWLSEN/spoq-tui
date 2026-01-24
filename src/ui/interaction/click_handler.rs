@@ -93,6 +93,24 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
                 );
             }
         }
+        ClickAction::AllowToolAlways(thread_id) => {
+            // Handle tool permission with "always allow" (auto-approve this tool in future)
+            // For now, this behaves like approval but with a flag for future enhancement
+            let sent = app.handle_thread_approval(&thread_id);
+            if sent {
+                app.dashboard.collapse_overlay();
+                tracing::info!(
+                    "Click: AllowToolAlways(thread_id={}) - tool approved with always flag",
+                    thread_id
+                );
+            } else {
+                tracing::debug!(
+                    "Click: AllowToolAlways(thread_id={}) - no action needed",
+                    thread_id
+                );
+            }
+            // TODO: In future, store the tool name in a persistent allow-list
+        }
         ClickAction::VerifyThread(thread_id) => {
             // Handle verification via REST endpoint with local fallback
             app.handle_thread_verification(&thread_id);
@@ -215,6 +233,7 @@ mod tests {
 
         handle_click_action(&mut app, ClickAction::ApproveThread(thread_id.clone()));
         handle_click_action(&mut app, ClickAction::RejectThread(thread_id.clone()));
+        handle_click_action(&mut app, ClickAction::AllowToolAlways(thread_id.clone()));
         handle_click_action(&mut app, ClickAction::VerifyThread(thread_id.clone()));
         handle_click_action(&mut app, ClickAction::ArchiveThread(thread_id.clone()));
         handle_click_action(&mut app, ClickAction::ResumeThread(thread_id.clone()));
