@@ -130,8 +130,9 @@ fn main() -> Result<()> {
 
     // =========================================================
     // Pre-flight checks - auth, VPS, health (via startup module)
+    // Set SPOQ_DEV=1 to skip auth and use localhost:8000
     // =========================================================
-    let startup_config = StartupConfig::default();
+    let startup_config = StartupConfig::from_env();
     let startup_result = match run_preflight_checks(&runtime, startup_config) {
         Ok(result) => result,
         Err(e) => {
@@ -141,8 +142,7 @@ fn main() -> Result<()> {
     };
 
     // Extract startup results
-    // Note: credentials are loaded by App from CredentialsManager
-    let _credentials = startup_result.credentials;
+    let credentials = startup_result.credentials;
     let vps_url = startup_result.vps_url;
     let debug_tx = startup_result.debug_tx;
     let debug_server_handle = startup_result.debug_server_handle;
@@ -165,8 +165,8 @@ fn main() -> Result<()> {
     // Create terminal manager - handles all setup and cleanup via RAII
     let mut term_manager = TerminalManager::new()?;
 
-    // Initialize application state with debug sender and VPS URL
-    let mut app = App::with_debug_and_vps(debug_tx, vps_url)?;
+    // Initialize application state with debug sender, VPS URL, and credentials
+    let mut app = App::with_credentials(debug_tx, vps_url, credentials)?;
 
     // Log initial auth state for debugging
     app.log_initial_auth_state();
@@ -185,12 +185,22 @@ fn main() -> Result<()> {
         app.load_folders();
 
         // Connect WebSocket for real-time communication
-        // Build config with token from credentials (not just env var)
-        let ws_config = if let Some(ref token) = app.credentials.access_token {
-            WsClientConfig::default().with_auth(token)
-        } else {
-            WsClientConfig::default()
-        };
+        // Build config with token from credentials and VPS URL
+        let mut ws_config = WsClientConfig::default();
+
+        // Use VPS URL for WebSocket host (strip protocol prefix)
+        if let Some(ref url) = app.vps_url {
+            let host = url
+                .strip_prefix("https://")
+                .or_else(|| url.strip_prefix("http://"))
+                .unwrap_or(url);
+            ws_config = ws_config.with_host(host);
+        }
+
+        // Add auth token if available
+        if let Some(ref token) = app.credentials.access_token {
+            ws_config = ws_config.with_auth(token);
+        }
 
         // Emit debug event showing connection attempt
         if let Some(ref tx) = app.debug_tx {

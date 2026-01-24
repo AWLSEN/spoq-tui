@@ -34,6 +34,10 @@ pub struct StartupConfig {
     pub enable_debug: bool,
     /// Debug server port (default: 3030)
     pub debug_port: u16,
+    /// Dev mode - skips auth and uses local conductor (set via SPOQ_DEV=1)
+    pub dev_mode: bool,
+    /// Override conductor URL (used in dev mode, defaults to http://localhost:8000)
+    pub dev_conductor_url: Option<String>,
 }
 
 impl Default for StartupConfig {
@@ -44,6 +48,8 @@ impl Default for StartupConfig {
             skip_health_check: false,
             enable_debug: true,
             debug_port: 3030,
+            dev_mode: false,
+            dev_conductor_url: None,
         }
     }
 }
@@ -82,6 +88,34 @@ impl StartupConfig {
     pub fn with_debug_port(mut self, port: u16) -> Self {
         self.debug_port = port;
         self
+    }
+
+    /// Enable dev mode (skips auth, uses local conductor).
+    pub fn with_dev_mode(mut self, dev_mode: bool) -> Self {
+        self.dev_mode = dev_mode;
+        self
+    }
+
+    /// Set the dev conductor URL (defaults to http://localhost:8000).
+    pub fn with_dev_conductor_url(mut self, url: impl Into<String>) -> Self {
+        self.dev_conductor_url = Some(url.into());
+        self
+    }
+
+    /// Create config from environment variable SPOQ_DEV.
+    /// When SPOQ_DEV=1, enables dev mode with localhost:8000.
+    pub fn from_env() -> Self {
+        let dev_mode = std::env::var("SPOQ_DEV").is_ok();
+
+        if dev_mode {
+            Self::default()
+                .with_dev_mode(true)
+                .with_skip_vps_check(true)
+                .with_skip_health_check(true)
+                .with_dev_conductor_url("http://localhost:8000")
+        } else {
+            Self::default()
+        }
     }
 }
 
@@ -163,6 +197,8 @@ mod tests {
         assert!(!config.skip_health_check);
         assert!(config.enable_debug);
         assert_eq!(config.debug_port, 3030);
+        assert!(!config.dev_mode);
+        assert!(config.dev_conductor_url.is_none());
     }
 
     #[test]
@@ -172,13 +208,38 @@ mod tests {
             .with_skip_vps_check(true)
             .with_skip_health_check(true)
             .with_enable_debug(false)
-            .with_debug_port(4040);
+            .with_debug_port(4040)
+            .with_dev_mode(true)
+            .with_dev_conductor_url("http://localhost:9000");
 
         assert!(!config.skip_update_check);
         assert!(config.skip_vps_check);
         assert!(config.skip_health_check);
         assert!(!config.enable_debug);
         assert_eq!(config.debug_port, 4040);
+        assert!(config.dev_mode);
+        assert_eq!(
+            config.dev_conductor_url,
+            Some("http://localhost:9000".to_string())
+        );
+    }
+
+    #[test]
+    fn test_startup_config_dev_mode_settings() {
+        // Test that dev mode configures all the right flags
+        let config = StartupConfig::default()
+            .with_dev_mode(true)
+            .with_skip_vps_check(true)
+            .with_skip_health_check(true)
+            .with_dev_conductor_url("http://localhost:8000");
+
+        assert!(config.dev_mode);
+        assert!(config.skip_vps_check);
+        assert!(config.skip_health_check);
+        assert_eq!(
+            config.dev_conductor_url,
+            Some("http://localhost:8000".to_string())
+        );
     }
 
     #[test]

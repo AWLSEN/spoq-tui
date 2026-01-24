@@ -68,6 +68,15 @@ impl Default for WsClientConfig {
 }
 
 impl WsClientConfig {
+    /// Set the WebSocket host.
+    ///
+    /// The host should be in format "host:port" (without protocol).
+    /// Returns self for method chaining.
+    pub fn with_host(mut self, host: impl Into<String>) -> Self {
+        self.host = host.into();
+        self
+    }
+
     /// Set the authentication token for Bearer auth.
     ///
     /// Returns self for method chaining.

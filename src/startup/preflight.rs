@@ -79,6 +79,43 @@ pub fn run_preflight_checks(
     runtime: &tokio::runtime::Runtime,
     config: StartupConfig,
 ) -> Result<StartupResult, PreflightError> {
+    // Dev mode: skip auth and use localhost conductor
+    if config.dev_mode {
+        println!("🔧 Dev mode enabled - skipping authentication");
+        let dev_url = config
+            .dev_conductor_url
+            .clone()
+            .unwrap_or_else(|| "http://localhost:8000".to_string());
+        println!("   Using conductor at: {}", dev_url);
+
+        // Create dummy credentials for dev mode
+        let credentials = crate::auth::credentials::Credentials {
+            access_token: Some("dev-token".to_string()),
+            refresh_token: Some("dev-refresh".to_string()),
+            expires_at: None,
+            user_id: Some("dev-user".to_string()),
+        };
+
+        // Start debug system
+        let (debug_tx, debug_handle, debug_snapshot) = if config.enable_debug {
+            let debug_result = runtime.block_on(start_debug_system(config.debug_port));
+            (
+                debug_result.tx,
+                debug_result.server_handle,
+                debug_result.state_snapshot,
+            )
+        } else {
+            (None, None, None)
+        };
+
+        let result = StartupResult::new(credentials)
+            .with_vps_url(Some(dev_url))
+            .with_debug(debug_tx, debug_handle, debug_snapshot);
+
+        println!("Starting SPOQ (dev mode)...\n");
+        return Ok(result);
+    }
+
     // Initialize credentials manager
     let manager = CredentialsManager::new().ok_or_else(|| {
         PreflightError::CredentialsManager("Failed to initialize credentials manager".to_string())

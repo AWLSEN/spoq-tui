@@ -284,6 +284,30 @@ impl App {
         Self::with_debug_and_vps(debug_tx, None)
     }
 
+    /// Create a new App instance with pre-loaded credentials (for dev mode).
+    ///
+    /// Unlike `with_debug_and_vps`, this does NOT reload credentials from disk.
+    /// Use this when you have credentials from startup (e.g., dev mode).
+    pub fn with_credentials(
+        debug_tx: Option<DebugEventSender>,
+        vps_url: Option<String>,
+        credentials: Credentials,
+    ) -> Result<Self> {
+        // Create client with VPS URL and credentials
+        let client = match (&vps_url, &credentials.access_token) {
+            (Some(url), Some(token)) => ConductorClient::with_url(url).with_auth(token),
+            (Some(url), None) => ConductorClient::with_url(url),
+            _ => ConductorClient::new(),
+        };
+
+        Self::with_client_and_debug_and_credentials(
+            Arc::new(client),
+            debug_tx,
+            credentials,
+            vps_url,
+        )
+    }
+
     /// Create a new App instance with optional debug sender and VPS URL.
     ///
     /// VPS URL is now passed explicitly rather than read from credentials,
