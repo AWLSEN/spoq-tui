@@ -44,6 +44,8 @@ ctrlc = "3"
 sysinfo = "0.30"
 webbrowser = "1.0"
 thiserror = "1"
+async-trait = "0.1"
+bytes = "1"
 
 # SSH/SFTP for credentials sync to VPS
 ssh2 = "0.9"
