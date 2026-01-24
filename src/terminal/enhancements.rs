@@ -77,24 +77,6 @@ pub fn pop_keyboard_enhancements<W: Write>(writer: &mut W) -> bool {
     execute!(writer, PopKeyboardEnhancementFlags).is_ok()
 }
 
-/// Hard reset Kitty keyboard protocol.
-///
-/// This sends a CSI sequence that resets all keyboard enhancement flags
-/// to zero. This is a non-stack-based reset that works even if the stack
-/// is corrupted or out of sync.
-///
-/// Some terminals (like Ghostty) need this sent after leaving alternate
-/// screen to properly restore keyboard behavior.
-///
-/// # Arguments
-///
-/// * `writer` - The output writer (typically stdout)
-pub fn hard_reset_keyboard_protocol<W: Write>(writer: &mut W) {
-    // CSI = 0 u sets all keyboard enhancement flags to zero
-    let _ = write!(writer, "\x1b[=0u");
-    let _ = writer.flush();
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,13 +87,5 @@ mod tests {
         // These may return false on non-supporting terminals, but shouldn't panic
         let _ = push_keyboard_enhancements(&mut buffer);
         let _ = pop_keyboard_enhancements(&mut buffer);
-    }
-
-    #[test]
-    fn test_hard_reset_writes_sequence() {
-        let mut buffer = Vec::new();
-        hard_reset_keyboard_protocol(&mut buffer);
-        // Should contain the CSI sequence
-        assert!(buffer.contains(&0x1b)); // ESC character
     }
 }

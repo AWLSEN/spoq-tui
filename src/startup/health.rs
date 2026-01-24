@@ -129,8 +129,6 @@ fn attempt_credential_sync(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Note: Full integration tests would require mocking the conductor client
     // which is beyond the scope of unit tests. The health check functionality
     // is tested in health_check.rs.
