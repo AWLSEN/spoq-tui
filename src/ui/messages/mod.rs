@@ -4,13 +4,14 @@
 //! Uses `LayoutContext` for responsive layout calculations.
 
 mod errors;
+pub mod height;
 mod permission_inline;
 mod segments;
 mod subagent_events;
 mod text_wrapping;
 mod thinking;
 mod tool_events;
-mod virtualization;
+pub mod virtualization;
 
 // Re-export public APIs at crate::ui::messages::*
 // Note: Some exports are only used in tests
@@ -232,17 +233,12 @@ pub fn render_single_message(
 /// visible viewport plus a small buffer, significantly improving performance
 /// for long conversation threads.
 pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &LayoutContext) {
-    // Reset link visibility flag at the start of each render pass
-    app.has_visible_links = false;
+    // Note: has_visible_links is reset in prepare_render()
+    // Note: rendered_lines_cache invalidation happens in prepare_render()
 
     let inner = inner_rect(area, 1);
     let viewport_height = inner.height as usize;
     let viewport_width = inner.width as usize;
-
-    // Invalidate rendered lines cache if viewport width changed (terminal resize)
-    // This ensures wrapped lines are re-rendered with correct width
-    app.rendered_lines_cache
-        .invalidate_if_width_changed(inner.width);
 
     // Collect header lines (error banners, stream errors)
     let mut header_lines: Vec<Line> = Vec::new();
@@ -276,8 +272,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
     let header_visual_lines = estimate_wrapped_line_count(&header_lines, viewport_width);
 
-    // Phase 1: Calculate heights using incremental caching
-    // Only recalculate heights when render_version changes or new messages are added
+    // Phase 1: Get heights from pre-computed cache (prepared in prepare_render)
+    // The height cache is updated in prepare_render(), we just read from it here
     let current_thread_id = app.active_thread_id.clone();
     let (message_heights, total_visual_lines, message_count) = {
         let cached_messages = current_thread_id.as_ref().and_then(|id| {
@@ -309,7 +305,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     ));
                 }
 
-                // Check if we can use incremental updates on existing cache
+                // Use pre-computed heights from the cache (prepared in prepare_render)
                 let cache_valid = app
                     .height_cache
                     .as_ref()
@@ -317,48 +313,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     .unwrap_or(false);
 
                 if cache_valid {
-                    // Incremental update: only update changed heights or append new ones
-                    let cache = app.height_cache.as_mut().unwrap();
-                    let cached_len = cache.heights.len();
-                    let msg_len = messages.len();
-
-                    // Handle message removal (truncate cache)
-                    if msg_len < cached_len {
-                        cache.truncate(msg_len);
-                    }
-
-                    // Track earliest index where cumulative offsets need recalculation
-                    let mut first_changed_idx: Option<usize> = None;
-
-                    // Update existing entries where render_version changed
-                    for (i, message) in messages.iter().enumerate().take(cache.heights.len()) {
-                        let cached_entry = &cache.heights[i];
-                        if cached_entry.message_id != message.id
-                            || cached_entry.render_version != message.render_version
-                        {
-                            // Recalculate height for this message
-                            let new_height = estimate_message_height_fast(message, viewport_width);
-                            cache.heights[i].message_id = message.id;
-                            cache.heights[i].render_version = message.render_version;
-                            if cache.heights[i].visual_lines != new_height {
-                                cache.heights[i].visual_lines = new_height;
-                                if first_changed_idx.is_none() {
-                                    first_changed_idx = Some(i);
-                                }
-                            }
-                        }
-                    }
-
-                    // Append new messages
-                    for message in messages.iter().skip(cache.heights.len()) {
-                        let height = estimate_message_height_fast(message, viewport_width);
-                        cache.append(message.id, message.render_version, height);
-                    }
-
-                    // Recalculate cumulative offsets if any heights changed
-                    if let Some(start_idx) = first_changed_idx {
-                        cache.recalculate_offsets_from(start_idx);
-                    }
+                    let cache = app.height_cache.as_ref().unwrap();
 
                     // Convert to MessageHeight for the virtualization API
                     let heights: Vec<MessageHeight> = cache
@@ -374,28 +329,24 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     let total = header_visual_lines + cache.total_lines;
                     (heights, total, count)
                 } else {
-                    // Cache miss or invalid: build fresh cache
-                    let thread_id_arc = std::sync::Arc::new(thread_id.clone());
-                    let mut cache = crate::app::CachedHeights::new(thread_id_arc, viewport_width);
-
-                    for message in messages.iter() {
-                        let height = estimate_message_height_fast(message, viewport_width);
-                        cache.append(message.id, message.render_version, height);
-                    }
-
-                    // Convert to MessageHeight for the virtualization API
-                    let heights: Vec<MessageHeight> = cache
-                        .heights
+                    // Fallback: build heights inline if cache wasn't prepared
+                    // This shouldn't happen normally since prepare_render handles it
+                    let heights: Vec<MessageHeight> = messages
                         .iter()
-                        .map(|h| MessageHeight {
-                            visual_lines: h.visual_lines,
-                            cumulative_offset: h.cumulative_offset,
+                        .scan(0usize, |offset, msg| {
+                            let height = estimate_message_height_fast(msg, viewport_width);
+                            let result = MessageHeight {
+                                visual_lines: height,
+                                cumulative_offset: *offset,
+                            };
+                            *offset += height;
+                            Some(result)
                         })
                         .collect();
 
+                    let total_lines: usize = heights.iter().map(|h| h.visual_lines).sum();
                     let count = messages.len();
-                    let total = header_visual_lines + cache.total_lines;
-                    app.height_cache = Some(cache);
+                    let total = header_visual_lines + total_lines;
                     (heights, total, count)
                 }
             }

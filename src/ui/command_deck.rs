@@ -96,8 +96,7 @@ fn render_dashboard_content(frame: &mut Frame, area: Rect, app: &mut App) {
         &theme,
     );
 
-    // Clear hit registry and render dashboard
-    app.hit_registry.clear();
+    // Note: hit_registry is cleared in prepare_render()
     render_dashboard(frame, area, &render_ctx, &mut app.hit_registry);
 }
 

@@ -19,6 +19,7 @@
 //! sizing decisions throughout the UI hierarchy.
 
 mod command_deck;
+pub mod context;
 mod conversation;
 pub mod dashboard;
 mod folder_picker;
@@ -26,7 +27,8 @@ mod helpers;
 pub mod input;
 pub mod interaction;
 mod layout;
-mod messages;
+pub mod messages;
+pub mod prepare;
 mod theme;
 mod thread_switcher;
 
@@ -54,6 +56,10 @@ pub use messages::{estimate_wrapped_line_count, truncate_preview};
 // Re-export interaction system for external use
 pub use interaction::{handle_click_action, ClickAction, HitArea, HitAreaRegistry};
 
+// Re-export prepare phase for external use
+pub use prepare::{apply_render_outputs, get_message_heights, get_total_visual_lines, prepare_render};
+pub use context::{MessageHeightInfo, RenderOutputs};
+
 use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Style},
@@ -71,6 +77,11 @@ use thread_switcher::render_thread_switcher;
 // ============================================================================
 
 /// Render the UI based on current screen
+///
+/// This function first calls `prepare_render` to perform all necessary
+/// mutations (cache invalidation, height calculations, etc.) and then
+/// renders the UI. This separation ensures render functions can be
+/// as pure as possible.
 pub fn render(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
 
@@ -80,6 +91,10 @@ pub fn render(frame: &mut Frame, app: &mut App) {
         return;
     }
 
+    // Prepare phase: perform all mutations before rendering
+    prepare::prepare_render(app, area.width);
+
+    // Render phase: should be mostly read-only
     match app.screen {
         Screen::CommandDeck => render_command_deck(frame, app),
         Screen::Conversation => render_conversation_screen(frame, app),
