@@ -121,8 +121,8 @@ pub struct WsThreadModeUpdate {
     pub thread_id: String,
     /// New mode for the thread
     pub mode: ThreadMode,
-    /// When this update occurred (Unix milliseconds)
-    pub timestamp: u64,
+    /// When this update occurred (ISO8601 timestamp string)
+    pub timestamp: String,
 }
 
 /// Status of a phase during plan execution
@@ -181,10 +181,10 @@ pub struct WsPhaseProgressUpdate {
 pub struct WsThreadVerified {
     /// Thread ID that was verified
     pub thread_id: String,
-    /// When the verification occurred (Unix milliseconds)
-    pub verified_at: u64,
-    /// When this notification was sent (Unix milliseconds)
-    pub timestamp: u64,
+    /// When the verification occurred (ISO8601 timestamp string)
+    pub verified_at: String,
+    /// When this notification was sent (ISO8601 timestamp string)
+    pub timestamp: String,
 }
 
 /// System metrics update from backend
@@ -854,11 +854,12 @@ mod tests {
 
     #[test]
     fn test_deserialize_thread_mode_update() {
+        // Backend sends ISO8601 timestamp strings
         let json = r#"{
             "type": "thread_mode_update",
             "thread_id": "thread-123",
             "mode": "plan",
-            "timestamp": 1705315800000
+            "timestamp": "2026-01-15T10:30:00Z"
         }"#;
 
         let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
@@ -866,7 +867,7 @@ mod tests {
             WsIncomingMessage::ThreadModeUpdate(update) => {
                 assert_eq!(update.thread_id, "thread-123");
                 assert_eq!(update.mode, crate::models::ThreadMode::Plan);
-                assert_eq!(update.timestamp, 1705315800000);
+                assert_eq!(update.timestamp, "2026-01-15T10:30:00Z");
             }
             _ => panic!("Expected ThreadModeUpdate"),
         }
@@ -878,7 +879,7 @@ mod tests {
             "type": "thread_mode_update",
             "thread_id": "thread-456",
             "mode": "exec",
-            "timestamp": 1705315800000
+            "timestamp": "2026-01-15T10:30:00Z"
         }"#;
 
         let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
@@ -886,6 +887,7 @@ mod tests {
             WsIncomingMessage::ThreadModeUpdate(update) => {
                 assert_eq!(update.thread_id, "thread-456");
                 assert_eq!(update.mode, crate::models::ThreadMode::Exec);
+                assert_eq!(update.timestamp, "2026-01-15T10:30:00Z");
             }
             _ => panic!("Expected ThreadModeUpdate"),
         }
@@ -896,7 +898,7 @@ mod tests {
         let update = WsThreadModeUpdate {
             thread_id: "thread-serialize".to_string(),
             mode: crate::models::ThreadMode::Plan,
-            timestamp: 1705315800000,
+            timestamp: "2026-01-15T10:30:00Z".to_string(),
         };
 
         let json = serde_json::to_string(&update).unwrap();
@@ -904,7 +906,7 @@ mod tests {
 
         assert_eq!(parsed["thread_id"], "thread-serialize");
         assert_eq!(parsed["mode"], "plan");
-        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+        assert_eq!(parsed["timestamp"], "2026-01-15T10:30:00Z");
     }
 
     // -------------------- Phase Progress Update Tests --------------------
@@ -1136,19 +1138,20 @@ mod tests {
 
     #[test]
     fn test_deserialize_thread_verified() {
+        // Backend sends ISO8601 timestamp strings
         let json = r#"{
             "type": "thread_verified",
             "thread_id": "thread-verified-123",
-            "verified_at": 1705315800000,
-            "timestamp": 1705315800001
+            "verified_at": "2026-01-15T10:30:00Z",
+            "timestamp": "2026-01-15T10:30:01Z"
         }"#;
 
         let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
         match msg {
             WsIncomingMessage::ThreadVerified(verified) => {
                 assert_eq!(verified.thread_id, "thread-verified-123");
-                assert_eq!(verified.verified_at, 1705315800000);
-                assert_eq!(verified.timestamp, 1705315800001);
+                assert_eq!(verified.verified_at, "2026-01-15T10:30:00Z");
+                assert_eq!(verified.timestamp, "2026-01-15T10:30:01Z");
             }
             _ => panic!("Expected ThreadVerified"),
         }
@@ -1158,16 +1161,58 @@ mod tests {
     fn test_serialize_thread_verified() {
         let verified = WsThreadVerified {
             thread_id: "thread-serialize".to_string(),
-            verified_at: 1705315800000,
-            timestamp: 1705315800001,
+            verified_at: "2026-01-15T10:30:00Z".to_string(),
+            timestamp: "2026-01-15T10:30:01Z".to_string(),
         };
 
         let json = serde_json::to_string(&verified).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed["thread_id"], "thread-serialize");
-        assert_eq!(parsed["verified_at"], 1705315800000_i64);
-        assert_eq!(parsed["timestamp"], 1705315800001_i64);
+        assert_eq!(parsed["verified_at"], "2026-01-15T10:30:00Z");
+        assert_eq!(parsed["timestamp"], "2026-01-15T10:30:01Z");
+    }
+
+    #[test]
+    fn test_deserialize_thread_verified_with_timezone_offset() {
+        // Backend might send timestamps with timezone offsets
+        let json = r#"{
+            "type": "thread_verified",
+            "thread_id": "thread-tz-123",
+            "verified_at": "2026-01-25T14:45:00+00:00",
+            "timestamp": "2026-01-25T14:45:01+00:00"
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadVerified(verified) => {
+                assert_eq!(verified.thread_id, "thread-tz-123");
+                assert_eq!(verified.verified_at, "2026-01-25T14:45:00+00:00");
+                assert_eq!(verified.timestamp, "2026-01-25T14:45:01+00:00");
+            }
+            _ => panic!("Expected ThreadVerified"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_thread_mode_update_with_milliseconds() {
+        // Backend might include milliseconds in the timestamp
+        let json = r#"{
+            "type": "thread_mode_update",
+            "thread_id": "thread-ms-123",
+            "mode": "plan",
+            "timestamp": "2026-01-25T14:45:00.123Z"
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadModeUpdate(update) => {
+                assert_eq!(update.thread_id, "thread-ms-123");
+                assert_eq!(update.mode, crate::models::ThreadMode::Plan);
+                assert_eq!(update.timestamp, "2026-01-25T14:45:00.123Z");
+            }
+            _ => panic!("Expected ThreadModeUpdate"),
+        }
     }
 
     // -------------------- Agent Status Tests --------------------

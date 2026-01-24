@@ -235,7 +235,7 @@ fn route_ws_message(
             message_tx
                 .send(AppMessage::ThreadVerified {
                     thread_id: verified.thread_id,
-                    verified_at: verified.verified_at.to_string(),
+                    verified_at: verified.verified_at,
                 })
                 .map_err(|e| format!("Failed to send ThreadVerified: {}", e))
         }
