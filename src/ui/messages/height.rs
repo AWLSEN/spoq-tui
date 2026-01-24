@@ -49,7 +49,7 @@ pub fn estimate_text_height(text: &str, viewport_width: usize) -> usize {
                 1
             } else {
                 // Simple estimation: divide by effective width, round up
-                (line.len() + effective_width - 1) / effective_width
+                line.len().div_ceil(effective_width)
             }
         })
         .sum()
