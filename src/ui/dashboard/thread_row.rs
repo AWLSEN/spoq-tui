@@ -45,12 +45,14 @@ pub fn render(
     let buf = frame.buffer_mut();
 
     // Calculate column widths as percentages of area.width
-    let title_width = ((area.width as f32) * 0.25) as u16;
-    let repo_width = ((area.width as f32) * 0.12) as u16;
-    let mode_width = ((area.width as f32) * 0.08) as u16;
-    let status_width = ((area.width as f32) * 0.12) as u16;
-    let progress_width = ((area.width as f32) * 0.15) as u16;
-    let time_width = ((area.width as f32) * 0.08) as u16;
+    // Total: 23+10+7+10+12+6 = 68%, leaving 32% for actions
+    // Actions need ~27 chars for permission buttons: [y] Yes  [n] No  [a] Always
+    let title_width = ((area.width as f32) * 0.23) as u16;
+    let repo_width = ((area.width as f32) * 0.10) as u16;
+    let mode_width = ((area.width as f32) * 0.07) as u16;
+    let status_width = ((area.width as f32) * 0.10) as u16;
+    let progress_width = ((area.width as f32) * 0.12) as u16;
+    let time_width = ((area.width as f32) * 0.06) as u16;
 
     // Track current x position
     let mut x = area.x;
