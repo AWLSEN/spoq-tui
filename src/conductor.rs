@@ -3,6 +3,7 @@
 //! This module provides the HTTP client for interacting with the Conductor backend,
 //! including streaming responses via Server-Sent Events (SSE).
 
+use crate::adapters::ReqwestHttpClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;
 use crate::models::{
@@ -11,6 +12,7 @@ use crate::models::{
 };
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
+use crate::traits::HttpClient;
 use futures_util::stream::{self, Stream};
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -18,6 +20,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 
 // macOS Keychain access for Claude Code OAuth tokens
 #[cfg(target_os = "macos")]
@@ -141,13 +144,73 @@ pub struct SyncResponse {
     pub verification: Option<SyncVerification>,
 }
 
+/// Configuration for ConductorClient.
+#[derive(Debug, Clone)]
+pub struct ConductorConfig {
+    /// Base URL for the Conductor API
+    pub base_url: String,
+    /// Optional authentication token for Bearer auth
+    pub auth_token: Option<String>,
+    /// Optional refresh token for automatic token refresh
+    pub refresh_token: Option<String>,
+    /// Central API URL for token refresh
+    pub central_api_url: String,
+}
+
+impl Default for ConductorConfig {
+    fn default() -> Self {
+        Self {
+            base_url: DEFAULT_CONDUCTOR_URL.to_string(),
+            auth_token: std::env::var("SPOQ_DEV_TOKEN").ok(),
+            refresh_token: None,
+            central_api_url: CENTRAL_API_URL.to_string(),
+        }
+    }
+}
+
+impl ConductorConfig {
+    /// Create a new ConductorConfig with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a config with a custom base URL.
+    pub fn with_base_url(base_url: String) -> Self {
+        Self {
+            base_url,
+            ..Self::default()
+        }
+    }
+
+    /// Set the authentication token.
+    pub fn with_auth(mut self, token: &str) -> Self {
+        self.auth_token = Some(token.to_string());
+        self
+    }
+
+    /// Set the refresh token.
+    pub fn with_refresh_token(mut self, token: &str) -> Self {
+        self.refresh_token = Some(token.to_string());
+        self
+    }
+}
+
 /// Client for interacting with the Conductor backend API.
 ///
 /// Provides methods for streaming conversations, health checks, and cancellation.
+///
+/// # Dependency Injection
+///
+/// The client can be constructed with a custom HTTP client implementation via
+/// [`ConductorClient::with_http`] for testing or custom HTTP behavior.
+/// For production use, [`ConductorClient::new`] creates a client with the default
+/// reqwest-based HTTP implementation.
 pub struct ConductorClient {
     /// Base URL for the Conductor API
     pub base_url: String,
-    /// Reusable HTTP client
+    /// Reusable HTTP client (trait object for dependency injection)
+    http: Arc<dyn HttpClient>,
+    /// Legacy reqwest client (kept for streaming which uses reqwest-specific features)
     client: Client,
     /// Optional authentication token for Bearer auth
     auth_token: Option<String>,
@@ -276,19 +339,47 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
 }
 
 impl ConductorClient {
-    /// Create a new ConductorClient with the default base URL.
+    /// Create a new ConductorClient with the default base URL and HTTP client.
     ///
     /// If `SPOQ_DEV_TOKEN` environment variable is set, it will be used
     /// as the Bearer token for all requests (useful for local development).
+    ///
+    /// This is the primary constructor for production use.
     pub fn new() -> Self {
-        let auth_token = std::env::var("SPOQ_DEV_TOKEN").ok();
+        Self::with_default_http(ConductorConfig::default())
+    }
+
+    /// Create a new ConductorClient with a custom HTTP client implementation.
+    ///
+    /// This constructor enables dependency injection for testing or custom HTTP behavior.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use spoq::conductor::{ConductorClient, ConductorConfig};
+    /// use spoq::adapters::MockHttpClient;
+    /// use std::sync::Arc;
+    ///
+    /// let mock_http = Arc::new(MockHttpClient::new());
+    /// let config = ConductorConfig::with_base_url("http://localhost:8000".to_string());
+    /// let client = ConductorClient::with_http(mock_http, config);
+    /// ```
+    pub fn with_http(http: Arc<dyn HttpClient>, config: ConductorConfig) -> Self {
         Self {
-            base_url: DEFAULT_CONDUCTOR_URL.to_string(),
+            base_url: config.base_url,
+            http,
             client: Client::new(),
-            auth_token,
-            refresh_token: None,
-            central_api_url: CENTRAL_API_URL.to_string(),
+            auth_token: config.auth_token,
+            refresh_token: config.refresh_token,
+            central_api_url: config.central_api_url,
         }
+    }
+
+    /// Create a new ConductorClient with the default reqwest-based HTTP client.
+    ///
+    /// This is a convenience constructor that uses the production HTTP implementation.
+    pub fn with_default_http(config: ConductorConfig) -> Self {
+        Self::with_http(Arc::new(ReqwestHttpClient::new()), config)
     }
 
     /// Create a new ConductorClient with a custom base URL.
@@ -296,14 +387,7 @@ impl ConductorClient {
     /// If `SPOQ_DEV_TOKEN` environment variable is set, it will be used
     /// as the Bearer token for all requests (useful for local development).
     pub fn with_base_url(base_url: String) -> Self {
-        let auth_token = std::env::var("SPOQ_DEV_TOKEN").ok();
-        Self {
-            base_url,
-            refresh_token: None,
-            central_api_url: CENTRAL_API_URL.to_string(),
-            client: Client::new(),
-            auth_token,
-        }
+        Self::with_default_http(ConductorConfig::with_base_url(base_url))
     }
 
     /// Create a new ConductorClient with a custom URL (alias for with_base_url).
@@ -325,6 +409,13 @@ impl ConductorClient {
     pub fn with_refresh_token(mut self, token: &str) -> Self {
         self.refresh_token = Some(token.to_string());
         self
+    }
+
+    /// Get a reference to the underlying HTTP client.
+    ///
+    /// This is useful for testing to verify the injected client.
+    pub fn http_client(&self) -> &Arc<dyn HttpClient> {
+        &self.http
     }
 
     /// Set the authentication token on an existing client.
@@ -1329,5 +1420,63 @@ mod tests {
         let result = client.update_thread_mode("thread-123", "fast").await;
         // Should fail with HTTP error since server doesn't exist
         assert!(result.is_err());
+    }
+
+    // Tests for dependency injection
+
+    #[test]
+    fn test_conductor_config_default() {
+        let config = ConductorConfig::default();
+        assert_eq!(config.base_url, DEFAULT_CONDUCTOR_URL);
+        assert_eq!(config.central_api_url, CENTRAL_API_URL);
+        assert!(config.refresh_token.is_none());
+    }
+
+    #[test]
+    fn test_conductor_config_with_base_url() {
+        let config = ConductorConfig::with_base_url("http://custom.example.com:9000".to_string());
+        assert_eq!(config.base_url, "http://custom.example.com:9000");
+    }
+
+    #[test]
+    fn test_conductor_config_with_auth() {
+        let config = ConductorConfig::new().with_auth("test-token");
+        assert_eq!(config.auth_token, Some("test-token".to_string()));
+    }
+
+    #[test]
+    fn test_conductor_config_with_refresh_token() {
+        let config = ConductorConfig::new().with_refresh_token("refresh-token");
+        assert_eq!(config.refresh_token, Some("refresh-token".to_string()));
+    }
+
+    #[test]
+    fn test_conductor_client_with_mock_http() {
+        use crate::adapters::MockHttpClient;
+
+        let mock_http = Arc::new(MockHttpClient::new());
+        let config = ConductorConfig::with_base_url("http://mock.example.com:8000".to_string());
+        let client = ConductorClient::with_http(mock_http.clone(), config);
+
+        assert_eq!(client.base_url, "http://mock.example.com:8000");
+        // Verify that http_client() returns the injected client
+        let _ = client.http_client();
+    }
+
+    #[test]
+    fn test_conductor_client_with_default_http() {
+        let config = ConductorConfig::with_base_url("http://test.example.com:8000".to_string())
+            .with_auth("test-token");
+        let client = ConductorClient::with_default_http(config);
+
+        assert_eq!(client.base_url, "http://test.example.com:8000");
+        assert_eq!(client.auth_token(), Some("test-token"));
+    }
+
+    #[test]
+    fn test_conductor_client_http_client_accessor() {
+        let client = ConductorClient::new();
+        // Just verify we can access the http client
+        let _http = client.http_client();
     }
 }

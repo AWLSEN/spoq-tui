@@ -3,9 +3,12 @@
 //! This module provides the HTTP client for interacting with the Spoq Central API,
 //! handling device authorization flow, token management, and VPS operations.
 
+use crate::adapters::ReqwestHttpClient;
+use crate::traits::HttpClient;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Default URL for the Central API
 pub const CENTRAL_API_URL: &str = "https://spoq.dev";
@@ -308,11 +311,68 @@ pub struct SubscriptionStatus {
     pub customer_portal_url: Option<String>,
 }
 
+/// Configuration for CentralApiClient.
+#[derive(Debug, Clone)]
+pub struct CentralApiConfig {
+    /// Base URL for the Central API
+    pub base_url: String,
+    /// Optional authentication token for Bearer auth
+    pub auth_token: Option<String>,
+    /// Optional refresh token for automatic token refresh
+    pub refresh_token: Option<String>,
+}
+
+impl Default for CentralApiConfig {
+    fn default() -> Self {
+        Self {
+            base_url: CENTRAL_API_URL.to_string(),
+            auth_token: None,
+            refresh_token: None,
+        }
+    }
+}
+
+impl CentralApiConfig {
+    /// Create a new CentralApiConfig with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a config with a custom base URL.
+    pub fn with_base_url(base_url: String) -> Self {
+        Self {
+            base_url,
+            ..Self::default()
+        }
+    }
+
+    /// Set the authentication token.
+    pub fn with_auth(mut self, token: &str) -> Self {
+        self.auth_token = Some(token.to_string());
+        self
+    }
+
+    /// Set the refresh token.
+    pub fn with_refresh_token(mut self, token: &str) -> Self {
+        self.refresh_token = Some(token.to_string());
+        self
+    }
+}
+
 /// Client for interacting with the Spoq Central API.
+///
+/// # Dependency Injection
+///
+/// The client can be constructed with a custom HTTP client implementation via
+/// [`CentralApiClient::with_http`] for testing or custom HTTP behavior.
+/// For production use, [`CentralApiClient::new`] creates a client with the default
+/// reqwest-based HTTP implementation.
 pub struct CentralApiClient {
     /// Base URL for the Central API
     pub base_url: String,
-    /// Reusable HTTP client
+    /// Reusable HTTP client (trait object for dependency injection)
+    http: Arc<dyn HttpClient>,
+    /// Legacy reqwest client (kept for endpoints that use reqwest-specific features)
     client: Client,
     /// Optional authentication token for Bearer auth
     auth_token: Option<String>,
@@ -321,24 +381,48 @@ pub struct CentralApiClient {
 }
 
 impl CentralApiClient {
-    /// Create a new CentralApiClient with the default base URL.
+    /// Create a new CentralApiClient with the default base URL and HTTP client.
+    ///
+    /// This is the primary constructor for production use.
     pub fn new() -> Self {
+        Self::with_default_http(CentralApiConfig::default())
+    }
+
+    /// Create a new CentralApiClient with a custom HTTP client implementation.
+    ///
+    /// This constructor enables dependency injection for testing or custom HTTP behavior.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use spoq::auth::central_api::{CentralApiClient, CentralApiConfig};
+    /// use spoq::adapters::MockHttpClient;
+    /// use std::sync::Arc;
+    ///
+    /// let mock_http = Arc::new(MockHttpClient::new());
+    /// let config = CentralApiConfig::with_base_url("http://localhost:8000".to_string());
+    /// let client = CentralApiClient::with_http(mock_http, config);
+    /// ```
+    pub fn with_http(http: Arc<dyn HttpClient>, config: CentralApiConfig) -> Self {
         Self {
-            base_url: CENTRAL_API_URL.to_string(),
+            base_url: config.base_url,
+            http,
             client: Client::new(),
-            auth_token: None,
-            refresh_token: None,
+            auth_token: config.auth_token,
+            refresh_token: config.refresh_token,
         }
+    }
+
+    /// Create a new CentralApiClient with the default reqwest-based HTTP client.
+    ///
+    /// This is a convenience constructor that uses the production HTTP implementation.
+    pub fn with_default_http(config: CentralApiConfig) -> Self {
+        Self::with_http(Arc::new(ReqwestHttpClient::new()), config)
     }
 
     /// Create a new CentralApiClient with a custom base URL.
     pub fn with_base_url(base_url: String) -> Self {
-        Self {
-            base_url,
-            client: Client::new(),
-            auth_token: None,
-            refresh_token: None,
-        }
+        Self::with_default_http(CentralApiConfig::with_base_url(base_url))
     }
 
     /// Set the authentication token for Bearer auth.
@@ -377,6 +461,13 @@ impl CentralApiClient {
     /// Useful for updating credentials after potential auto-refresh.
     pub fn get_tokens(&self) -> (Option<String>, Option<String>) {
         (self.auth_token.clone(), self.refresh_token.clone())
+    }
+
+    /// Get a reference to the underlying HTTP client.
+    ///
+    /// This is useful for testing to verify the injected client.
+    pub fn http_client(&self) -> &Arc<dyn HttpClient> {
+        &self.http
     }
 
     /// Helper to add auth header to a request builder if token is set.
@@ -2151,5 +2242,63 @@ mod tests {
         } else {
             panic!("Expected ServerError with refresh failure message");
         }
+    }
+
+    // Tests for dependency injection
+
+    #[test]
+    fn test_central_api_config_default() {
+        let config = CentralApiConfig::default();
+        assert_eq!(config.base_url, CENTRAL_API_URL);
+        assert!(config.auth_token.is_none());
+        assert!(config.refresh_token.is_none());
+    }
+
+    #[test]
+    fn test_central_api_config_with_base_url() {
+        let config = CentralApiConfig::with_base_url("http://custom.example.com:9000".to_string());
+        assert_eq!(config.base_url, "http://custom.example.com:9000");
+    }
+
+    #[test]
+    fn test_central_api_config_with_auth() {
+        let config = CentralApiConfig::new().with_auth("test-token");
+        assert_eq!(config.auth_token, Some("test-token".to_string()));
+    }
+
+    #[test]
+    fn test_central_api_config_with_refresh_token() {
+        let config = CentralApiConfig::new().with_refresh_token("refresh-token");
+        assert_eq!(config.refresh_token, Some("refresh-token".to_string()));
+    }
+
+    #[test]
+    fn test_central_api_client_with_mock_http() {
+        use crate::adapters::MockHttpClient;
+
+        let mock_http = Arc::new(MockHttpClient::new());
+        let config = CentralApiConfig::with_base_url("http://mock.example.com:8000".to_string());
+        let client = CentralApiClient::with_http(mock_http.clone(), config);
+
+        assert_eq!(client.base_url, "http://mock.example.com:8000");
+        // Verify that http_client() returns the injected client
+        let _ = client.http_client();
+    }
+
+    #[test]
+    fn test_central_api_client_with_default_http() {
+        let config = CentralApiConfig::with_base_url("http://test.example.com:8000".to_string())
+            .with_auth("test-token");
+        let client = CentralApiClient::with_default_http(config);
+
+        assert_eq!(client.base_url, "http://test.example.com:8000");
+        assert_eq!(client.auth_token(), Some("test-token"));
+    }
+
+    #[test]
+    fn test_central_api_client_http_client_accessor() {
+        let client = CentralApiClient::new();
+        // Just verify we can access the http client
+        let _http = client.http_client();
     }
 }
