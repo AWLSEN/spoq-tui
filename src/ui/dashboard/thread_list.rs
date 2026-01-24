@@ -25,7 +25,7 @@ const MAX_NEED_ACTION_DISPLAY: usize = 5;
 const SEPARATOR_WIDTH_PERCENT: f32 = 0.10;
 
 /// Thread list width as percentage of area width (8% margin on each side)
-const THREAD_LIST_WIDTH_PERCENT: f32 = 0.84;
+const THREAD_LIST_WIDTH_PERCENT: f32 = 0.915;
 
 // ============================================================================
 // Public API
