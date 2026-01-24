@@ -755,10 +755,7 @@ fn main() -> Result<()> {
     // Run async initialization using the runtime
     let (debug_tx, debug_server_handle) = runtime.block_on(start_debug_system());
 
-    // Open debug dashboard in browser (fire and forget)
-    if debug_tx.is_some() {
-        let _ = open::that("http://localhost:3030");
-    }
+    // Debug dashboard available at http://localhost:3030 if debug_tx is Some
 
     // Setup terminal
     enable_raw_mode()?;
