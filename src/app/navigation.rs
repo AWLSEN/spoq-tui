@@ -206,8 +206,9 @@ impl App {
         false
     }
 
-    /// Open the thread switcher dialog and select the second thread (index 1)
-    /// so the first Tab press moves to the previous thread.
+    /// Open the thread switcher dialog and set selection based on current screen:
+    /// - CommandDeck (Dashboard): starts at index 0 (most recent thread)
+    /// - Conversation (Thread view): starts at index 1 (second most recent)
     pub fn open_switcher(&mut self) {
         let thread_count = self.cache.threads().len();
         if thread_count < 2 {
@@ -216,9 +217,13 @@ impl App {
         }
 
         self.thread_switcher.visible = true;
-        // Start at index 1 (second most recent) so Tab immediately shows
-        // a different thread than the current one
-        self.thread_switcher.selected_index = 1;
+        // Set initial selection based on current screen:
+        // - Dashboard (CommandDeck): start at 0 (most recent)
+        // - Thread view (Conversation): start at 1 (second most recent, allows immediate switch)
+        self.thread_switcher.selected_index = match self.screen {
+            Screen::CommandDeck => 0,
+            Screen::Conversation => 1,
+        };
         self.thread_switcher.scroll_offset = 0;
         self.thread_switcher.last_nav_time = Some(std::time::Instant::now());
         self.mark_dirty();

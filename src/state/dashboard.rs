@@ -162,6 +162,8 @@ impl DashboardState {
     ) {
         if let Some(thread) = self.threads.get_mut(thread_id) {
             thread.status = Some(status);
+        } else {
+            tracing::warn!("Received status update for unknown thread: {}", thread_id);
         }
 
         if let Some(wf) = waiting_for {
@@ -424,11 +426,17 @@ impl DashboardState {
     // ========================================================================
 
     /// Build a render context for the dashboard
+    ///
+    /// This method ensures thread views are fresh before returning the context.
+    /// If the views are dirty, it recomputes them first.
     pub fn build_render_context<'a>(
-        &'a self,
+        &'a mut self,
         system_stats: &'a SystemStats,
         theme: &'a Theme,
     ) -> RenderContext<'a> {
+        // Ensure thread views are fresh before building context
+        self.compute_thread_views();
+
         RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme)
             .with_filter(self.filter)
             .with_overlay(self.overlay.as_ref())
@@ -1362,5 +1370,96 @@ mod tests {
 
         let v3 = views.iter().find(|v| v.id == "t3").unwrap();
         assert!(v3.progress.is_none());
+    }
+
+    // -------------------- build_render_context Cache Tests --------------------
+
+    #[test]
+    fn test_build_render_context_refreshes_stale_views() {
+        use crate::view_state::{SystemStats, Theme};
+
+        let mut state = DashboardState::new();
+
+        // Add initial thread
+        let t1 = make_thread("t1", "Thread 1");
+        state.threads.insert("t1".to_string(), t1);
+
+        // Compute views to cache them
+        let views = state.compute_thread_views();
+        assert_eq!(views.len(), 1);
+        assert!(!state.thread_views_dirty);
+
+        // Add another thread (makes views dirty)
+        let t2 = make_thread("t2", "Thread 2");
+        state.threads.insert("t2".to_string(), t2);
+        state.recompute_aggregate();
+        state.thread_views_dirty = true;
+
+        // Verify views are dirty
+        assert!(state.thread_views_dirty);
+
+        // build_render_context should refresh the views
+        let stats = SystemStats::default();
+        let theme = Theme::default();
+        let ctx = state.build_render_context(&stats, &theme);
+
+        // Context should have 2 threads (the updated view)
+        assert_eq!(ctx.threads.len(), 2);
+        // And the dirty flag should be cleared
+        assert!(!state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_build_render_context_uses_cache_when_not_dirty() {
+        use crate::view_state::{SystemStats, Theme};
+
+        let mut state = DashboardState::new();
+
+        // Add thread
+        let t1 = make_thread("t1", "Thread 1");
+        state.threads.insert("t1".to_string(), t1);
+
+        // Compute views to cache them
+        let _ = state.compute_thread_views();
+        assert!(!state.thread_views_dirty);
+
+        // build_render_context should use cached views
+        let stats = SystemStats::default();
+        let theme = Theme::default();
+        let ctx = state.build_render_context(&stats, &theme);
+
+        // Still 1 thread
+        assert_eq!(ctx.threads.len(), 1);
+        // Still not dirty
+        assert!(!state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_build_render_context_reflects_status_updates() {
+        use crate::view_state::{SystemStats, Theme};
+
+        let mut state = DashboardState::new();
+
+        // Add thread with idle status
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Idle);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Build initial context
+        let stats = SystemStats::default();
+        let theme = Theme::default();
+        let ctx = state.build_render_context(&stats, &theme);
+        assert_eq!(ctx.threads.len(), 1);
+
+        // Update thread status (marks dirty)
+        state.update_thread_status("t1", ThreadStatus::Waiting, Some(WaitingFor::UserInput));
+
+        // Verify dirty
+        assert!(state.thread_views_dirty);
+
+        // build_render_context should reflect the update
+        let ctx = state.build_render_context(&stats, &theme);
+        let view = &ctx.threads[0];
+        assert!(view.needs_action); // Waiting threads need action
     }
 }
