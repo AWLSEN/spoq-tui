@@ -1134,6 +1134,265 @@ mod tests {
         }
     }
 
+    // -------------------- Thread Created Tests --------------------
+
+    #[test]
+    fn test_deserialize_thread_created_minimal() {
+        // Test minimal ThreadCreated message with required fields only
+        let json = r#"{
+            "type": "thread_created",
+            "thread": {
+                "id": "thread-123",
+                "updated_at": "2026-01-25T10:30:00Z",
+                "created_at": "2026-01-25T10:30:00Z"
+            },
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadCreated(created) => {
+                assert_eq!(created.thread.id, "thread-123");
+                assert_eq!(created.timestamp, 1705315800000);
+                // Check defaults for optional fields
+                assert_eq!(created.thread.title, "");
+                assert_eq!(created.thread.preview, "");
+                assert_eq!(created.thread.message_count, 0);
+                assert!(created.thread.description.is_none());
+                assert!(created.thread.model.is_none());
+                assert!(created.thread.permission_mode.is_none());
+                assert!(created.thread.working_directory.is_none());
+                assert!(created.thread.status.is_none());
+                assert!(created.thread.verified.is_none());
+                assert!(created.thread.verified_at.is_none());
+            }
+            _ => panic!("Expected ThreadCreated"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_thread_created_full() {
+        // Test full ThreadCreated message with all optional fields
+        let json = r#"{
+            "type": "thread_created",
+            "thread": {
+                "id": "thread-456",
+                "name": "My New Thread",
+                "description": "Thread description",
+                "preview": "Last message preview",
+                "last_activity": "2026-01-25T10:30:00Z",
+                "type": "programming",
+                "mode": "normal",
+                "model": "claude-opus-4-5",
+                "permission_mode": "ask",
+                "message_count": 5,
+                "created_at": "2026-01-25T10:00:00Z",
+                "working_directory": "/home/user/project",
+                "status": "running",
+                "verified": false,
+                "verified_at": null
+            },
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadCreated(created) => {
+                assert_eq!(created.thread.id, "thread-456");
+                assert_eq!(created.thread.title, "My New Thread");
+                assert_eq!(created.thread.description, Some("Thread description".to_string()));
+                assert_eq!(created.thread.preview, "Last message preview");
+                assert_eq!(created.thread.thread_type, crate::models::ThreadType::Programming);
+                assert_eq!(created.thread.mode, crate::models::ThreadMode::Normal);
+                assert_eq!(created.thread.model, Some("claude-opus-4-5".to_string()));
+                assert_eq!(created.thread.permission_mode, Some("ask".to_string()));
+                assert_eq!(created.thread.message_count, 5);
+                assert_eq!(created.thread.working_directory, Some("/home/user/project".to_string()));
+                assert_eq!(created.thread.status, Some(crate::models::ThreadStatus::Running));
+                assert_eq!(created.thread.verified, Some(false));
+                assert!(created.thread.verified_at.is_none());
+                assert_eq!(created.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ThreadCreated"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_thread_created_with_integer_id() {
+        // Backend may send thread ID as integer
+        let json = r#"{
+            "type": "thread_created",
+            "thread": {
+                "id": 789,
+                "updated_at": "2026-01-25T10:30:00Z",
+                "created_at": "2026-01-25T10:30:00Z"
+            },
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadCreated(created) => {
+                assert_eq!(created.thread.id, "789");
+                assert_eq!(created.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ThreadCreated"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_thread_created_with_null_title() {
+        // Backend may send null for title/name
+        let json = r#"{
+            "type": "thread_created",
+            "thread": {
+                "id": "thread-null-title",
+                "name": null,
+                "updated_at": "2026-01-25T10:30:00Z",
+                "created_at": "2026-01-25T10:30:00Z"
+            },
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadCreated(created) => {
+                assert_eq!(created.thread.id, "thread-null-title");
+                assert_eq!(created.thread.title, ""); // null should deserialize to empty string
+                assert_eq!(created.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ThreadCreated"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_thread_created_backend_format() {
+        // Test exact backend JSON format as specified in the phase description
+        // This matches what the Python backend sends in ThreadCreatedEvent
+        let json = r#"{
+            "type": "thread_created",
+            "thread": {
+                "id": "cm5xyzabc123",
+                "name": "New thread",
+                "description": null,
+                "preview": "",
+                "last_activity": "2026-01-25T14:45:00.123456Z",
+                "type": "programming",
+                "mode": "normal",
+                "model": "claude-sonnet-4-5",
+                "permission_mode": "ask",
+                "message_count": 1,
+                "created_at": "2026-01-25T14:45:00.123456Z",
+                "working_directory": "/Users/sam/project",
+                "status": "idle",
+                "verified": null,
+                "verified_at": null
+            },
+            "timestamp": 1737817500123
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadCreated(created) => {
+                // Verify all fields parse correctly
+                assert_eq!(created.thread.id, "cm5xyzabc123");
+                assert_eq!(created.thread.title, "New thread");
+                assert!(created.thread.description.is_none());
+                assert_eq!(created.thread.preview, "");
+                assert_eq!(created.thread.thread_type, crate::models::ThreadType::Programming);
+                assert_eq!(created.thread.mode, crate::models::ThreadMode::Normal);
+                assert_eq!(created.thread.model, Some("claude-sonnet-4-5".to_string()));
+                assert_eq!(created.thread.permission_mode, Some("ask".to_string()));
+                assert_eq!(created.thread.message_count, 1);
+                assert_eq!(created.thread.working_directory, Some("/Users/sam/project".to_string()));
+                assert_eq!(created.thread.status, Some(crate::models::ThreadStatus::Idle));
+                assert!(created.thread.verified.is_none());
+                assert!(created.thread.verified_at.is_none());
+                assert_eq!(created.timestamp, 1737817500123);
+            }
+            _ => panic!("Expected ThreadCreated"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_thread_created() {
+        use crate::models::Thread;
+        use chrono::Utc;
+
+        let thread = Thread {
+            id: "thread-serialize".to_string(),
+            title: "Test Thread".to_string(),
+            description: Some("Description".to_string()),
+            preview: "Preview text".to_string(),
+            updated_at: Utc::now(),
+            thread_type: crate::models::ThreadType::Programming,
+            mode: crate::models::ThreadMode::Normal,
+            model: Some("claude-opus-4-5".to_string()),
+            permission_mode: Some("ask".to_string()),
+            message_count: 3,
+            created_at: Utc::now(),
+            working_directory: Some("/path/to/dir".to_string()),
+            status: Some(crate::models::ThreadStatus::Running),
+            verified: Some(false),
+            verified_at: None,
+        };
+
+        let created = WsThreadCreated {
+            thread,
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&created).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread"]["id"], "thread-serialize");
+        // Thread struct serializes title as "title", not "name"
+        // The "name" is only an alias for deserialization
+        assert_eq!(parsed["thread"]["title"], "Test Thread");
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+    }
+
+    #[test]
+    fn test_roundtrip_thread_created() {
+        use crate::models::Thread;
+        use chrono::Utc;
+
+        let original_thread = Thread {
+            id: "thread-roundtrip".to_string(),
+            title: "Roundtrip Test".to_string(),
+            description: None,
+            preview: "".to_string(),
+            updated_at: Utc::now(),
+            thread_type: crate::models::ThreadType::Conversation,
+            mode: crate::models::ThreadMode::Plan,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
+            working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
+        };
+
+        let original = WsIncomingMessage::ThreadCreated(WsThreadCreated {
+            thread: original_thread,
+            timestamp: 1705315800000,
+        });
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: WsIncomingMessage = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            WsIncomingMessage::ThreadCreated(created) => {
+                assert_eq!(created.thread.id, "thread-roundtrip");
+                assert_eq!(created.thread.title, "Roundtrip Test");
+                assert_eq!(created.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ThreadCreated"),
+        }
+    }
+
     // -------------------- Thread Verified Tests --------------------
 
     #[test]

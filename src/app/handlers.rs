@@ -901,8 +901,15 @@ impl App {
                 );
             }
             AppMessage::WsThreadCreated { thread } => {
-                // Log for terminal debugging
-                tracing::info!("WS_THREAD_CREATED: thread_id={}", thread.id);
+                // Log for terminal debugging with detailed thread information
+                tracing::info!(
+                    "WS_THREAD_CREATED: thread_id={}, title={:?}, mode={:?}, status={:?}, verified={:?}",
+                    thread.id,
+                    thread.title,
+                    thread.mode,
+                    thread.status,
+                    thread.verified
+                );
                 // Add newly created thread to dashboard state
                 let thread_id = thread.id.clone();
                 self.dashboard.add_thread(thread);
@@ -912,7 +919,7 @@ impl App {
                     DebugEventKind::StateChange(StateChangeData::new(
                         StateType::WebSocket,
                         "WS_THREAD_CREATED",
-                        format!("thread_id: {}", thread_id),
+                        format!("thread_id: {} - successfully added to dashboard", thread_id),
                     )),
                     Some(&thread_id),
                 );

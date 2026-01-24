@@ -181,7 +181,14 @@ fn route_ws_message(
         }
         WsIncomingMessage::ThreadCreated(created) => {
             // New thread created - add to dashboard immediately
-            info!("Received thread_created: thread_id={}", created.thread.id);
+            info!(
+                "Received thread_created: thread_id={}, title={:?}, type={:?}, mode={:?}, status={:?}",
+                created.thread.id,
+                created.thread.title,
+                created.thread.thread_type,
+                created.thread.mode,
+                created.thread.status
+            );
             message_tx
                 .send(AppMessage::WsThreadCreated {
                     thread: created.thread,
