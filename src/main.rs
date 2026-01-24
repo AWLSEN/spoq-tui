@@ -1,14 +1,11 @@
 use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary};
-use spoq::websocket::WsClientConfig;
-use spoq::auth::CredentialsManager;
-use spoq::auth::central_api::{CentralApiClient, VpsStatusResponse};
-use spoq::auth::credentials::Credentials;
 use spoq::cli::{parse_args, run_cli_command};
 use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
 use spoq::models;
 use spoq::startup::{run_preflight_checks, StartupConfig};
 use spoq::terminal::{setup_panic_hook, TerminalManager};
 use spoq::ui;
+use spoq::websocket::WsClientConfig;
 
 use color_eyre::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
@@ -91,90 +88,6 @@ async fn check_and_download_update() {
     // User will see notification in TUI or can run `spoq --update` manually
 }
 
-/// Attempt to refresh an expired access token using the refresh token.
-///
-/// # Arguments
-/// * `runtime` - Tokio runtime for async operations
-/// * `credentials` - Current credentials with refresh_token
-///
-/// # Returns
-/// * `Ok(Credentials)` - New credentials with refreshed tokens
-/// * `Err(CentralApiError)` - Refresh failed (trigger re-auth)
-fn attempt_token_refresh(
-    runtime: &tokio::runtime::Runtime,
-    credentials: &Credentials,
-    manager: &CredentialsManager,
-) -> Result<Credentials, spoq::auth::central_api::CentralApiError> {
-    use spoq::auth::central_api::{CentralApiError, get_jwt_expires_in};
-
-    // Check for refresh token availability
-    let refresh_token = credentials.refresh_token.as_ref()
-        .ok_or_else(|| {
-            CentralApiError::ServerError {
-                status: 0,
-                message: "No refresh token available".to_string(),
-            }
-        })?;
-
-    let client = CentralApiClient::new();
-
-    // Attempt the refresh
-    let refresh_response = runtime.block_on(client.refresh_token(refresh_token))?;
-
-    // Build new credentials with refreshed tokens
-    let mut new_credentials = credentials.clone();
-    new_credentials.access_token = Some(refresh_response.access_token.clone());
-
-    // Update refresh token if server provided a new one
-    if let Some(new_refresh) = refresh_response.refresh_token {
-        new_credentials.refresh_token = Some(new_refresh);
-    }
-
-    // Calculate expiration from response or JWT
-    let expires_in = if let Some(exp) = refresh_response.expires_in {
-        exp
-    } else if let Some(jwt_exp) = get_jwt_expires_in(&refresh_response.access_token) {
-        jwt_exp
-    } else {
-        900 // Default to 15 minutes
-    };
-
-    let new_expires_at = chrono::Utc::now().timestamp() + expires_in as i64;
-    new_credentials.expires_at = Some(new_expires_at);
-
-    // Save credentials immediately after successful refresh
-    if !manager.save(&new_credentials) {
-        eprintln!("Warning: Failed to save refreshed credentials to disk");
-    }
-
-    Ok(new_credentials)
-}
-
-/// Fetch VPS state from server (always fetch from API - never use local cache).
-///
-/// # Arguments
-/// * `runtime` - Tokio runtime for async operations
-/// * `credentials` - Current credentials (for auth token only)
-///
-/// # Returns
-/// * `Ok(Some(vps))` - VPS exists on server
-/// * `Ok(None)` - No VPS on server (provisioning needed)
-/// * `Err(CentralApiError)` - Server check failed
-fn fetch_vps_from_api(
-    runtime: &tokio::runtime::Runtime,
-    credentials: &Credentials,
-) -> Result<Option<VpsStatusResponse>, spoq::auth::central_api::CentralApiError> {
-    println!("Checking VPS status...");
-
-    let mut client = if let Some(ref token) = credentials.access_token {
-        CentralApiClient::new().with_auth(token)
-    } else {
-        CentralApiClient::new()
-    };
-
-    runtime.block_on(client.fetch_user_vps())
-}
-
 fn main() -> Result<()> {
     // Handle CLI commands before any TUI initialization
     let command = parse_args(std::env::args());
@@ -227,7 +140,8 @@ fn main() -> Result<()> {
     };
 
     // Extract startup results
-    let credentials = startup_result.credentials;
+    // Note: credentials are loaded by App from CredentialsManager
+    let _credentials = startup_result.credentials;
     let vps_url = startup_result.vps_url;
     let debug_tx = startup_result.debug_tx;
     let debug_server_handle = startup_result.debug_server_handle;
@@ -324,31 +238,6 @@ fn main() -> Result<()> {
     }
 
     result
-}
-
-/// Start the debug system (channel + server).
-///
-/// Returns the debug event sender and server handle if successful.
-/// If the debug server fails to start, returns None for both - the app continues without debug.
-async fn start_debug_system() -> (
-    Option<spoq::debug::DebugEventSender>,
-    Option<JoinHandle<()>>,
-) {
-    // Create debug channel with capacity for 1000 events
-    let (debug_tx, _) = create_debug_channel(1000);
-
-    // Try to start the debug server
-    match start_debug_server(debug_tx.clone()).await {
-        Ok((handle, _)) => {
-            // Server started successfully
-            (Some(debug_tx), Some(handle))
-        }
-        Err(_e) => {
-            // Server failed to start - continue without debug
-            // (e.g., port 3030 already in use)
-            (None, None)
-        }
-    }
 }
 
 async fn run_app<B: ratatui::backend::Backend>(
