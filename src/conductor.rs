@@ -7,8 +7,7 @@ use crate::adapters::ReqwestHttpClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;
 use crate::models::{
-    Folder, FolderListResponse, Message, StreamRequest, Thread, ThreadDetailResponse,
-    ThreadListResponse,
+    Folder, Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse,
 };
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
@@ -852,8 +851,8 @@ impl ConductorClient {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(ConductorError::ServerError { status, message });
         }
-        let data: FolderListResponse = response.json().await?;
-        Ok(data.folders)
+        let folders: Vec<Folder> = response.json().await?;
+        Ok(folders)
     }
 
     /// Fetch all tasks from the backend.
