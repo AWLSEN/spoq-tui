@@ -54,6 +54,8 @@ pub async fn run_health_checks(vps_url: &str, credentials: &Credentials) -> Heal
         }
         Err(_) => {
             result.conductor_healthy = false;
+            result.should_block = true;
+            result.error_message = Some("Conductor not responding. Your VPS may be offline or starting up.".to_string());
             return result; // If conductor is down, skip token check
         }
     }
@@ -199,11 +201,13 @@ mod tests {
             conductor_response_time_ms: None,
             claude_code_works: false,
             github_cli_works: false,
-            should_block: false,
-            error_message: None,
+            should_block: true, // Conductor down should block
+            error_message: Some("Conductor not responding".to_string()),
         };
 
         assert!(!result.conductor_healthy);
         assert!(result.conductor_response_time_ms.is_none());
+        assert!(result.should_block);
+        assert!(result.error_message.is_some());
     }
 }
