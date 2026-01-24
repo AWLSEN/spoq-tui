@@ -185,6 +185,38 @@ pub struct ProvisionResponse {
     pub message: Option<String>,
 }
 
+/// Response from VPS provision endpoint when status is "pending" (POST /api/vps/provision).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProvisionPendingResponse {
+    pub hostname: String,
+    #[serde(default)]
+    pub ip_address: Option<String>,
+    pub provider_instance_id: i64,
+    #[serde(default)]
+    pub provider_order_id: Option<String>,
+    pub plan_id: i64,
+    pub template_id: i64,
+    pub data_center_id: i64,
+    pub jwt_secret: String,
+    pub ssh_password: String,
+    pub message: String,
+}
+
+/// Request body for VPS confirmation endpoint (POST /api/vps/confirm).
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfirmVpsRequest {
+    pub hostname: String,
+    pub ip_address: String,
+    pub provider_instance_id: i64,
+    #[serde(default)]
+    pub provider_order_id: Option<String>,
+    pub plan_id: i64,
+    pub template_id: i64,
+    pub data_center_id: i64,
+    pub jwt_secret: String,
+    pub ssh_password: String,
+}
+
 /// Response from VPS status endpoint (GET /api/vps/status).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VpsStatusResponse {
