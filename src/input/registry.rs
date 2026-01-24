@@ -71,9 +71,9 @@ impl CommandRegistry {
 
         // Priority 4: Focus-specific bindings
         if context.is_input_focused() {
-            return self.dispatch_input(key, context);
+            self.dispatch_input(key, context)
         } else {
-            return self.dispatch_navigation(key, context);
+            self.dispatch_navigation(key, context)
         }
     }
 
@@ -162,10 +162,10 @@ impl CommandRegistry {
         let combo = KeyCombo::new(key.code, key.modifiers);
 
         // Check for Shift+Escape first (navigate to command deck)
-        if key.code == KeyCode::Esc && key.modifiers.contains(KeyModifiers::SHIFT) {
-            if context.is_conversation_screen() {
-                return Some(Command::NavigateToCommandDeck);
-            }
+        if key.code == KeyCode::Esc && key.modifiers.contains(KeyModifiers::SHIFT)
+            && context.is_conversation_screen()
+        {
+            return Some(Command::NavigateToCommandDeck);
         }
 
         // Check input editing bindings

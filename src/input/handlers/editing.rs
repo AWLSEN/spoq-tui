@@ -134,7 +134,7 @@ pub fn handle_editing_command(app: &mut App, cmd: &Command) -> bool {
         }
 
         Command::SubmitInput(thread_type) => {
-            app.submit_input(thread_type.clone());
+            app.submit_input(*thread_type);
             true
         }
 
