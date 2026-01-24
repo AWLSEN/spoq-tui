@@ -24,8 +24,8 @@ const MAX_NEED_ACTION_DISPLAY: usize = 5;
 /// Separator width as percentage of area width
 const SEPARATOR_WIDTH_PERCENT: f32 = 0.10;
 
-/// Maximum width for thread cards (centered if terminal is wider)
-const MAX_CARD_WIDTH: u16 = 90;
+/// Thread list width as percentage of area width (8% margin on each side)
+const THREAD_LIST_WIDTH_PERCENT: f32 = 0.84;
 
 // ============================================================================
 // Public API
@@ -78,19 +78,16 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
     }
 }
 
-/// Calculate a horizontally centered area with maximum card width
+/// Calculate a horizontally centered area with 84% width
 ///
-/// If the provided area is wider than MAX_CARD_WIDTH, returns a centered
-/// rectangle of MAX_CARD_WIDTH. Otherwise, returns the original area unchanged.
+/// Returns a centered rectangle using 84% of the available width (8% margin on each side).
+/// This matches the status bar's width calculation for consistent horizontal alignment.
 fn calculate_centered_area(area: Rect) -> Rect {
-    if area.width <= MAX_CARD_WIDTH {
-        return area;
-    }
+    // Calculate 84% width (8% margin on each side), matching status bar
+    let card_width = (area.width as f32 * THREAD_LIST_WIDTH_PERCENT).round() as u16;
+    let left_padding = (area.width - card_width) / 2;
 
-    let card_width = MAX_CARD_WIDTH;
-    let x_offset = (area.width - card_width) / 2;
-
-    Rect::new(area.x + x_offset, area.y, card_width, area.height)
+    Rect::new(area.x + left_padding, area.y, card_width, area.height)
 }
 
 // ============================================================================
@@ -488,33 +485,19 @@ mod tests {
     #[test]
     fn test_calculate_centered_area_narrow_terminal() {
         use super::calculate_centered_area;
+        use super::THREAD_LIST_WIDTH_PERCENT;
         use ratatui::layout::Rect;
 
-        // Terminal narrower than MAX_CARD_WIDTH should return unchanged
+        // Terminal should always use 84% width
         let area = Rect::new(0, 5, 60, 20);
         let centered = calculate_centered_area(area);
 
-        assert_eq!(centered.x, area.x);
-        assert_eq!(centered.y, area.y);
-        assert_eq!(centered.width, area.width);
-        assert_eq!(centered.height, area.height);
-    }
-
-    #[test]
-    fn test_calculate_centered_area_wide_terminal() {
-        use super::calculate_centered_area;
-        use super::MAX_CARD_WIDTH;
-        use ratatui::layout::Rect;
-
-        // Terminal wider than MAX_CARD_WIDTH should be centered
-        let area = Rect::new(0, 5, 150, 20);
-        let centered = calculate_centered_area(area);
-
-        // Width should be capped at MAX_CARD_WIDTH
-        assert_eq!(centered.width, MAX_CARD_WIDTH);
+        // Width should be 84% of area width
+        let expected_width = (area.width as f32 * THREAD_LIST_WIDTH_PERCENT).round() as u16;
+        assert_eq!(centered.width, expected_width);
 
         // Should be horizontally centered
-        let expected_x = (area.width - MAX_CARD_WIDTH) / 2;
+        let expected_x = (area.width - expected_width) / 2;
         assert_eq!(centered.x, expected_x);
 
         // Y and height should be unchanged
@@ -523,34 +506,67 @@ mod tests {
     }
 
     #[test]
-    fn test_calculate_centered_area_exact_max_width() {
+    fn test_calculate_centered_area_wide_terminal() {
         use super::calculate_centered_area;
-        use super::MAX_CARD_WIDTH;
+        use super::THREAD_LIST_WIDTH_PERCENT;
         use ratatui::layout::Rect;
 
-        // Terminal exactly at MAX_CARD_WIDTH should return unchanged
-        let area = Rect::new(5, 10, MAX_CARD_WIDTH, 15);
+        // Terminal should use 84% width regardless of size
+        let area = Rect::new(0, 5, 150, 20);
         let centered = calculate_centered_area(area);
 
-        assert_eq!(centered.x, area.x);
+        // Width should be 84% of area width
+        let expected_width = (area.width as f32 * THREAD_LIST_WIDTH_PERCENT).round() as u16;
+        assert_eq!(centered.width, expected_width);
+
+        // Should be horizontally centered
+        let expected_x = (area.width - expected_width) / 2;
+        assert_eq!(centered.x, expected_x);
+
+        // Y and height should be unchanged
         assert_eq!(centered.y, area.y);
-        assert_eq!(centered.width, area.width);
+        assert_eq!(centered.height, area.height);
+    }
+
+    #[test]
+    fn test_calculate_centered_area_100_width() {
+        use super::calculate_centered_area;
+        use super::THREAD_LIST_WIDTH_PERCENT;
+        use ratatui::layout::Rect;
+
+        // Test with width of 100 for easy percentage calculation
+        let area = Rect::new(5, 10, 100, 15);
+        let centered = calculate_centered_area(area);
+
+        // 84% of 100 = 84
+        let expected_width = (100_f32 * THREAD_LIST_WIDTH_PERCENT).round() as u16;
+        assert_eq!(centered.width, expected_width);
+
+        // Centered: (100 - 84) / 2 = 8 offset from area.x
+        let expected_x = area.x + (area.width - expected_width) / 2;
+        assert_eq!(centered.x, expected_x);
+
+        // Y and height should be unchanged
+        assert_eq!(centered.y, area.y);
         assert_eq!(centered.height, area.height);
     }
 
     #[test]
     fn test_calculate_centered_area_with_offset() {
         use super::calculate_centered_area;
-        use super::MAX_CARD_WIDTH;
+        use super::THREAD_LIST_WIDTH_PERCENT;
         use ratatui::layout::Rect;
 
         // Area with non-zero x should center relative to area
         let area = Rect::new(10, 5, 200, 30);
         let centered = calculate_centered_area(area);
 
+        // Width should be 84% of area width
+        let expected_width = (area.width as f32 * THREAD_LIST_WIDTH_PERCENT).round() as u16;
+        assert_eq!(centered.width, expected_width);
+
         // X offset should be area.x + centering offset
-        let expected_x = area.x + (area.width - MAX_CARD_WIDTH) / 2;
+        let expected_x = area.x + (area.width - expected_width) / 2;
         assert_eq!(centered.x, expected_x);
-        assert_eq!(centered.width, MAX_CARD_WIDTH);
     }
 }
