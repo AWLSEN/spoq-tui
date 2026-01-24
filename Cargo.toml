@@ -1,6 +1,6 @@
 [package]
 name = "spoq"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "A TUI client for spoq"
 license = "MIT"
@@ -48,6 +48,9 @@ bytes = "1"
 
 # SSH/SFTP for credentials sync to VPS
 ssh2 = "0.9"
+
+# Vendored OpenSSL for cross-compilation (ssh2 requires OpenSSL)
+openssl = { version = "0.10", features = ["vendored"] }
 
 # macOS Keychain access (for Claude Code OAuth tokens)
 [target.'cfg(target_os = "macos")'.dependencies]
