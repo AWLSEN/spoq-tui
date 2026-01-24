@@ -939,11 +939,12 @@ impl App {
             } => {
                 // Log for terminal debugging
                 tracing::info!(
-                    "PHASE_PROGRESS_UPDATE: plan_id={}, phase={}/{}, status={:?}",
+                    "PHASE_PROGRESS_UPDATE: plan_id={}, phase={}/{}, status={:?}, thread_id={:?}",
                     plan_id,
                     phase_index + 1,
                     total_phases,
-                    status
+                    status,
+                    thread_id
                 );
                 // Create phase progress data and update dashboard
                 let progress = PhaseProgressData::new(

@@ -206,8 +206,8 @@ fn route_ws_message(
         WsIncomingMessage::PhaseProgressUpdate(progress) => {
             // Phase progress updates during plan execution
             info!(
-                "Received phase progress: plan={}, phase={}/{}, status={:?}",
-                progress.plan_id, progress.phase_index + 1, progress.total_phases, progress.status
+                "Received phase progress: plan={}, phase={}/{}, status={:?}, thread_id={:?}",
+                progress.plan_id, progress.phase_index + 1, progress.total_phases, progress.status, progress.thread_id
             );
             message_tx
                 .send(AppMessage::PhaseProgressUpdate {

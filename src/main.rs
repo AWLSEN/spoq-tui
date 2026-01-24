@@ -23,7 +23,10 @@ use crossterm::{
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
+use tokio::sync::{mpsc, RwLock};
 use tokio::task::JoinHandle;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -466,6 +469,29 @@ fn main() -> Result<()> {
         return handle_sync_command();
     }
 
+    // Initialize tracing to write to /tmp/spoq_debug.log
+    {
+        use std::fs::OpenOptions;
+        use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+        let log_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/spoq_debug.log")
+            .expect("Failed to open /tmp/spoq_debug.log");
+
+        let filter = EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("info"));
+
+        tracing_subscriber::registry()
+            .with(fmt::layer()
+                .with_writer(std::sync::Mutex::new(log_file))
+                .with_ansi(false)
+                .with_target(false))
+            .with(filter)
+            .init();
+    }
+
     color_eyre::install()?;
 
     // Setup panic hook to ensure terminal cleanup on panic
@@ -758,6 +784,8 @@ fn main() -> Result<()> {
     // Debug dashboard available at http://localhost:3030 if debug_tx is Some
 
     // Setup terminal
+    // Small delay to let PTY fully initialize (needed for some terminal emulators)
+    thread::sleep(Duration::from_millis(100));
     enable_raw_mode()?;
     let mut stdout = io::stdout();
 
