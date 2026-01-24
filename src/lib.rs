@@ -2,6 +2,7 @@
 //!
 //! This library exposes modules for use in integration tests.
 
+pub mod adapters;
 pub mod app;
 pub mod auth;
 pub mod cache;
