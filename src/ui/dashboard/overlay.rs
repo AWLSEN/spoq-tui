@@ -20,7 +20,7 @@ use ratatui::{
 };
 
 use crate::models::dashboard::PlanSummary;
-use crate::ui::dashboard::context::{OverlayState, RenderContext};
+use crate::ui::dashboard::{OverlayState, RenderContext};
 use crate::ui::dashboard::plan_card;
 use crate::ui::dashboard::question_card;
 use crate::ui::interaction::{ClickAction, HitAreaRegistry};

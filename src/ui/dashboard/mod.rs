@@ -3,7 +3,6 @@
 //! Provides the multi-thread dashboard view components for managing
 //! multiple concurrent agent threads.
 
-mod context;
 pub mod footer;
 pub mod header;
 pub mod overlay;
@@ -14,9 +13,12 @@ pub mod status_bar;
 pub mod thread_list;
 pub mod thread_row;
 
-pub use context::{
-    FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadMode, ThreadView,
+// Re-export types from view_state for backward compatibility
+// This allows existing code using `crate::ui::dashboard::*` to keep working
+pub use crate::view_state::{
+    FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
+pub use crate::models::ThreadMode;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},

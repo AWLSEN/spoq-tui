@@ -5,7 +5,7 @@
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, Frame};
 
-use super::context::RenderContext;
+use super::RenderContext;
 
 // ============================================================================
 // Logo Constants

@@ -5,7 +5,7 @@
 
 use ratatui::{layout::Rect, style::Style, text::Span, Frame};
 
-use super::context::{FilterState, RenderContext, ThreadView};
+use super::{FilterState, RenderContext, ThreadView};
 use super::states;
 use super::thread_row;
 use crate::models::dashboard::ThreadStatus;
@@ -237,7 +237,7 @@ fn render_filtered_view(
 #[cfg(test)]
 mod tests {
     use crate::models::dashboard::ThreadStatus;
-    use crate::ui::dashboard::context::ThreadView;
+    use crate::ui::dashboard::ThreadView;
 
     // -------------------- Helper Functions --------------------
 

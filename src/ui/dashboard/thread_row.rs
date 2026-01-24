@@ -10,7 +10,7 @@ use ratatui::{
 };
 
 use crate::models::dashboard::{ThreadStatus, WaitingFor};
-use crate::ui::dashboard::context::{RenderContext, ThreadMode, ThreadView};
+use crate::ui::dashboard::{RenderContext, ThreadMode, ThreadView};
 use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
 // ============================================================================

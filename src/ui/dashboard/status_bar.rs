@@ -11,7 +11,7 @@ use ratatui::{
     Frame,
 };
 
-use super::context::{FilterState, RenderContext};
+use super::{FilterState, RenderContext};
 use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
 // ============================================================================

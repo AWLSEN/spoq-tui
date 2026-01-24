@@ -5,8 +5,8 @@
 
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::Thread;
-use crate::ui::dashboard::{
-    FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadView,
+use crate::view_state::{
+    FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
 use crate::websocket::messages::PhaseStatus;
 use std::collections::{HashMap, HashSet};
@@ -500,7 +500,7 @@ impl DashboardState {
 
     /// Build thread views from current data
     fn build_thread_views(&self) -> Vec<ThreadView> {
-        use crate::ui::dashboard::Progress;
+        // Progress is now imported at the top from view_state
 
         let mut views: Vec<ThreadView> = self
             .threads
