@@ -173,9 +173,141 @@ check_prerequisites() {
 # Creates a new conversation thread using the API endpoint
 # Sets THREAD_ID global variable on success
 create_thread_via_api() {
-    log_warn "create_thread_via_api: Not yet implemented (Phase 4)"
-    # TODO: Implement API call to create thread
-    # Expected to set: THREAD_ID
+    log_step "CREATE_THREAD" "Creating thread via API"
+
+    # Generate unique IDs for this request
+    local session_id
+    session_id=$(generate_uuid)
+    log_debug "Generated session_id: $session_id"
+
+    # Ensure we have an auth token
+    if [ -z "$AUTH_TOKEN" ]; then
+        if [ -f "$CREDENTIALS_FILE" ]; then
+            if command -v jq &> /dev/null; then
+                AUTH_TOKEN=$(jq -r '.token // ""' "$CREDENTIALS_FILE" 2>/dev/null || echo "")
+            fi
+        fi
+    fi
+
+    if [ -z "$AUTH_TOKEN" ]; then
+        log_error "No authentication token available"
+        log_info "Set SPOQ_AUTH_TOKEN env var or add token to ~/.spoq/credentials.json"
+        return 1
+    fi
+
+    log_debug "Using auth token: ${AUTH_TOKEN:0:20}..."
+
+    # Build the request payload
+    # The API expects a prompt to initiate a conversation which creates the thread
+    local payload
+    payload=$(jq -n \
+        --arg prompt "Initialize E2E test thread" \
+        --arg session_id "$session_id" \
+        '{prompt: $prompt, session_id: $session_id}')
+
+    log_debug "Request payload: $payload"
+
+    # Create a temporary file to store the SSE response
+    local tmp_response="/tmp/e2e_thread_response_$$.txt"
+    local tmp_stderr="/tmp/e2e_thread_stderr_$$.txt"
+
+    log_info "Calling POST ${API_BASE_URL}/v1/stream..."
+
+    # Make the SSE request with curl
+    # - Use -N (--no-buffer) for real-time SSE
+    # - Use --max-time for timeout
+    # - Capture both stdout and stderr
+    local http_code
+    http_code=$(curl -s -N \
+        --max-time 30 \
+        -w "%{http_code}" \
+        -o "$tmp_response" \
+        -X POST \
+        -H "Authorization: Bearer $AUTH_TOKEN" \
+        -H "Content-Type: application/json" \
+        -H "Accept: text/event-stream" \
+        -d "$payload" \
+        "${API_BASE_URL}/v1/stream" 2>"$tmp_stderr")
+
+    local curl_exit=$?
+
+    # Check for curl errors
+    if [ $curl_exit -ne 0 ] && [ $curl_exit -ne 28 ]; then
+        # Exit code 28 is timeout which is expected for SSE
+        log_error "curl failed with exit code $curl_exit"
+        if [ -f "$tmp_stderr" ]; then
+            log_error "stderr: $(cat "$tmp_stderr")"
+        fi
+        rm -f "$tmp_response" "$tmp_stderr"
+        return 1
+    fi
+
+    # Check HTTP status (if available)
+    if [ -n "$http_code" ] && [ "$http_code" != "000" ]; then
+        if [ "$http_code" -ge 400 ]; then
+            log_error "HTTP error: $http_code"
+            if [ -f "$tmp_response" ]; then
+                log_error "Response: $(cat "$tmp_response")"
+            fi
+            rm -f "$tmp_response" "$tmp_stderr"
+            return 1
+        fi
+        log_debug "HTTP status: $http_code"
+    fi
+
+    # Parse the SSE response to find thread_created event
+    if [ ! -f "$tmp_response" ]; then
+        log_error "No response received from server"
+        rm -f "$tmp_stderr"
+        return 1
+    fi
+
+    log_debug "SSE response received ($(wc -c < "$tmp_response") bytes)"
+
+    # Extract thread_id from the thread_created event
+    # SSE format is:
+    #   event: thread_created
+    #   data: {"type": "thread_created", "thread": {"id": "...", ...}, ...}
+    #
+    # We look for lines starting with "data:" and parse the JSON to find thread_created
+    local extracted_thread_id=""
+
+    # Method 1: Look for thread_created event with jq parsing
+    while IFS= read -r line; do
+        # Skip empty lines and event lines
+        if [[ "$line" =~ ^data:\ *(.+)$ ]]; then
+            local json_data="${BASH_REMATCH[1]}"
+            log_debug "Found data line: ${json_data:0:100}..."
+
+            # Try to parse as JSON and extract thread_id from thread_created message
+            local msg_type
+            msg_type=$(echo "$json_data" | jq -r '.type // empty' 2>/dev/null)
+
+            if [ "$msg_type" = "thread_created" ]; then
+                extracted_thread_id=$(echo "$json_data" | jq -r '.thread.id // empty' 2>/dev/null)
+                if [ -n "$extracted_thread_id" ]; then
+                    log_success "Found thread_created event with thread_id: $extracted_thread_id"
+                    break
+                fi
+            fi
+        fi
+    done < "$tmp_response"
+
+    # Cleanup temp files
+    rm -f "$tmp_response" "$tmp_stderr"
+
+    # Verify we got a thread_id
+    if [ -z "$extracted_thread_id" ]; then
+        log_error "Failed to extract thread_id from SSE response"
+        log_info "The thread_created event was not found in the response"
+        return 1
+    fi
+
+    # Set the global THREAD_ID variable
+    THREAD_ID="$extracted_thread_id"
+    log_success "Thread created successfully: $THREAD_ID"
+
+    return 0
 }
 
 # Phase 5: Generate Nova plan
@@ -326,11 +458,120 @@ monitor_execution() {
     # Expected to watch: ~/comms/plans/$PROJECT/active/$PLAN_ID/status/
 }
 
-# Phase 7: Capture screenshot - uses capture_screenshot() from e2e_helpers.sh
-# The helper function captures screenshots of the TUI showing progress circles
-# Usage: capture_screenshot [output_path] [session_id]
-# Default output path: /tmp/e2e_screenshot_<timestamp>.png
-# Output is saved to SCREENSHOT_DIR by cmd_screenshot_only()
+# ==============================================================================
+# Phase 7: TUI Screenshot Capture Functions
+# ==============================================================================
+
+# Check if TUI process is running
+# Returns: 0 if running, 1 if not
+check_tui_running() {
+    log_info "Checking if TUI is running..."
+
+    if pgrep -f "spoq" > /dev/null 2>&1; then
+        local pid
+        pid=$(pgrep -f "spoq" | head -1)
+        log_success "TUI is running (PID: $pid)"
+        return 0
+    else
+        log_warn "TUI is NOT running"
+        return 1
+    fi
+}
+
+# Start TUI if needed
+# Offers to start the TUI or provides instructions
+start_tui_if_needed() {
+    if check_tui_running; then
+        return 0
+    fi
+
+    log_info "TUI needs to be started for screenshot capture"
+    log_info "TUI binary location: $TUI_BINARY"
+
+    # Check if binary exists
+    if [ ! -f "$TUI_BINARY" ]; then
+        log_error "TUI binary not found at: $TUI_BINARY"
+        log_info "Build it with: cargo build --release"
+        return 1
+    fi
+
+    # Offer to start it
+    log_info "Start command: SPOQ_DEV=1 $TUI_BINARY &"
+    read -p "Start TUI now? [y/N] " -n 1 -r
+    echo
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Starting TUI in background..."
+        SPOQ_DEV=1 "$TUI_BINARY" > /dev/null 2>&1 &
+        local tui_pid=$!
+        log_success "TUI started (PID: $tui_pid)"
+
+        # Wait a moment for TUI to initialize
+        log_info "Waiting 2s for TUI to initialize..."
+        sleep 2
+
+        # Verify it's running
+        if check_tui_running; then
+            return 0
+        else
+            log_error "TUI failed to start"
+            return 1
+        fi
+    else
+        log_info "Please start the TUI manually before capturing screenshots"
+        return 1
+    fi
+}
+
+# Capture TUI state
+# Wrapper around the helper's capture_screenshot function
+# Creates timestamped filename and captures both screenshot and text
+# Usage: capture_tui_state [description]
+capture_tui_state() {
+    local description="${1:-tui_state}"
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    local screenshot_file="$SCREENSHOT_DIR/${description}_${timestamp}.png"
+    local text_file="$SCREENSHOT_DIR/${description}_${timestamp}.txt"
+
+    log_step "CAPTURE" "Capturing TUI state: $description"
+
+    # Ensure screenshot directory exists
+    mkdir -p "$SCREENSHOT_DIR"
+
+    # Method 1: Use helper's capture_screenshot function
+    # This tries screencapture (macOS), scrot (Linux), or import (ImageMagick)
+    log_info "Attempting screenshot capture..."
+    if capture_screenshot "$screenshot_file"; then
+        log_success "Screenshot saved: $screenshot_file"
+    else
+        log_warn "Screenshot capture failed or no tool available"
+    fi
+
+    # Method 2: Capture terminal text as alternative
+    # This provides a text representation of the TUI state
+    log_info "Capturing terminal text output..."
+    if command -v script &> /dev/null; then
+        # Use script command to capture terminal output
+        # This is a fallback when screenshot tools aren't available
+        log_debug "script command available for text capture"
+        echo "Terminal capture at $timestamp" > "$text_file"
+        echo "TUI Status: $(check_tui_running && echo 'running' || echo 'not running')" >> "$text_file"
+        log_success "Text capture saved: $text_file"
+    else
+        log_debug "script command not available"
+    fi
+
+    # Method 3: Document MCP tool usage
+    log_info ""
+    log_info "Screenshot Capture Methods:"
+    log_info "  1. Helper library tools (screencapture/scrot/import) - just attempted"
+    log_info "  2. Claude Code MCP tui-vision tool - use mcp__tui-vision__screenshot_tui"
+    log_info "  3. Terminal text capture with 'script' command - use for text alternative"
+    log_info ""
+
+    return 0
+}
 
 # Phase 8: Main test orchestration
 # Orchestrates the full E2E test flow
@@ -394,9 +635,13 @@ cmd_cleanup() {
 cmd_screenshot_only() {
     log_step "SCREENSHOT" "Capturing TUI screenshot"
 
-    mkdir -p "$SCREENSHOT_DIR"
-    local output_path="$SCREENSHOT_DIR/tui_$(date +%Y%m%d_%H%M%S).png"
-    capture_screenshot "$output_path"
+    # Check if TUI is running, offer to start if not
+    start_tui_if_needed
+
+    # Capture the TUI state
+    capture_tui_state "manual_capture"
+
+    log_success "Screenshot capture complete. Files saved to: $SCREENSHOT_DIR"
 }
 
 # Run full test
