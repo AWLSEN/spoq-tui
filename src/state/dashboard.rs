@@ -4,7 +4,7 @@
 //! managing thread data, computed views, and overlay states.
 
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
-use crate::models::Thread;
+use crate::models::{Thread, ThreadMode};
 use crate::view_state::{
     FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
@@ -542,11 +542,15 @@ impl DashboardState {
                     // Look up phase progress and create Progress if status is Running or Starting
                     let progress =
                         self.get_phase_progress(&thread.id)
-                            .and_then(|phase_data| match phase_data.status {
-                                PhaseStatus::Running | PhaseStatus::Starting => Some(
-                                    Progress::new(phase_data.phase_index, phase_data.total_phases),
-                                ),
-                                _ => None,
+                            .and_then(|phase_data| {
+                                // Always populate progress for Exec mode, or when phase is actively running
+                                if thread.mode == ThreadMode::Exec
+                                    || matches!(phase_data.status, PhaseStatus::Running | PhaseStatus::Starting)
+                                {
+                                    Some(Progress::new(phase_data.phase_index, phase_data.total_phases))
+                                } else {
+                                    None
+                                }
                             });
 
                     // Get current_operation from agent state

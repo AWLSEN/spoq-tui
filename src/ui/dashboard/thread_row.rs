@@ -310,6 +310,20 @@ pub fn render_progress(current: u32, total: u32) -> String {
     format!("{}{} {}/{}", filled, empty, current, total)
 }
 
+/// Render phase circles without the fraction (for exec mode)
+///
+/// # Arguments
+/// * `current` - Current phase number
+/// * `total` - Total number of phases
+///
+/// # Returns
+/// A string like "●●●○○○" (circles only, no fraction)
+pub fn render_phase_circles(current: u32, total: u32) -> String {
+    let filled = "\u{25CF}".repeat(current as usize); // ●
+    let empty = "\u{25CB}".repeat(total.saturating_sub(current) as usize); // ○
+    format!("{}{}", filled, empty)
+}
+
 /// Truncate a string with ellipsis if it exceeds max_len
 ///
 /// # Arguments
