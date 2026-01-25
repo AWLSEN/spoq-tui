@@ -7,6 +7,7 @@
 //! - [`AppMessage`] - Messages for async communication
 
 mod actions;
+pub mod cursor_blink;
 mod handlers;
 mod messages;
 mod navigation;

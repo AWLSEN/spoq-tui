@@ -591,8 +591,8 @@ impl App {
                                 DebugEventKind::ProcessedEvent(ProcessedEventData::new(
                                     "SystemInit",
                                     format!(
-                                        "session: {}, model: {}, mode: {}, tools: {}",
-                                        system_init_event.session_id,
+                                        "cli_session: {}, model: {}, mode: {}, tools: {}",
+                                        system_init_event.cli_session_id,
                                         system_init_event.model,
                                         system_init_event.permission_mode,
                                         system_init_event.tool_count

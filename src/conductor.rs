@@ -1234,12 +1234,12 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
             context_window_limit,
         }),
         crate::sse::SseEvent::SystemInit {
-            session_id,
+            cli_session_id,
             permission_mode,
             model,
             tool_count,
         } => SseEvent::SystemInit(crate::events::SystemInitEvent {
-            session_id,
+            cli_session_id,
             permission_mode,
             model,
             tool_count,

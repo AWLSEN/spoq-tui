@@ -268,8 +268,8 @@ pub struct UsageEvent {
 /// SystemInit event - sent when Claude CLI starts with session info
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct SystemInitEvent {
-    /// Session ID for the Claude CLI session
-    pub session_id: String,
+    /// Claude CLI session ID (distinct from EventMeta's session_id)
+    pub cli_session_id: String,
     /// Permission mode: "auto" or "prompt"
     pub permission_mode: String,
     /// Model name: "opus" or "sonnet"
@@ -1038,14 +1038,14 @@ mod tests {
     #[test]
     fn test_parse_system_init_event() {
         let json = r#"{
-            "session_id": "sess-abc-123",
+            "cli_session_id": "sess-abc-123",
             "permission_mode": "auto",
             "model": "opus",
             "tool_count": 15
         }"#;
 
         let event: SystemInitEvent = serde_json::from_str(json).unwrap();
-        assert_eq!(event.session_id, "sess-abc-123");
+        assert_eq!(event.cli_session_id, "sess-abc-123");
         assert_eq!(event.permission_mode, "auto");
         assert_eq!(event.model, "opus");
         assert_eq!(event.tool_count, 15);
@@ -1055,7 +1055,7 @@ mod tests {
     fn test_parse_sse_event_system_init() {
         let json = r#"{
             "type": "system_init",
-            "session_id": "sess-xyz-789",
+            "cli_session_id": "sess-xyz-789",
             "permission_mode": "prompt",
             "model": "sonnet",
             "tool_count": 42
@@ -1064,7 +1064,7 @@ mod tests {
         let event: SseEvent = serde_json::from_str(json).unwrap();
         match event {
             SseEvent::SystemInit(e) => {
-                assert_eq!(e.session_id, "sess-xyz-789");
+                assert_eq!(e.cli_session_id, "sess-xyz-789");
                 assert_eq!(e.permission_mode, "prompt");
                 assert_eq!(e.model, "sonnet");
                 assert_eq!(e.tool_count, 42);

@@ -116,9 +116,11 @@ pub(crate) struct UsagePayload {
 
 /// SystemInit payload
 /// Note: Conductor sends tool_count (number) not tools (array)
+/// cli_session_id is the Claude CLI session, session_id is Conductor's session (from EventMeta)
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SystemInitPayload {
-    pub session_id: String,
+    /// Claude CLI session ID (distinct from EventMeta's session_id)
+    pub cli_session_id: String,
     pub permission_mode: String,
     pub model: String,
     /// Number of tools available (Conductor sends tool_count, not tools array)
@@ -233,9 +235,9 @@ mod tests {
 
     #[test]
     fn test_system_init_payload() {
-        let json = r#"{"session_id": "sess-abc", "permission_mode": "auto", "model": "opus", "tool_count": 15}"#;
+        let json = r#"{"cli_session_id": "sess-abc", "permission_mode": "auto", "model": "opus", "tool_count": 15}"#;
         let payload: SystemInitPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.session_id, "sess-abc");
+        assert_eq!(payload.cli_session_id, "sess-abc");
         assert_eq!(payload.permission_mode, "auto");
         assert_eq!(payload.model, "opus");
         assert_eq!(payload.tool_count, 15);

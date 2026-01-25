@@ -121,7 +121,8 @@ pub enum SseEvent {
     },
     /// System initialization - sent when Claude CLI starts
     SystemInit {
-        session_id: String,
+        /// Claude CLI session ID (distinct from EventMeta's session_id)
+        cli_session_id: String,
         permission_mode: String,
         model: String,
         /// Number of tools available (Conductor sends tool_count, not tools array)
