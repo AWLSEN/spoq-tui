@@ -9,7 +9,6 @@ pub mod overlay;
 pub mod plan_card;
 pub mod question_card;
 pub mod states;
-pub mod status_bar;
 pub mod thread_list;
 pub mod thread_row;
 pub mod tooltip;
@@ -78,16 +77,15 @@ pub fn render_dashboard(
         return;
     }
 
-    // Layout: header (3 rows) + margin + status bar (2 rows) + thread list (remaining) + footer (1 row)
-    // Margin between header and status bar is ~8% of remaining height (min 1 row)
+    // Layout: header (3 rows) + margin + thread list (remaining) + footer (1 row)
+    // Margin between header and thread list is ~8% of remaining height (min 1 row)
     let margin_rows = ((area.height as f32 * 0.08).round() as u16).max(1);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header (3 rows for better vertical alignment)
-            Constraint::Length(margin_rows), // Margin between header and status bar
-            Constraint::Length(2), // Status bar
+            Constraint::Length(margin_rows), // Margin between header and thread list
             Constraint::Min(5),    // Thread list
             Constraint::Length(1), // Footer hint
         ])
@@ -98,16 +96,13 @@ pub fn render_dashboard(
 
     // chunks[1] is the margin - intentionally left empty
 
-    // Render status bar (proportional segments with filters)
-    status_bar::render(frame, chunks[2], ctx, registry);
-
     // Render thread list (split or filtered view)
-    thread_list::render(frame, chunks[3], ctx, registry);
+    thread_list::render(frame, chunks[2], ctx, registry);
 
     // Render footer hint
     let hint = footer::get_footer_hint(ctx);
     let hint_line = Line::styled(hint, Style::default().fg(Color::DarkGray));
-    frame.render_widget(hint_line, chunks[4]);
+    frame.render_widget(hint_line, chunks[3]);
 
     // Render tooltip if hovering over an info icon
     if let Some((content, anchor_x, anchor_y)) = registry.get_tooltip_info() {

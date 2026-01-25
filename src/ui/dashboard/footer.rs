@@ -1,32 +1,25 @@
 //! Footer hints for dashboard context-awareness
 //!
-//! Provides dynamic footer hints based on UI state (filter, overlay, etc.)
+//! Provides dynamic footer hints based on UI state (overlay, etc.)
 
-use crate::ui::dashboard::{FilterState, RenderContext};
+use crate::ui::dashboard::RenderContext;
 
 /// Get context-aware footer hint text based on UI state
 ///
 /// Returns appropriate hint text depending on whether:
 /// - An overlay is open (show "esc close")
-/// - A filter is active (show "✕ clear")
-/// - Default state (show "click status to filter")
+/// - Default state (empty)
 ///
 /// # Arguments
-/// * `ctx` - The render context containing overlay and filter state
+/// * `ctx` - The render context containing overlay state
 ///
 /// # Returns
 /// Static string reference with the appropriate hint text
 pub fn get_footer_hint(ctx: &RenderContext) -> &'static str {
     if ctx.overlay.is_some() {
         "esc close"
-    } else if let Some(filter) = ctx.filter {
-        if filter != FilterState::All {
-            "✕ clear"
-        } else {
-            "click status to filter"
-        }
     } else {
-        "click status to filter"
+        ""
     }
 }
 
@@ -49,60 +42,7 @@ mod tests {
 
         let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme);
 
-        assert_eq!(get_footer_hint(&ctx), "click status to filter");
-    }
-
-    #[test]
-    fn test_footer_hint_with_filter_all() {
-        let threads = vec![];
-        let aggregate = Aggregate::new();
-        let stats = SystemStats::default();
-        let theme = Theme::default();
-
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_filter(Some(FilterState::All));
-
-        // FilterState::All should show default hint
-        assert_eq!(get_footer_hint(&ctx), "click status to filter");
-    }
-
-    #[test]
-    fn test_footer_hint_with_filter_working() {
-        let threads = vec![];
-        let aggregate = Aggregate::new();
-        let stats = SystemStats::default();
-        let theme = Theme::default();
-
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_filter(Some(FilterState::Working));
-
-        assert_eq!(get_footer_hint(&ctx), "✕ clear");
-    }
-
-    #[test]
-    fn test_footer_hint_with_filter_ready_to_test() {
-        let threads = vec![];
-        let aggregate = Aggregate::new();
-        let stats = SystemStats::default();
-        let theme = Theme::default();
-
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_filter(Some(FilterState::ReadyToTest));
-
-        assert_eq!(get_footer_hint(&ctx), "✕ clear");
-    }
-
-    #[test]
-    fn test_footer_hint_with_filter_idle() {
-        let threads = vec![];
-        let aggregate = Aggregate::new();
-        let stats = SystemStats::default();
-        let theme = Theme::default();
-
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_filter(Some(FilterState::Idle));
-
-        assert_eq!(get_footer_hint(&ctx), "✕ clear");
+        assert_eq!(get_footer_hint(&ctx), "");
     }
 
     #[test]
@@ -175,29 +115,6 @@ mod tests {
 
         let ctx =
             RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
-
-        assert_eq!(get_footer_hint(&ctx), "esc close");
-    }
-
-    #[test]
-    fn test_footer_hint_overlay_takes_precedence_over_filter() {
-        // When both overlay and filter are present, overlay hint should take precedence
-        let threads = vec![];
-        let aggregate = Aggregate::new();
-        let stats = SystemStats::default();
-        let theme = Theme::default();
-
-        let overlay = OverlayState::Question {
-            thread_id: "t1".to_string(),
-            thread_title: "Test".to_string(),
-            repository: "~/repo".to_string(),
-            question_data: None,
-            anchor_y: 10,
-        };
-
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme)
-            .with_filter(Some(FilterState::Working))
-            .with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }

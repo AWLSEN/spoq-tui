@@ -1,7 +1,6 @@
 //! Dashboard header component
 //!
-//! Renders the header with system stats (left), SPOQ logo (center),
-//! and aggregate counts (right).
+//! Renders the header with system stats (left) and SPOQ logo (right).
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style, Frame};
 
@@ -28,12 +27,11 @@ const LOGO_WIDTH: u16 = 15;
 ///
 /// # Layout
 /// ```text
-/// [left_stats] [spacer] [logo] [spacer] [right_counts]
+/// [left_stats] [spacer] [logo]
 /// ```
 ///
-/// - Left section (x=2): CPU bar, RAM usage
-/// - Center: SPOQ logo (2 rows, 15 chars wide)
-/// - Right section (right-aligned): Thread and repo counts
+/// - Left section (x=2): Connection status, CPU bar, RAM usage
+/// - Right: SPOQ logo (2 rows, 15 chars wide)
 ///
 /// # Arguments
 /// * `frame` - The ratatui frame to render into
@@ -49,11 +47,8 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext) {
     // Render left section (system stats)
     render_left_section(buf, area, ctx);
 
-    // Render center section (logo)
+    // Render logo (top-right)
     render_logo(buf, area, ctx);
-
-    // Render right section (counts)
-    render_right_section(buf, area, ctx);
 }
 
 // ============================================================================
@@ -114,10 +109,10 @@ fn render_left_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
     }
 }
 
-/// Render the centered SPOQ logo
+/// Render the SPOQ logo (top-right aligned)
 fn render_logo(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
-    // Calculate horizontal center position: area.width/2 - logo_width/2
-    let logo_x = area.x + (area.width / 2).saturating_sub(LOGO_WIDTH / 2);
+    // Right-align the logo with 2 char padding from edge
+    let logo_x = (area.x + area.width).saturating_sub(LOGO_WIDTH + 2);
 
     // Vertically center the 2-row logo within the header area
     let logo_y = area.y + (area.height.saturating_sub(2)) / 2;
@@ -143,31 +138,6 @@ fn render_logo(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
                     .set_char(ch)
                     .set_style(Style::default().fg(ctx.theme.accent));
             }
-        }
-    }
-}
-
-/// Render the right section with thread and repo counts
-fn render_right_section(buf: &mut Buffer, area: Rect, ctx: &RenderContext) {
-    // Calculate total thread count from aggregate
-    let total_threads: u32 = ctx.aggregate.by_status.values().sum();
-    let total_repos = ctx.aggregate.total_repos;
-
-    // Format: "{n} threads \u{00B7} {n} repos"
-    let text = format!("{} threads \u{00B7} {} repos", total_threads, total_repos);
-
-    // Right-align: x = area.x + area.width - text.len() - 2
-    let text_len = text.chars().count() as u16;
-    let x = (area.x + area.width).saturating_sub(text_len + 2);
-    // Vertically center the single-line text within the header area
-    let y = area.y + (area.height.saturating_sub(1)) / 2;
-
-    for (offset, ch) in text.chars().enumerate() {
-        let pos_x = x + offset as u16;
-        if pos_x < area.x + area.width {
-            buf[(pos_x, y)]
-                .set_char(ch)
-                .set_style(Style::default().fg(ctx.theme.dim));
         }
     }
 }

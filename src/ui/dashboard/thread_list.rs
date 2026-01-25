@@ -134,19 +134,23 @@ fn render_split_view(
         area.y + need_action_height
     };
 
-    // Render separator line "────────" at ~10% of area width
+    // Render separator line "────────" only if there are need_action threads
     let sep_y = need_action_more_y;
-    if sep_y < area.bottom() {
-        let sep_width = ((area.width as f32) * SEPARATOR_WIDTH_PERCENT).max(4.0) as u16;
-        let separator = "\u{2500}".repeat(sep_width as usize);
-        frame.render_widget(
-            Span::raw(separator),
-            Rect::new(area.x + 2, sep_y, sep_width, 1),
-        );
-    }
-
-    // Render autonomous threads
-    let autonomous_start_y = sep_y + 1;
+    let autonomous_start_y = if !need_action.is_empty() {
+        // Show divider when >= 1 need_action threads
+        if sep_y < area.bottom() {
+            let sep_width = ((area.width as f32) * SEPARATOR_WIDTH_PERCENT).max(4.0) as u16;
+            let separator = "\u{2500}".repeat(sep_width as usize);
+            frame.render_widget(
+                Span::raw(separator),
+                Rect::new(area.x + 2, sep_y, sep_width, 1),
+            );
+        }
+        sep_y + 1
+    } else {
+        // No divider when no need_action threads - start autonomous from top
+        area.y
+    };
     let available_autonomous_rows = area.bottom().saturating_sub(autonomous_start_y);
 
     for (i, thread) in autonomous
