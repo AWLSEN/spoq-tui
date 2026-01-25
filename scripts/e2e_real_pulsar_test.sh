@@ -196,14 +196,11 @@ monitor_execution() {
     # Expected to watch: ~/comms/plans/$PROJECT/active/$PLAN_ID/status/
 }
 
-# Phase 7: Capture screenshot
-# Captures a screenshot of the TUI showing progress circles
-# Saves to SCREENSHOT_DIR
-capture_screenshot() {
-    log_warn "capture_screenshot: Not yet implemented (Phase 7)"
-    # TODO: Implement TUI screenshot capture
-    # Expected to use: capture_screenshot helper or TUI vision tool
-}
+# Phase 7: Capture screenshot - uses capture_screenshot() from e2e_helpers.sh
+# The helper function captures screenshots of the TUI showing progress circles
+# Usage: capture_screenshot [output_path] [session_id]
+# Default output path: /tmp/e2e_screenshot_<timestamp>.png
+# Output is saved to SCREENSHOT_DIR by cmd_screenshot_only()
 
 # Phase 8: Main test orchestration
 # Orchestrates the full E2E test flow
@@ -268,7 +265,8 @@ cmd_screenshot_only() {
     log_step "SCREENSHOT" "Capturing TUI screenshot"
 
     mkdir -p "$SCREENSHOT_DIR"
-    capture_screenshot
+    local output_path="$SCREENSHOT_DIR/tui_$(date +%Y%m%d_%H%M%S).png"
+    capture_screenshot "$output_path"
 }
 
 # Run full test
