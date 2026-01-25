@@ -521,4 +521,34 @@ mod tests {
         let working_label = format!("{}working {}", prefix, 24);
         assert_eq!(working_label, "\u{25B6} working 24");
     }
+
+    // -------------------- Bounds Checking Tests --------------------
+
+    #[test]
+    fn test_idle_label_bounds_check() {
+        // Test that when the idle segment is very narrow, the label doesn't cause truncation
+        // This prevents the stray "i" character bug
+
+        // Scenario: Very narrow idle segment (e.g., 5 chars) with label "idle 15" (7 chars)
+        // The label should not render to avoid showing partial characters like "i"
+        let widths = calculate_segment_widths(40, 30, 5, 80);
+
+        // Idle segment is only 5 chars wide (80 - 40 - 30 - 5 = 5)
+        // "idle 15" is 7 chars, so it shouldn't fit even with truncation
+        assert_eq!(widths.idle, 5);
+
+        // The actual rendering logic will check: remaining_space >= idle_label_len
+        // If idle_label = "idle 15" (7 chars) and remaining_space < 7, it won't render
+        // This test just validates the width calculation is correct
+    }
+
+    #[test]
+    fn test_idle_label_sufficient_space() {
+        // Test that when there's enough space, the idle segment width accommodates the label
+        let widths = calculate_segment_widths(10, 10, 30, 80);
+
+        // Idle segment should be wide enough for "idle 30" (7 chars)
+        // 30/50 * 80 = 48 chars
+        assert!(widths.idle >= 7, "Idle segment should fit the label");
+    }
 }
