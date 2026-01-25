@@ -13,6 +13,196 @@ use crate::websocket::messages::PhaseStatus;
 use std::collections::{HashMap, HashSet};
 
 // ============================================================================
+// DashboardQuestionState
+// ============================================================================
+
+/// Navigation state for question overlays in the dashboard
+///
+/// This struct manages the UI navigation state when a question overlay is displayed
+/// from the dashboard. It tracks the current option selection, tab index for
+/// multi-question prompts, multi-select toggles, and "Other" text input state.
+///
+/// Note: This is dashboard-specific state that complements the `AskUserQuestionData`
+/// stored in `pending_questions`. The data (questions, options) comes from
+/// `AskUserQuestionData`, while this struct tracks navigation/selection state.
+#[derive(Debug, Clone, Default)]
+pub struct DashboardQuestionState {
+    /// Current question tab index (0-based) for multi-question prompts
+    pub tab_index: usize,
+    /// Currently highlighted option index per question (None = "Other" highlighted)
+    pub selections: Vec<Option<usize>>,
+    /// For multi-select questions: which options are toggled per question
+    /// Each inner Vec corresponds to a question's options
+    pub multi_selections: Vec<Vec<bool>>,
+    /// "Other" text content per question
+    pub other_texts: Vec<String>,
+    /// Whether "Other" text input is active (cursor in text field)
+    pub other_active: bool,
+    /// Tracks which questions have been answered (for multi-question flow)
+    pub answered: Vec<bool>,
+}
+
+impl DashboardQuestionState {
+    /// Create a new DashboardQuestionState for the given question data
+    ///
+    /// Initializes navigation state based on the number of questions and options.
+    pub fn from_question_data(data: &AskUserQuestionData) -> Self {
+        let num_questions = data.questions.len();
+        let options_per_question: Vec<usize> =
+            data.questions.iter().map(|q| q.options.len()).collect();
+
+        Self {
+            tab_index: 0,
+            selections: vec![Some(0); num_questions],
+            multi_selections: options_per_question
+                .iter()
+                .map(|&count| vec![false; count])
+                .collect(),
+            other_texts: vec![String::new(); num_questions],
+            other_active: false,
+            answered: vec![false; num_questions],
+        }
+    }
+
+    /// Reset all navigation state
+    pub fn reset(&mut self) {
+        self.tab_index = 0;
+        self.selections.clear();
+        self.multi_selections.clear();
+        self.other_texts.clear();
+        self.other_active = false;
+        self.answered.clear();
+    }
+
+    /// Get the currently selected option index for the current tab
+    ///
+    /// Returns None if "Other" is selected or if tab_index is out of bounds.
+    pub fn current_selection(&self) -> Option<usize> {
+        self.selections.get(self.tab_index).copied().flatten()
+    }
+
+    /// Set the selection for the current tab
+    pub fn set_current_selection(&mut self, selection: Option<usize>) {
+        if self.tab_index < self.selections.len() {
+            self.selections[self.tab_index] = selection;
+        }
+    }
+
+    /// Move to the previous option in the current question
+    ///
+    /// Wraps from first option to "Other" and from "Other" to last option.
+    pub fn prev_option(&mut self, option_count: usize) {
+        if let Some(current) = self.current_selection() {
+            if current > 0 {
+                self.set_current_selection(Some(current - 1));
+            } else {
+                // Wrap to "Other" (None)
+                self.set_current_selection(None);
+            }
+        } else {
+            // Currently on "Other", move to last option
+            if option_count > 0 {
+                self.set_current_selection(Some(option_count - 1));
+            }
+        }
+    }
+
+    /// Move to the next option in the current question
+    ///
+    /// Wraps from last option to "Other" and from "Other" to first option.
+    pub fn next_option(&mut self, option_count: usize) {
+        if let Some(current) = self.current_selection() {
+            if current < option_count.saturating_sub(1) {
+                self.set_current_selection(Some(current + 1));
+            } else {
+                // Wrap to "Other" (None)
+                self.set_current_selection(None);
+            }
+        } else {
+            // Currently on "Other", wrap to first option
+            self.set_current_selection(Some(0));
+        }
+    }
+
+    /// Move to the next tab (wraps around)
+    pub fn next_tab(&mut self, num_questions: usize) {
+        if num_questions > 1 {
+            self.tab_index = (self.tab_index + 1) % num_questions;
+        }
+    }
+
+    /// Toggle a multi-select option for the current tab
+    pub fn toggle_multi_selection(&mut self, option_index: usize) {
+        if let Some(options) = self.multi_selections.get_mut(self.tab_index) {
+            if option_index < options.len() {
+                options[option_index] = !options[option_index];
+            }
+        }
+    }
+
+    /// Check if a multi-select option is selected for the current tab
+    pub fn is_multi_selected(&self, option_index: usize) -> bool {
+        self.multi_selections
+            .get(self.tab_index)
+            .and_then(|options| options.get(option_index))
+            .copied()
+            .unwrap_or(false)
+    }
+
+    /// Get the "Other" text for the current tab
+    pub fn current_other_text(&self) -> &str {
+        self.other_texts
+            .get(self.tab_index)
+            .map(|s| s.as_str())
+            .unwrap_or("")
+    }
+
+    /// Append a character to the current tab's "Other" text
+    pub fn push_other_char(&mut self, c: char) {
+        if let Some(text) = self.other_texts.get_mut(self.tab_index) {
+            text.push(c);
+        }
+    }
+
+    /// Remove the last character from the current tab's "Other" text
+    pub fn pop_other_char(&mut self) {
+        if let Some(text) = self.other_texts.get_mut(self.tab_index) {
+            text.pop();
+        }
+    }
+
+    /// Mark the current question as answered
+    pub fn mark_current_answered(&mut self) {
+        if self.tab_index < self.answered.len() {
+            self.answered[self.tab_index] = true;
+        }
+    }
+
+    /// Check if all questions have been answered
+    pub fn all_answered(&self) -> bool {
+        !self.answered.is_empty() && self.answered.iter().all(|&a| a)
+    }
+
+    /// Advance to the next unanswered question
+    ///
+    /// Returns true if moved to a new tab, false if no unanswered questions.
+    pub fn advance_to_next_unanswered(&mut self, num_questions: usize) -> bool {
+        if num_questions == 0 {
+            return false;
+        }
+
+        for offset in 1..=num_questions {
+            let idx = (self.tab_index + offset) % num_questions;
+            if !self.answered.get(idx).copied().unwrap_or(true) {
+                self.tab_index = idx;
+                return true;
+            }
+        }
+        false
+    }
+}
+
+// ============================================================================
 // PhaseProgressData
 // ============================================================================
 
@@ -84,12 +274,15 @@ pub struct DashboardState {
     /// Phase progress data by thread_id during plan execution
     phase_progress: HashMap<String, PhaseProgressData>,
     /// Pending question data by thread_id (for AskUserQuestion tool)
-    pending_questions: HashMap<String, AskUserQuestionData>,
+    /// Stores (request_id, question_data) tuple for WebSocket response
+    pending_questions: HashMap<String, (String, AskUserQuestionData)>,
 
     /// Current filter state (None means show all)
     filter: Option<FilterState>,
     /// Current overlay state (if an overlay is open)
     overlay: Option<OverlayState>,
+    /// Navigation state for question overlay (when Question overlay is open)
+    question_state: Option<DashboardQuestionState>,
     /// Cached aggregate statistics
     aggregate: Aggregate,
 
@@ -118,6 +311,7 @@ impl DashboardState {
             pending_questions: HashMap::new(),
             filter: None,
             overlay: None,
+            question_state: None,
             aggregate: Aggregate::new(),
             thread_views: Vec::new(),
             thread_views_dirty: true,
@@ -294,15 +488,34 @@ impl DashboardState {
     /// Called when receiving an AskUserQuestion permission request from WebSocket.
     /// This stores the question data so it can be displayed in the UI when the
     /// user interacts with the thread.
-    pub fn set_pending_question(&mut self, thread_id: &str, question_data: AskUserQuestionData) {
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread this question belongs to
+    /// * `request_id` - The WebSocket request ID for sending the response
+    /// * `question_data` - The question data structure
+    pub fn set_pending_question(
+        &mut self,
+        thread_id: &str,
+        request_id: String,
+        question_data: AskUserQuestionData,
+    ) {
         self.pending_questions
-            .insert(thread_id.to_string(), question_data);
+            .insert(thread_id.to_string(), (request_id, question_data));
         self.thread_views_dirty = true;
     }
 
     /// Get pending question data for a thread
     pub fn get_pending_question(&self, thread_id: &str) -> Option<&AskUserQuestionData> {
-        self.pending_questions.get(thread_id)
+        self.pending_questions
+            .get(thread_id)
+            .map(|(_, data)| data)
+    }
+
+    /// Get pending question request ID for a thread
+    pub fn get_pending_question_request_id(&self, thread_id: &str) -> Option<&str> {
+        self.pending_questions
+            .get(thread_id)
+            .map(|(request_id, _)| request_id.as_str())
     }
 
     /// Clear pending question data for a thread
@@ -353,6 +566,8 @@ impl DashboardState {
         self.overlay = match waiting_for {
             Some(WaitingFor::PlanApproval { .. }) => {
                 if let Some((request_id, summary)) = self.plan_requests.get(thread_id) {
+                    // Clear question state when opening Plan overlay
+                    self.question_state = None;
                     Some(OverlayState::Plan {
                         thread_id: thread_id.to_string(),
                         thread_title: thread.title.clone(),
@@ -372,8 +587,15 @@ impl DashboardState {
                 return;
             }
             Some(WaitingFor::UserInput) | None => {
-                // Question overlay - lookup pending question data
-                let question_data = self.pending_questions.get(thread_id).cloned();
+                // Question overlay - lookup pending question data (extract just the data, not request_id)
+                let question_data = self
+                    .pending_questions
+                    .get(thread_id)
+                    .map(|(_, data)| data.clone());
+                // Initialize question navigation state if we have question data
+                self.question_state = question_data
+                    .as_ref()
+                    .map(DashboardQuestionState::from_question_data);
                 Some(OverlayState::Question {
                     thread_id: thread_id.to_string(),
                     thread_title: thread.title.clone(),
@@ -388,6 +610,7 @@ impl DashboardState {
     /// Close the current overlay
     pub fn collapse_overlay(&mut self) {
         self.overlay = None;
+        self.question_state = None;
     }
 
     /// Get current overlay state
@@ -468,6 +691,277 @@ impl DashboardState {
     }
 
     // ========================================================================
+    // Question Navigation (for Question overlay)
+    // ========================================================================
+
+    /// Get the question state (immutable)
+    pub fn question_state(&self) -> Option<&DashboardQuestionState> {
+        self.question_state.as_ref()
+    }
+
+    /// Get the question state (mutable)
+    pub fn question_state_mut(&mut self) -> Option<&mut DashboardQuestionState> {
+        self.question_state.as_mut()
+    }
+
+    /// Get the number of options in the current question
+    ///
+    /// Returns 0 if no question overlay is open or no question data available.
+    fn get_current_option_count(&self) -> usize {
+        if let Some(OverlayState::Question { question_data, .. }) = &self.overlay {
+            if let Some(data) = question_data {
+                if let Some(state) = &self.question_state {
+                    if let Some(question) = data.questions.get(state.tab_index) {
+                        return question.options.len();
+                    }
+                }
+            }
+        }
+        0
+    }
+
+    /// Get the number of questions in the overlay
+    fn get_question_count(&self) -> usize {
+        if let Some(OverlayState::Question { question_data, .. }) = &self.overlay {
+            if let Some(data) = question_data {
+                return data.questions.len();
+            }
+        }
+        0
+    }
+
+    /// Check if the current question is multi-select
+    fn is_current_question_multi_select(&self) -> bool {
+        if let Some(OverlayState::Question { question_data, .. }) = &self.overlay {
+            if let Some(data) = question_data {
+                if let Some(state) = &self.question_state {
+                    if let Some(question) = data.questions.get(state.tab_index) {
+                        return question.multi_select;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Move to the previous option in the question overlay
+    pub fn question_prev_option(&mut self) {
+        let option_count = self.get_current_option_count();
+        if let Some(state) = &mut self.question_state {
+            state.prev_option(option_count);
+        }
+    }
+
+    /// Move to the next option in the question overlay
+    pub fn question_next_option(&mut self) {
+        let option_count = self.get_current_option_count();
+        if let Some(state) = &mut self.question_state {
+            state.next_option(option_count);
+        }
+    }
+
+    /// Move to the next question tab
+    pub fn question_next_tab(&mut self) {
+        let num_questions = self.get_question_count();
+        if let Some(state) = &mut self.question_state {
+            state.next_tab(num_questions);
+        }
+    }
+
+    /// Toggle the current option in multi-select mode
+    pub fn question_toggle_option(&mut self) {
+        if self.is_current_question_multi_select() {
+            if let Some(state) = &mut self.question_state {
+                if let Some(idx) = state.current_selection() {
+                    state.toggle_multi_selection(idx);
+                }
+            }
+        }
+    }
+
+    /// Check if "Other" text input is active in question overlay
+    pub fn is_question_other_active(&self) -> bool {
+        self.question_state
+            .as_ref()
+            .map(|s| s.other_active)
+            .unwrap_or(false)
+    }
+
+    /// Activate "Other" text input mode
+    pub fn question_activate_other(&mut self) {
+        if let Some(state) = &mut self.question_state {
+            state.other_active = true;
+        }
+    }
+
+    /// Deactivate "Other" text input mode
+    pub fn question_deactivate_other(&mut self) {
+        if let Some(state) = &mut self.question_state {
+            state.other_active = false;
+        }
+    }
+
+    /// Cancel "Other" text input mode and clear text
+    pub fn question_cancel_other(&mut self) {
+        if let Some(state) = &mut self.question_state {
+            if state.other_active {
+                state.other_active = false;
+                if let Some(text) = state.other_texts.get_mut(state.tab_index) {
+                    text.clear();
+                }
+            }
+        }
+    }
+
+    /// Type a character in "Other" text input
+    pub fn question_type_char(&mut self, c: char) {
+        if let Some(state) = &mut self.question_state {
+            if state.other_active {
+                state.push_other_char(c);
+            }
+        }
+    }
+
+    /// Backspace in "Other" text input
+    pub fn question_backspace(&mut self) {
+        if let Some(state) = &mut self.question_state {
+            if state.other_active {
+                state.pop_other_char();
+            }
+        }
+    }
+
+    /// Handle Enter key in question overlay
+    ///
+    /// For single questions: returns Some((thread_id, request_id, answers)) to submit
+    /// For multiple questions: marks current as answered and advances to next
+    ///                         Returns Some only when all questions are answered
+    ///
+    /// Returns None if not ready to submit.
+    pub fn question_confirm(
+        &mut self,
+    ) -> Option<(String, String, std::collections::HashMap<String, String>)> {
+        let num_questions = self.get_question_count();
+
+        // Check if "Other" is selected and not in text input mode
+        let should_activate_other = self.question_state
+            .as_ref()
+            .map(|s| s.current_selection().is_none() && !s.other_active)
+            .unwrap_or(false);
+
+        if should_activate_other {
+            self.question_activate_other();
+            return None;
+        }
+
+        // If in "Other" text input mode, validate text
+        if let Some(state) = &self.question_state {
+            if state.other_active {
+                let other_text = state.current_other_text();
+                if other_text.is_empty() {
+                    return None;
+                }
+            }
+        }
+
+        // Deactivate "Other" mode as we're confirming
+        self.question_deactivate_other();
+
+        // For single question, submit immediately
+        if num_questions == 1 {
+            return self.build_question_answers();
+        }
+
+        // Multiple questions: mark current as answered and advance
+        if let Some(state) = &mut self.question_state {
+            state.mark_current_answered();
+
+            // Check if all questions are now answered
+            if state.all_answered() {
+                return self.build_question_answers();
+            }
+
+            // Advance to next unanswered question
+            state.advance_to_next_unanswered(num_questions);
+        }
+
+        None
+    }
+
+    /// Build the answers map from current question state
+    ///
+    /// Returns (thread_id, request_id, answers) tuple for WebSocket response.
+    fn build_question_answers(
+        &self,
+    ) -> Option<(String, String, std::collections::HashMap<String, String>)> {
+        let (thread_id, question_data) = match &self.overlay {
+            Some(OverlayState::Question {
+                thread_id,
+                question_data,
+                ..
+            }) => (thread_id.clone(), question_data.as_ref()?),
+            _ => return None,
+        };
+
+        // Get the request_id from pending_questions
+        let request_id = self.get_pending_question_request_id(&thread_id)?.to_string();
+
+        let state = self.question_state.as_ref()?;
+        let mut answers = std::collections::HashMap::new();
+
+        for (i, question) in question_data.questions.iter().enumerate() {
+            let answer = if question.multi_select {
+                // Collect all selected options for multi-select
+                let selected: Vec<String> = question
+                    .options
+                    .iter()
+                    .enumerate()
+                    .filter(|(opt_idx, _)| {
+                        state
+                            .multi_selections
+                            .get(i)
+                            .map(|s| s.get(*opt_idx).copied().unwrap_or(false))
+                            .unwrap_or(false)
+                    })
+                    .map(|(_, opt)| opt.label.clone())
+                    .collect();
+
+                // Also check if "Other" has text for this question
+                let other_text = state.other_texts.get(i).cloned().unwrap_or_default();
+                if !other_text.is_empty() {
+                    let mut with_other = selected;
+                    with_other.push(other_text);
+                    with_other.join(", ")
+                } else if selected.is_empty() {
+                    continue;
+                } else {
+                    selected.join(", ")
+                }
+            } else {
+                // Single select
+                if let Some(selection) = state.selections.get(i).copied().flatten() {
+                    if let Some(opt) = question.options.get(selection) {
+                        opt.label.clone()
+                    } else {
+                        continue;
+                    }
+                } else {
+                    // "Other" selected - use the text
+                    let other_text = state.other_texts.get(i).cloned().unwrap_or_default();
+                    if other_text.is_empty() {
+                        continue;
+                    }
+                    other_text
+                }
+            };
+
+            answers.insert(question.question.clone(), answer);
+        }
+
+        Some((thread_id, request_id, answers))
+    }
+
+    // ========================================================================
     // Computed Views (for rendering)
     // ========================================================================
 
@@ -486,6 +980,7 @@ impl DashboardState {
         RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme)
             .with_filter(self.filter)
             .with_overlay(self.overlay.as_ref())
+            .with_question_state(self.question_state.as_ref())
     }
 
     /// Compute and cache thread views if dirty
@@ -1670,7 +2165,7 @@ mod tests {
             answers: std::collections::HashMap::new(),
         };
 
-        state.set_pending_question("thread-123", question_data.clone());
+        state.set_pending_question("thread-123", "req-123".to_string(), question_data.clone());
 
         let result = state.get_pending_question("thread-123");
         assert!(result.is_some());
@@ -1678,6 +2173,12 @@ mod tests {
         assert_eq!(stored.questions.len(), 1);
         assert_eq!(stored.questions[0].question, "Which auth method?");
         assert_eq!(stored.questions[0].options.len(), 2);
+
+        // Verify request_id is stored
+        assert_eq!(
+            state.get_pending_question_request_id("thread-123"),
+            Some("req-123")
+        );
     }
 
     #[test]
@@ -1697,7 +2198,7 @@ mod tests {
             answers: std::collections::HashMap::new(),
         };
 
-        state.set_pending_question("thread-123", question_data);
+        state.set_pending_question("thread-123", "req-123".to_string(), question_data);
         assert!(state.thread_views_dirty);
     }
 
@@ -1723,7 +2224,7 @@ mod tests {
             answers: std::collections::HashMap::new(),
         };
 
-        state.set_pending_question("thread-123", question_data);
+        state.set_pending_question("thread-123", "req-123".to_string(), question_data);
         assert!(state.get_pending_question("thread-123").is_some());
 
         state.clear_pending_question("thread-123");
@@ -1746,7 +2247,7 @@ mod tests {
             answers: std::collections::HashMap::new(),
         };
 
-        state.set_pending_question("thread-123", question_data);
+        state.set_pending_question("thread-123", "req-123".to_string(), question_data);
         state.thread_views_dirty = false;
 
         state.clear_pending_question("thread-123");
@@ -1791,8 +2292,8 @@ mod tests {
             answers: std::collections::HashMap::new(),
         };
 
-        state.set_pending_question("thread-1", q1);
-        state.set_pending_question("thread-2", q2);
+        state.set_pending_question("thread-1", "req-1".to_string(), q1);
+        state.set_pending_question("thread-2", "req-2".to_string(), q2);
 
         let result1 = state.get_pending_question("thread-1").unwrap();
         let result2 = state.get_pending_question("thread-2").unwrap();
@@ -1829,12 +2330,17 @@ mod tests {
             answers: std::collections::HashMap::new(),
         };
 
-        state.set_pending_question("thread-123", q1);
-        state.set_pending_question("thread-123", q2);
+        state.set_pending_question("thread-123", "req-1".to_string(), q1);
+        state.set_pending_question("thread-123", "req-2".to_string(), q2);
 
         let result = state.get_pending_question("thread-123").unwrap();
         assert_eq!(result.questions[0].header, "Second");
         assert!(result.questions[0].multi_select);
+        // Request ID should also be replaced
+        assert_eq!(
+            state.get_pending_question_request_id("thread-123"),
+            Some("req-2")
+        );
     }
 
     #[test]
@@ -1874,7 +2380,7 @@ mod tests {
             }],
             answers: std::collections::HashMap::new(),
         };
-        state.set_pending_question("t1", question_data);
+        state.set_pending_question("t1", "req-t1".to_string(), question_data);
 
         // Expand the thread
         state.expand_thread("t1", 10);
@@ -1939,7 +2445,7 @@ mod tests {
             }],
             answers: std::collections::HashMap::new(),
         };
-        state.set_pending_question("t1", question_data);
+        state.set_pending_question("t1", "req-t1".to_string(), question_data);
 
         // Expand and switch to free form
         state.expand_thread("t1", 10);
@@ -1982,7 +2488,7 @@ mod tests {
             }],
             answers: std::collections::HashMap::new(),
         };
-        state.set_pending_question("t1", question_data);
+        state.set_pending_question("t1", "req-t1".to_string(), question_data);
 
         // Expand, go to free form, then back to options
         state.expand_thread("t1", 10);
@@ -2033,7 +2539,7 @@ mod tests {
             }],
             answers: std::collections::HashMap::new(),
         };
-        state.set_pending_question("t1", question_data);
+        state.set_pending_question("t1", "req-t1".to_string(), question_data);
 
         // Expand the thread
         state.expand_thread("t1", 5);
@@ -2046,5 +2552,53 @@ mod tests {
         } else {
             panic!("Expected Question overlay");
         }
+    }
+
+    // -------------------- Question Submit Tests --------------------
+
+    #[test]
+    fn test_question_confirm_returns_request_id() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set pending question data with a request_id
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which option?".to_string(),
+                header: "Options".to_string(),
+                options: vec![QuestionOption {
+                    label: "Option A".to_string(),
+                    description: "First option".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+        state.set_pending_question("t1", "req-submit-test".to_string(), question_data);
+
+        // Expand the thread to open overlay
+        state.expand_thread("t1", 10);
+
+        // Select the first option
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(Some(0));
+        }
+
+        // Confirm should return (thread_id, request_id, answers)
+        let result = state.question_confirm();
+        assert!(result.is_some());
+        let (thread_id, request_id, answers) = result.unwrap();
+        assert_eq!(thread_id, "t1");
+        assert_eq!(request_id, "req-submit-test");
+        assert_eq!(answers.get("Which option?"), Some(&"Option A".to_string()));
+    }
+
+    #[test]
+    fn test_get_pending_question_request_id_returns_none_for_nonexistent() {
+        let state = DashboardState::new();
+        assert!(state.get_pending_question_request_id("nonexistent").is_none());
     }
 }
