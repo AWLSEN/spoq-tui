@@ -427,6 +427,213 @@ test_cleanup_plan() {
 }
 
 # ==============================================================================
+# TUI Log Verification Tests
+# ==============================================================================
+
+# Create a mock TUI log for testing
+setup_mock_tui_log() {
+    local mock_log_dir="/tmp/e2e_mock_tui_$$"
+    mkdir -p "$mock_log_dir"
+    export TUI_LOG_FILE="$mock_log_dir/spoq.log"
+
+    # Create mock log entries
+    cat > "$TUI_LOG_FILE" << 'EOF'
+[2026-01-25T10:00:00Z] INFO Starting TUI
+[2026-01-25T10:00:01Z] PHASE_PROGRESS_UPDATE {"plan_id": "plan-test-helpers", "phase": 1, "status": "running", "thread_id": "abc-123"}
+[2026-01-25T10:00:02Z] DEBUG Some debug message
+[2026-01-25T10:00:03Z] PHASE_PROGRESS_UPDATE {"plan_id": "plan-test-helpers", "phase": 1, "status": "completed", "thread_id": "abc-123"}
+[2026-01-25T10:00:04Z] PHASE_PROGRESS_UPDATE {"plan_id": "plan-test-helpers", "phase": 2, "status": "running", "thread_id": "def-456"}
+[2026-01-25T10:00:05Z] INFO Thread loaded: abc-123
+[2026-01-25T10:00:06Z] PHASE_PROGRESS_UPDATE {"plan_id": "other-plan", "phase": 1, "status": "running", "thread_id": "xyz-789"}
+EOF
+}
+
+cleanup_mock_tui_log() {
+    local mock_log_dir="/tmp/e2e_mock_tui_$$"
+    rm -rf "$mock_log_dir" 2>/dev/null || true
+    unset TUI_LOG_FILE
+}
+
+test_verify_tui_log_received_success() {
+    setup_mock_tui_log
+
+    # Should find entries for our plan
+    verify_tui_log_received "plan-test-helpers" 1 >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    # Should find at least 3 entries for our plan
+    verify_tui_log_received "plan-test-helpers" 3 >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_verify_tui_log_received_failure() {
+    setup_mock_tui_log
+
+    # Should fail when expecting too many entries
+    ! verify_tui_log_received "plan-test-helpers" 100 >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    # Should fail for non-existent plan
+    ! verify_tui_log_received "nonexistent-plan" 1 >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_verify_tui_log_no_file() {
+    # Set to non-existent file
+    local old_log="${TUI_LOG_FILE:-}"
+    export TUI_LOG_FILE="/nonexistent/path/spoq.log"
+
+    # Should fail gracefully
+    ! verify_tui_log_received "any-plan" 1 >/dev/null 2>&1 || { export TUI_LOG_FILE="$old_log"; return 1; }
+
+    export TUI_LOG_FILE="$old_log"
+    return 0
+}
+
+test_extract_phase_updates_from_log() {
+    setup_mock_tui_log
+
+    local output
+    output=$(extract_phase_updates_from_log "plan-test-helpers" 2>/dev/null)
+
+    # Should return valid JSON array
+    echo "$output" | jq empty 2>/dev/null || { cleanup_mock_tui_log; return 1; }
+
+    # Should have 3 entries for our plan
+    local count
+    count=$(echo "$output" | jq 'length')
+    [ "$count" -eq 3 ] || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_extract_phase_updates_empty_log() {
+    local mock_log_dir="/tmp/e2e_mock_tui_$$"
+    mkdir -p "$mock_log_dir"
+    export TUI_LOG_FILE="$mock_log_dir/spoq.log"
+
+    # Create empty log (no PHASE_PROGRESS_UPDATE entries)
+    echo "[2026-01-25T10:00:00Z] INFO No phase updates" > "$TUI_LOG_FILE"
+
+    local output
+    output=$(extract_phase_updates_from_log 2>/dev/null)
+
+    # Should return empty JSON array
+    [ "$output" = "[]" ] || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_verify_thread_exists_in_tui_via_log() {
+    setup_mock_tui_log
+
+    # Thread abc-123 is mentioned in the log
+    verify_thread_exists_in_tui "abc-123" 1 >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_verify_thread_not_found() {
+    setup_mock_tui_log
+
+    # Non-existent thread should not be found
+    ! verify_thread_exists_in_tui "nonexistent-thread-xyz" 1 >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_verify_thread_requires_id() {
+    # Should fail when no thread ID provided
+    ! verify_thread_exists_in_tui "" 1 >/dev/null 2>&1 || return 1
+    return 0
+}
+
+test_collect_verification_evidence() {
+    setup_mock_tui_log
+
+    # Create some status files (suppress output)
+    init_plan_dirs >/dev/null 2>&1
+    create_status_file 1 "running" >/dev/null 2>&1
+    create_status_file 2 "pending" >/dev/null 2>&1
+    create_plan_file "Evidence Test" >/dev/null 2>&1
+
+    local evidence_dir
+    # The function outputs log messages to stdout, so capture only the last line (the path)
+    evidence_dir=$(collect_verification_evidence "/tmp/e2e_evidence_test_$$" 2>/dev/null | tail -1)
+
+    # Evidence directory should exist
+    [ -d "$evidence_dir" ] || { cleanup_mock_tui_log; rm -rf "/tmp/e2e_evidence_test_$$"; return 1; }
+
+    # Should contain TUI log tail
+    [ -f "$evidence_dir/tui_log_tail.log" ] || { cleanup_mock_tui_log; rm -rf "/tmp/e2e_evidence_test_$$"; return 1; }
+
+    # Should contain phase updates JSON
+    [ -f "$evidence_dir/phase_updates.json" ] || { cleanup_mock_tui_log; rm -rf "/tmp/e2e_evidence_test_$$"; return 1; }
+
+    # Should contain summary
+    [ -f "$evidence_dir/summary.json" ] || { cleanup_mock_tui_log; rm -rf "/tmp/e2e_evidence_test_$$"; return 1; }
+
+    # Summary should be valid JSON
+    jq empty "$evidence_dir/summary.json" 2>/dev/null || { cleanup_mock_tui_log; rm -rf "/tmp/e2e_evidence_test_$$"; return 1; }
+
+    # Should contain status files
+    [ -d "$evidence_dir/status_files" ] || { cleanup_mock_tui_log; rm -rf "/tmp/e2e_evidence_test_$$"; return 1; }
+
+    rm -rf "/tmp/e2e_evidence_test_$$"
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_compare_status_with_log_matching() {
+    setup_mock_tui_log
+
+    # Create a status file that matches log entries
+    init_plan_dirs
+    create_status_file 1 "completed"
+
+    # Should pass - status file exists and matches log
+    compare_status_with_log 1 "completed" >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_compare_status_with_log_status_mismatch() {
+    setup_mock_tui_log
+
+    # Create a status file
+    init_plan_dirs
+    create_status_file 1 "running"
+
+    # Should fail - expected status doesn't match file
+    ! compare_status_with_log 1 "completed" >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+test_compare_status_with_log_no_file() {
+    setup_mock_tui_log
+
+    # Ensure no status file exists
+    local status_dir
+    status_dir=$(get_status_dir)
+    rm -f "$status_dir/phase-99.status" 2>/dev/null
+
+    # Should fail - status file doesn't exist
+    ! compare_status_with_log 99 >/dev/null 2>&1 || { cleanup_mock_tui_log; return 1; }
+
+    cleanup_mock_tui_log
+    return 0
+}
+
+# ==============================================================================
 # Test Runner
 # ==============================================================================
 
@@ -481,6 +688,20 @@ main() {
 
     # Cleanup
     run_test "cleanup_plan removes plan directory" test_cleanup_plan
+
+    # TUI Log Verification tests
+    run_test "verify_tui_log_received finds entries" test_verify_tui_log_received_success
+    run_test "verify_tui_log_received fails for missing entries" test_verify_tui_log_received_failure
+    run_test "verify_tui_log_received handles missing log file" test_verify_tui_log_no_file
+    run_test "extract_phase_updates_from_log returns JSON array" test_extract_phase_updates_from_log
+    run_test "extract_phase_updates_from_log handles empty log" test_extract_phase_updates_empty_log
+    run_test "verify_thread_exists_in_tui finds thread in log" test_verify_thread_exists_in_tui_via_log
+    run_test "verify_thread_exists_in_tui fails for missing thread" test_verify_thread_not_found
+    run_test "verify_thread_exists_in_tui requires thread ID" test_verify_thread_requires_id
+    run_test "collect_verification_evidence creates evidence dir" test_collect_verification_evidence
+    run_test "compare_status_with_log validates matching status" test_compare_status_with_log_matching
+    run_test "compare_status_with_log fails on status mismatch" test_compare_status_with_log_status_mismatch
+    run_test "compare_status_with_log fails for missing file" test_compare_status_with_log_no_file
 
     # Final cleanup
     cleanup_test_env
