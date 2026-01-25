@@ -2601,4 +2601,578 @@ mod tests {
         let state = DashboardState::new();
         assert!(state.get_pending_question_request_id("nonexistent").is_none());
     }
+
+    // -------------------- DashboardQuestionState Navigation Tests --------------------
+
+    #[test]
+    fn test_dashboard_question_state_from_question_data() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![
+                Question {
+                    question: "Q1?".to_string(),
+                    header: "Q1".to_string(),
+                    options: vec![
+                        QuestionOption {
+                            label: "A".to_string(),
+                            description: "Opt A".to_string(),
+                        },
+                        QuestionOption {
+                            label: "B".to_string(),
+                            description: "Opt B".to_string(),
+                        },
+                    ],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Q2?".to_string(),
+                    header: "Q2".to_string(),
+                    options: vec![
+                        QuestionOption {
+                            label: "X".to_string(),
+                            description: "Opt X".to_string(),
+                        },
+                        QuestionOption {
+                            label: "Y".to_string(),
+                            description: "Opt Y".to_string(),
+                        },
+                        QuestionOption {
+                            label: "Z".to_string(),
+                            description: "Opt Z".to_string(),
+                        },
+                    ],
+                    multi_select: true,
+                },
+            ],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let state = DashboardQuestionState::from_question_data(&question_data);
+
+        assert_eq!(state.tab_index, 0);
+        assert_eq!(state.selections.len(), 2);
+        assert_eq!(state.selections[0], Some(0));
+        assert_eq!(state.selections[1], Some(0));
+        assert_eq!(state.multi_selections.len(), 2);
+        assert_eq!(state.multi_selections[0].len(), 2);
+        assert_eq!(state.multi_selections[1].len(), 3);
+        assert_eq!(state.other_texts.len(), 2);
+        assert!(!state.other_active);
+        assert_eq!(state.answered.len(), 2);
+    }
+
+    #[test]
+    fn test_dashboard_question_state_prev_option() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Q?".to_string(),
+                header: "Q".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "A".to_string(),
+                        description: "".to_string(),
+                    },
+                    QuestionOption {
+                        label: "B".to_string(),
+                        description: "".to_string(),
+                    },
+                    QuestionOption {
+                        label: "C".to_string(),
+                        description: "".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let mut state = DashboardQuestionState::from_question_data(&question_data);
+
+        // Start at option 0
+        assert_eq!(state.current_selection(), Some(0));
+
+        // Prev wraps to "Other" (None)
+        state.prev_option(3);
+        assert_eq!(state.current_selection(), None);
+
+        // Prev from "Other" wraps to last option
+        state.prev_option(3);
+        assert_eq!(state.current_selection(), Some(2));
+
+        // Prev to middle option
+        state.prev_option(3);
+        assert_eq!(state.current_selection(), Some(1));
+    }
+
+    #[test]
+    fn test_dashboard_question_state_next_option() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Q?".to_string(),
+                header: "Q".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "A".to_string(),
+                        description: "".to_string(),
+                    },
+                    QuestionOption {
+                        label: "B".to_string(),
+                        description: "".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let mut state = DashboardQuestionState::from_question_data(&question_data);
+
+        // Start at option 0
+        assert_eq!(state.current_selection(), Some(0));
+
+        // Next to option 1
+        state.next_option(2);
+        assert_eq!(state.current_selection(), Some(1));
+
+        // Next wraps to "Other" (None)
+        state.next_option(2);
+        assert_eq!(state.current_selection(), None);
+
+        // Next from "Other" wraps to first option
+        state.next_option(2);
+        assert_eq!(state.current_selection(), Some(0));
+    }
+
+    #[test]
+    fn test_dashboard_question_state_next_tab() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![
+                Question {
+                    question: "Q1?".to_string(),
+                    header: "Q1".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Q2?".to_string(),
+                    header: "Q2".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Q3?".to_string(),
+                    header: "Q3".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+            ],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let mut state = DashboardQuestionState::from_question_data(&question_data);
+
+        assert_eq!(state.tab_index, 0);
+
+        state.next_tab(3);
+        assert_eq!(state.tab_index, 1);
+
+        state.next_tab(3);
+        assert_eq!(state.tab_index, 2);
+
+        // Wrap around
+        state.next_tab(3);
+        assert_eq!(state.tab_index, 0);
+    }
+
+    #[test]
+    fn test_dashboard_question_state_toggle_multi_selection() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Q?".to_string(),
+                header: "Q".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "A".to_string(),
+                        description: "".to_string(),
+                    },
+                    QuestionOption {
+                        label: "B".to_string(),
+                        description: "".to_string(),
+                    },
+                ],
+                multi_select: true,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let mut state = DashboardQuestionState::from_question_data(&question_data);
+
+        // Initially nothing selected
+        assert!(!state.is_multi_selected(0));
+        assert!(!state.is_multi_selected(1));
+
+        // Toggle first option
+        state.toggle_multi_selection(0);
+        assert!(state.is_multi_selected(0));
+        assert!(!state.is_multi_selected(1));
+
+        // Toggle second option
+        state.toggle_multi_selection(1);
+        assert!(state.is_multi_selected(0));
+        assert!(state.is_multi_selected(1));
+
+        // Toggle first again (off)
+        state.toggle_multi_selection(0);
+        assert!(!state.is_multi_selected(0));
+        assert!(state.is_multi_selected(1));
+    }
+
+    #[test]
+    fn test_dashboard_question_state_other_text_operations() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Q?".to_string(),
+                header: "Q".to_string(),
+                options: vec![QuestionOption {
+                    label: "A".to_string(),
+                    description: "".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let mut state = DashboardQuestionState::from_question_data(&question_data);
+
+        // Initially empty
+        assert_eq!(state.current_other_text(), "");
+
+        // Type some characters
+        state.push_other_char('H');
+        state.push_other_char('e');
+        state.push_other_char('l');
+        state.push_other_char('l');
+        state.push_other_char('o');
+        assert_eq!(state.current_other_text(), "Hello");
+
+        // Backspace
+        state.pop_other_char();
+        assert_eq!(state.current_other_text(), "Hell");
+
+        state.pop_other_char();
+        assert_eq!(state.current_other_text(), "Hel");
+    }
+
+    #[test]
+    fn test_dashboard_question_state_mark_answered() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![
+                Question {
+                    question: "Q1?".to_string(),
+                    header: "Q1".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Q2?".to_string(),
+                    header: "Q2".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+            ],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let mut state = DashboardQuestionState::from_question_data(&question_data);
+
+        // Initially none answered
+        assert!(!state.all_answered());
+
+        // Mark first as answered
+        state.mark_current_answered();
+        assert!(state.answered[0]);
+        assert!(!state.answered[1]);
+        assert!(!state.all_answered());
+
+        // Move to second and mark
+        state.tab_index = 1;
+        state.mark_current_answered();
+        assert!(state.answered[0]);
+        assert!(state.answered[1]);
+        assert!(state.all_answered());
+    }
+
+    #[test]
+    fn test_dashboard_question_state_advance_to_next_unanswered() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let question_data = AskUserQuestionData {
+            questions: vec![
+                Question {
+                    question: "Q1?".to_string(),
+                    header: "Q1".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Q2?".to_string(),
+                    header: "Q2".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Q3?".to_string(),
+                    header: "Q3".to_string(),
+                    options: vec![],
+                    multi_select: false,
+                },
+            ],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let mut state = DashboardQuestionState::from_question_data(&question_data);
+
+        // Mark first as answered
+        state.answered[0] = true;
+
+        // Advance should move to tab 1
+        let advanced = state.advance_to_next_unanswered(3);
+        assert!(advanced);
+        assert_eq!(state.tab_index, 1);
+
+        // Mark second as answered
+        state.answered[1] = true;
+
+        // Advance should move to tab 2
+        let advanced = state.advance_to_next_unanswered(3);
+        assert!(advanced);
+        assert_eq!(state.tab_index, 2);
+
+        // Mark third as answered
+        state.answered[2] = true;
+
+        // No more unanswered - should return false
+        let advanced = state.advance_to_next_unanswered(3);
+        assert!(!advanced);
+    }
+
+    #[test]
+    fn test_question_confirm_single_question_submits_immediately() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Single question
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which framework?".to_string(),
+                header: "Framework".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "React".to_string(),
+                        description: "UI library".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Vue".to_string(),
+                        description: "Progressive framework".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-single".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Select second option
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(Some(1));
+        }
+
+        // Confirm should return answers immediately (single question)
+        let result = state.question_confirm();
+        assert!(result.is_some());
+        let (thread_id, request_id, answers) = result.unwrap();
+        assert_eq!(thread_id, "t1");
+        assert_eq!(request_id, "req-single");
+        assert_eq!(answers.get("Which framework?"), Some(&"Vue".to_string()));
+    }
+
+    #[test]
+    fn test_question_confirm_multi_question_requires_all_answered() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Multiple questions
+        let question_data = AskUserQuestionData {
+            questions: vec![
+                Question {
+                    question: "Q1?".to_string(),
+                    header: "Q1".to_string(),
+                    options: vec![QuestionOption {
+                        label: "A".to_string(),
+                        description: "".to_string(),
+                    }],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Q2?".to_string(),
+                    header: "Q2".to_string(),
+                    options: vec![QuestionOption {
+                        label: "B".to_string(),
+                        description: "".to_string(),
+                    }],
+                    multi_select: false,
+                },
+            ],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-multi".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // First confirm should mark Q1 as answered and advance
+        let result = state.question_confirm();
+        assert!(result.is_none());
+        assert_eq!(state.question_state.as_ref().unwrap().tab_index, 1);
+        assert!(state.question_state.as_ref().unwrap().answered[0]);
+
+        // Second confirm should submit
+        let result = state.question_confirm();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+        assert_eq!(answers.len(), 2);
+    }
+
+    #[test]
+    fn test_question_confirm_activates_other_when_selected() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Q?".to_string(),
+                header: "Q".to_string(),
+                options: vec![QuestionOption {
+                    label: "A".to_string(),
+                    description: "".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-other".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Select "Other" (None)
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(None);
+        }
+
+        // Confirm should activate "Other" text input mode
+        let result = state.question_confirm();
+        assert!(result.is_none());
+        assert!(state.question_state.as_ref().unwrap().other_active);
+    }
+
+    #[test]
+    fn test_question_confirm_requires_other_text_not_empty() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Q?".to_string(),
+                header: "Q".to_string(),
+                options: vec![QuestionOption {
+                    label: "A".to_string(),
+                    description: "".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-validate".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Activate "Other" mode with empty text
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(None);
+            qs.other_active = true;
+        }
+
+        // Confirm should fail (empty text)
+        let result = state.question_confirm();
+        assert!(result.is_none());
+
+        // Add text
+        if let Some(qs) = &mut state.question_state {
+            qs.push_other_char('H');
+            qs.push_other_char('i');
+        }
+
+        // Now confirm should succeed
+        let result = state.question_confirm();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+        assert_eq!(answers.get("Q?"), Some(&"Hi".to_string()));
+    }
+
+    #[test]
+    fn test_question_state_reset_on_collapse() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Q?".to_string(),
+                header: "Q".to_string(),
+                options: vec![],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-collapse".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Question state should be initialized
+        assert!(state.question_state.is_some());
+
+        // Collapse overlay
+        state.collapse_overlay();
+
+        // Question state should be cleared
+        assert!(state.question_state.is_none());
+    }
 }
