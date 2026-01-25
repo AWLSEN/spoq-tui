@@ -44,6 +44,8 @@ use color_eyre::Result;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use cursor_blink::CursorBlinkState;
+
 /// Cached message height data for incremental updates.
 /// Stores precomputed heights with cumulative offsets to avoid recalculating
 /// all heights on every render frame.
@@ -284,8 +286,8 @@ pub struct App {
     pub system_stats: SystemStats,
     /// Timestamp of last Ctrl+C press (for double-press exit detection)
     pub last_ctrl_c_time: Option<std::time::Instant>,
-    /// Cursor blink visibility state (updated each tick)
-    pub cursor_blink_visible: bool,
+    /// Cursor blink state (manages visibility with blinkwait behavior)
+    pub cursor_blink: CursorBlinkState,
 }
 
 impl App {
@@ -465,7 +467,7 @@ impl App {
             vps_url,
             system_stats: SystemStats::default(),
             last_ctrl_c_time: None,
-            cursor_blink_visible: true,
+            cursor_blink: CursorBlinkState::default(),
         })
     }
 

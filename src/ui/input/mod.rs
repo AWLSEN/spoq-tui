@@ -287,11 +287,11 @@ pub fn build_input_section_with_cursor(
 /// Build the input section as content lines for unified scroll.
 ///
 /// This is a convenience wrapper around `build_input_section_with_cursor` that
-/// uses `app.cursor_blink_visible` for cursor visibility.
+/// uses `app.cursor_blink.is_visible()` for cursor visibility.
 ///
 /// Returns lines for: top border, input content (with blinking cursor), bottom border, keybinds.
 pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>> {
-    build_input_section_with_cursor(app, viewport_width, app.cursor_blink_visible)
+    build_input_section_with_cursor(app, viewport_width, app.cursor_blink.is_visible())
 }
 
 #[cfg(test)]

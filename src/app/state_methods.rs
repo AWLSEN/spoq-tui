@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use super::{App, AppMessage, Focus, Screen, ScrollBoundary};
+use super::{App, AppMessage, ScrollBoundary};
 
 impl App {
     /// Mark the UI as needing a redraw.
@@ -50,9 +50,11 @@ impl App {
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
 
-        // Update cursor blink visibility (~500ms toggle at 60fps)
-        // Visible when (tick_count / 31) is even, giving ~31 ticks per half-cycle
-        self.cursor_blink_visible = (self.tick_count / 31) % 2 == 0;
+        // Update cursor blink state and mark dirty if visibility changed
+        let cursor_visibility_changed = self.cursor_blink.update(self.tick_count);
+        if cursor_visibility_changed {
+            self.mark_dirty();
+        }
 
         // Only update smooth scrolling if there's meaningful velocity
         const VELOCITY_THRESHOLD: f32 = 0.1;
@@ -68,13 +70,7 @@ impl App {
         // - Scroll momentum (velocity > 0)
         // - Streaming (spinner animation)
         // - Boundary hit indicator (fades after a few ticks)
-        // - Cursor blink when conversation input is focused
         if has_velocity || self.is_streaming() || self.scroll_boundary_hit.is_some() {
-            self.mark_dirty();
-        }
-
-        // Redraw for cursor blink when conversation input is focused
-        if self.screen == Screen::Conversation && self.focus == Focus::Input {
             self.mark_dirty();
         }
 
