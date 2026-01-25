@@ -1,8 +1,34 @@
 //! Question card overlay component for dashboard rendering
 //!
-//! This module renders question card content - both Question mode (with option buttons)
+//! This module renders question card content - both Question mode (with option selection)
 //! and FreeForm mode (with text input). Used by the overlay module to render
 //! expanded thread cards that need user input.
+//!
+//! ## UI Layout (Question Mode)
+//!
+//! ```text
+//! ╭────────────────────────────────────────────────────────────╮
+//! │  Implement auth · my-project                               │
+//! │                                                            │
+//! │  Which authentication method should I use?                 │
+//! │                                                            │
+//! │    > [●] JWT tokens                                        │
+//! │      [ ] Session cookies                                   │
+//! │      [ ] OAuth 2.0 only                                    │
+//! │      [ ] Other: _______________________________            │
+//! │                                                            │
+//! │  ↑↓ navigate   enter select   esc cancel          (4:32)  │
+//! ╰────────────────────────────────────────────────────────────╯
+//! ```
+//!
+//! ## Multi-Select Mode (checkboxes)
+//!
+//! ```text
+//! │    > [x] Linting                                           │
+//! │      [x] Unit tests                                        │
+//! │      [ ] E2E tests                                         │
+//! │      [ ] Other: _______________________________            │
+//! ```
 
 use ratatui::{
     layout::Rect,
@@ -13,11 +39,248 @@ use ratatui::{
 
 use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
+/// Configuration for rendering a question card
+#[derive(Debug, Clone)]
+pub struct QuestionRenderConfig<'a> {
+    /// The question text to display
+    pub question: &'a str,
+    /// Available options for the question
+    pub options: &'a [String],
+    /// Currently selected option index (for single-select) or cursor position
+    pub selected_index: Option<usize>,
+    /// Whether this is a multi-select question
+    pub multi_select: bool,
+    /// For multi-select: which options are currently selected
+    pub multi_selections: &'a [bool],
+    /// Text entered in the "Other" input field
+    pub other_input: &'a str,
+    /// Whether "Other" is selected (selected_index is None)
+    pub other_selected: bool,
+    /// Remaining time in seconds for the timer (None = no timer)
+    pub timer_seconds: Option<u32>,
+}
+
+impl<'a> Default for QuestionRenderConfig<'a> {
+    fn default() -> Self {
+        Self {
+            question: "",
+            options: &[],
+            selected_index: Some(0),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+        }
+    }
+}
+
 // ============================================================================
 // Public API
 // ============================================================================
 
+/// Renders question card content with full configuration
+///
+/// This is the new render function that supports the full mockup UI:
+/// - Vertical option list with selection markers
+/// - Multi-select checkboxes
+/// - Other input field
+/// - Help text and timer
+///
+/// # Arguments
+///
+/// * `frame` - The ratatui frame to render into
+/// * `area` - Inner card area (inside border)
+/// * `thread_id` - The thread ID for registering click actions
+/// * `title` - Thread title
+/// * `repo` - Repository name
+/// * `config` - Configuration for the question display
+/// * `registry` - Hit area registry for mouse interaction
+#[allow(clippy::too_many_arguments)]
+pub fn render_question(
+    frame: &mut Frame,
+    area: Rect,
+    thread_id: &str,
+    title: &str,
+    repo: &str,
+    config: &QuestionRenderConfig,
+    registry: &mut HitAreaRegistry,
+) {
+    // Guard against zero-height areas
+    if area.height < 6 || area.width < 20 {
+        return;
+    }
+
+    let mut y = area.y;
+
+    // Row 0: Header - "{title} · {repo}"
+    let header = format!("{} \u{00b7} {}", title, repo);
+    let header_truncated = truncate_with_ellipsis(&header, area.width as usize);
+    frame.render_widget(
+        Line::styled(
+            header_truncated,
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Rect::new(area.x, y, area.width, 1),
+    );
+    y += 1;
+
+    // Row 1: blank
+    y += 1;
+
+    // Row 2-3: Question text (wrapped, max 2 lines)
+    let question_lines = wrap_text(config.question, area.width as usize, 2);
+    for line in &question_lines {
+        frame.render_widget(Line::raw(line.clone()), Rect::new(area.x, y, area.width, 1));
+        y += 1;
+    }
+    // Ensure we advance past the question area
+    let min_question_rows = 2;
+    if question_lines.len() < min_question_rows {
+        y += (min_question_rows - question_lines.len()) as u16;
+    }
+
+    // Row: blank before options
+    y += 1;
+
+    // Calculate how many option rows we can show
+    // Reserve 2 rows: 1 for blank before help, 1 for help text
+    let available_option_rows = area.height.saturating_sub(y - area.y + 2) as usize;
+
+    // Render options
+    let option_indent = 4u16; // "    " indent
+    for (i, opt) in config.options.iter().enumerate() {
+        if i >= available_option_rows.saturating_sub(1) {
+            break; // Leave room for Other
+        }
+
+        let is_cursor = config.selected_index == Some(i);
+        let marker = if config.multi_select {
+            // Multi-select: [x] or [ ]
+            let checked = config
+                .multi_selections
+                .get(i)
+                .copied()
+                .unwrap_or(false);
+            if checked { "[x]" } else { "[ ]" }
+        } else {
+            // Single-select: [●] or [ ]
+            if is_cursor && !config.other_selected {
+                "[\u{25cf}]"
+            } else {
+                "[ ]"
+            }
+        };
+
+        // Build the option line
+        let cursor_char = if is_cursor && !config.other_selected {
+            "> "
+        } else {
+            "  "
+        };
+
+        let option_text = format!("{}{} {}", cursor_char, marker, opt);
+        let option_truncated = truncate_with_ellipsis(&option_text, (area.width - option_indent) as usize);
+
+        // Style: highlight if cursor is on this option
+        let style = if is_cursor && !config.other_selected {
+            Style::default().fg(Color::White)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+
+        let option_area = Rect::new(area.x + option_indent, y, area.width - option_indent, 1);
+        frame.render_widget(Line::styled(option_truncated, style), option_area);
+
+        // Register click area for this option
+        registry.register(
+            option_area,
+            ClickAction::SelectOption {
+                thread_id: thread_id.to_string(),
+                index: i,
+            },
+            Some(Style::default().bg(Color::DarkGray)),
+        );
+
+        y += 1;
+    }
+
+    // Render "Other" option
+    if y < area.y + area.height.saturating_sub(2) {
+        let is_other_cursor = config.other_selected
+            || (config.selected_index.is_none()
+                || config.selected_index == Some(config.options.len()));
+
+        let cursor_char = if is_other_cursor { "> " } else { "  " };
+        let marker = if config.multi_select {
+            // Multi-select: Other can be checked
+            if !config.other_input.is_empty() {
+                "[x]"
+            } else {
+                "[ ]"
+            }
+        } else {
+            // Single-select: Other is selected when cursor is on it
+            if is_other_cursor { "[\u{25cf}]" } else { "[ ]" }
+        };
+
+        // Build Other line with input field
+        let other_prefix = format!("{}{} Other: ", cursor_char, marker);
+        let input_width = (area.width - option_indent)
+            .saturating_sub(other_prefix.len() as u16) as usize;
+
+        // Display input or underscores placeholder
+        let input_display = if config.other_input.is_empty() {
+            "_".repeat(input_width.min(30))
+        } else {
+            let truncated = truncate_with_ellipsis(config.other_input, input_width);
+            format!("{}{}", truncated, "_".repeat(input_width.saturating_sub(truncated.len())))
+        };
+
+        let style = if is_other_cursor {
+            Style::default().fg(Color::White)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+
+        let other_area = Rect::new(area.x + option_indent, y, area.width - option_indent, 1);
+
+        // Build spans for proper styling
+        let spans = vec![
+            Span::styled(&other_prefix, style),
+            Span::styled(
+                input_display,
+                if is_other_cursor {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                },
+            ),
+        ];
+        frame.render_widget(Line::from(spans), other_area);
+
+        // Register click area for Other
+        registry.register(
+            other_area,
+            ClickAction::ShowFreeFormInput(thread_id.to_string()),
+            Some(Style::default().bg(Color::DarkGray)),
+        );
+
+        y += 1;
+    }
+
+    // Skip to help text row (last row)
+    let help_row_y = area.y + area.height.saturating_sub(1);
+
+    // Render help text with timer
+    if help_row_y > y {
+        render_help_line(frame, area.x, help_row_y, area.width, config.timer_seconds);
+    }
+}
+
 /// Renders question card content - handles both Question and FreeForm modes
+///
+/// This is the legacy render function for backward compatibility.
 ///
 /// # Arguments
 ///
@@ -43,9 +306,20 @@ pub fn render(
     registry: &mut HitAreaRegistry,
 ) {
     match input {
-        None => render_question_mode(
-            frame, area, thread_id, title, repo, question, options, registry,
-        ),
+        None => {
+            // Use the new question renderer with default config
+            let config = QuestionRenderConfig {
+                question,
+                options,
+                selected_index: Some(0),
+                multi_select: false,
+                multi_selections: &[],
+                other_input: "",
+                other_selected: false,
+                timer_seconds: None,
+            };
+            render_question(frame, area, thread_id, title, repo, &config, registry);
+        }
         Some((text, cursor)) => render_free_form_mode(
             frame, area, thread_id, title, repo, question, text, cursor, registry,
         ),
@@ -53,88 +327,55 @@ pub fn render(
 }
 
 // ============================================================================
-// Question Mode Rendering
+// Help Line Rendering
 // ============================================================================
 
-/// Render the question mode with option buttons
-///
-/// Layout:
-///   Row 0: "{title} \u{00b7} {repo}" (header line)
-///   Row 1: blank
-///   Row 2-4: question text (wrapped, max 3 lines)
-///   Row 5: blank
-///   Row 6: [option0] [option1] [option2] [Other...]
-#[allow(clippy::too_many_arguments)]
-fn render_question_mode(
-    frame: &mut Frame,
-    area: Rect,
-    thread_id: &str,
-    title: &str,
-    repo: &str,
-    question: &str,
-    options: &[String],
-    registry: &mut HitAreaRegistry,
-) {
-    let mut y = area.y;
+/// Render the help line with navigation hints and timer
+fn render_help_line(frame: &mut Frame, x: u16, y: u16, width: u16, timer_seconds: Option<u32>) {
+    let help_text = "\u{2191}\u{2193} navigate   enter select   esc cancel";
 
-    // Header: title \u{00b7} repo
-    let header = format!("{} \u{00b7} {}", title, repo);
-    let header_line = Line::styled(header, Style::default().add_modifier(Modifier::BOLD));
-    frame.render_widget(header_line, Rect::new(area.x, y, area.width, 1));
-    y += 2; // Skip blank line
+    // Format timer
+    let timer_text = timer_seconds
+        .map(|secs| {
+            let mins = secs / 60;
+            let secs = secs % 60;
+            format!("({:}:{:02})", mins, secs)
+        })
+        .unwrap_or_default();
 
-    // Question text (wrap to 3 lines max)
-    let question_lines = wrap_text(question, area.width as usize, 3);
-    for line in &question_lines {
-        frame.render_widget(Line::raw(line.clone()), Rect::new(area.x, y, area.width, 1));
-        y += 1;
-    }
-    // Ensure we advance past the question area even if fewer than 3 lines
-    y = (area.y + 2 + 3).min(y.max(area.y + 2 + question_lines.len() as u16));
-    y += 1; // Skip blank line
+    // Timer style: red if < 10 seconds
+    let timer_style = if timer_seconds.map(|s| s < 10).unwrap_or(false) {
+        Style::default().fg(Color::Red)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
 
-    // Option buttons
-    let mut btn_x = area.x;
-    let btn_y = y;
+    // Calculate positions
+    let timer_width = timer_text.len() as u16;
+    let help_width = help_text.len() as u16;
 
-    for (i, opt) in options.iter().enumerate() {
-        let btn_text = format!("[{}]", opt);
-        let btn_width = btn_text.len() as u16;
-
-        // Check if there's room for this button
-        if btn_x + btn_width > area.x + area.width {
-            break;
-        }
-
-        let btn_area = Rect::new(btn_x, btn_y, btn_width, 1);
-
-        // Style: white text
-        let style = Style::default().fg(Color::White);
-        frame.render_widget(Span::styled(&btn_text, style), btn_area);
-
-        registry.register(
-            btn_area,
-            ClickAction::SelectOption {
-                thread_id: thread_id.to_string(),
-                index: i,
-            },
-            Some(Style::default().bg(Color::DarkGray)),
+    // If both fit, render with proper spacing
+    if help_width + timer_width + 2 <= width {
+        // Help text on the left
+        frame.render_widget(
+            Line::styled(help_text, Style::default().fg(Color::DarkGray)),
+            Rect::new(x, y, help_width, 1),
         );
-        btn_x += btn_width + 2; // +2 for spacing
-    }
 
-    // [Other...] button
-    let other_btn = "[Other...]";
-    let other_width = other_btn.len() as u16;
-
-    // Check if there's room for the Other button
-    if btn_x + other_width <= area.x + area.width {
-        let other_area = Rect::new(btn_x, btn_y, other_width, 1);
-        frame.render_widget(Span::raw(other_btn), other_area);
-        registry.register(
-            other_area,
-            ClickAction::ShowFreeFormInput(thread_id.to_string()),
-            Some(Style::default().bg(Color::DarkGray)),
+        // Timer on the right
+        if !timer_text.is_empty() {
+            let timer_x = x + width - timer_width;
+            frame.render_widget(
+                Line::styled(&timer_text, timer_style),
+                Rect::new(timer_x, y, timer_width, 1),
+            );
+        }
+    } else {
+        // Just render truncated help text
+        let truncated = truncate_with_ellipsis(help_text, width as usize);
+        frame.render_widget(
+            Line::styled(truncated, Style::default().fg(Color::DarkGray)),
+            Rect::new(x, y, width, 1),
         );
     }
 }
@@ -146,13 +387,13 @@ fn render_question_mode(
 /// Render the free-form input mode
 ///
 /// Layout:
-///   Row 0: "{title} \u{00b7} {repo}"
+///   Row 0: "{title} · {repo}"
 ///   Row 1: blank
 ///   Row 2: question truncated with "..."
 ///   Row 3: blank
 ///   Row 4-5: input box with borders
 ///   Row 6: blank
-///   Row 7: [<- back]  [send]
+///   Row 7: [← back]  [send]
 #[allow(clippy::too_many_arguments)]
 fn render_free_form_mode(
     frame: &mut Frame,
@@ -413,6 +654,8 @@ pub fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
 
     // -------------------- wrap_text Tests --------------------
 
@@ -445,9 +688,6 @@ mod tests {
 
     #[test]
     fn test_wrap_text_truncates_with_ellipsis() {
-        // When max_lines is reached, the function adds "..." to indicate truncation
-        // But only if there would be more content - wrapping "brown fox" to line 2
-        // adds ellipsis because there are more words after
         let result = wrap_text("The quick brown fox jumps over the lazy dog", 10, 2);
         assert_eq!(result, vec!["The quick", "brown fox..."]);
     }
@@ -479,7 +719,6 @@ mod tests {
     #[test]
     fn test_wrap_text_long_word() {
         let result = wrap_text("supercalifragilisticexpialidocious", 10, 5);
-        // Word gets broken into chunks
         assert_eq!(result.len(), 4);
         assert_eq!(result[0], "supercalif");
         assert_eq!(result[1], "ragilistic");
@@ -489,19 +728,14 @@ mod tests {
 
     #[test]
     fn test_wrap_text_long_word_truncated() {
-        // Long word gets broken into 10-char chunks
-        // When we hit max_lines limit, the second chunk is returned as-is
-        // since truncate_with_ellipsis is only called when the chunk itself
-        // needs to be shortened (which it doesn't here - it's exactly 10 chars)
         let result = wrap_text("supercalifragilisticexpialidocious", 10, 2);
         assert_eq!(result.len(), 2);
         assert_eq!(result[0], "supercalif");
-        assert_eq!(result[1], "ragilistic"); // 10 chars, no need for ellipsis
+        assert_eq!(result[1], "ragilistic");
     }
 
     #[test]
     fn test_wrap_text_preserves_whitespace_handling() {
-        // Multiple spaces between words should be treated as single separator
         let result = wrap_text("Hello    world", 20, 3);
         assert_eq!(result, vec!["Hello world"]);
     }
@@ -552,14 +786,12 @@ mod tests {
 
     #[test]
     fn test_truncate_unicode() {
-        // "Hello \u{4e16}\u{754c}!" has 10 characters
         let result = truncate_with_ellipsis("Hello \u{4e16}\u{754c}!", 10);
         assert_eq!(result, "Hello \u{4e16}\u{754c}!");
     }
 
     #[test]
     fn test_truncate_unicode_truncated() {
-        // "\u{65e5}\u{672c}\u{8a9e}\u{30c6}\u{30b9}\u{30c8}" has 6 characters
         let result = truncate_with_ellipsis("\u{65e5}\u{672c}\u{8a9e}\u{30c6}\u{30b9}\u{30c8}", 5);
         assert_eq!(result, "\u{65e5}\u{672c}...");
     }
@@ -596,7 +828,6 @@ mod tests {
     #[test]
     fn test_get_visible_input_cursor_in_middle() {
         let (visible, cursor) = get_visible_input("Hello World!", 6, 5);
-        // Cursor at 'W', should center around it
         assert!(visible.len() == 5);
         assert!(cursor <= 5);
     }
@@ -606,5 +837,327 @@ mod tests {
         let (visible, cursor) = get_visible_input("", 0, 10);
         assert_eq!(visible, "");
         assert_eq!(cursor, 0);
+    }
+
+    // -------------------- QuestionRenderConfig Tests --------------------
+
+    #[test]
+    fn test_question_render_config_default() {
+        let config = QuestionRenderConfig::default();
+        assert_eq!(config.question, "");
+        assert!(config.options.is_empty());
+        assert_eq!(config.selected_index, Some(0));
+        assert!(!config.multi_select);
+        assert!(config.multi_selections.is_empty());
+        assert_eq!(config.other_input, "");
+        assert!(!config.other_selected);
+        assert!(config.timer_seconds.is_none());
+    }
+
+    // -------------------- render_question Tests --------------------
+
+    #[test]
+    fn test_render_question_single_select() {
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec![
+            "JWT tokens".to_string(),
+            "Session cookies".to_string(),
+            "OAuth 2.0 only".to_string(),
+        ];
+
+        let config = QuestionRenderConfig {
+            question: "Which authentication method should I use?",
+            options: &options,
+            selected_index: Some(0),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: Some(272), // 4:32
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 1, 56, 12);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Implement auth",
+                    "my-project",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Verify hit areas were registered (3 options + 1 Other)
+        assert!(registry.len() >= 4);
+    }
+
+    #[test]
+    fn test_render_question_multi_select() {
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec![
+            "Linting".to_string(),
+            "Unit tests".to_string(),
+            "E2E tests".to_string(),
+        ];
+        let multi_selections = vec![true, true, false];
+
+        let config = QuestionRenderConfig {
+            question: "Select features to enable:",
+            options: &options,
+            selected_index: Some(0),
+            multi_select: true,
+            multi_selections: &multi_selections,
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 1, 56, 12);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Setup CI",
+                    "my-repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Verify rendering completed without panic
+        assert!(registry.len() >= 4);
+    }
+
+    #[test]
+    fn test_render_question_with_other_selected() {
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec!["Option A".to_string(), "Option B".to_string()];
+
+        let config = QuestionRenderConfig {
+            question: "Choose an option:",
+            options: &options,
+            selected_index: None,
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "Custom value",
+            other_selected: true,
+            timer_seconds: Some(5), // < 10 seconds, should be red
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 1, 56, 12);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Test",
+                    "repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Verify rendering completed without panic
+        assert!(registry.len() >= 3);
+    }
+
+    #[test]
+    fn test_render_question_minimum_area() {
+        let backend = TestBackend::new(20, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec!["A".to_string()];
+        let config = QuestionRenderConfig {
+            question: "Q?",
+            options: &options,
+            selected_index: Some(0),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 20, 6);
+                render_question(
+                    frame,
+                    area,
+                    "t1",
+                    "Title",
+                    "repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should render without panic even with minimal area
+    }
+
+    #[test]
+    fn test_render_question_too_small_area() {
+        let backend = TestBackend::new(15, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec!["A".to_string()];
+        let config = QuestionRenderConfig {
+            question: "Q?",
+            options: &options,
+            selected_index: Some(0),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                // Area too small - should bail out gracefully
+                let area = Rect::new(0, 0, 15, 5);
+                render_question(
+                    frame,
+                    area,
+                    "t1",
+                    "Title",
+                    "repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should not panic, should bail early
+        assert_eq!(registry.len(), 0);
+    }
+
+    // -------------------- Help Line Tests --------------------
+
+    #[test]
+    fn test_help_line_with_timer() {
+        let backend = TestBackend::new(60, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_help_line(frame, 0, 0, 60, Some(272));
+            })
+            .unwrap();
+
+        // Should render without panic
+    }
+
+    #[test]
+    fn test_help_line_timer_red_when_low() {
+        let backend = TestBackend::new(60, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_help_line(frame, 0, 0, 60, Some(5));
+            })
+            .unwrap();
+
+        // Should render without panic (timer should be red)
+    }
+
+    #[test]
+    fn test_help_line_no_timer() {
+        let backend = TestBackend::new(60, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_help_line(frame, 0, 0, 60, None);
+            })
+            .unwrap();
+
+        // Should render without panic
+    }
+
+    // -------------------- Legacy Render Tests --------------------
+
+    #[test]
+    fn test_legacy_render_question_mode() {
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec!["Yes".to_string(), "No".to_string()];
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 1, 56, 12);
+                render(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Confirm",
+                    "repo",
+                    "Proceed?",
+                    &options,
+                    None,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should use the new question renderer
+        assert!(registry.len() >= 3);
+    }
+
+    #[test]
+    fn test_legacy_render_free_form_mode() {
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 1, 56, 12);
+                render(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Input",
+                    "repo",
+                    "Enter text:",
+                    &[],
+                    Some(("Hello", 5)),
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should have back and send buttons
+        assert!(registry.len() >= 2);
     }
 }

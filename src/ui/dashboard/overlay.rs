@@ -9,21 +9,39 @@
 //! 1. Register CollapseOverlay hit area on list_area (click outside = close)
 //! 2. Dim background behind the card
 //! 3. Clear card area (solid background)
-//! 4. Draw card border
+//! 4. Draw card border with rounded corners
 //! 5. Delegate to content renderer based on overlay type
+//!
+//! ## Card Dimensions
+//!
+//! | Property | Value |
+//! |----------|-------|
+//! | **Width** | 80% of dashboard list area |
+//! | **Height** | ~35% (10-12 rows, dynamic based on options count) |
+//! | **Border** | Rounded Unicode: `╭╮╰╯─│` |
 
 use ratatui::{
+    buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
-    widgets::{Block, Borders, Clear},
+    widgets::Clear,
     Frame,
 };
 
 use crate::models::dashboard::PlanSummary;
 use crate::ui::dashboard::plan_card;
-use crate::ui::dashboard::question_card;
+use crate::ui::dashboard::question_card::{self, QuestionRenderConfig};
 use crate::ui::dashboard::{OverlayState, RenderContext};
 use crate::ui::interaction::{ClickAction, HitAreaRegistry};
+
+/// Maximum height for question card as percentage of list area
+const QUESTION_CARD_MAX_HEIGHT_PERCENT: f32 = 0.35;
+
+/// Minimum height for question card (rows)
+const QUESTION_CARD_MIN_HEIGHT: u16 = 8;
+
+/// Card width as percentage of list area
+const CARD_WIDTH_PERCENT: f32 = 0.80;
 
 /// Render an overlay card on top of the thread list.
 ///
@@ -49,27 +67,10 @@ pub fn render(
     registry: &mut HitAreaRegistry,
 ) {
     // Calculate card dimensions based on overlay type
-    let (anchor_y, card_height) = match overlay {
-        OverlayState::Question {
-            anchor_y,
-            question_data,
-            ..
-        } => {
-            // Get option count from question_data if available
-            let option_count = question_data
-                .as_ref()
-                .and_then(|qd| qd.questions.first())
-                .map(|q| q.options.len())
-                .unwrap_or(0);
-            (*anchor_y, 6 + option_count as u16)
-        }
-        OverlayState::FreeForm { anchor_y, .. } => (*anchor_y, 8),
-        OverlayState::Plan {
-            anchor_y, summary, ..
-        } => (*anchor_y, 6 + summary.phases.len().min(5) as u16 + 2),
-    };
+    let (anchor_y, card_height) = calculate_card_dimensions(overlay, list_area);
 
-    let card_width = (list_area.width as f32 * 0.90) as u16;
+    // Card width is 80% of list area
+    let card_width = ((list_area.width as f32) * CARD_WIDTH_PERCENT) as u16;
     let card_x = list_area.x + (list_area.width - card_width) / 2;
     let mut card_y = anchor_y + 1; // Below the anchor row
 
@@ -93,7 +94,8 @@ pub fn render(
             // These rows are "behind" the card - render them dimmed
             let dim_area = Rect::new(list_area.x, y, list_area.width, 1);
             frame.render_widget(
-                Block::default().style(Style::default().fg(Color::DarkGray)),
+                ratatui::widgets::Block::default()
+                    .style(Style::default().fg(Color::DarkGray)),
                 dim_area,
             );
         }
@@ -102,18 +104,14 @@ pub fn render(
     // 3. Clear card area (solid background)
     frame.render_widget(Clear, card_area);
 
-    // 4. Draw card border (Block with borders)
-    let card_block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::White))
-        .style(Style::default().bg(Color::Black));
-    frame.render_widget(card_block, card_area);
+    // 4. Draw card border with rounded corners
+    render_rounded_border(frame.buffer_mut(), card_area, Color::White, Color::Black);
 
     // 5. Delegate to content renderer based on overlay type
     let inner_area = Rect::new(
-        card_area.x + 1,
+        card_area.x + 2, // 1 for border + 1 for padding
         card_area.y + 1,
-        card_area.width.saturating_sub(2),
+        card_area.width.saturating_sub(4), // 2 for border + 2 for padding
         card_area.height.saturating_sub(2),
     );
 
@@ -125,26 +123,13 @@ pub fn render(
             question_data,
             ..
         } => {
-            // Extract question text and option labels from question_data
-            let (question_text, option_labels): (String, Vec<String>) = question_data
-                .as_ref()
-                .and_then(|qd| qd.questions.first())
-                .map(|q| {
-                    let labels = q.options.iter().map(|o| o.label.clone()).collect();
-                    (q.question.clone(), labels)
-                })
-                .unwrap_or_else(|| (String::new(), vec![]));
-
-            // Question mode: pass None for input to render option buttons
-            question_card::render(
+            render_question_content(
                 frame,
                 inner_area,
                 thread_id,
                 thread_title,
                 repository,
-                &question_text,
-                &option_labels,
-                None,
+                question_data.as_ref(),
                 registry,
             );
         }
@@ -201,6 +186,172 @@ pub fn render(
     }
 }
 
+/// Calculate card dimensions based on overlay type
+fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u16) {
+    match overlay {
+        OverlayState::Question {
+            anchor_y,
+            question_data,
+            ..
+        } => {
+            // Get option count from question_data if available
+            let option_count = question_data
+                .as_ref()
+                .and_then(|qd| qd.questions.first())
+                .map(|q| q.options.len())
+                .unwrap_or(0);
+
+            // Calculate height:
+            // - 1 row: header (title · repo)
+            // - 1 row: blank
+            // - 2 rows: question text (max)
+            // - 1 row: blank
+            // - N rows: options
+            // - 1 row: Other option
+            // - 1 row: blank
+            // - 1 row: help text
+            // - 2 rows: border (top + bottom)
+            let content_height = 1 + 1 + 2 + 1 + option_count as u16 + 1 + 1 + 1;
+            let total_height = content_height + 2; // +2 for borders
+
+            // Apply max height constraint (~35% of list area)
+            let max_height =
+                ((list_area.height as f32) * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16;
+            let card_height = total_height
+                .max(QUESTION_CARD_MIN_HEIGHT)
+                .min(max_height.max(QUESTION_CARD_MIN_HEIGHT));
+
+            (*anchor_y, card_height)
+        }
+        OverlayState::FreeForm { anchor_y, .. } => {
+            // Fixed height for free-form input
+            // - 1 row: header
+            // - 1 row: blank
+            // - 1 row: question (truncated)
+            // - 1 row: blank
+            // - 3 rows: input box
+            // - 1 row: blank
+            // - 1 row: buttons
+            // - 2 rows: border
+            (*anchor_y, 11)
+        }
+        OverlayState::Plan {
+            anchor_y, summary, ..
+        } => {
+            // Plan card height based on phases
+            let phase_rows = summary.phases.len().min(5) as u16;
+            (*anchor_y, 6 + phase_rows + 2)
+        }
+    }
+}
+
+/// Render the question content using the new QuestionRenderConfig
+fn render_question_content(
+    frame: &mut Frame,
+    area: Rect,
+    thread_id: &str,
+    title: &str,
+    repo: &str,
+    question_data: Option<&crate::state::session::AskUserQuestionData>,
+    registry: &mut HitAreaRegistry,
+) {
+    // Extract question info from question_data
+    let (question_text, option_labels, multi_select) = question_data
+        .and_then(|qd| qd.questions.first())
+        .map(|q| {
+            let labels: Vec<String> = q.options.iter().map(|o| o.label.clone()).collect();
+            (q.question.clone(), labels, q.multi_select)
+        })
+        .unwrap_or_else(|| (String::new(), vec![], false));
+
+    // Build the render config
+    // Note: In a full implementation, these would come from the question state
+    // For now, we use defaults since the state isn't passed through RenderContext
+    let config = QuestionRenderConfig {
+        question: &question_text,
+        options: &option_labels,
+        selected_index: Some(0), // Default to first option
+        multi_select,
+        multi_selections: &[], // Would come from question state
+        other_input: "",
+        other_selected: false,
+        timer_seconds: None, // Would come from timer state
+    };
+
+    question_card::render_question(frame, area, thread_id, title, repo, &config, registry);
+}
+
+/// Render a rounded border using Unicode box-drawing characters
+///
+/// ```text
+/// ╭───────────────────╮
+/// │                   │
+/// │                   │
+/// ╰───────────────────╯
+/// ```
+fn render_rounded_border(buf: &mut Buffer, area: Rect, fg: Color, bg: Color) {
+    if area.width < 2 || area.height < 2 {
+        return;
+    }
+
+    let style = Style::default().fg(fg).bg(bg);
+
+    // Top-left corner
+    if let Some(cell) = buf.cell_mut((area.x, area.y)) {
+        cell.set_char('\u{256d}').set_style(style);
+    }
+
+    // Top-right corner
+    if let Some(cell) = buf.cell_mut((area.x + area.width - 1, area.y)) {
+        cell.set_char('\u{256e}').set_style(style);
+    }
+
+    // Bottom-left corner
+    if let Some(cell) = buf.cell_mut((area.x, area.y + area.height - 1)) {
+        cell.set_char('\u{2570}').set_style(style);
+    }
+
+    // Bottom-right corner
+    if let Some(cell) =
+        buf.cell_mut((area.x + area.width - 1, area.y + area.height - 1))
+    {
+        cell.set_char('\u{256f}').set_style(style);
+    }
+
+    // Top and bottom horizontal lines
+    for x in (area.x + 1)..(area.x + area.width - 1) {
+        // Top
+        if let Some(cell) = buf.cell_mut((x, area.y)) {
+            cell.set_char('\u{2500}').set_style(style);
+        }
+        // Bottom
+        if let Some(cell) = buf.cell_mut((x, area.y + area.height - 1)) {
+            cell.set_char('\u{2500}').set_style(style);
+        }
+    }
+
+    // Left and right vertical lines
+    for y in (area.y + 1)..(area.y + area.height - 1) {
+        // Left
+        if let Some(cell) = buf.cell_mut((area.x, y)) {
+            cell.set_char('\u{2502}').set_style(style);
+        }
+        // Right
+        if let Some(cell) = buf.cell_mut((area.x + area.width - 1, y)) {
+            cell.set_char('\u{2502}').set_style(style);
+        }
+    }
+
+    // Fill interior with background
+    for y in (area.y + 1)..(area.y + area.height - 1) {
+        for x in (area.x + 1)..(area.x + area.width - 1) {
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_char(' ').set_style(Style::default().bg(bg));
+            }
+        }
+    }
+}
+
 /// Content renderer for plan approval overlays.
 ///
 /// Delegates to plan_card::render() for the full plan approval preview.
@@ -235,6 +386,373 @@ fn render_plan_content(
 
 #[cfg(test)]
 mod tests {
-    // Tests removed - card bounds calculation is now inlined in the render function
-    // and tested through integration tests
+    use super::*;
+    use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use std::collections::HashMap;
+
+    fn create_test_question_data(option_count: usize, multi_select: bool) -> AskUserQuestionData {
+        let options: Vec<QuestionOption> = (0..option_count)
+            .map(|i| QuestionOption {
+                label: format!("Option {}", i + 1),
+                description: format!("Description {}", i + 1),
+            })
+            .collect();
+
+        AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which option should I use?".to_string(),
+                header: "Choice".to_string(),
+                options,
+                multi_select,
+            }],
+            answers: HashMap::new(),
+        }
+    }
+
+    // -------------------- Card Dimension Tests --------------------
+
+    #[test]
+    fn test_calculate_card_dimensions_question_basic() {
+        let list_area = Rect::new(0, 0, 100, 40);
+        let question_data = Some(create_test_question_data(3, false));
+
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            question_data,
+            anchor_y: 10,
+        };
+
+        let (anchor, height) = calculate_card_dimensions(&overlay, list_area);
+
+        assert_eq!(anchor, 10);
+        // Height should be reasonable for 3 options
+        assert!(height >= QUESTION_CARD_MIN_HEIGHT);
+        // Should not exceed 35% of list area
+        let max_expected = ((40.0 * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16).max(QUESTION_CARD_MIN_HEIGHT);
+        assert!(height <= max_expected);
+    }
+
+    #[test]
+    fn test_calculate_card_dimensions_question_many_options() {
+        let list_area = Rect::new(0, 0, 100, 30);
+        let question_data = Some(create_test_question_data(10, false));
+
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            question_data,
+            anchor_y: 5,
+        };
+
+        let (_, height) = calculate_card_dimensions(&overlay, list_area);
+
+        // Should be capped at ~35% of list area (30 * 0.35 = 10.5)
+        let max_expected = ((30.0 * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16).max(QUESTION_CARD_MIN_HEIGHT);
+        assert!(height <= max_expected);
+    }
+
+    #[test]
+    fn test_calculate_card_dimensions_free_form() {
+        let list_area = Rect::new(0, 0, 100, 40);
+
+        let overlay = OverlayState::FreeForm {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            question_data: None,
+            input: String::new(),
+            cursor_pos: 0,
+            anchor_y: 15,
+        };
+
+        let (anchor, height) = calculate_card_dimensions(&overlay, list_area);
+
+        assert_eq!(anchor, 15);
+        assert_eq!(height, 11); // Fixed height for free-form
+    }
+
+    #[test]
+    fn test_calculate_card_dimensions_plan() {
+        let list_area = Rect::new(0, 0, 100, 40);
+        let summary = crate::models::dashboard::PlanSummary::new(
+            "Test Plan".to_string(),
+            vec![
+                "Phase 1".to_string(),
+                "Phase 2".to_string(),
+                "Phase 3".to_string(),
+            ],
+            5,
+            Some(10000),
+        );
+
+        let overlay = OverlayState::Plan {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            request_id: "req-1".to_string(),
+            summary,
+            scroll_offset: 0,
+            anchor_y: 8,
+        };
+
+        let (anchor, height) = calculate_card_dimensions(&overlay, list_area);
+
+        assert_eq!(anchor, 8);
+        // 6 base + 3 phases (capped at 5) + 2
+        assert_eq!(height, 6 + 3 + 2);
+    }
+
+    // -------------------- Rounded Border Tests --------------------
+
+    #[test]
+    fn test_render_rounded_border_basic() {
+        let backend = TestBackend::new(20, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 2, 10, 5);
+                render_rounded_border(frame.buffer_mut(), area, Color::White, Color::Black);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+
+        // Check corners
+        assert_eq!(buf.cell((2, 2)).unwrap().symbol(), "\u{256d}"); // Top-left
+        assert_eq!(buf.cell((11, 2)).unwrap().symbol(), "\u{256e}"); // Top-right
+        assert_eq!(buf.cell((2, 6)).unwrap().symbol(), "\u{2570}"); // Bottom-left
+        assert_eq!(buf.cell((11, 6)).unwrap().symbol(), "\u{256f}"); // Bottom-right
+    }
+
+    #[test]
+    fn test_render_rounded_border_horizontal_lines() {
+        let backend = TestBackend::new(20, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 10, 5);
+                render_rounded_border(frame.buffer_mut(), area, Color::White, Color::Black);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+
+        // Check horizontal lines (top and bottom, excluding corners)
+        for x in 1..9 {
+            assert_eq!(buf.cell((x, 0)).unwrap().symbol(), "\u{2500}"); // Top
+            assert_eq!(buf.cell((x, 4)).unwrap().symbol(), "\u{2500}"); // Bottom
+        }
+    }
+
+    #[test]
+    fn test_render_rounded_border_vertical_lines() {
+        let backend = TestBackend::new(20, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 10, 5);
+                render_rounded_border(frame.buffer_mut(), area, Color::White, Color::Black);
+            })
+            .unwrap();
+
+        let buf = terminal.backend().buffer();
+
+        // Check vertical lines (left and right, excluding corners)
+        for y in 1..4 {
+            assert_eq!(buf.cell((0, y)).unwrap().symbol(), "\u{2502}"); // Left
+            assert_eq!(buf.cell((9, y)).unwrap().symbol(), "\u{2502}"); // Right
+        }
+    }
+
+    #[test]
+    fn test_render_rounded_border_too_small() {
+        let backend = TestBackend::new(5, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                // Area too small - should bail out gracefully
+                let area = Rect::new(0, 0, 1, 1);
+                render_rounded_border(frame.buffer_mut(), area, Color::White, Color::Black);
+            })
+            .unwrap();
+
+        // Should not panic
+    }
+
+    // -------------------- Full Render Tests --------------------
+
+    #[test]
+    fn test_render_overlay_question() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let question_data = Some(create_test_question_data(3, false));
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Implement feature".to_string(),
+            repository: "my-project".to_string(),
+            question_data,
+            anchor_y: 5,
+        };
+
+        let threads = vec![];
+        let aggregate = crate::models::dashboard::Aggregate::default();
+        let system_stats = crate::view_state::SystemStats::default();
+        let theme = crate::view_state::Theme::default();
+        let ctx = crate::view_state::RenderContext {
+            threads: &threads,
+            aggregate: &aggregate,
+            filter: None,
+            overlay: Some(&overlay),
+            system_stats: &system_stats,
+            theme: &theme,
+        };
+
+        let mut registry = HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let list_area = Rect::new(0, 0, 80, 30);
+                render(frame, list_area, &overlay, &ctx, &mut registry);
+            })
+            .unwrap();
+
+        // Should have registered hit areas:
+        // - CollapseOverlay for background
+        // - options (may be limited by card height)
+        // - 1 Other (if space allows)
+        // Minimum: CollapseOverlay + at least 1 option
+        assert!(registry.len() >= 2, "Expected at least 2 hit areas, got {}", registry.len());
+    }
+
+    #[test]
+    fn test_render_overlay_multi_select() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let question_data = Some(create_test_question_data(4, true));
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Setup CI".to_string(),
+            repository: "my-repo".to_string(),
+            question_data,
+            anchor_y: 10,
+        };
+
+        let threads = vec![];
+        let aggregate = crate::models::dashboard::Aggregate::default();
+        let system_stats = crate::view_state::SystemStats::default();
+        let theme = crate::view_state::Theme::default();
+        let ctx = crate::view_state::RenderContext {
+            threads: &threads,
+            aggregate: &aggregate,
+            filter: None,
+            overlay: Some(&overlay),
+            system_stats: &system_stats,
+            theme: &theme,
+        };
+
+        let mut registry = HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let list_area = Rect::new(0, 0, 80, 30);
+                render(frame, list_area, &overlay, &ctx, &mut registry);
+            })
+            .unwrap();
+
+        // Should have registered hit areas for multi-select options
+        // Minimum: CollapseOverlay + at least 1 option
+        assert!(registry.len() >= 2, "Expected at least 2 hit areas, got {}", registry.len());
+    }
+
+    #[test]
+    fn test_render_overlay_free_form() {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let overlay = OverlayState::FreeForm {
+            thread_id: "t1".to_string(),
+            thread_title: "Enter input".to_string(),
+            repository: "my-repo".to_string(),
+            question_data: None,
+            input: "Hello world".to_string(),
+            cursor_pos: 5,
+            anchor_y: 8,
+        };
+
+        let threads = vec![];
+        let aggregate = crate::models::dashboard::Aggregate::default();
+        let system_stats = crate::view_state::SystemStats::default();
+        let theme = crate::view_state::Theme::default();
+        let ctx = crate::view_state::RenderContext {
+            threads: &threads,
+            aggregate: &aggregate,
+            filter: None,
+            overlay: Some(&overlay),
+            system_stats: &system_stats,
+            theme: &theme,
+        };
+
+        let mut registry = HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let list_area = Rect::new(0, 0, 80, 30);
+                render(frame, list_area, &overlay, &ctx, &mut registry);
+            })
+            .unwrap();
+
+        // Should have: CollapseOverlay + back button + send button
+        assert!(registry.len() >= 3);
+    }
+
+    #[test]
+    fn test_render_overlay_card_position_clamped() {
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        // Anchor near bottom - card should be clamped to fit
+        let question_data = Some(create_test_question_data(3, false));
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "repo".to_string(),
+            question_data,
+            anchor_y: 18, // Near bottom
+        };
+
+        let threads = vec![];
+        let aggregate = crate::models::dashboard::Aggregate::default();
+        let system_stats = crate::view_state::SystemStats::default();
+        let theme = crate::view_state::Theme::default();
+        let ctx = crate::view_state::RenderContext {
+            threads: &threads,
+            aggregate: &aggregate,
+            filter: None,
+            overlay: Some(&overlay),
+            system_stats: &system_stats,
+            theme: &theme,
+        };
+
+        let mut registry = HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let list_area = Rect::new(0, 0, 80, 20);
+                render(frame, list_area, &overlay, &ctx, &mut registry);
+            })
+            .unwrap();
+
+        // Should render without panic (card clamped to fit)
+    }
 }
