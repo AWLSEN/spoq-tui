@@ -28,7 +28,7 @@ pub fn build_contextual_keybinds(app: &App) -> Line<'static> {
 ///
 /// On narrow terminals (< 80 columns), keybind hints are abbreviated:
 /// - "[Shift+Tab]" becomes "[S+Tab]"
-/// - "[Alt+Enter]" becomes "[A+Ent]"
+/// - "[Ctrl+J]" becomes "[C+J]"
 /// - "[Tab Tab]" becomes "[Tab]"
 /// - "cycle mode" becomes "mode"
 /// - "switch thread" becomes "switch"
@@ -73,11 +73,11 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
         // Newline hint (skip on extra small)
         if !is_extra_small {
             if is_narrow {
-                spans.push(Span::styled("[A+Ent]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::styled("[C+J]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" newline | "));
             } else {
                 spans.push(Span::styled(
-                    "[Alt+Enter]",
+                    "[Ctrl+J]",
                     Style::default().fg(COLOR_ACCENT),
                 ));
                 spans.push(Span::raw(" newline | "));
@@ -131,11 +131,11 @@ pub fn build_responsive_keybinds(app: &App, ctx: &LayoutContext) -> Line<'static
         // Newline hint (skip on extra small)
         if !is_extra_small {
             if is_narrow {
-                spans.push(Span::styled("[A+Ent]", Style::default().fg(COLOR_ACCENT)));
+                spans.push(Span::styled("[C+J]", Style::default().fg(COLOR_ACCENT)));
                 spans.push(Span::raw(" newline | "));
             } else {
                 spans.push(Span::styled(
-                    "[Alt+Enter]",
+                    "[Ctrl+J]",
                     Style::default().fg(COLOR_ACCENT),
                 ));
                 spans.push(Span::raw(" newline | "));
