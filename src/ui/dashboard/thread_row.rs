@@ -136,7 +136,7 @@ pub fn render(
     }
 
     // Action buttons (based on status and waiting_for)
-    render_actions(frame, x, y, area, thread, ctx, registry);
+    render_actions(frame, x, y, area, thread, ctx, registry, false);
 }
 
 // ============================================================================
@@ -169,9 +169,9 @@ fn render_actions(
     thread: &ThreadView,
     ctx: &RenderContext,
     registry: &mut HitAreaRegistry,
+    right_align: bool,
 ) {
     let buf = frame.buffer_mut();
-    let mut current_x = x;
 
     // Key style: accent + bold
     let key_style = Style::default()
@@ -208,6 +208,28 @@ fn render_actions(
         }
         // Idle/Running/Error -> no buttons
         _ => vec![],
+    };
+
+    // Calculate total width of all buttons
+    let total_button_width: u16 = buttons
+        .iter()
+        .enumerate()
+        .map(|(i, (key, label, _))| {
+            let key_len = key.len() as u16;
+            let label_len = label.len() as u16;
+            let button_width = key_len + 1 + label_len; // key + space + label
+            let spacing = if i < buttons.len() - 1 { 2 } else { 0 }; // 2 spaces between buttons
+            button_width + spacing
+        })
+        .sum();
+
+    // Determine starting x position based on alignment
+    let mut current_x = if right_align {
+        // Start from right edge, subtract total button width
+        area.x + area.width.saturating_sub(total_button_width)
+    } else {
+        // Left align: start from provided x position
+        x
     };
 
     for (key, label, action) in buttons {
@@ -925,5 +947,187 @@ mod tests {
         }
 
         assert!(!found_action_button, "Found unexpected action button for running status");
+    }
+
+    // -------------------- Right Alignment Tests --------------------
+
+    #[test]
+    fn test_render_actions_right_align() {
+        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
+        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
+        use crate::view_state::dashboard_view::ThreadView;
+        use crate::view_state::SystemStats;
+        use ratatui::backend::TestBackend;
+        use ratatui::layout::Rect;
+        use ratatui::Terminal;
+
+        let thread = ThreadView {
+            id: "thread-right".to_string(),
+            title: "Right Align Test".to_string(),
+            repository: "repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Waiting,
+            waiting_for: Some(WaitingFor::Permission {
+                request_id: "req-right".to_string(),
+                tool_name: "test_tool".to_string(),
+            }),
+            progress: None,
+            duration: "1m".to_string(),
+            needs_action: true,
+            current_operation: None,
+        };
+
+        // Create a custom test that directly calls render_actions with right_align=true
+        let backend = TestBackend::new(100, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut registry = HitAreaRegistry::new();
+
+        let theme = crate::view_state::Theme::default();
+        let system_stats = SystemStats {
+            connected: true,
+            cpu_percent: 10.0,
+            ram_used_gb: 2.0,
+            ram_total_gb: 8.0,
+        };
+        let aggregate = Aggregate::new();
+        let threads = vec![];
+
+        let ctx = RenderContext {
+            threads: &threads,
+            aggregate: &aggregate,
+            filter: None,
+            overlay: None,
+            system_stats: &system_stats,
+            theme: &theme,
+        };
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 100, 1);
+                // Call render_actions directly with right_align=true
+                render_actions(frame, 0, 0, area, &thread, &ctx, &mut registry, true);
+            })
+            .unwrap();
+
+        // Verify that buttons are registered
+        assert!(registry.len() >= 3, "Expected at least 3 hit areas for permission buttons");
+
+        // For right-aligned buttons with 3 permission buttons:
+        // [y] Yes  [n] No  [a] Always
+        // Button widths: 3+1+3=7, 3+1+2=6, 3+1+6=10
+        // Total: 7 + 2 (spacing) + 6 + 2 (spacing) + 10 = 27
+        // With area width 100, they should start at x = 100 - 27 = 73
+
+        // Find the leftmost button position
+        let mut leftmost_button_x = 100u16;
+        for x in 0..100 {
+            if let Some(action) = registry.hit_test(x, 0) {
+                match action {
+                    ClickAction::ApproveThread(_)
+                    | ClickAction::RejectThread(_)
+                    | ClickAction::AllowToolAlways(_) => {
+                        leftmost_button_x = leftmost_button_x.min(x);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Verify buttons start significantly to the right (not at x=0)
+        assert!(leftmost_button_x > 50, "Right-aligned buttons should start after x=50, got x={}", leftmost_button_x);
+
+        // Verify buttons end near the right edge (within last 5 columns)
+        let mut rightmost_button_x = 0u16;
+        for x in 0..100 {
+            if let Some(action) = registry.hit_test(x, 0) {
+                match action {
+                    ClickAction::ApproveThread(_)
+                    | ClickAction::RejectThread(_)
+                    | ClickAction::AllowToolAlways(_) => {
+                        rightmost_button_x = rightmost_button_x.max(x);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        assert!(rightmost_button_x >= 95, "Right-aligned buttons should end near right edge (>= 95), got x={}", rightmost_button_x);
+    }
+
+    #[test]
+    fn test_render_actions_left_align() {
+        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
+        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
+        use crate::view_state::dashboard_view::ThreadView;
+        use crate::view_state::SystemStats;
+        use ratatui::backend::TestBackend;
+        use ratatui::layout::Rect;
+        use ratatui::Terminal;
+
+        let thread = ThreadView {
+            id: "thread-left".to_string(),
+            title: "Left Align Test".to_string(),
+            repository: "repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Waiting,
+            waiting_for: Some(WaitingFor::PlanApproval {
+                request_id: "req-left".to_string(),
+            }),
+            progress: None,
+            duration: "2m".to_string(),
+            needs_action: true,
+            current_operation: None,
+        };
+
+        let backend = TestBackend::new(100, 1);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let mut registry = HitAreaRegistry::new();
+
+        let theme = crate::view_state::Theme::default();
+        let system_stats = SystemStats {
+            connected: true,
+            cpu_percent: 10.0,
+            ram_used_gb: 2.0,
+            ram_total_gb: 8.0,
+        };
+        let aggregate = Aggregate::new();
+        let threads = vec![];
+
+        let ctx = RenderContext {
+            threads: &threads,
+            aggregate: &aggregate,
+            filter: None,
+            overlay: None,
+            system_stats: &system_stats,
+            theme: &theme,
+        };
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 100, 1);
+                // Call render_actions directly with right_align=false and x=20
+                render_actions(frame, 20, 0, area, &thread, &ctx, &mut registry, false);
+            })
+            .unwrap();
+
+        // Verify that buttons are registered
+        assert!(registry.len() >= 2, "Expected at least 2 hit areas for plan approval buttons");
+
+        // For left-aligned buttons starting at x=20:
+        // [y] Yes  [n] No
+        // First button should start at x=20
+
+        let mut found_approve_at_start = false;
+        // Check area around x=20 for the first button
+        for x in 20..25 {
+            if let Some(action) = registry.hit_test(x, 0) {
+                if matches!(action, ClickAction::ApproveThread(id) if id == "thread-left") {
+                    found_approve_at_start = true;
+                    break;
+                }
+            }
+        }
+
+        assert!(found_approve_at_start, "Left-aligned buttons should start at the provided x position (20)");
     }
 }
