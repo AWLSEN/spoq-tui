@@ -46,6 +46,8 @@ pub struct QuestionRenderConfig<'a> {
     pub question: &'a str,
     /// Available options for the question
     pub options: &'a [String],
+    /// Descriptions for each option (parallel to options, can be empty strings)
+    pub option_descriptions: &'a [String],
     /// Currently selected option index (for single-select) or cursor position
     pub selected_index: Option<usize>,
     /// Whether this is a multi-select question
@@ -71,6 +73,7 @@ impl<'a> Default for QuestionRenderConfig<'a> {
         Self {
             question: "",
             options: &[],
+            option_descriptions: &[],
             selected_index: Some(0),
             multi_select: false,
             multi_selections: &[],
@@ -115,8 +118,9 @@ pub fn render_question(
     config: &QuestionRenderConfig,
     registry: &mut HitAreaRegistry,
 ) {
-    // Guard against zero-height areas
-    if area.height < 6 || area.width < 20 {
+    // Guard against impossibly small areas (need at least header + 1 option + help)
+    // Minimum: 3 rows height (header, one content row, help), 10 chars width
+    if area.height < 3 || area.width < 10 {
         return;
     }
 
@@ -168,19 +172,33 @@ pub fn render_question(
     y += 1;
 
     // Calculate how many option rows we can show
-    // Reserve 2 rows: 1 for blank before help, 1 for help text
-    let available_option_rows = area.height.saturating_sub(y - area.y + 2) as usize;
+    // Reserve 2 rows: 1 for "Other" option, 1 for help text
+    let rows_used = (y - area.y) as usize;
+    let total_rows = area.height as usize;
+    let reserved_rows = 2; // 1 for Other, 1 for help line
+    let available_option_rows = total_rows.saturating_sub(rows_used + reserved_rows);
+
+    // Calculate if we have space for descriptions (need at least 2 rows per option)
+    let options_count = config.options.len();
+    let has_descriptions = !config.option_descriptions.is_empty();
+    let show_descriptions = has_descriptions && available_option_rows >= options_count * 2;
 
     // Render options
     let option_indent = 4u16; // "    " indent
+    let description_indent = 10u16; // Extra indent for descriptions
+    let mut options_rendered = 0;
+
     for (i, opt) in config.options.iter().enumerate() {
-        if i >= available_option_rows.saturating_sub(1) {
-            break; // Leave room for Other
+        // Check if we have room for this option (plus description if showing)
+        let rows_needed = if show_descriptions { 2 } else { 1 };
+        let rows_remaining = available_option_rows.saturating_sub(options_rendered * rows_needed);
+        if rows_remaining < rows_needed {
+            break; // No room for more options
         }
 
         let is_cursor = config.selected_index == Some(i);
         let marker = if config.multi_select {
-            // Multi-select: [x] or [ ]
+            // Multi-select: [x] for checked, [ ] for unchecked
             let checked = config
                 .multi_selections
                 .get(i)
@@ -188,7 +206,7 @@ pub fn render_question(
                 .unwrap_or(false);
             if checked { "[x]" } else { "[ ]" }
         } else {
-            // Single-select: [●] or [ ]
+            // Single-select: [●] for selected (cursor position), [ ] for others
             if is_cursor && !config.other_selected {
                 "[\u{25cf}]"
             } else {
@@ -196,7 +214,7 @@ pub fn render_question(
             }
         };
 
-        // Build the option line
+        // Build the option line with cursor indicator `> ` on focused option
         let cursor_char = if is_cursor && !config.other_selected {
             "> "
         } else {
@@ -227,6 +245,23 @@ pub fn render_question(
         );
 
         y += 1;
+        options_rendered += 1;
+
+        // Render description below label if space permits
+        if show_descriptions {
+            if let Some(desc) = config.option_descriptions.get(i) {
+                if !desc.is_empty() {
+                    let desc_width = (area.width - description_indent) as usize;
+                    let desc_truncated = truncate_with_ellipsis(desc, desc_width);
+                    let desc_style = Style::default().fg(Color::DarkGray);
+                    frame.render_widget(
+                        Line::styled(desc_truncated, desc_style),
+                        Rect::new(area.x + description_indent, y, area.width - description_indent, 1),
+                    );
+                }
+            }
+            y += 1;
+        }
     }
 
     // Render "Other" option
@@ -343,6 +378,7 @@ pub fn render(
             let config = QuestionRenderConfig {
                 question,
                 options,
+                option_descriptions: &[],
                 selected_index: Some(0),
                 multi_select: false,
                 multi_selections: &[],
@@ -982,6 +1018,7 @@ mod tests {
         let config = QuestionRenderConfig {
             question: "Which authentication method should I use?",
             options: &options,
+            option_descriptions: &[],
             selected_index: Some(0),
             multi_select: false,
             multi_selections: &[],
@@ -1029,6 +1066,7 @@ mod tests {
         let config = QuestionRenderConfig {
             question: "Select features to enable:",
             options: &options,
+            option_descriptions: &[],
             selected_index: Some(0),
             multi_select: true,
             multi_selections: &multi_selections,
@@ -1071,6 +1109,7 @@ mod tests {
         let config = QuestionRenderConfig {
             question: "Choose an option:",
             options: &options,
+            option_descriptions: &[],
             selected_index: None,
             multi_select: false,
             multi_selections: &[],
@@ -1112,6 +1151,7 @@ mod tests {
         let config = QuestionRenderConfig {
             question: "Q?",
             options: &options,
+            option_descriptions: &[],
             selected_index: Some(0),
             multi_select: false,
             multi_selections: &[],
@@ -1145,13 +1185,14 @@ mod tests {
 
     #[test]
     fn test_render_question_too_small_area() {
-        let backend = TestBackend::new(15, 5);
+        let backend = TestBackend::new(10, 3);
         let mut terminal = Terminal::new(backend).unwrap();
 
         let options = vec!["A".to_string()];
         let config = QuestionRenderConfig {
             question: "Q?",
             options: &options,
+            option_descriptions: &[],
             selected_index: Some(0),
             multi_select: false,
             multi_selections: &[],
@@ -1167,8 +1208,8 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                // Area too small - should bail out gracefully
-                let area = Rect::new(0, 0, 15, 5);
+                // Area too small (height < 3) - should bail out gracefully
+                let area = Rect::new(0, 0, 8, 2);
                 render_question(
                     frame,
                     area,
@@ -1181,7 +1222,7 @@ mod tests {
             })
             .unwrap();
 
-        // Should not panic, should bail early
+        // Should not panic, should bail early (height=2 < min 3)
         assert_eq!(registry.len(), 0);
     }
 
@@ -1393,6 +1434,7 @@ mod tests {
         let config = QuestionRenderConfig {
             question: "Choose authentication:",
             options: &options,
+            option_descriptions: &[],
             selected_index: Some(0),
             multi_select: false,
             multi_selections: &[],
@@ -1437,6 +1479,7 @@ mod tests {
         let config = QuestionRenderConfig {
             question: "Choose database:",
             options: &options,
+            option_descriptions: &[],
             selected_index: Some(0),
             multi_select: false,
             multi_selections: &[],
@@ -1481,5 +1524,266 @@ mod tests {
             .unwrap();
 
         // Should render with tab hint
+    }
+
+    // -------------------- Option Description Tests --------------------
+
+    #[test]
+    fn test_render_question_with_descriptions() {
+        let backend = TestBackend::new(60, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec![
+            "JWT tokens".to_string(),
+            "Session cookies".to_string(),
+        ];
+        let option_descriptions = vec![
+            "Stateless tokens signed by server".to_string(),
+            "Server-side session storage".to_string(),
+        ];
+
+        let config = QuestionRenderConfig {
+            question: "Which authentication method?",
+            options: &options,
+            option_descriptions: &option_descriptions,
+            selected_index: Some(0),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                // Large enough area to show descriptions (need 2 rows per option)
+                let area = Rect::new(2, 1, 56, 18);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Auth Setup",
+                    "my-project",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should render with descriptions (2 options + 1 Other)
+        assert!(registry.len() >= 3);
+    }
+
+    #[test]
+    fn test_render_question_descriptions_skipped_when_tight() {
+        // Test that descriptions are skipped when there's not enough space
+        // for 2 rows per option, but all options still render
+        let backend = TestBackend::new(60, 14);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec![
+            "Option A".to_string(),
+            "Option B".to_string(),
+            "Option C".to_string(),
+        ];
+        let option_descriptions = vec![
+            "Description A".to_string(),
+            "Description B".to_string(),
+            "Description C".to_string(),
+        ];
+
+        let config = QuestionRenderConfig {
+            question: "Choose an option:",
+            options: &options,
+            option_descriptions: &option_descriptions,
+            selected_index: Some(1),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                // Area with 12 rows:
+                // - 1 header, 1 blank, 2 question, 1 blank = 5 rows used
+                // - 2 reserved (Other + help)
+                // - 5 available for options
+                // - 3 options need only 3 rows (descriptions need 6, so skipped)
+                let area = Rect::new(0, 0, 56, 12);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Test",
+                    "repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should render all 3 options + 1 Other = 4 hit areas
+        // (descriptions are skipped because 5 available rows < 6 needed for descriptions)
+        assert_eq!(registry.len(), 4);
+    }
+
+    #[test]
+    fn test_available_option_rows_not_truncated() {
+        // Test that all options are rendered when there's enough space
+        let backend = TestBackend::new(60, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec![
+            "Option 1".to_string(),
+            "Option 2".to_string(),
+            "Option 3".to_string(),
+            "Option 4".to_string(),
+            "Option 5".to_string(),
+        ];
+
+        let config = QuestionRenderConfig {
+            question: "Select one:",
+            options: &options,
+            option_descriptions: &[],
+            selected_index: Some(2),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 56, 18);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Title",
+                    "repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should render all 5 options + 1 Other = 6 hit areas
+        assert_eq!(registry.len(), 6);
+    }
+
+    #[test]
+    fn test_single_select_markers() {
+        // Test that single-select shows correct markers
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec![
+            "First".to_string(),
+            "Second".to_string(),
+            "Third".to_string(),
+        ];
+
+        // Cursor on second option
+        let config = QuestionRenderConfig {
+            question: "Select:",
+            options: &options,
+            option_descriptions: &[],
+            selected_index: Some(1),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 56, 14);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Title",
+                    "repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // 3 options + 1 Other
+        assert_eq!(registry.len(), 4);
+    }
+
+    #[test]
+    fn test_multi_select_markers() {
+        // Test that multi-select shows correct markers
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec![
+            "Linting".to_string(),
+            "Tests".to_string(),
+            "Coverage".to_string(),
+        ];
+        let multi_selections = vec![true, false, true]; // First and third checked
+
+        let config = QuestionRenderConfig {
+            question: "Select features:",
+            options: &options,
+            option_descriptions: &[],
+            selected_index: Some(0),
+            multi_select: true,
+            multi_selections: &multi_selections,
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(0, 0, 56, 14);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Title",
+                    "repo",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // 3 options + 1 Other
+        assert_eq!(registry.len(), 4);
     }
 }

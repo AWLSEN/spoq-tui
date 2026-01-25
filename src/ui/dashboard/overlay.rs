@@ -17,7 +17,7 @@
 //! | Property | Value |
 //! |----------|-------|
 //! | **Width** | 80% of dashboard list area |
-//! | **Height** | ~35% (10-12 rows, dynamic based on options count) |
+//! | **Height** | ~50% max (12+ rows, dynamic based on options count) |
 //! | **Border** | Rounded Unicode: `╭╮╰╯─│` |
 
 use ratatui::{
@@ -36,10 +36,11 @@ use crate::ui::dashboard::{OverlayState, RenderContext};
 use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
 /// Maximum height for question card as percentage of list area
-const QUESTION_CARD_MAX_HEIGHT_PERCENT: f32 = 0.35;
+const QUESTION_CARD_MAX_HEIGHT_PERCENT: f32 = 0.50;
 
 /// Minimum height for question card (rows)
-const QUESTION_CARD_MIN_HEIGHT: u16 = 8;
+/// Calculated from: header(1) + blank(1) + question(2) + blank(1) + options(2min) + other(1) + blank(1) + help(1) + borders(2) = 12
+const QUESTION_CARD_MIN_HEIGHT: u16 = 12;
 
 /// Card width as percentage of list area
 const CARD_WIDTH_PERCENT: f32 = 0.80;
@@ -189,6 +190,18 @@ pub fn render(
 }
 
 /// Calculate card dimensions based on overlay type
+///
+/// For question cards, dynamically calculates height based on:
+/// - Header row (1)
+/// - Tab bar if multi-question (1, optional)
+/// - Blank row (1)
+/// - Question text (2-4 lines, typically 2)
+/// - Blank row (1)
+/// - Options (n rows, one per option)
+/// - Other option row (1)
+/// - Blank row (1)
+/// - Help text row (1)
+/// - Top and bottom borders (2)
 fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u16) {
     match overlay {
         OverlayState::Question {
@@ -196,32 +209,44 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             question_data,
             ..
         } => {
-            // Get option count from question_data if available
-            let option_count = question_data
+            // Get option count and check for multi-question (tabs)
+            let (option_count, has_tabs) = question_data
                 .as_ref()
-                .and_then(|qd| qd.questions.first())
-                .map(|q| q.options.len())
-                .unwrap_or(0);
+                .map(|qd| {
+                    let opts = qd.questions.first().map(|q| q.options.len()).unwrap_or(0);
+                    let tabs = qd.questions.len() > 1;
+                    (opts, tabs)
+                })
+                .unwrap_or((0, false));
 
-            // Calculate height:
+            // Calculate required height dynamically:
             // - 1 row: header (title · repo)
-            // - 1 row: blank
-            // - 2 rows: question text (max)
-            // - 1 row: blank
-            // - N rows: options
+            // - 1 row: tab bar (only if has_tabs)
+            // - 1 row: blank after header/tabs
+            // - 2 rows: question text (wrapped, max 2 lines)
+            // - 1 row: blank before options
+            // - N rows: options (one per option)
             // - 1 row: Other option
-            // - 1 row: blank
+            // - 1 row: blank before help
             // - 1 row: help text
             // - 2 rows: border (top + bottom)
-            let content_height = 1 + 1 + 2 + 1 + option_count as u16 + 1 + 1 + 1;
-            let total_height = content_height + 2; // +2 for borders
+            let tab_row = if has_tabs { 1 } else { 0 };
+            let header_section = 1 + tab_row + 1; // header + optional tabs + blank
+            let question_section = 2; // question text (max 2 lines)
+            let options_section = 1 + option_count as u16 + 1; // blank + options + Other
+            let footer_section = 1 + 1; // blank + help
+            let borders = 2;
 
-            // Apply max height constraint (~35% of list area)
-            let max_height =
-                ((list_area.height as f32) * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16;
-            let card_height = total_height
-                .max(QUESTION_CARD_MIN_HEIGHT)
-                .min(max_height.max(QUESTION_CARD_MIN_HEIGHT));
+            let content_height = header_section + question_section + options_section + footer_section;
+            let total_height = content_height + borders;
+
+            // Calculate dynamic minimum based on actual content needs
+            // At minimum we need: header(1) + blank(1) + question(2) + blank(1) + 1 option + other(1) + blank(1) + help(1) + borders(2) = 11
+            let dynamic_min = total_height.max(QUESTION_CARD_MIN_HEIGHT);
+
+            // Apply max height constraint (50% of list area, but at least the minimum)
+            let max_height = ((list_area.height as f32) * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16;
+            let card_height = dynamic_min.min(max_height.max(QUESTION_CARD_MIN_HEIGHT));
 
             (*anchor_y, card_height)
         }
@@ -267,13 +292,14 @@ fn render_question_content(
         .unwrap_or_default();
 
     // Extract question info for the current tab
-    let (question_text, option_labels, multi_select) = question_data
+    let (question_text, option_labels, option_descriptions, multi_select) = question_data
         .and_then(|qd| qd.questions.get(tab_index))
         .map(|q| {
             let labels: Vec<String> = q.options.iter().map(|o| o.label.clone()).collect();
-            (q.question.clone(), labels, q.multi_select)
+            let descriptions: Vec<String> = q.options.iter().map(|o| o.description.clone()).collect();
+            (q.question.clone(), labels, descriptions, q.multi_select)
         })
-        .unwrap_or_else(|| (String::new(), vec![], false));
+        .unwrap_or_else(|| (String::new(), vec![], vec![], false));
 
     // Get UI state for current question from question_state
     let selected_index = question_state
@@ -303,6 +329,7 @@ fn render_question_content(
     let config = QuestionRenderConfig {
         question: &question_text,
         options: &option_labels,
+        option_descriptions: &option_descriptions,
         selected_index: if other_selected { None } else { selected_index.or(Some(0)) },
         multi_select,
         multi_selections: &multi_selections_owned,
@@ -467,7 +494,7 @@ mod tests {
         assert_eq!(anchor, 10);
         // Height should be reasonable for 3 options
         assert!(height >= QUESTION_CARD_MIN_HEIGHT);
-        // Should not exceed 35% of list area
+        // Should not exceed max percent of list area (50%)
         let max_expected = ((40.0 * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16).max(QUESTION_CARD_MIN_HEIGHT);
         assert!(height <= max_expected);
     }
@@ -487,7 +514,7 @@ mod tests {
 
         let (_, height) = calculate_card_dimensions(&overlay, list_area);
 
-        // Should be capped at ~35% of list area (30 * 0.35 = 10.5)
+        // Should be capped at max percent of list area (30 * 0.50 = 15)
         let max_expected = ((30.0 * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16).max(QUESTION_CARD_MIN_HEIGHT);
         assert!(height <= max_expected);
     }
@@ -541,6 +568,117 @@ mod tests {
         assert_eq!(anchor, 8);
         // 6 base + 3 phases (capped at 5) + 2
         assert_eq!(height, 6 + 3 + 2);
+    }
+
+    #[test]
+    fn test_calculate_card_dimensions_ensures_options_visible() {
+        // Test that card height is sufficient to show all options
+        let list_area = Rect::new(0, 0, 100, 40);
+        let question_data = Some(create_test_question_data(5, false));
+
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            question_data,
+            anchor_y: 10,
+        };
+
+        let (_, height) = calculate_card_dimensions(&overlay, list_area);
+
+        // For 5 options, we need:
+        // header(1) + blank(1) + question(2) + blank(1) + options(5) + other(1) + blank(1) + help(1) + borders(2) = 15
+        // With 40 row list at 50%, max is 20, so we should get the full 15
+        assert!(height >= 15, "Height {} should be at least 15 for 5 options", height);
+    }
+
+    #[test]
+    fn test_calculate_card_dimensions_with_tabs() {
+        // Test that multi-question tabs are accounted for
+        let list_area = Rect::new(0, 0, 100, 40);
+
+        // Create question data with multiple questions (tabs)
+        let options: Vec<QuestionOption> = (0..3)
+            .map(|i| QuestionOption {
+                label: format!("Option {}", i + 1),
+                description: format!("Description {}", i + 1),
+            })
+            .collect();
+
+        let question_data = Some(AskUserQuestionData {
+            questions: vec![
+                Question {
+                    question: "First question?".to_string(),
+                    header: "Q1".to_string(),
+                    options: options.clone(),
+                    multi_select: false,
+                },
+                Question {
+                    question: "Second question?".to_string(),
+                    header: "Q2".to_string(),
+                    options,
+                    multi_select: false,
+                },
+            ],
+            answers: HashMap::new(),
+        });
+
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            question_data,
+            anchor_y: 10,
+        };
+
+        let (_, height) = calculate_card_dimensions(&overlay, list_area);
+
+        // With tabs: header(1) + tabs(1) + blank(1) + question(2) + blank(1) + options(3) + other(1) + blank(1) + help(1) + borders(2) = 14
+        assert!(height >= 14, "Height {} should be at least 14 for 3 options with tabs", height);
+    }
+
+    #[test]
+    fn test_calculate_card_dimensions_respects_new_minimum() {
+        // Test that the new minimum (12) is respected
+        let list_area = Rect::new(0, 0, 100, 40);
+        let question_data = Some(create_test_question_data(1, false)); // Just 1 option
+
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            question_data,
+            anchor_y: 10,
+        };
+
+        let (_, height) = calculate_card_dimensions(&overlay, list_area);
+
+        // Even with just 1 option, should meet minimum height of 12
+        assert!(height >= QUESTION_CARD_MIN_HEIGHT,
+            "Height {} should be at least minimum {}", height, QUESTION_CARD_MIN_HEIGHT);
+    }
+
+    #[test]
+    fn test_calculate_card_dimensions_max_50_percent() {
+        // Test that max height is 50% of list area
+        let list_area = Rect::new(0, 0, 100, 20); // 20 rows, 50% = 10
+        let question_data = Some(create_test_question_data(15, false)); // Many options
+
+        let overlay = OverlayState::Question {
+            thread_id: "t1".to_string(),
+            thread_title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            question_data,
+            anchor_y: 5,
+        };
+
+        let (_, height) = calculate_card_dimensions(&overlay, list_area);
+
+        // Max should be 50% of 20 = 10, but minimum is 12
+        // So we expect 12 (the minimum takes precedence)
+        let expected_max = ((20.0 * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16).max(QUESTION_CARD_MIN_HEIGHT);
+        assert!(height <= expected_max,
+            "Height {} should not exceed max {} (or minimum)", height, expected_max);
     }
 
     // -------------------- Rounded Border Tests --------------------
