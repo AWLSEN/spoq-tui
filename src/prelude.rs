@@ -35,7 +35,7 @@ pub use crate::state::{
 };
 
 // UI types
-pub use crate::ui::{render, ClickAction, HitAreaRegistry, LayoutContext};
+pub use crate::ui::{render, LayoutContext};
 
 // Widget types
 pub use crate::widgets::TextAreaInput;

@@ -33,7 +33,6 @@ use crate::state::dashboard::DashboardQuestionState;
 use crate::ui::dashboard::plan_card;
 use crate::ui::dashboard::question_card::{self, QuestionRenderConfig};
 use crate::ui::dashboard::{OverlayState, RenderContext};
-use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
 /// Maximum height for question card as percentage of list area
 const QUESTION_CARD_MAX_HEIGHT_PERCENT: f32 = 0.50;
@@ -59,14 +58,12 @@ const CARD_WIDTH_PERCENT: f32 = 0.80;
 /// * `list_area` - The area of the thread list (used for positioning and backdrop)
 /// * `overlay` - The overlay state containing card content
 /// * `ctx` - Render context with theme and other settings
-/// * `registry` - Hit area registry for click handling
 #[allow(unused_variables)]
 pub fn render(
     frame: &mut Frame,
     list_area: Rect,
     overlay: &OverlayState,
     ctx: &RenderContext,
-    registry: &mut HitAreaRegistry,
 ) {
     // Calculate card dimensions based on overlay type
     let (anchor_y, card_height) = calculate_card_dimensions(overlay, list_area);
@@ -85,11 +82,7 @@ pub fn render(
 
     // Render sequence (z-index via call order):
 
-    // 1. First: Register list_area as CollapseOverlay (click outside = close)
-    //    This is registered FIRST so card hit areas take precedence
-    registry.register(list_area, ClickAction::CollapseOverlay, None);
-
-    // 2. Dim background behind card (semi-transparent overlay effect)
+    // 1. Dim background behind card (semi-transparent overlay effect)
     //    Draw dim styling on rows above and below the card
     for y in list_area.y..list_area.bottom() {
         if y < card_y || y >= card_y + card_height {
@@ -103,13 +96,13 @@ pub fn render(
         }
     }
 
-    // 3. Clear card area (solid background)
+    // 2. Clear card area (solid background)
     frame.render_widget(Clear, card_area);
 
-    // 4. Draw card border with rounded corners
+    // 3. Draw card border with rounded corners
     render_rounded_border(frame.buffer_mut(), card_area, Color::White, Color::Black);
 
-    // 5. Delegate to content renderer based on overlay type
+    // 4. Delegate to content renderer based on overlay type
     let inner_area = Rect::new(
         card_area.x + 2, // 1 for border + 1 for padding
         card_area.y + 1,
@@ -133,7 +126,6 @@ pub fn render(
                 repository,
                 question_data.as_ref(),
                 ctx.question_state,
-                registry,
             );
         }
         OverlayState::FreeForm {
@@ -162,7 +154,6 @@ pub fn render(
                 &question_text,
                 &[], // No options in FreeForm mode
                 Some((input.as_str(), *cursor_pos)),
-                registry,
             );
         }
         OverlayState::Plan {
@@ -183,7 +174,6 @@ pub fn render(
                 request_id,
                 summary,
                 *scroll_offset,
-                registry,
             );
         }
     }
@@ -281,7 +271,6 @@ fn render_question_content(
     repo: &str,
     question_data: Option<&crate::state::session::AskUserQuestionData>,
     question_state: Option<&DashboardQuestionState>,
-    registry: &mut HitAreaRegistry,
 ) {
     // Get tab index from question state, default to 0
     let tab_index = question_state.map(|s| s.tab_index).unwrap_or(0);
@@ -341,7 +330,7 @@ fn render_question_content(
         tabs_answered: &tabs_answered,
     };
 
-    question_card::render_question(frame, area, thread_id, title, repo, &config, registry);
+    question_card::render_question(frame, area, thread_id, title, repo, &config);
 }
 
 /// Render a rounded border using Unicode box-drawing characters
@@ -428,7 +417,6 @@ fn render_plan_content(
     request_id: &str,
     summary: &PlanSummary,
     scroll_offset: usize,
-    registry: &mut HitAreaRegistry,
 ) {
     plan_card::render(
         frame,
@@ -439,7 +427,6 @@ fn render_plan_content(
         request_id,
         summary,
         scroll_offset,
-        registry,
     );
 }
 
@@ -785,28 +772,20 @@ mod tests {
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
-            filter: None,
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
         };
 
-        let mut registry = HitAreaRegistry::new();
-
         terminal
             .draw(|frame| {
                 let list_area = Rect::new(0, 0, 80, 30);
-                render(frame, list_area, &overlay, &ctx, &mut registry);
+                render(frame, list_area, &overlay, &ctx);
             })
             .unwrap();
 
-        // Should have registered hit areas:
-        // - CollapseOverlay for background
-        // - options (may be limited by card height)
-        // - 1 Other (if space allows)
-        // Minimum: CollapseOverlay + at least 1 option
-        assert!(registry.len() >= 2, "Expected at least 2 hit areas, got {}", registry.len());
+        // Should render without panic
     }
 
     #[test]
@@ -830,25 +809,20 @@ mod tests {
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
-            filter: None,
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
         };
 
-        let mut registry = HitAreaRegistry::new();
-
         terminal
             .draw(|frame| {
                 let list_area = Rect::new(0, 0, 80, 30);
-                render(frame, list_area, &overlay, &ctx, &mut registry);
+                render(frame, list_area, &overlay, &ctx);
             })
             .unwrap();
 
-        // Should have registered hit areas for multi-select options
-        // Minimum: CollapseOverlay + at least 1 option
-        assert!(registry.len() >= 2, "Expected at least 2 hit areas, got {}", registry.len());
+        // Should render without panic
     }
 
     #[test]
@@ -873,24 +847,20 @@ mod tests {
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
-            filter: None,
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
         };
 
-        let mut registry = HitAreaRegistry::new();
-
         terminal
             .draw(|frame| {
                 let list_area = Rect::new(0, 0, 80, 30);
-                render(frame, list_area, &overlay, &ctx, &mut registry);
+                render(frame, list_area, &overlay, &ctx);
             })
             .unwrap();
 
-        // Should have: CollapseOverlay + back button + send button
-        assert!(registry.len() >= 3);
+        // Should render without panic
     }
 
     #[test]
@@ -915,19 +885,16 @@ mod tests {
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
-            filter: None,
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
         };
 
-        let mut registry = HitAreaRegistry::new();
-
         terminal
             .draw(|frame| {
                 let list_area = Rect::new(0, 0, 80, 20);
-                render(frame, list_area, &overlay, &ctx, &mut registry);
+                render(frame, list_area, &overlay, &ctx);
             })
             .unwrap();
 

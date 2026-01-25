@@ -647,7 +647,7 @@ mod tests {
         let mut visible_count = 0;
         let mut hidden_count = 0;
 
-        for tick in 0..20 {
+        for tick in 0u64..20u64 {
             let cursor_visible = if blink_enabled && focused {
                 (tick / 5).is_multiple_of(2)
             } else {

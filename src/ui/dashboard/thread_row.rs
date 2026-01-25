@@ -11,7 +11,6 @@ use ratatui::{
 
 use crate::models::dashboard::{ThreadStatus, WaitingFor};
 use crate::ui::dashboard::{RenderContext, ThreadMode, ThreadView};
-use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
 // ============================================================================
 // Public API
@@ -30,13 +29,11 @@ use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 /// * `area` - The rectangle area allocated for this row (height=1)
 /// * `thread` - The thread view data to render
 /// * `ctx` - The render context containing theme colors
-/// * `registry` - Hit area registry for mouse interaction
 pub fn render(
     frame: &mut Frame,
     area: Rect,
     thread: &ThreadView,
     ctx: &RenderContext,
-    registry: &mut HitAreaRegistry,
 ) {
     if area.height < 1 || area.width < 20 {
         return;
@@ -72,16 +69,6 @@ pub fn render(
     // Track current x position
     let mut x = area.x;
     let y = area.y;
-
-    // Register entire row as hit area for expanding the thread
-    registry.register(
-        area,
-        ClickAction::ExpandThread {
-            thread_id: thread.id.clone(),
-            anchor_y: area.y,
-        },
-        None,
-    );
 
     // Title column (bold)
     let title_text = truncate(&thread.title, title_width.saturating_sub(1) as usize);
@@ -142,7 +129,7 @@ pub fn render(
     // Action buttons (based on status and waiting_for)
     // Use right-align for need-action threads (permission/plan approval buttons)
     let right_align = thread.needs_action;
-    render_actions(frame, x, y, area, thread, ctx, registry, right_align);
+    render_actions(frame, x, y, area, thread, ctx, right_align);
 }
 
 // ============================================================================
@@ -174,7 +161,6 @@ fn render_actions(
     area: Rect,
     thread: &ThreadView,
     ctx: &RenderContext,
-    registry: &mut HitAreaRegistry,
     right_align: bool,
 ) {
     let buf = frame.buffer_mut();
@@ -191,9 +177,9 @@ fn render_actions(
     let info_icon_style = Style::default().fg(ctx.theme.dim);
 
     // Determine which buttons to show and if we need an info icon
-    let (buttons, show_info_icon, permission_tool) = match (&thread.status, &thread.waiting_for) {
+    let (buttons, show_info_icon) = match (&thread.status, &thread.waiting_for) {
         // Permission -> (i) [y] Yes  [n] No  [a] Always
-        (ThreadStatus::Waiting, Some(WaitingFor::Permission { tool_name, .. })) => {
+        (ThreadStatus::Waiting, Some(WaitingFor::Permission { .. })) => {
             (
                 vec![
                     ("[y]", "Yes", ButtonAction::Approve),
@@ -201,7 +187,6 @@ fn render_actions(
                     ("[a]", "Always", ButtonAction::Always),
                 ],
                 true,
-                Some(tool_name.clone()),
             )
         }
         // Plan approval -> [y] Yes  [n] No
@@ -212,17 +197,16 @@ fn render_actions(
                     ("[n]", "No", ButtonAction::Reject),
                 ],
                 false,
-                None,
             )
         }
         // User input -> [a] Answer
         (ThreadStatus::Waiting, Some(WaitingFor::UserInput)) => {
-            (vec![("[a]", "Answer", ButtonAction::Answer)], false, None)
+            (vec![("[a]", "Answer", ButtonAction::Answer)], false)
         }
         // Done -> [v] Verify
-        (ThreadStatus::Done, _) => (vec![("[v]", "Verify", ButtonAction::Verify)], false, None),
+        (ThreadStatus::Done, _) => (vec![("[v]", "Verify", ButtonAction::Verify)], false),
         // Idle/Running/Error -> no buttons
-        _ => (vec![], false, None),
+        _ => (vec![], false),
     };
 
     // Icon width: "ⓘ" = 1 char + 1 space = 2
@@ -260,29 +244,10 @@ fn render_actions(
     if show_info_icon {
         // Render "ⓘ" (circled info icon)
         render_text(buf, current_x, y, "ⓘ", info_icon_style, area);
-
-        // Register hit area for info icon
-        let icon_rect = Rect::new(current_x, y, 2, 1); // "ⓘ " is 2 chars (icon + space)
-        let tooltip_content = if let Some(tool_name) = permission_tool {
-            format!("Permission request for tool: {}", tool_name)
-        } else {
-            "Permission request".to_string()
-        };
-
-        registry.register(
-            icon_rect,
-            ClickAction::HoverInfoIcon {
-                content: tooltip_content,
-                anchor_x: current_x,
-                anchor_y: y,
-            },
-            None,
-        );
-
         current_x += 2; // Move past "ⓘ " (1 char + 1 space)
     }
 
-    for (key, label, action) in buttons {
+    for (key, label, _action) in buttons {
         let key_len = key.len() as u16;
         let label_len = label.len() as u16;
         let total_len = key_len + 1 + label_len; // key + space + label
@@ -303,20 +268,6 @@ fn render_actions(
         // Render label (e.g., "Yes")
         render_text(buf, current_x, y, label, label_style, area);
         current_x += label_len;
-
-        // Register hit area for entire button (key + space + label)
-        let button_rect = Rect::new(current_x - total_len, y, total_len, 1);
-        let click_action = match action {
-            ButtonAction::Approve => ClickAction::ApproveThread(thread.id.clone()),
-            ButtonAction::Reject => ClickAction::RejectThread(thread.id.clone()),
-            ButtonAction::Always => ClickAction::AllowToolAlways(thread.id.clone()),
-            ButtonAction::Answer => ClickAction::ExpandThread {
-                thread_id: thread.id.clone(),
-                anchor_y: y,
-            },
-            ButtonAction::Verify => ClickAction::VerifyThread(thread.id.clone()),
-        };
-        registry.register(button_rect, click_action, Some(key_style));
 
         current_x += 2; // 2 spaces between buttons
     }
@@ -717,607 +668,5 @@ mod tests {
         };
 
         assert_eq!(buttons.len(), 0);
-    }
-
-    // -------------------- Integration Tests (Full Rendering with Hit Areas) --------------------
-
-    #[test]
-    fn test_render_permission_buttons_registers_hit_areas() {
-        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::ThreadView;
-        use crate::view_state::SystemStats;
-        use ratatui::backend::TestBackend;
-        use ratatui::layout::Rect;
-        use ratatui::Terminal;
-
-        let thread = ThreadView {
-            id: "thread-1".to_string(),
-            title: "Test".to_string(),
-            repository: "repo".to_string(),
-            mode: crate::models::ThreadMode::Normal,
-            status: ThreadStatus::Waiting,
-            waiting_for: Some(WaitingFor::Permission {
-                request_id: "req-1".to_string(),
-                tool_name: "test_tool".to_string(),
-            }),
-            progress: None,
-            duration: "1m".to_string(),
-            needs_action: true,
-            current_operation: None,
-        };
-
-        // Use wider terminal to ensure all buttons fit
-        let backend = TestBackend::new(200, 1);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut registry = HitAreaRegistry::new();
-
-        let theme = crate::view_state::Theme::default();
-        let system_stats = SystemStats {
-            connected: true,
-            cpu_percent: 10.0,
-            ram_used_gb: 2.0,
-            ram_total_gb: 8.0,
-        };
-        let aggregate = Aggregate::new();
-        let threads = vec![];
-
-        let ctx = RenderContext {
-            threads: &threads,
-            aggregate: &aggregate,
-            filter: None,
-            overlay: None,
-            system_stats: &system_stats,
-            theme: &theme,
-            question_state: None,
-        };
-
-        terminal
-            .draw(|frame| {
-                let area = Rect::new(0, 0, 200, 1);
-                render(frame, area, &thread, &ctx, &mut registry);
-            })
-            .unwrap();
-
-        // Verify hit areas were registered
-        // Should have: 3 permission buttons (row expand area is registered first but may be overwritten)
-        // Note: With ratatui's TestBackend, the rendering flow may differ slightly
-        assert!(registry.len() >= 3, "Expected at least 3 hit areas (permission buttons), got {}", registry.len());
-
-        // Test that clicking on buttons returns correct actions
-        // Note: We can't test exact positions without knowing layout, but we can verify
-        // that some areas map to the expected actions
-        let mut found_approve = false;
-        let mut found_reject = false;
-        let mut found_always = false;
-
-        // Scan across the row to find button hit areas
-        for x in 0..200 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                match action {
-                    ClickAction::ApproveThread(id) if id == "thread-1" => found_approve = true,
-                    ClickAction::RejectThread(id) if id == "thread-1" => found_reject = true,
-                    ClickAction::AllowToolAlways(id) if id == "thread-1" => found_always = true,
-                    _ => {}
-                }
-            }
-        }
-
-        assert!(found_approve, "ApproveThread action not found in hit areas");
-        assert!(found_reject, "RejectThread action not found in hit areas");
-        assert!(found_always, "AllowToolAlways action not found in hit areas");
-
-        // Also verify that the info icon is registered with correct tooltip content
-        let mut found_info_icon = false;
-        for x in 0..200 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                if let ClickAction::HoverInfoIcon { content, .. } = action {
-                    assert_eq!(content, "Permission request for tool: test_tool");
-                    found_info_icon = true;
-                    break;
-                }
-            }
-        }
-        assert!(found_info_icon, "Info icon with tooltip not found for permission state");
-    }
-
-    #[test]
-    fn test_render_plan_approval_buttons_registers_hit_areas() {
-        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::ThreadView;
-        use crate::view_state::SystemStats;
-        use ratatui::backend::TestBackend;
-        use ratatui::layout::Rect;
-        use ratatui::Terminal;
-
-        let thread = ThreadView {
-            id: "thread-2".to_string(),
-            title: "Plan Test".to_string(),
-            repository: "repo".to_string(),
-            mode: crate::models::ThreadMode::Plan,
-            status: ThreadStatus::Waiting,
-            waiting_for: Some(WaitingFor::PlanApproval {
-                request_id: "req-2".to_string(),
-            }),
-            progress: None,
-            duration: "2m".to_string(),
-            needs_action: true,
-            current_operation: None,
-        };
-
-        let backend = TestBackend::new(100, 1);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut registry = HitAreaRegistry::new();
-
-        let theme = crate::view_state::Theme::default();
-        let system_stats = SystemStats {
-            connected: true,
-            cpu_percent: 10.0,
-            ram_used_gb: 2.0,
-            ram_total_gb: 8.0,
-        };
-        let aggregate = Aggregate::new();
-        let threads = vec![];
-
-        let ctx = RenderContext {
-            threads: &threads,
-            aggregate: &aggregate,
-            filter: None,
-            overlay: None,
-            system_stats: &system_stats,
-            theme: &theme,
-            question_state: None,
-        };
-
-        terminal
-            .draw(|frame| {
-                let area = Rect::new(0, 0, 100, 1);
-                render(frame, area, &thread, &ctx, &mut registry);
-            })
-            .unwrap();
-
-        // Verify hit areas were registered (1 for row + 2 for plan approval buttons)
-        assert!(registry.len() >= 3, "Expected at least 3 hit areas (row + 2 buttons), got {}", registry.len());
-
-        // Scan for plan approval button actions
-        let mut found_approve = false;
-        let mut found_reject = false;
-
-        for x in 0..100 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                match action {
-                    ClickAction::ApproveThread(id) if id == "thread-2" => found_approve = true,
-                    ClickAction::RejectThread(id) if id == "thread-2" => found_reject = true,
-                    _ => {}
-                }
-            }
-        }
-
-        assert!(found_approve, "ApproveThread action not found for plan approval");
-        assert!(found_reject, "RejectThread action not found for plan approval");
-
-        // Verify that NO info icon is registered for plan approval (only for permissions)
-        let mut found_info_icon = false;
-        for x in 0..100 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                if matches!(action, ClickAction::HoverInfoIcon { .. }) {
-                    found_info_icon = true;
-                    break;
-                }
-            }
-        }
-        assert!(!found_info_icon, "Info icon should NOT appear for plan approval (only for permissions)");
-    }
-
-    #[test]
-    fn test_render_done_status_registers_verify_button() {
-        use crate::models::dashboard::{Aggregate, ThreadStatus};
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::ThreadView;
-        use crate::view_state::SystemStats;
-        use ratatui::backend::TestBackend;
-        use ratatui::layout::Rect;
-        use ratatui::Terminal;
-
-        let thread = ThreadView {
-            id: "thread-3".to_string(),
-            title: "Done Test".to_string(),
-            repository: "repo".to_string(),
-            mode: crate::models::ThreadMode::Normal,
-            status: ThreadStatus::Done,
-            waiting_for: None,
-            progress: None,
-            duration: "5m".to_string(),
-            needs_action: false,
-            current_operation: None,
-        };
-
-        let backend = TestBackend::new(100, 1);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut registry = HitAreaRegistry::new();
-
-        let theme = crate::view_state::Theme::default();
-        let system_stats = SystemStats {
-            connected: true,
-            cpu_percent: 10.0,
-            ram_used_gb: 2.0,
-            ram_total_gb: 8.0,
-        };
-        let aggregate = Aggregate::new();
-        let threads = vec![];
-
-        let ctx = RenderContext {
-            threads: &threads,
-            aggregate: &aggregate,
-            filter: None,
-            overlay: None,
-            system_stats: &system_stats,
-            theme: &theme,
-            question_state: None,
-        };
-
-        terminal
-            .draw(|frame| {
-                let area = Rect::new(0, 0, 100, 1);
-                render(frame, area, &thread, &ctx, &mut registry);
-            })
-            .unwrap();
-
-        // Verify verify button is registered
-        let mut found_verify = false;
-        for x in 0..100 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                if matches!(action, ClickAction::VerifyThread(id) if id == "thread-3") {
-                    found_verify = true;
-                    break;
-                }
-            }
-        }
-
-        assert!(found_verify, "VerifyThread action not found for done status");
-    }
-
-    #[test]
-    fn test_render_running_status_no_action_buttons() {
-        use crate::models::dashboard::{Aggregate, ThreadStatus};
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::{Progress, ThreadView};
-        use crate::view_state::SystemStats;
-        use ratatui::backend::TestBackend;
-        use ratatui::layout::Rect;
-        use ratatui::Terminal;
-
-        let thread = ThreadView {
-            id: "thread-4".to_string(),
-            title: "Running Test".to_string(),
-            repository: "repo".to_string(),
-            mode: crate::models::ThreadMode::Normal,
-            status: ThreadStatus::Running,
-            waiting_for: None,
-            progress: Some(Progress {
-                current: 3,
-                total: 5,
-            }),
-            duration: "1m".to_string(),
-            needs_action: false,
-            current_operation: Some("Running".to_string()),
-        };
-
-        let backend = TestBackend::new(100, 1);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut registry = HitAreaRegistry::new();
-
-        let theme = crate::view_state::Theme::default();
-        let system_stats = SystemStats {
-            connected: true,
-            cpu_percent: 10.0,
-            ram_used_gb: 2.0,
-            ram_total_gb: 8.0,
-        };
-        let aggregate = Aggregate::new();
-        let threads = vec![];
-
-        let ctx = RenderContext {
-            threads: &threads,
-            aggregate: &aggregate,
-            filter: None,
-            overlay: None,
-            system_stats: &system_stats,
-            theme: &theme,
-            question_state: None,
-        };
-
-        terminal
-            .draw(|frame| {
-                let area = Rect::new(0, 0, 100, 1);
-                render(frame, area, &thread, &ctx, &mut registry);
-            })
-            .unwrap();
-
-        // Should only have the row expand action, no action buttons
-        // Scan for action buttons (should find none)
-        let mut found_action_button = false;
-        for x in 0..100 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                match action {
-                    ClickAction::ApproveThread(_)
-                    | ClickAction::RejectThread(_)
-                    | ClickAction::AllowToolAlways(_)
-                    | ClickAction::VerifyThread(_) => {
-                        found_action_button = true;
-                        break;
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        assert!(!found_action_button, "Found unexpected action button for running status");
-    }
-
-    // -------------------- Right Alignment Tests --------------------
-
-    #[test]
-    fn test_render_actions_right_align() {
-        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::ThreadView;
-        use crate::view_state::SystemStats;
-        use ratatui::backend::TestBackend;
-        use ratatui::layout::Rect;
-        use ratatui::Terminal;
-
-        let thread = ThreadView {
-            id: "thread-right".to_string(),
-            title: "Right Align Test".to_string(),
-            repository: "repo".to_string(),
-            mode: crate::models::ThreadMode::Normal,
-            status: ThreadStatus::Waiting,
-            waiting_for: Some(WaitingFor::Permission {
-                request_id: "req-right".to_string(),
-                tool_name: "test_tool".to_string(),
-            }),
-            progress: None,
-            duration: "1m".to_string(),
-            needs_action: true,
-            current_operation: None,
-        };
-
-        // Create a custom test that directly calls render_actions with right_align=true
-        let backend = TestBackend::new(100, 1);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut registry = HitAreaRegistry::new();
-
-        let theme = crate::view_state::Theme::default();
-        let system_stats = SystemStats {
-            connected: true,
-            cpu_percent: 10.0,
-            ram_used_gb: 2.0,
-            ram_total_gb: 8.0,
-        };
-        let aggregate = Aggregate::new();
-        let threads = vec![];
-
-        let ctx = RenderContext {
-            threads: &threads,
-            aggregate: &aggregate,
-            filter: None,
-            overlay: None,
-            system_stats: &system_stats,
-            theme: &theme,
-            question_state: None,
-        };
-
-        terminal
-            .draw(|frame| {
-                let area = Rect::new(0, 0, 100, 1);
-                // Call render_actions directly with right_align=true
-                render_actions(frame, 0, 0, area, &thread, &ctx, &mut registry, true);
-            })
-            .unwrap();
-
-        // Verify that buttons are registered
-        assert!(registry.len() >= 3, "Expected at least 3 hit areas for permission buttons");
-
-        // For right-aligned buttons with 3 permission buttons:
-        // [y] Yes  [n] No  [a] Always
-        // Button widths: 3+1+3=7, 3+1+2=6, 3+1+6=10
-        // Total: 7 + 2 (spacing) + 6 + 2 (spacing) + 10 = 27
-        // With area width 100, they should start at x = 100 - 27 = 73
-
-        // Find the leftmost button position
-        let mut leftmost_button_x = 100u16;
-        for x in 0..100 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                match action {
-                    ClickAction::ApproveThread(_)
-                    | ClickAction::RejectThread(_)
-                    | ClickAction::AllowToolAlways(_) => {
-                        leftmost_button_x = leftmost_button_x.min(x);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Verify buttons start significantly to the right (not at x=0)
-        assert!(leftmost_button_x > 50, "Right-aligned buttons should start after x=50, got x={}", leftmost_button_x);
-
-        // Verify buttons end near the right edge (within last 5 columns)
-        let mut rightmost_button_x = 0u16;
-        for x in 0..100 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                match action {
-                    ClickAction::ApproveThread(_)
-                    | ClickAction::RejectThread(_)
-                    | ClickAction::AllowToolAlways(_) => {
-                        rightmost_button_x = rightmost_button_x.max(x);
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        assert!(rightmost_button_x >= 95, "Right-aligned buttons should end near right edge (>= 95), got x={}", rightmost_button_x);
-    }
-
-    #[test]
-    fn test_info_icon_tooltip_content_formatting() {
-        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::ThreadView;
-        use crate::view_state::SystemStats;
-        use ratatui::backend::TestBackend;
-        use ratatui::layout::Rect;
-        use ratatui::Terminal;
-
-        // Test with different tool names to verify formatting
-        let tool_names = vec!["Bash", "WebFetch", "Read", "Edit"];
-
-        for tool_name in tool_names {
-            let thread = ThreadView {
-                id: "thread-test".to_string(),
-                title: "Test".to_string(),
-                repository: "repo".to_string(),
-                mode: crate::models::ThreadMode::Normal,
-                status: ThreadStatus::Waiting,
-                waiting_for: Some(WaitingFor::Permission {
-                    request_id: "req-test".to_string(),
-                    tool_name: tool_name.to_string(),
-                }),
-                progress: None,
-                duration: "1m".to_string(),
-                needs_action: true,
-                current_operation: None,
-            };
-
-            let backend = TestBackend::new(200, 1);
-            let mut terminal = Terminal::new(backend).unwrap();
-            let mut registry = HitAreaRegistry::new();
-
-            let theme = crate::view_state::Theme::default();
-            let system_stats = SystemStats {
-                connected: true,
-                cpu_percent: 10.0,
-                ram_used_gb: 2.0,
-                ram_total_gb: 8.0,
-            };
-            let aggregate = Aggregate::new();
-            let threads = vec![];
-
-            let ctx = RenderContext {
-                threads: &threads,
-                aggregate: &aggregate,
-                filter: None,
-                overlay: None,
-                system_stats: &system_stats,
-                theme: &theme,
-                question_state: None,
-            };
-
-            terminal
-                .draw(|frame| {
-                    let area = Rect::new(0, 0, 200, 1);
-                    render(frame, area, &thread, &ctx, &mut registry);
-                })
-                .unwrap();
-
-            // Find the info icon and verify tooltip content format
-            let mut found_tooltip = false;
-            for x in 0..200 {
-                if let Some(action) = registry.hit_test(x, 0) {
-                    if let ClickAction::HoverInfoIcon { content, .. } = action {
-                        let expected_content = format!("Permission request for tool: {}", tool_name);
-                        assert_eq!(
-                            content, expected_content,
-                            "Tooltip content should be formatted as 'Permission request for tool: {}'",
-                            tool_name
-                        );
-                        found_tooltip = true;
-                        break;
-                    }
-                }
-            }
-            assert!(found_tooltip, "Tooltip with formatted content not found for tool: {}", tool_name);
-        }
-    }
-
-    #[test]
-    fn test_render_actions_left_align() {
-        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::ThreadView;
-        use crate::view_state::SystemStats;
-        use ratatui::backend::TestBackend;
-        use ratatui::layout::Rect;
-        use ratatui::Terminal;
-
-        let thread = ThreadView {
-            id: "thread-left".to_string(),
-            title: "Left Align Test".to_string(),
-            repository: "repo".to_string(),
-            mode: crate::models::ThreadMode::Normal,
-            status: ThreadStatus::Waiting,
-            waiting_for: Some(WaitingFor::PlanApproval {
-                request_id: "req-left".to_string(),
-            }),
-            progress: None,
-            duration: "2m".to_string(),
-            needs_action: true,
-            current_operation: None,
-        };
-
-        let backend = TestBackend::new(100, 1);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut registry = HitAreaRegistry::new();
-
-        let theme = crate::view_state::Theme::default();
-        let system_stats = SystemStats {
-            connected: true,
-            cpu_percent: 10.0,
-            ram_used_gb: 2.0,
-            ram_total_gb: 8.0,
-        };
-        let aggregate = Aggregate::new();
-        let threads = vec![];
-
-        let ctx = RenderContext {
-            threads: &threads,
-            aggregate: &aggregate,
-            filter: None,
-            overlay: None,
-            system_stats: &system_stats,
-            theme: &theme,
-            question_state: None,
-        };
-
-        terminal
-            .draw(|frame| {
-                let area = Rect::new(0, 0, 100, 1);
-                // Call render_actions directly with right_align=false and x=20
-                render_actions(frame, 20, 0, area, &thread, &ctx, &mut registry, false);
-            })
-            .unwrap();
-
-        // Verify that buttons are registered
-        assert!(registry.len() >= 2, "Expected at least 2 hit areas for plan approval buttons");
-
-        // For left-aligned buttons starting at x=20:
-        // [y] Yes  [n] No
-        // First button should start at x=20
-
-        let mut found_approve_at_start = false;
-        // Check area around x=20 for the first button
-        for x in 20..25 {
-            if let Some(action) = registry.hit_test(x, 0) {
-                if matches!(action, ClickAction::ApproveThread(id) if id == "thread-left") {
-                    found_approve_at_start = true;
-                    break;
-                }
-            }
-        }
-
-        assert!(found_approve_at_start, "Left-aligned buttons should start at the provided x position (20)");
     }
 }

@@ -29,7 +29,6 @@ use ratatui::{
 };
 
 use crate::models::dashboard::PlanSummary;
-use crate::ui::interaction::{ClickAction, HitAreaRegistry};
 
 /// Maximum number of phases visible without scrolling.
 const MAX_VISIBLE_PHASES: usize = 5;
@@ -46,24 +45,22 @@ const MAX_VISIBLE_PHASES: usize = 5;
 ///
 /// * `frame` - The ratatui frame to render to
 /// * `area` - Inner card area (inside the border)
-/// * `thread_id` - ID of the thread for click actions
+/// * `thread_id` - ID of the thread (kept for API compatibility)
 /// * `title` - Thread/plan title
 /// * `repo` - Repository name
 /// * `request_id` - Request ID for plan approval
 /// * `summary` - PlanSummary containing phases and metadata
 /// * `scroll_offset` - Current scroll position in phase list
-/// * `registry` - Hit area registry for click handling
 #[allow(clippy::too_many_arguments)]
 pub fn render(
     frame: &mut Frame,
     area: Rect,
-    thread_id: &str,
+    _thread_id: &str,
     title: &str,
     repo: &str,
     _request_id: &str,
     summary: &PlanSummary,
     scroll_offset: usize,
-    registry: &mut HitAreaRegistry,
 ) {
     // Guard against zero-height areas
     if area.height < 3 {
@@ -160,11 +157,6 @@ pub fn render(
     let view_len = view_btn.len() as u16;
     let view_area = Rect::new(area.x, button_row_y, view_len, 1);
     frame.render_widget(Span::raw(view_btn), view_area);
-    registry.register(
-        view_area,
-        ClickAction::ViewFullPlan(thread_id.to_string()),
-        Some(Style::default().bg(Color::DarkGray)),
-    );
 
     // [approve] on the right
     let approve_len = approve_btn.len() as u16;
@@ -174,11 +166,6 @@ pub fn render(
         Span::styled(approve_btn, Style::default().fg(Color::Green)),
         approve_area,
     );
-    registry.register(
-        approve_area,
-        ClickAction::ApproveThread(thread_id.to_string()),
-        Some(Style::default().bg(Color::DarkGray)),
-    );
 
     // [reject] to the left of [approve] with 2-char gap
     let reject_len = reject_btn.len() as u16;
@@ -187,11 +174,6 @@ pub fn render(
     frame.render_widget(
         Span::styled(reject_btn, Style::default().fg(Color::Red)),
         reject_area,
-    );
-    registry.register(
-        reject_area,
-        ClickAction::RejectThread(thread_id.to_string()),
-        Some(Style::default().bg(Color::DarkGray)),
     );
 }
 

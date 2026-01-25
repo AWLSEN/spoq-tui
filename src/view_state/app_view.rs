@@ -262,7 +262,6 @@ mod tests {
     #[test]
     fn test_dashboard_view_state_defaults() {
         let dashboard = DashboardViewState::default();
-        assert!(dashboard.filter.is_none());
         assert!(!dashboard.has_overlay);
         assert_eq!(dashboard.thread_count, 0);
     }

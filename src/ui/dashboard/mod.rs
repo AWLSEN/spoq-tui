@@ -27,8 +27,6 @@ use ratatui::{
     Frame,
 };
 
-use crate::ui::interaction::HitAreaRegistry;
-
 // ============================================================================
 // Main Dashboard Rendering
 // ============================================================================
@@ -60,12 +58,10 @@ use crate::ui::interaction::HitAreaRegistry;
 /// * `frame` - The ratatui frame to render into
 /// * `area` - The rectangle area allocated for the dashboard
 /// * `ctx` - The render context containing all data for rendering
-/// * `registry` - Hit area registry for click handling
 pub fn render_dashboard(
     frame: &mut Frame,
     area: Rect,
     ctx: &RenderContext,
-    registry: &mut HitAreaRegistry,
 ) {
     // Minimum dimensions check
     if area.width < 40 || area.height < 10 {
@@ -93,23 +89,18 @@ pub fn render_dashboard(
     // chunks[1] is the margin - intentionally left empty
 
     // Render thread list (shows all threads)
-    thread_list::render(frame, chunks[2], ctx, registry);
+    thread_list::render(frame, chunks[2], ctx);
 
     // Render footer hint
     let hint = footer::get_footer_hint(ctx);
     let hint_line = Line::styled(hint, Style::default().fg(Color::DarkGray));
     frame.render_widget(hint_line, chunks[3]);
 
-    // Render tooltip if hovering over an info icon
-    if let Some((content, anchor_x, anchor_y)) = registry.get_tooltip_info() {
-        tooltip::render_tooltip(frame.buffer_mut(), content, anchor_x, anchor_y, ctx.theme);
-    }
-
     // Render overlay if present
     if let Some(overlay_state) = ctx.overlay {
         // Calculate overlay position based on anchor_y or center
         let overlay_area = calculate_overlay_area(area, overlay_state);
-        overlay::render(frame, overlay_area, overlay_state, ctx, registry);
+        overlay::render(frame, overlay_area, overlay_state, ctx);
     }
 }
 
@@ -269,60 +260,5 @@ mod tests {
         // Should be centered horizontally
         let expected_x = parent.x + (parent.width - area.width) / 2;
         assert_eq!(area.x, expected_x);
-    }
-
-    #[test]
-    fn test_tooltip_rendering_integration() {
-        use crate::models::dashboard::Aggregate;
-        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-        use crate::view_state::dashboard_view::RenderContext;
-        use ratatui::backend::TestBackend;
-        use ratatui::Terminal;
-
-        // Create a test terminal
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-
-        // Create test data
-        let threads: Vec<ThreadView> = vec![];
-        let aggregate = Aggregate::default();
-        let system_stats = SystemStats::default();
-        let theme = Theme::default();
-
-        // Create a minimal render context
-        let ctx = RenderContext {
-            threads: &threads,
-            aggregate: &aggregate,
-            overlay: None,
-            system_stats: &system_stats,
-            theme: &theme,
-            question_state: None,
-        };
-
-        // Create registry and register a tooltip hover area
-        let mut registry = HitAreaRegistry::new();
-        registry.register(
-            Rect::new(10, 5, 3, 1),
-            ClickAction::HoverInfoIcon {
-                content: "Test tooltip".to_string(),
-                anchor_x: 10,
-                anchor_y: 6,
-            },
-            None,
-        );
-
-        // Simulate hover
-        registry.update_hover(11, 5);
-
-        // Render the dashboard
-        terminal
-            .draw(|frame| {
-                let area = frame.area();
-                render_dashboard(frame, area, &ctx, &mut registry);
-            })
-            .unwrap();
-
-        // Verify tooltip info is available
-        assert_eq!(registry.get_tooltip_info(), Some(("Test tooltip", 10, 6)));
     }
 }

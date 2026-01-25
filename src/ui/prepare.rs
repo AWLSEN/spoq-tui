@@ -28,9 +28,6 @@ use crate::ui::context::{MessageHeightInfo, RenderOutputs};
 /// * `app` - Mutable reference to app state
 /// * `viewport_width` - Current viewport width in columns
 pub fn prepare_render(app: &mut App, viewport_width: u16) {
-    // Clear hit registry before rendering
-    app.hit_registry.clear();
-
     // Invalidate rendered lines cache if viewport width changed
     app.rendered_lines_cache
         .invalidate_if_width_changed(viewport_width);
@@ -163,29 +160,11 @@ pub fn apply_render_outputs(app: &mut App, outputs: RenderOutputs) {
     app.has_visible_links = outputs.has_visible_links;
     app.input_section_start = outputs.input_section_start;
     app.total_content_lines = outputs.total_content_lines;
-    app.hit_registry = outputs.hit_registry;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_prepare_render_clears_hit_registry() {
-        let mut app = App::default();
-
-        // Register a dummy hit area
-        use crate::ui::interaction::ClickAction;
-        use ratatui::layout::Rect;
-        app.hit_registry
-            .register(Rect::default(), ClickAction::ClearFilter, None);
-
-        // Prepare render should clear it
-        prepare_render(&mut app, 80);
-
-        // The app's hit registry should be cleared
-        assert!(app.hit_registry.hit_test(0, 0).is_none());
-    }
 
     #[test]
     fn test_prepare_render_resets_link_visibility() {
@@ -206,7 +185,6 @@ mod tests {
             has_visible_links: true,
             input_section_start: 10,
             total_content_lines: 50,
-            hit_registry: crate::ui::interaction::HitAreaRegistry::new(),
         };
 
         apply_render_outputs(&mut app, outputs);

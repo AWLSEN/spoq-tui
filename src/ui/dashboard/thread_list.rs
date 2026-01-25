@@ -7,7 +7,6 @@ use ratatui::{layout::Rect, style::Style, text::Span, Frame};
 use super::states;
 use super::thread_row;
 use super::{RenderContext, ThreadView};
-use crate::ui::interaction::HitAreaRegistry;
 
 // ============================================================================
 // Constants
@@ -46,8 +45,7 @@ const THREAD_LIST_WIDTH_PERCENT: f32 = 0.915;
 /// * `frame` - The ratatui frame to render into
 /// * `area` - The rectangle area allocated for the thread list
 /// * `ctx` - The render context containing thread views
-/// * `registry` - Hit area registry for click handling
-pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut HitAreaRegistry) {
+pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext) {
     // Check minimum height requirement
     if area.height < MIN_HEIGHT {
         return;
@@ -57,7 +55,7 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
     let centered_area = calculate_centered_area(area);
 
     // Always use split view - no filter modes
-    render_split_view(frame, centered_area, ctx, registry);
+    render_split_view(frame, centered_area, ctx);
 }
 
 /// Calculate a horizontally centered area with 84% width
@@ -80,7 +78,6 @@ fn render_split_view(
     frame: &mut Frame,
     area: Rect,
     ctx: &RenderContext,
-    registry: &mut HitAreaRegistry,
 ) {
     // Partition threads into need_action and autonomous
     let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
@@ -97,7 +94,7 @@ fn render_split_view(
     // Render need_action threads
     for (i, thread) in need_action.iter().take(MAX_NEED_ACTION_DISPLAY).enumerate() {
         let row_rect = Rect::new(area.x, area.y + i as u16, area.width, 1);
-        thread_row::render(frame, row_rect, thread, ctx, registry);
+        thread_row::render(frame, row_rect, thread, ctx);
     }
 
     // Show "+ N more" if there are more need_action threads than displayed
@@ -140,7 +137,7 @@ fn render_split_view(
         .enumerate()
     {
         let row_rect = Rect::new(area.x, autonomous_start_y + i as u16, area.width, 1);
-        thread_row::render(frame, row_rect, thread, ctx, registry);
+        thread_row::render(frame, row_rect, thread, ctx);
     }
 
     // Show "+ N more" if there are more autonomous threads than displayed

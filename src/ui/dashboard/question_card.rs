@@ -37,8 +37,6 @@ use ratatui::{
     Frame,
 };
 
-use crate::ui::interaction::{ClickAction, HitAreaRegistry};
-
 /// Configuration for rendering a question card
 #[derive(Debug, Clone)]
 pub struct QuestionRenderConfig<'a> {
@@ -103,20 +101,18 @@ impl<'a> Default for QuestionRenderConfig<'a> {
 ///
 /// * `frame` - The ratatui frame to render into
 /// * `area` - Inner card area (inside border)
-/// * `thread_id` - The thread ID for registering click actions
+/// * `thread_id` - The thread ID (kept for API compatibility)
 /// * `title` - Thread title
 /// * `repo` - Repository name
 /// * `config` - Configuration for the question display
-/// * `registry` - Hit area registry for mouse interaction
 #[allow(clippy::too_many_arguments)]
 pub fn render_question(
     frame: &mut Frame,
     area: Rect,
-    thread_id: &str,
+    _thread_id: &str,
     title: &str,
     repo: &str,
     config: &QuestionRenderConfig,
-    registry: &mut HitAreaRegistry,
 ) {
     // Guard against impossibly small areas (need at least header + 1 option + help)
     // Minimum: 3 rows height (header, one content row, help), 10 chars width
@@ -234,16 +230,6 @@ pub fn render_question(
         let option_area = Rect::new(area.x + option_indent, y, area.width - option_indent, 1);
         frame.render_widget(Line::styled(option_truncated, style), option_area);
 
-        // Register click area for this option
-        registry.register(
-            option_area,
-            ClickAction::SelectOption {
-                thread_id: thread_id.to_string(),
-                index: i,
-            },
-            Some(Style::default().bg(Color::DarkGray)),
-        );
-
         y += 1;
         options_rendered += 1;
 
@@ -318,13 +304,6 @@ pub fn render_question(
         ];
         frame.render_widget(Line::from(spans), other_area);
 
-        // Register click area for Other
-        registry.register(
-            other_area,
-            ClickAction::ShowFreeFormInput(thread_id.to_string()),
-            Some(Style::default().bg(Color::DarkGray)),
-        );
-
         y += 1;
     }
 
@@ -353,13 +332,12 @@ pub fn render_question(
 ///
 /// * `frame` - The ratatui frame to render into
 /// * `area` - Inner card area (inside border)
-/// * `thread_id` - The thread ID for registering click actions
+/// * `thread_id` - The thread ID (kept for API compatibility)
 /// * `title` - Thread title
 /// * `repo` - Repository name
 /// * `question` - The question text to display
 /// * `options` - Available options for the question
 /// * `input` - None = Question mode, Some((text, cursor_pos)) = FreeForm mode
-/// * `registry` - Hit area registry for mouse interaction
 #[allow(clippy::too_many_arguments)]
 pub fn render(
     frame: &mut Frame,
@@ -370,7 +348,6 @@ pub fn render(
     question: &str,
     options: &[String],
     input: Option<(&str, usize)>,
-    registry: &mut HitAreaRegistry,
 ) {
     match input {
         None => {
@@ -389,10 +366,10 @@ pub fn render(
                 current_tab: 0,
                 tabs_answered: &[],
             };
-            render_question(frame, area, thread_id, title, repo, &config, registry);
+            render_question(frame, area, thread_id, title, repo, &config);
         }
         Some((text, cursor)) => render_free_form_mode(
-            frame, area, thread_id, title, repo, question, text, cursor, registry,
+            frame, area, thread_id, title, repo, question, text, cursor,
         ),
     }
 }
@@ -480,13 +457,12 @@ fn render_help_line(
 fn render_free_form_mode(
     frame: &mut Frame,
     area: Rect,
-    thread_id: &str,
+    _thread_id: &str,
     title: &str,
     repo: &str,
     question: &str,
     input_text: &str,
     cursor_pos: usize,
-    registry: &mut HitAreaRegistry,
 ) {
     let mut y = area.y;
 
@@ -572,21 +548,11 @@ fn render_free_form_mode(
     // Back button (left aligned)
     let back_area = Rect::new(area.x, y, back_width, 1);
     frame.render_widget(Span::raw(back_btn), back_area);
-    registry.register(
-        back_area,
-        ClickAction::BackToOptions(thread_id.to_string()),
-        Some(Style::default().bg(Color::DarkGray)),
-    );
 
     // Send button (right aligned)
     let send_x = area.x + area.width - send_width;
     let send_area = Rect::new(send_x, y, send_width, 1);
     frame.render_widget(Span::raw(send_btn), send_area);
-    registry.register(
-        send_area,
-        ClickAction::SubmitFreeForm(thread_id.to_string()),
-        Some(Style::default().bg(Color::DarkGray)),
-    );
 }
 
 // ============================================================================
@@ -1030,8 +996,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(2, 1, 56, 12);
@@ -1042,13 +1007,11 @@ mod tests {
                     "Implement auth",
                     "my-project",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Verify hit areas were registered (3 options + 1 Other)
-        assert!(registry.len() >= 4);
+        // Should render without panic
     }
 
     #[test]
@@ -1078,8 +1041,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(2, 1, 56, 12);
@@ -1090,13 +1052,11 @@ mod tests {
                     "Setup CI",
                     "my-repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Verify rendering completed without panic
-        assert!(registry.len() >= 4);
+        // Should render without panic
     }
 
     #[test]
@@ -1121,8 +1081,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(2, 1, 56, 12);
@@ -1133,13 +1092,11 @@ mod tests {
                     "Test",
                     "repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Verify rendering completed without panic
-        assert!(registry.len() >= 3);
+        // Should render without panic
     }
 
     #[test]
@@ -1163,8 +1120,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(0, 0, 20, 6);
@@ -1175,7 +1131,6 @@ mod tests {
                     "Title",
                     "repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
@@ -1204,8 +1159,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 // Area too small (height < 3) - should bail out gracefully
@@ -1217,13 +1171,11 @@ mod tests {
                     "Title",
                     "repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
         // Should not panic, should bail early (height=2 < min 3)
-        assert_eq!(registry.len(), 0);
     }
 
     // -------------------- Help Line Tests --------------------
@@ -1278,8 +1230,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
 
         let options = vec!["Yes".to_string(), "No".to_string()];
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(2, 1, 56, 12);
@@ -1292,13 +1243,11 @@ mod tests {
                     "Proceed?",
                     &options,
                     None,
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Should use the new question renderer
-        assert!(registry.len() >= 3);
+        // Should render without panic
     }
 
     #[test]
@@ -1306,8 +1255,7 @@ mod tests {
         let backend = TestBackend::new(60, 15);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(2, 1, 56, 12);
@@ -1320,13 +1268,11 @@ mod tests {
                     "Enter text:",
                     &[],
                     Some(("Hello", 5)),
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Should have back and send buttons
-        assert!(registry.len() >= 2);
+        // Should render without panic
     }
 
     // -------------------- Tab Bar Tests --------------------
@@ -1446,8 +1392,7 @@ mod tests {
             tabs_answered: &tabs_answered,
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(2, 1, 56, 14);
@@ -1458,13 +1403,11 @@ mod tests {
                     "Setup Auth",
                     "my-project",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
         // Should render with tab bar
-        assert!(registry.len() >= 3);
     }
 
     #[test]
@@ -1491,8 +1434,7 @@ mod tests {
             tabs_answered: &tabs_answered,
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(2, 1, 56, 14);
@@ -1503,13 +1445,11 @@ mod tests {
                     "Setup DB",
                     "my-project",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
         // Should render with tab bar
-        assert!(registry.len() >= 3);
     }
 
     #[test]
@@ -1557,8 +1497,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 // Large enough area to show descriptions (need 2 rows per option)
@@ -1570,13 +1509,11 @@ mod tests {
                     "Auth Setup",
                     "my-project",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Should render with descriptions (2 options + 1 Other)
-        assert!(registry.len() >= 3);
+        // Should render with descriptions
     }
 
     #[test]
@@ -1612,8 +1549,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 // Area with 12 rows:
@@ -1629,14 +1565,12 @@ mod tests {
                     "Test",
                     "repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Should render all 3 options + 1 Other = 4 hit areas
+        // Should render all 3 options + 1 Other
         // (descriptions are skipped because 5 available rows < 6 needed for descriptions)
-        assert_eq!(registry.len(), 4);
     }
 
     #[test]
@@ -1668,8 +1602,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(0, 0, 56, 18);
@@ -1680,13 +1613,11 @@ mod tests {
                     "Title",
                     "repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
-        // Should render all 5 options + 1 Other = 6 hit areas
-        assert_eq!(registry.len(), 6);
+        // Should render all 5 options + 1 Other
     }
 
     #[test]
@@ -1717,8 +1648,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(0, 0, 56, 14);
@@ -1729,13 +1659,11 @@ mod tests {
                     "Title",
                     "repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
         // 3 options + 1 Other
-        assert_eq!(registry.len(), 4);
     }
 
     #[test]
@@ -1766,8 +1694,7 @@ mod tests {
             tabs_answered: &[],
         };
 
-        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
-
+        
         terminal
             .draw(|frame| {
                 let area = Rect::new(0, 0, 56, 14);
@@ -1778,12 +1705,10 @@ mod tests {
                     "Title",
                     "repo",
                     &config,
-                    &mut registry,
                 );
             })
             .unwrap();
 
         // 3 options + 1 Other
-        assert_eq!(registry.len(), 4);
     }
 }
