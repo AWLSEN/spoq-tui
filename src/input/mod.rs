@@ -38,11 +38,13 @@ pub mod context;
 pub mod handlers;
 pub mod keybindings;
 pub mod registry;
+pub mod slash_command;
 
 pub use command::Command;
 pub use context::{InputContext, ModalType};
 pub use keybindings::{KeyCombo, KeybindingConfig};
 pub use registry::CommandRegistry;
+pub use slash_command::SlashCommand;
 
 use crate::app::{App, Screen};
 use crate::view_state::OverlayState;
@@ -102,6 +104,8 @@ impl App {
     pub fn build_input_context(&self) -> InputContext {
         let modal = if self.folder_picker_visible {
             ModalType::FolderPicker
+        } else if self.slash_autocomplete_visible {
+            ModalType::SlashAutocomplete
         } else if self.thread_switcher.visible {
             ModalType::ThreadSwitcher
         } else if self.screen == Screen::CommandDeck {
@@ -167,6 +171,8 @@ impl App {
     ///
     /// Returns `true` if the command was handled.
     pub fn execute_command(&mut self, cmd: Command) -> bool {
+        eprintln!("DEBUG: execute_command called with: {:?}", cmd);
+
         // Mark dirty for most commands
         if cmd.marks_dirty() {
             self.mark_dirty();
@@ -180,6 +186,11 @@ impl App {
         match self.build_input_context().modal {
             ModalType::FolderPicker => {
                 if handlers::handle_folder_picker_command(self, &cmd) {
+                    return true;
+                }
+            }
+            ModalType::SlashAutocomplete => {
+                if handlers::handle_slash_autocomplete_command(self, &cmd) {
                     return true;
                 }
             }
@@ -208,9 +219,12 @@ impl App {
         }
 
         // Try editing commands
+        eprintln!("DEBUG: About to call handle_editing_command");
         if handlers::handle_editing_command(self, &cmd) {
+            eprintln!("DEBUG: handle_editing_command returned true");
             return true;
         }
+        eprintln!("DEBUG: handle_editing_command returned false");
 
         // Try navigation commands
         if handlers::handle_navigation_command(self, &cmd) {

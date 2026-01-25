@@ -17,6 +17,7 @@ use crate::models::{MessageSegment, PermissionMode, ToolEventStatus};
 use super::helpers::{inner_rect, truncate_string, SPINNER_FRAMES};
 use super::layout::LayoutContext;
 use super::messages::render_messages_area;
+use super::slash_autocomplete::render_slash_autocomplete;
 use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 
 // ============================================================================
@@ -83,6 +84,25 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
         render_conversation_header(frame, main_chunks[0], app, &ctx);
         render_messages_area(frame, main_chunks[1], app, &ctx);
         render_streaming_indicator(frame, main_chunks[2], app, &ctx);
+
+        // Render slash autocomplete overlay (if visible) - must be last for proper layering
+        if app.slash_autocomplete_visible {
+            // Position dropdown 5 lines above the bottom
+            let textarea_lines = app.textarea.line_count();
+            eprintln!("DEBUG CONV: textarea has {} lines", textarea_lines);
+            eprintln!("DEBUG CONV: viewport bottom would be at y={}", main_chunks[1].y + main_chunks[1].height);
+
+            let anchor_y = main_chunks[1].y + main_chunks[1].height.saturating_sub(5);
+            eprintln!("DEBUG CONV: anchor_y = {}", anchor_y);
+
+            let input_anchor_area = Rect {
+                x: main_chunks[1].x + 2,
+                y: anchor_y,
+                width: main_chunks[1].width.saturating_sub(4),
+                height: 1,
+            };
+            render_slash_autocomplete(frame, app, input_anchor_area);
+        }
     } else {
         // Layout without streaming indicator (2 sections)
         let main_chunks = Layout::default()
@@ -95,6 +115,25 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
 
         render_conversation_header(frame, main_chunks[0], app, &ctx);
         render_messages_area(frame, main_chunks[1], app, &ctx);
+
+        // Render slash autocomplete overlay (if visible) - must be last for proper layering
+        if app.slash_autocomplete_visible {
+            // Position dropdown 5 lines above the bottom
+            let textarea_lines = app.textarea.line_count();
+            eprintln!("DEBUG CONV: textarea has {} lines", textarea_lines);
+            eprintln!("DEBUG CONV: viewport bottom would be at y={}", main_chunks[1].y + main_chunks[1].height);
+
+            let anchor_y = main_chunks[1].y + main_chunks[1].height.saturating_sub(5);
+            eprintln!("DEBUG CONV: anchor_y = {}", anchor_y);
+
+            let input_anchor_area = Rect {
+                x: main_chunks[1].x + 2,
+                y: anchor_y,
+                width: main_chunks[1].width.saturating_sub(4),
+                height: 1,
+            };
+            render_slash_autocomplete(frame, app, input_anchor_area);
+        }
     }
 }
 

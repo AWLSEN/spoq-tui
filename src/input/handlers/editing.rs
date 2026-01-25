@@ -11,8 +11,11 @@ use crate::models::ThreadType;
 ///
 /// Returns `true` if the command was handled successfully.
 pub fn handle_editing_command(app: &mut App, cmd: &Command) -> bool {
+    eprintln!("DEBUG: handle_editing_command called with: {:?}", cmd);
     match cmd {
         Command::InsertChar(c) => {
+            eprintln!("DEBUG: InsertChar received: '{}' (screen={:?})", c, app.screen);
+
             // Auto-focus to input if not already focused
             if app.focus != Focus::Input {
                 app.focus = Focus::Input;
@@ -35,6 +38,19 @@ pub fn handle_editing_command(app: &mut App, cmd: &Command) -> bool {
                     app.open_folder_picker();
                     return true;
                 }
+            }
+
+            // Check for / trigger for slash command autocomplete (only on CommandDeck)
+            // TEMP: Always trigger on / for debugging
+            if *c == '/' && app.screen == Screen::CommandDeck {
+                eprintln!("DEBUG: Slash autocomplete triggered!");
+                app.textarea.insert_char('/');
+                app.slash_autocomplete_visible = true;
+                app.slash_autocomplete_query.clear();
+                app.slash_autocomplete_cursor = 0;
+                app.mark_dirty();
+                eprintln!("DEBUG: slash_autocomplete_visible = {}", app.slash_autocomplete_visible);
+                return true;
             }
 
             // Normal character insertion

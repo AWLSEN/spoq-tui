@@ -14,6 +14,8 @@ pub enum ModalType {
     None,
     /// Folder picker is visible
     FolderPicker,
+    /// Slash command autocomplete is visible
+    SlashAutocomplete,
     /// Thread switcher is visible
     ThreadSwitcher,
     /// Permission prompt is pending

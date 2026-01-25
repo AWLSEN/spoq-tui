@@ -203,6 +203,88 @@ pub fn handle_folder_picker_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles slash command autocomplete-related commands.
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_slash_autocomplete_command(app: &mut App, cmd: &Command) -> bool {
+    match cmd {
+        Command::OpenSlashAutocomplete => {
+            app.slash_autocomplete_visible = true;
+            app.slash_autocomplete_query.clear();
+            app.slash_autocomplete_cursor = 0;
+            app.mark_dirty();
+            true
+        }
+
+        Command::CloseSlashAutocomplete => {
+            app.remove_slash_and_query_from_input();
+            app.slash_autocomplete_visible = false;
+            app.slash_autocomplete_query.clear();
+            app.slash_autocomplete_cursor = 0;
+            app.mark_dirty();
+            true
+        }
+
+        Command::SelectSlashCommand => {
+            let filtered = app.filtered_slash_commands();
+            if let Some(command) = filtered.get(app.slash_autocomplete_cursor) {
+                // Replace the / and query with the selected command name
+                app.remove_slash_and_query_from_input();
+                let command_text = command.name();
+                for ch in command_text.chars() {
+                    app.textarea.insert_char(ch);
+                }
+                app.slash_autocomplete_visible = false;
+                app.slash_autocomplete_query.clear();
+                app.slash_autocomplete_cursor = 0;
+                app.mark_dirty();
+            }
+            true
+        }
+
+        Command::SlashAutocompleteTypeChar(c) => {
+            app.slash_autocomplete_query.push(*c);
+            app.slash_autocomplete_cursor = 0; // Reset cursor when query changes
+            app.mark_dirty();
+            true
+        }
+
+        Command::SlashAutocompleteBackspace => {
+            if app.slash_autocomplete_query.is_empty() {
+                // Close autocomplete when backspacing with empty query
+                app.textarea.backspace(); // Remove the /
+                app.slash_autocomplete_visible = false;
+                app.slash_autocomplete_cursor = 0;
+            } else {
+                // Remove last character from query
+                app.slash_autocomplete_query.pop();
+                app.slash_autocomplete_cursor = 0;
+            }
+            app.mark_dirty();
+            true
+        }
+
+        Command::SlashAutocompleteCursorUp => {
+            if app.slash_autocomplete_cursor > 0 {
+                app.slash_autocomplete_cursor -= 1;
+                app.mark_dirty();
+            }
+            true
+        }
+
+        Command::SlashAutocompleteCursorDown => {
+            let filtered_count = app.filtered_slash_commands().len();
+            if filtered_count > 0 && app.slash_autocomplete_cursor < filtered_count - 1 {
+                app.slash_autocomplete_cursor += 1;
+                app.mark_dirty();
+            }
+            true
+        }
+
+        _ => false,
+    }
+}
+
 /// Handles thread switcher-related commands.
 ///
 /// Returns `true` if the command was handled successfully.

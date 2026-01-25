@@ -119,6 +119,24 @@ pub enum Command {
     FolderPickerCursorDown,
 
     // =========================================================================
+    // Slash Command Autocomplete Commands
+    // =========================================================================
+    /// Open slash command autocomplete (/ trigger)
+    OpenSlashAutocomplete,
+    /// Close slash command autocomplete (Escape)
+    CloseSlashAutocomplete,
+    /// Select command from autocomplete (Enter)
+    SelectSlashCommand,
+    /// Type character in slash autocomplete query
+    SlashAutocompleteTypeChar(char),
+    /// Backspace in slash autocomplete query
+    SlashAutocompleteBackspace,
+    /// Move slash autocomplete cursor up
+    SlashAutocompleteCursorUp,
+    /// Move slash autocomplete cursor down
+    SlashAutocompleteCursorDown,
+
+    // =========================================================================
     // Thread Switcher Commands
     // =========================================================================
     /// Cycle thread switcher forward (Tab, Down)
@@ -268,6 +286,13 @@ impl Command {
             Command::FolderPickerBackspace => "Backspace in folder filter",
             Command::FolderPickerCursorUp => "Folder picker cursor up",
             Command::FolderPickerCursorDown => "Folder picker cursor down",
+            Command::OpenSlashAutocomplete => "Open slash command autocomplete",
+            Command::CloseSlashAutocomplete => "Close slash command autocomplete",
+            Command::SelectSlashCommand => "Select slash command",
+            Command::SlashAutocompleteTypeChar(_) => "Type in slash autocomplete",
+            Command::SlashAutocompleteBackspace => "Backspace in slash autocomplete",
+            Command::SlashAutocompleteCursorUp => "Slash autocomplete cursor up",
+            Command::SlashAutocompleteCursorDown => "Slash autocomplete cursor down",
             Command::CycleSwitcherForward => "Next thread in switcher",
             Command::CycleSwitcherBackward => "Previous thread in switcher",
             Command::CloseSwitcher => "Close thread switcher",

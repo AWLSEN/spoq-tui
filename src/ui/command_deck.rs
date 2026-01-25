@@ -17,6 +17,7 @@ use super::conversation::{create_mode_indicator_line, render_mode_indicator};
 use super::folder_picker::render_folder_picker;
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
+use super::slash_autocomplete::render_slash_autocomplete;
 
 // ============================================================================
 // Helper Functions
@@ -77,6 +78,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         if app.folder_picker_visible {
             render_folder_picker(frame, app, main_chunks[2]);
         }
+
+        // Render slash autocomplete overlay (if visible) - must be last for proper layering
+        if app.slash_autocomplete_visible {
+            render_slash_autocomplete(frame, app, main_chunks[2]);
+        }
     } else {
         // Layout without mode indicator (2 sections)
         let main_chunks = Layout::default()
@@ -93,6 +99,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         // Render folder picker overlay (if visible) - must be last for proper layering
         if app.folder_picker_visible {
             render_folder_picker(frame, app, main_chunks[1]);
+        }
+
+        // Render slash autocomplete overlay (if visible) - must be last for proper layering
+        if app.slash_autocomplete_visible {
+            render_slash_autocomplete(frame, app, main_chunks[1]);
         }
     }
 }

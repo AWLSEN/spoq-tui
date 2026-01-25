@@ -656,6 +656,91 @@ where
                                 }
                             }
 
+                            // Slash Autocomplete Key Handling (HIGHEST PRIORITY when visible)
+                            // =========================================================
+                            if app.slash_autocomplete_visible {
+                                eprintln!("DEBUG: Slash autocomplete key handling - key={:?}", key.code);
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        // Close autocomplete, remove / + query from input
+                                        eprintln!("DEBUG: ESC pressed in slash autocomplete");
+                                        app.remove_slash_and_query_from_input();
+                                        app.slash_autocomplete_visible = false;
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        // Select command, close autocomplete
+                                        eprintln!("DEBUG: ENTER pressed in slash autocomplete");
+                                        let filtered = app.filtered_slash_commands();
+                                        if let Some(command) = filtered.get(app.slash_autocomplete_cursor) {
+                                            // Remove / and query from input
+                                            app.remove_slash_and_query_from_input();
+                                            // Insert the command name
+                                            let command_name = command.name();
+                                            for ch in command_name.chars() {
+                                                app.textarea.insert_char(ch);
+                                            }
+                                            app.slash_autocomplete_visible = false;
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Backspace => {
+                                        eprintln!("DEBUG: BACKSPACE in slash autocomplete, query='{}'", app.slash_autocomplete_query);
+                                        if app.slash_autocomplete_query.is_empty() {
+                                            // Query is empty, close autocomplete and remove /
+                                            app.textarea.backspace(); // Remove the /
+                                            app.slash_autocomplete_visible = false;
+                                            app.mark_dirty();
+                                        } else {
+                                            // Remove last char from query
+                                            app.slash_autocomplete_query.pop();
+                                            // Also backspace in textarea
+                                            app.textarea.backspace();
+                                            // Reset cursor to top when filter changes
+                                            app.slash_autocomplete_cursor = 0;
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Up => {
+                                        eprintln!("DEBUG: UP in slash autocomplete");
+                                        let filtered = app.filtered_slash_commands();
+                                        if !filtered.is_empty() {
+                                            app.slash_autocomplete_cursor = app.slash_autocomplete_cursor.saturating_sub(1);
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Down => {
+                                        eprintln!("DEBUG: DOWN in slash autocomplete");
+                                        let filtered = app.filtered_slash_commands();
+                                        if !filtered.is_empty() {
+                                            app.slash_autocomplete_cursor = (app.slash_autocomplete_cursor + 1).min(filtered.len() - 1);
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
+                                        eprintln!("DEBUG: CHAR '{}' in slash autocomplete", c);
+                                        // Append character to query
+                                        app.slash_autocomplete_query.push(c);
+                                        // Also insert in textarea
+                                        app.textarea.insert_char(c);
+                                        // Reset cursor to top when filter changes
+                                        app.slash_autocomplete_cursor = 0;
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    _ => {
+                                        eprintln!("DEBUG: Other key in slash autocomplete - ignoring");
+                                        // Other keys are ignored while autocomplete is open
+                                        continue;
+                                    }
+                                }
+                            }
+
                             // Thread switcher handling (takes priority when visible)
                             if app.thread_switcher.visible {
                                 match key.code {
@@ -804,6 +889,19 @@ where
                                                 continue;
                                             }
                                         }
+
+                                        // Check for / trigger for slash command autocomplete (works on both CommandDeck and Conversation)
+                                        if char_to_insert == '/' {
+                                            eprintln!("DEBUG: / trigger hit!");
+                                            app.textarea.insert_char('/');
+                                            app.slash_autocomplete_visible = true;
+                                            app.slash_autocomplete_query.clear();
+                                            app.slash_autocomplete_cursor = 0;
+                                            app.mark_dirty();
+                                            eprintln!("DEBUG: slash_autocomplete_visible set to {}", app.slash_autocomplete_visible);
+                                            continue;
+                                        }
+
                                         // Normal character insertion
                                         app.textarea.insert_char(char_to_insert);
                                         continue;

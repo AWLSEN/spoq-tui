@@ -29,6 +29,7 @@ pub mod interaction;
 mod layout;
 pub mod messages;
 pub mod prepare;
+mod slash_autocomplete;
 mod theme;
 mod thread_switcher;
 

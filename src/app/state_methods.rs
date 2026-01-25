@@ -523,6 +523,21 @@ impl App {
     pub fn filtered_slash_commands(&self) -> Vec<crate::input::SlashCommand> {
         crate::input::SlashCommand::filter(&self.slash_autocomplete_query)
     }
+
+    /// Remove the / and any query text from the textarea input.
+    ///
+    /// This is called when closing the slash autocomplete or when selecting a command
+    /// to clean up the / trigger character and any typed query text.
+    pub fn remove_slash_and_query_from_input(&mut self) {
+        // Calculate how many characters to remove: / + query length
+        let chars_to_remove = 1 + self.slash_autocomplete_query.len();
+
+        // Remove characters by calling backspace repeatedly
+        for _ in 0..chars_to_remove {
+            self.textarea.backspace();
+        }
+        self.mark_dirty();
+    }
 }
 
 #[cfg(test)]

@@ -143,6 +143,28 @@ impl KeybindingConfig {
         );
         self.modal.insert(ModalType::FolderPicker, folder_picker);
 
+        // Slash command autocomplete bindings
+        let mut slash_autocomplete = HashMap::new();
+        slash_autocomplete.insert(
+            KeyCombo::plain(KeyCode::Esc),
+            Command::CloseSlashAutocomplete,
+        );
+        slash_autocomplete.insert(KeyCombo::plain(KeyCode::Enter), Command::SelectSlashCommand);
+        slash_autocomplete.insert(
+            KeyCombo::plain(KeyCode::Up),
+            Command::SlashAutocompleteCursorUp,
+        );
+        slash_autocomplete.insert(
+            KeyCombo::plain(KeyCode::Down),
+            Command::SlashAutocompleteCursorDown,
+        );
+        slash_autocomplete.insert(
+            KeyCombo::plain(KeyCode::Backspace),
+            Command::SlashAutocompleteBackspace,
+        );
+        self.modal
+            .insert(ModalType::SlashAutocomplete, slash_autocomplete);
+
         // Thread switcher bindings
         let mut thread_switcher = HashMap::new();
         thread_switcher.insert(KeyCombo::plain(KeyCode::Tab), Command::CycleSwitcherForward);

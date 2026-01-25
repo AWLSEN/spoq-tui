@@ -2,19 +2,21 @@
 //!
 //! This module provides [`InputState`], a domain object that encapsulates
 //! all input-related state including text input, history navigation,
-//! and folder picker state.
+//! folder picker state, and slash command autocomplete.
 
+use crate::input::SlashCommand;
 use crate::input_history::InputHistory;
 use crate::models::Folder;
 use crate::widgets::textarea::TextAreaInput;
 
-/// Input state encapsulating text input, history, and folder picker.
+/// Input state encapsulating text input, history, folder picker, and slash autocomplete.
 ///
 /// This domain object manages all input-related concerns:
 /// - TextArea input widget
 /// - Input history for Up/Down arrow navigation
 /// - Folder picker state (visibility, filter, selection)
 /// - Selected folder for context
+/// - Slash command autocomplete (visibility, navigation, filtering)
 pub struct InputState {
     /// TextArea input (tui-textarea wrapper)
     pub textarea: TextAreaInput<'static>,
@@ -34,6 +36,12 @@ pub struct InputState {
     pub folder_picker_filter: String,
     /// Selected index in the filtered folder list
     pub folder_picker_cursor: usize,
+    /// Is the slash command autocomplete dropdown showing
+    pub slash_autocomplete_visible: bool,
+    /// Current query for slash command filtering (text after /)
+    pub slash_autocomplete_query: String,
+    /// Selected index in the filtered slash commands list
+    pub slash_autocomplete_cursor: usize,
 }
 
 impl Default for InputState {
@@ -55,6 +63,9 @@ impl InputState {
             folder_picker_visible: false,
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
+            slash_autocomplete_visible: false,
+            slash_autocomplete_query: String::new(),
+            slash_autocomplete_cursor: 0,
         }
     }
 
@@ -72,6 +83,9 @@ impl InputState {
             folder_picker_visible: false,
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
+            slash_autocomplete_visible: false,
+            slash_autocomplete_query: String::new(),
+            slash_autocomplete_cursor: 0,
         }
     }
 
@@ -265,6 +279,85 @@ impl InputState {
         self.hide_folder_picker();
         self.selected_folder = None;
         self.folders_error = None;
+        self.hide_slash_autocomplete();
+    }
+
+    // Slash autocomplete methods
+
+    /// Show the slash command autocomplete dropdown.
+    pub fn show_slash_autocomplete(&mut self) {
+        self.slash_autocomplete_visible = true;
+        self.slash_autocomplete_query.clear();
+        self.slash_autocomplete_cursor = 0;
+    }
+
+    /// Hide the slash command autocomplete dropdown.
+    pub fn hide_slash_autocomplete(&mut self) {
+        self.slash_autocomplete_visible = false;
+        self.slash_autocomplete_query.clear();
+        self.slash_autocomplete_cursor = 0;
+    }
+
+    /// Check if the slash autocomplete dropdown is visible.
+    pub fn is_slash_autocomplete_visible(&self) -> bool {
+        self.slash_autocomplete_visible
+    }
+
+    /// Set the slash autocomplete query text.
+    ///
+    /// This updates the filter query and resets the cursor to the first item.
+    pub fn set_slash_query(&mut self, query: String) {
+        self.slash_autocomplete_query = query;
+        self.slash_autocomplete_cursor = 0; // Reset cursor when query changes
+    }
+
+    /// Get filtered slash commands matching the current query.
+    ///
+    /// Returns commands whose primary name or aliases match the query.
+    pub fn get_filtered_commands(&self) -> Vec<SlashCommand> {
+        SlashCommand::filter(&self.slash_autocomplete_query)
+    }
+
+    /// Move the slash autocomplete cursor up.
+    pub fn slash_autocomplete_up(&mut self) {
+        if self.slash_autocomplete_cursor > 0 {
+            self.slash_autocomplete_cursor -= 1;
+        }
+    }
+
+    /// Move the slash autocomplete cursor down.
+    pub fn slash_autocomplete_down(&mut self) {
+        let filtered = self.get_filtered_commands();
+        if !filtered.is_empty() && self.slash_autocomplete_cursor < filtered.len() - 1 {
+            self.slash_autocomplete_cursor += 1;
+        }
+    }
+
+    /// Select the currently highlighted slash command.
+    ///
+    /// Returns the selected command if one is available at the cursor position.
+    /// Hides the autocomplete dropdown after selection.
+    pub fn select_slash_command(&mut self) -> Option<SlashCommand> {
+        let filtered = self.get_filtered_commands();
+        if self.slash_autocomplete_cursor < filtered.len() {
+            let command = filtered[self.slash_autocomplete_cursor].clone();
+            self.hide_slash_autocomplete();
+            Some(command)
+        } else {
+            None
+        }
+    }
+
+    /// Get the currently highlighted slash command (for preview).
+    ///
+    /// Returns the command at the cursor position without selecting it.
+    pub fn get_highlighted_command(&self) -> Option<SlashCommand> {
+        let filtered = self.get_filtered_commands();
+        if self.slash_autocomplete_cursor < filtered.len() {
+            Some(filtered[self.slash_autocomplete_cursor].clone())
+        } else {
+            None
+        }
     }
 }
 
@@ -280,6 +373,9 @@ impl std::fmt::Debug for InputState {
             .field("folder_picker_visible", &self.folder_picker_visible)
             .field("folder_picker_filter", &self.folder_picker_filter)
             .field("folder_picker_cursor", &self.folder_picker_cursor)
+            .field("slash_autocomplete_visible", &self.slash_autocomplete_visible)
+            .field("slash_autocomplete_query", &self.slash_autocomplete_query)
+            .field("slash_autocomplete_cursor", &self.slash_autocomplete_cursor)
             .finish()
     }
 }

@@ -102,6 +102,26 @@ impl CommandRegistry {
                 Some(Command::Noop)
             }
 
+            ModalType::SlashAutocomplete => {
+                // Check modal-specific bindings first
+                if let Some(cmd) = self.config.get_modal(ModalType::SlashAutocomplete, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Handle character input for query (no modifiers)
+                if let KeyCode::Char(c) = key.code {
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+                    {
+                        return Some(Command::SlashAutocompleteTypeChar(c));
+                    }
+                }
+
+                // Ignore other keys in slash autocomplete
+                Some(Command::Noop)
+            }
+
             ModalType::ThreadSwitcher => {
                 // Check modal-specific bindings first
                 if let Some(cmd) = self.config.get_modal(ModalType::ThreadSwitcher, &combo) {
