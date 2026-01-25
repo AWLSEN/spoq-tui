@@ -41,6 +41,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/e2e_helpers.sh"
 
 # ==============================================================================
+# Exit Codes
+# ==============================================================================
+
+E2E_SUCCESS=0
+E2E_CHECKPOINT_FAIL=1
+E2E_SETUP_ERROR=2
+
+# ==============================================================================
 # Configuration
 # ==============================================================================
 
@@ -85,6 +93,8 @@ Commands:
     setup           Setup test environment only
     cleanup         Cleanup test files and directories
     screenshot-only Capture TUI screenshot only
+    verify-only     Run verification on existing plan
+    checkpoint N    Run up to checkpoint N only
     help            Show this help message
 
 Options:
@@ -103,6 +113,11 @@ Environment Variables:
     E2E_DEBUG         Enable debug logging
     E2E_VERBOSE       Enable verbose checkpoint logging (same as --verbose)
 
+Exit Codes:
+    0   All tests passed (E2E_SUCCESS)
+    1   Checkpoint failed (E2E_CHECKPOINT_FAIL)
+    2   Setup error (E2E_SETUP_ERROR)
+
 Examples:
     # Run full test
     ./scripts/e2e_real_pulsar_test.sh
@@ -115,6 +130,12 @@ Examples:
 
     # Run with verbose checkpoint logging
     ./scripts/e2e_real_pulsar_test.sh run --verbose
+
+    # Verify existing plan
+    PLAN_ID=plan-20260125-1200 ./scripts/e2e_real_pulsar_test.sh verify-only
+
+    # Run up to checkpoint 5
+    ./scripts/e2e_real_pulsar_test.sh checkpoint 5
 
     # Just cleanup
     ./scripts/e2e_real_pulsar_test.sh cleanup
@@ -1626,9 +1647,9 @@ EOF
 
 # Orchestrates the full E2E test flow
 # Usage: run_real_e2e_test
-# Returns: 0 if all tests pass, 1 if any fail
+# Returns: E2E_SUCCESS if all tests pass, E2E_CHECKPOINT_FAIL if checkpoint failed, E2E_SETUP_ERROR if setup failed
 run_real_e2e_test() {
-    local exit_code=0
+    local exit_code=$E2E_SUCCESS
 
     log_step "E2E TEST" "Starting Real Pulsar E2E Test"
     echo ""
@@ -1652,7 +1673,7 @@ run_real_e2e_test() {
         collect_evidence
         generate_verification_report
         generate_summary_report
-        return 1
+        return $E2E_SETUP_ERROR
     fi
     echo ""
 
@@ -1674,7 +1695,7 @@ run_real_e2e_test() {
     else
         log_error "Failed to create thread"
         record_checkpoint "THREAD_CREATION" "FAIL" "API call failed"
-        exit_code=1
+        exit_code=$E2E_CHECKPOINT_FAIL
         # Continue to next step even if this fails
     fi
     echo ""
@@ -1691,7 +1712,7 @@ run_real_e2e_test() {
         collect_evidence
         generate_verification_report
         generate_summary_report
-        return 1
+        return $E2E_SETUP_ERROR
     fi
     echo ""
 
@@ -1721,7 +1742,7 @@ run_real_e2e_test() {
     else
         log_error "Monitoring detected issues or timeout"
         record_checkpoint "EXECUTION_MONITOR" "FAIL" "Monitoring detected issues"
-        exit_code=1
+        exit_code=$E2E_CHECKPOINT_FAIL
         # Continue to verification anyway
     fi
     echo ""
@@ -1745,7 +1766,7 @@ run_real_e2e_test() {
     else
         log_error "Phase verification failed"
         record_checkpoint "PHASE_VERIFICATION" "FAIL" "Not all phases completed"
-        exit_code=1
+        exit_code=$E2E_CHECKPOINT_FAIL
     fi
     echo ""
 
@@ -1776,7 +1797,7 @@ run_real_e2e_test() {
         log_success "Summary report generated"
     else
         log_error "Summary report indicates test failures"
-        exit_code=1
+        exit_code=$E2E_CHECKPOINT_FAIL
     fi
 
     # Step 13: Show evidence location and optional cleanup
@@ -1834,6 +1855,17 @@ cmd_cleanup() {
         log_success "Removed temporary directory: $TEMP_DIR"
     fi
 
+    # Remove evidence directory if it exists
+    if [ -n "${EVIDENCE_DIR:-}" ] && [ -d "$EVIDENCE_DIR" ]; then
+        log_info "Found evidence directory: $EVIDENCE_DIR"
+        read -p "Remove evidence directory? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            rm -rf "$EVIDENCE_DIR"
+            log_success "Removed evidence directory"
+        fi
+    fi
+
     # Optionally clean up plan files (if PLAN_ID is known)
     if [ -n "${PLAN_ID:-}" ]; then
         local plan_dir="$HOME/comms/plans/$PROJECT/active/$PLAN_ID"
@@ -1875,6 +1907,231 @@ cmd_run() {
     run_real_e2e_test
 }
 
+# Verify existing plan only (no execution)
+cmd_verify_only() {
+    log_separator
+    echo "  Verification Only Mode"
+    log_separator
+    echo ""
+
+    # Ensure PLAN_ID is set
+    if [ -z "${PLAN_ID:-}" ]; then
+        log_error "PLAN_ID environment variable must be set for verify-only mode"
+        log_info "Example: PLAN_ID=plan-20260125-1200 ./scripts/e2e_real_pulsar_test.sh verify-only"
+        return $E2E_SETUP_ERROR
+    fi
+
+    log_info "Verifying plan: $PLAN_ID"
+    log_info "Project: $PROJECT"
+    echo ""
+
+    # Initialize evidence collection
+    init_evidence_dir
+    echo ""
+
+    # Verify all phases completed
+    log_info "Verifying phase completion"
+    if verify_all_phases_completed; then
+        log_success "All phases verified as completed"
+        record_checkpoint "PHASE_VERIFICATION" "PASS" "All $TOTAL_PHASES phases completed"
+    else
+        log_error "Phase verification failed"
+        record_checkpoint "PHASE_VERIFICATION" "FAIL" "Not all phases completed"
+        collect_evidence
+        generate_verification_report
+        return $E2E_CHECKPOINT_FAIL
+    fi
+    echo ""
+
+    # Collect evidence
+    log_info "Collecting evidence"
+    if collect_evidence; then
+        record_checkpoint "EVIDENCE_COLLECTION" "PASS" "Evidence collected"
+    else
+        record_checkpoint "EVIDENCE_COLLECTION" "FAIL" "Evidence collection failed"
+    fi
+    echo ""
+
+    # Generate verification report
+    log_info "Generating verification report"
+    if generate_verification_report; then
+        log_success "Verification report generated"
+        record_checkpoint "VERIFICATION_REPORT" "PASS" "Report generated"
+    else
+        log_error "Verification report generation failed"
+        record_checkpoint "VERIFICATION_REPORT" "FAIL" "Report generation failed"
+    fi
+    echo ""
+
+    log_separator
+    log_info "Evidence directory: $EVIDENCE_DIR"
+    log_info "Verification report: $EVIDENCE_DIR/verification_report.md"
+    log_separator
+
+    # Check for failures
+    if grep -q '"result": "FAIL"' "$CHECKPOINT_DATA_DIR"/*.json 2>/dev/null; then
+        return $E2E_CHECKPOINT_FAIL
+    fi
+
+    return $E2E_SUCCESS
+}
+
+# Run up to a specific checkpoint only
+cmd_checkpoint() {
+    local checkpoint_num="${1:-}"
+
+    if [ -z "$checkpoint_num" ]; then
+        log_error "Checkpoint number required"
+        log_info "Usage: ./scripts/e2e_real_pulsar_test.sh checkpoint N"
+        return $E2E_SETUP_ERROR
+    fi
+
+    # Validate checkpoint number is numeric
+    if ! [[ "$checkpoint_num" =~ ^[0-9]+$ ]]; then
+        log_error "Checkpoint number must be a positive integer"
+        return $E2E_SETUP_ERROR
+    fi
+
+    log_separator
+    echo "  Checkpoint Mode: Running up to checkpoint $checkpoint_num"
+    log_separator
+    echo ""
+
+    # Initialize directories and evidence
+    log_info "Initializing test environment"
+    mkdir -p "$TEMP_DIR"
+    mkdir -p "$SCREENSHOT_DIR"
+    init_evidence_dir
+    record_checkpoint "SETUP_DIRECTORIES" "PASS" "Temp and evidence directories created"
+    echo ""
+
+    # Checkpoint 1: Prerequisites
+    if [ "$checkpoint_num" -ge 1 ]; then
+        log_info "Checkpoint 1: Checking prerequisites"
+        if check_prerequisites; then
+            record_checkpoint "PREREQUISITES" "PASS" "All prerequisites satisfied"
+        else
+            log_error "Prerequisites check failed"
+            record_checkpoint "PREREQUISITES" "FAIL" "Prerequisites check failed"
+            collect_evidence
+            generate_verification_report
+            return $E2E_CHECKPOINT_FAIL
+        fi
+        echo ""
+    fi
+
+    # Checkpoint 2: Start TUI
+    if [ "$checkpoint_num" -ge 2 ]; then
+        log_info "Checkpoint 2: Starting TUI if needed"
+        if start_tui_if_needed; then
+            record_checkpoint "TUI_START" "PASS" "TUI is running"
+        else
+            log_warn "TUI not started - optional for test"
+            record_checkpoint "TUI_START" "SKIP" "TUI not started"
+        fi
+        echo ""
+    fi
+
+    # Checkpoint 3: Create thread
+    if [ "$checkpoint_num" -ge 3 ]; then
+        log_info "Checkpoint 3: Creating thread via API"
+        if create_thread_via_api; then
+            log_success "Thread created: $THREAD_ID"
+            record_checkpoint "THREAD_CREATION" "PASS" "Thread ID: $THREAD_ID"
+        else
+            log_error "Failed to create thread"
+            record_checkpoint "THREAD_CREATION" "FAIL" "API call failed"
+            collect_evidence
+            generate_verification_report
+            return $E2E_CHECKPOINT_FAIL
+        fi
+        echo ""
+    fi
+
+    # Checkpoint 4: Generate plan
+    if [ "$checkpoint_num" -ge 4 ]; then
+        log_info "Checkpoint 4: Generating Nova plan"
+        if generate_nova_plan; then
+            log_success "Plan generated: $PLAN_ID"
+            record_checkpoint "PLAN_GENERATION" "PASS" "Plan ID: $PLAN_ID"
+        else
+            log_error "Failed to generate plan"
+            record_checkpoint "PLAN_GENERATION" "FAIL" "Plan generation failed"
+            collect_evidence
+            generate_verification_report
+            return $E2E_CHECKPOINT_FAIL
+        fi
+        echo ""
+    fi
+
+    # Checkpoint 5: Monitor execution
+    if [ "$checkpoint_num" -ge 5 ]; then
+        log_info "Checkpoint 5: Monitoring Pulsar execution"
+        if monitor_execution; then
+            log_success "Pulsar execution monitored successfully"
+            record_checkpoint "EXECUTION_MONITOR" "PASS" "Monitoring completed"
+        else
+            log_error "Monitoring detected issues or timeout"
+            record_checkpoint "EXECUTION_MONITOR" "FAIL" "Monitoring detected issues"
+            collect_evidence
+            generate_verification_report
+            return $E2E_CHECKPOINT_FAIL
+        fi
+        echo ""
+    fi
+
+    # Checkpoint 6: Capture screenshot
+    if [ "$checkpoint_num" -ge 6 ]; then
+        log_info "Checkpoint 6: Capturing final TUI state"
+        if capture_tui_state "final_state"; then
+            log_success "Screenshot captured"
+            record_checkpoint "SCREENSHOT_CAPTURE" "PASS" "Final state captured"
+        else
+            log_warn "Screenshot capture encountered issues"
+            record_checkpoint "SCREENSHOT_CAPTURE" "SKIP" "Screenshot capture failed"
+        fi
+        echo ""
+    fi
+
+    # Checkpoint 7: Verify phases
+    if [ "$checkpoint_num" -ge 7 ]; then
+        log_info "Checkpoint 7: Verifying phase completion"
+        if verify_all_phases_completed; then
+            log_success "All phases verified as completed"
+            record_checkpoint "PHASE_VERIFICATION" "PASS" "All $TOTAL_PHASES phases completed"
+        else
+            log_error "Phase verification failed"
+            record_checkpoint "PHASE_VERIFICATION" "FAIL" "Not all phases completed"
+            collect_evidence
+            generate_verification_report
+            return $E2E_CHECKPOINT_FAIL
+        fi
+        echo ""
+    fi
+
+    # Always collect evidence and generate report
+    log_info "Collecting evidence"
+    collect_evidence
+    echo ""
+
+    log_info "Generating verification report"
+    generate_verification_report
+    echo ""
+
+    log_separator
+    log_info "Checkpoint test completed up to checkpoint $checkpoint_num"
+    log_info "Evidence directory: $EVIDENCE_DIR"
+    log_info "Verification report: $EVIDENCE_DIR/verification_report.md"
+    log_separator
+
+    # Check for failures
+    if grep -q '"result": "FAIL"' "$CHECKPOINT_DATA_DIR"/*.json 2>/dev/null; then
+        return $E2E_CHECKPOINT_FAIL
+    fi
+
+    return $E2E_SUCCESS
+}
+
 # ==============================================================================
 # Main Entry Point
 # ==============================================================================
@@ -1883,6 +2140,7 @@ cmd_run() {
 parse_args() {
     local command="run"
     local args_done=false
+    local checkpoint_arg=""
 
     while [ $# -gt 0 ]; do
         if [ "$args_done" = false ]; then
@@ -1899,9 +2157,20 @@ parse_args() {
                     VERBOSE="1"
                     shift
                     ;;
-                setup|cleanup|screenshot-only|run|help|--help|-h)
+                setup|cleanup|screenshot-only|run|verify-only|help|--help|-h)
                     command="$1"
                     shift
+                    args_done=true
+                    ;;
+                checkpoint)
+                    command="checkpoint"
+                    # Next argument should be the checkpoint number
+                    if [ -n "${2:-}" ]; then
+                        checkpoint_arg="$2"
+                        shift 2
+                    else
+                        shift
+                    fi
                     args_done=true
                     ;;
                 -*)
@@ -1931,9 +2200,15 @@ parse_args() {
                     shift
                     ;;
                 *)
-                    log_error "Unknown argument: $1"
-                    usage
-                    exit 1
+                    # For checkpoint command, the next argument is the number
+                    if [ "$command" = "checkpoint" ] && [ -z "$checkpoint_arg" ]; then
+                        checkpoint_arg="$1"
+                        shift
+                    else
+                        log_error "Unknown argument: $1"
+                        usage
+                        exit 1
+                    fi
                     ;;
             esac
         fi
@@ -1942,7 +2217,12 @@ parse_args() {
     # Apply E2E_VERBOSE environment variable if set
     [ -n "${E2E_VERBOSE:-}" ] && VERBOSE="1"
 
-    echo "$command"
+    # Return command and checkpoint arg as "command:arg" format
+    if [ "$command" = "checkpoint" ]; then
+        echo "$command:$checkpoint_arg"
+    else
+        echo "$command"
+    fi
 }
 
 # Get the command from arguments
@@ -1952,22 +2232,39 @@ COMMAND=$(parse_args "$@")
 case "$COMMAND" in
     setup)
         cmd_setup
+        exit $?
         ;;
     cleanup)
         cmd_cleanup
+        exit $E2E_SUCCESS
         ;;
     screenshot-only)
         cmd_screenshot_only
+        exit $E2E_SUCCESS
         ;;
     run)
         cmd_run
+        exit_code=$?
+        # Map exit code to proper values
+        [ $exit_code -eq 0 ] && exit $E2E_SUCCESS || exit $E2E_CHECKPOINT_FAIL
+        ;;
+    verify-only)
+        cmd_verify_only
+        exit $?
+        ;;
+    checkpoint:*)
+        # Extract checkpoint number from command
+        checkpoint_num="${COMMAND#checkpoint:}"
+        cmd_checkpoint "$checkpoint_num"
+        exit $?
         ;;
     help|--help|-h)
         usage
+        exit $E2E_SUCCESS
         ;;
     *)
         log_error "Unknown command: $COMMAND"
         usage
-        exit 1
+        exit $E2E_SETUP_ERROR
         ;;
 esac
