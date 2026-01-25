@@ -57,6 +57,14 @@ pub enum ClickAction {
     // Navigation
     /// View the full plan for a thread
     ViewFullPlan(String),
+
+    // Tooltip hover
+    /// Hover over an info icon to display a tooltip
+    HoverInfoIcon {
+        content: String,
+        anchor_x: u16,
+        anchor_y: u16,
+    },
 }
 
 /// A clickable region with an associated action.
@@ -110,6 +118,8 @@ pub struct HitAreaRegistry {
     areas: Vec<HitArea>,
     /// Index of the currently hovered area (if any)
     hovered: Option<usize>,
+    /// Currently hovered info icon tooltip (content, anchor_x, anchor_y)
+    hovered_info_icon: Option<(String, u16, u16)>,
 }
 
 impl HitAreaRegistry {
@@ -118,6 +128,7 @@ impl HitAreaRegistry {
         Self {
             areas: Vec::new(),
             hovered: None,
+            hovered_info_icon: None,
         }
     }
 
@@ -127,6 +138,7 @@ impl HitAreaRegistry {
     pub fn clear(&mut self) {
         self.areas.clear();
         self.hovered = None;
+        self.hovered_info_icon = None;
     }
 
     /// Register a new hit area.
@@ -166,12 +178,32 @@ impl HitAreaRegistry {
     /// Returns true if the hover state changed (requiring a redraw).
     pub fn update_hover(&mut self, x: u16, y: u16) -> bool {
         let new_hovered = self.find_hovered_index(x, y);
-        if new_hovered != self.hovered {
-            self.hovered = new_hovered;
-            true
-        } else {
-            false
-        }
+        let old_hovered = self.hovered;
+
+        // Update hovered_info_icon based on the new hovered area
+        let new_tooltip = new_hovered.and_then(|idx| {
+            if let Some(area) = self.areas.get(idx) {
+                match &area.action {
+                    ClickAction::HoverInfoIcon {
+                        content,
+                        anchor_x,
+                        anchor_y,
+                    } => Some((content.clone(), *anchor_x, *anchor_y)),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        });
+
+        let tooltip_changed = new_tooltip != self.hovered_info_icon;
+        self.hovered_info_icon = new_tooltip;
+
+        let hover_changed = new_hovered != old_hovered;
+        self.hovered = new_hovered;
+
+        // Redraw if either hover or tooltip changed
+        hover_changed || tooltip_changed
     }
 
     /// Find the index of the topmost area containing the given point.
@@ -219,6 +251,15 @@ impl HitAreaRegistry {
     /// Check if the registry is empty.
     pub fn is_empty(&self) -> bool {
         self.areas.is_empty()
+    }
+
+    /// Get the currently hovered tooltip info (content, anchor_x, anchor_y).
+    ///
+    /// Returns Some when hovering over a HoverInfoIcon action, None otherwise.
+    pub fn get_tooltip_info(&self) -> Option<(&str, u16, u16)> {
+        self.hovered_info_icon
+            .as_ref()
+            .map(|(content, x, y)| (content.as_str(), *x, *y))
     }
 }
 
@@ -484,5 +525,139 @@ mod tests {
                 index: 1
             })
         );
+    }
+
+    #[test]
+    fn test_hover_info_icon_tooltip_tracking() {
+        let mut registry = HitAreaRegistry::new();
+
+        // Register a tooltip hit area
+        registry.register(
+            make_rect(10, 10, 3, 1),
+            ClickAction::HoverInfoIcon {
+                content: "This is a tooltip".to_string(),
+                anchor_x: 10,
+                anchor_y: 11,
+            },
+            None,
+        );
+
+        // Initially no tooltip
+        assert_eq!(registry.get_tooltip_info(), None);
+
+        // Hover over the info icon
+        let changed = registry.update_hover(11, 10);
+        assert!(changed); // Should trigger redraw
+        assert_eq!(
+            registry.get_tooltip_info(),
+            Some(("This is a tooltip", 10, 11))
+        );
+
+        // Move within the same icon - no change
+        let changed = registry.update_hover(12, 10);
+        assert!(!changed);
+        assert_eq!(
+            registry.get_tooltip_info(),
+            Some(("This is a tooltip", 10, 11))
+        );
+
+        // Move away from the icon
+        let changed = registry.update_hover(100, 100);
+        assert!(changed);
+        assert_eq!(registry.get_tooltip_info(), None);
+    }
+
+    #[test]
+    fn test_tooltip_clears_with_registry() {
+        let mut registry = HitAreaRegistry::new();
+
+        registry.register(
+            make_rect(5, 5, 2, 1),
+            ClickAction::HoverInfoIcon {
+                content: "Tooltip content".to_string(),
+                anchor_x: 5,
+                anchor_y: 6,
+            },
+            None,
+        );
+
+        registry.update_hover(5, 5);
+        assert!(registry.get_tooltip_info().is_some());
+
+        registry.clear();
+        assert_eq!(registry.get_tooltip_info(), None);
+    }
+
+    #[test]
+    fn test_tooltip_with_multiple_hit_areas() {
+        let mut registry = HitAreaRegistry::new();
+
+        // Register regular hit area
+        registry.register(make_rect(0, 0, 10, 10), ClickAction::FilterWorking, None);
+
+        // Register tooltip hit area
+        registry.register(
+            make_rect(20, 0, 3, 1),
+            ClickAction::HoverInfoIcon {
+                content: "Info".to_string(),
+                anchor_x: 20,
+                anchor_y: 1,
+            },
+            None,
+        );
+
+        // Hover over regular area - no tooltip
+        registry.update_hover(5, 5);
+        assert_eq!(registry.get_tooltip_info(), None);
+        assert_eq!(registry.hit_test(5, 5), Some(ClickAction::FilterWorking));
+
+        // Hover over tooltip area
+        registry.update_hover(21, 0);
+        assert_eq!(registry.get_tooltip_info(), Some(("Info", 20, 1)));
+        assert_eq!(
+            registry.hit_test(21, 0),
+            Some(ClickAction::HoverInfoIcon {
+                content: "Info".to_string(),
+                anchor_x: 20,
+                anchor_y: 1
+            })
+        );
+    }
+
+    #[test]
+    fn test_tooltip_redraw_on_change() {
+        let mut registry = HitAreaRegistry::new();
+
+        registry.register(
+            make_rect(0, 0, 5, 5),
+            ClickAction::HoverInfoIcon {
+                content: "Tooltip 1".to_string(),
+                anchor_x: 0,
+                anchor_y: 5,
+            },
+            None,
+        );
+
+        registry.register(
+            make_rect(10, 0, 5, 5),
+            ClickAction::HoverInfoIcon {
+                content: "Tooltip 2".to_string(),
+                anchor_x: 10,
+                anchor_y: 5,
+            },
+            None,
+        );
+
+        // First hover
+        assert!(registry.update_hover(2, 2));
+        assert_eq!(registry.get_tooltip_info(), Some(("Tooltip 1", 0, 5)));
+
+        // Move to second tooltip - should trigger redraw
+        assert!(registry.update_hover(12, 2));
+        assert_eq!(registry.get_tooltip_info(), Some(("Tooltip 2", 10, 5)));
+
+        // Move to no tooltip - should trigger redraw
+        assert!(registry.update_hover(50, 50));
+        assert_eq!(registry.get_tooltip_info(), None);
     }
 }

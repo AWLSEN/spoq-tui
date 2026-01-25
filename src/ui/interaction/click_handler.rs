@@ -174,6 +174,15 @@ pub fn handle_click_action(app: &mut App, action: ClickAction) {
             app.dashboard.expand_thread(&thread_id, 5);
             tracing::debug!("Click: ViewFullPlan(thread_id={})", thread_id);
         }
+
+        // =====================================================================
+        // Tooltip Hover
+        // =====================================================================
+        ClickAction::HoverInfoIcon { .. } => {
+            // Hover actions are handled by the registry's update_hover() method.
+            // Clicking an info icon is a no-op (tooltips are hover-only).
+            tracing::debug!("Click: HoverInfoIcon (no-op)");
+        }
     }
 }
 
@@ -266,5 +275,23 @@ mod tests {
             &mut app,
             ClickAction::ViewFullPlan("test-thread".to_string()),
         );
+    }
+
+    #[test]
+    fn test_handle_hover_info_icon_no_panic() {
+        let mut app = create_test_app();
+
+        // Clicking a hover info icon should be a no-op (tooltips are hover-only)
+        handle_click_action(
+            &mut app,
+            ClickAction::HoverInfoIcon {
+                content: "Test tooltip".to_string(),
+                anchor_x: 10,
+                anchor_y: 20,
+            },
+        );
+
+        // Should still mark dirty
+        assert!(app.needs_redraw);
     }
 }

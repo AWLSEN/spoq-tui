@@ -112,10 +112,18 @@ pub fn render(
     render_text(buf, x, y, &status_text, status_style, area);
     x += status_width;
 
-    // Progress column (only if running and progress is present)
-    if thread.status == ThreadStatus::Running {
+    // Progress column: show for Running threads, or Exec mode threads that are Running/Waiting
+    let show_progress = thread.status == ThreadStatus::Running
+        || (thread.mode == ThreadMode::Exec && thread.status == ThreadStatus::Waiting);
+
+    if show_progress {
         if let Some(ref progress) = thread.progress {
-            let progress_text = render_progress(progress.current, progress.total);
+            // For exec mode, show circles only; otherwise show circles + fraction
+            let progress_text = if thread.mode == ThreadMode::Exec {
+                render_phase_circles(progress.current, progress.total)
+            } else {
+                render_progress(progress.current, progress.total)
+            };
             let progress_text = truncate(&progress_text, progress_width.saturating_sub(1) as usize);
             let progress_style = Style::default().fg(ctx.theme.accent);
             render_text(buf, x, y, &progress_text, progress_style, area);
