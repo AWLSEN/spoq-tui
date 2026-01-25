@@ -29,6 +29,7 @@ use ratatui::{
 };
 
 use crate::models::dashboard::PlanSummary;
+use crate::state::dashboard::DashboardQuestionState;
 use crate::ui::dashboard::plan_card;
 use crate::ui::dashboard::question_card::{self, QuestionRenderConfig};
 use crate::ui::dashboard::{OverlayState, RenderContext};
@@ -130,6 +131,7 @@ pub fn render(
                 thread_title,
                 repository,
                 question_data.as_ref(),
+                ctx.question_state,
                 registry,
             );
         }
@@ -253,29 +255,63 @@ fn render_question_content(
     title: &str,
     repo: &str,
     question_data: Option<&crate::state::session::AskUserQuestionData>,
+    question_state: Option<&DashboardQuestionState>,
     registry: &mut HitAreaRegistry,
 ) {
-    // Extract question info from question_data
+    // Get tab index from question state, default to 0
+    let tab_index = question_state.map(|s| s.tab_index).unwrap_or(0);
+
+    // Extract tab headers from all questions
+    let tab_headers: Vec<String> = question_data
+        .map(|qd| qd.questions.iter().map(|q| q.header.clone()).collect())
+        .unwrap_or_default();
+
+    // Extract question info for the current tab
     let (question_text, option_labels, multi_select) = question_data
-        .and_then(|qd| qd.questions.first())
+        .and_then(|qd| qd.questions.get(tab_index))
         .map(|q| {
             let labels: Vec<String> = q.options.iter().map(|o| o.label.clone()).collect();
             (q.question.clone(), labels, q.multi_select)
         })
         .unwrap_or_else(|| (String::new(), vec![], false));
 
+    // Get UI state for current question from question_state
+    let selected_index = question_state
+        .and_then(|s| s.selections.get(tab_index).copied())
+        .flatten();
+
+    let multi_selections_owned: Vec<bool> = question_state
+        .and_then(|s| s.multi_selections.get(tab_index).cloned())
+        .unwrap_or_default();
+
+    let other_input = question_state
+        .and_then(|s| s.other_texts.get(tab_index))
+        .map(|s| s.as_str())
+        .unwrap_or("");
+
+    let other_selected = question_state
+        .map(|s| s.selections.get(tab_index).copied().flatten().is_none())
+        .unwrap_or(false);
+
+    let other_active = question_state.map(|s| s.other_active).unwrap_or(false);
+
+    let tabs_answered: Vec<bool> = question_state
+        .map(|s| s.answered.clone())
+        .unwrap_or_default();
+
     // Build the render config
-    // Note: In a full implementation, these would come from the question state
-    // For now, we use defaults since the state isn't passed through RenderContext
     let config = QuestionRenderConfig {
         question: &question_text,
         options: &option_labels,
-        selected_index: Some(0), // Default to first option
+        selected_index: if other_selected { None } else { selected_index.or(Some(0)) },
         multi_select,
-        multi_selections: &[], // Would come from question state
-        other_input: "",
-        other_selected: false,
-        timer_seconds: None, // Would come from timer state
+        multi_selections: &multi_selections_owned,
+        other_input: if other_active { other_input } else { "" },
+        other_selected,
+        timer_seconds: None,
+        tab_headers: &tab_headers,
+        current_tab: tab_index,
+        tabs_answered: &tabs_answered,
     };
 
     question_card::render_question(frame, area, thread_id, title, repo, &config, registry);
@@ -615,6 +651,7 @@ mod tests {
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         let mut registry = HitAreaRegistry::new();
@@ -659,6 +696,7 @@ mod tests {
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         let mut registry = HitAreaRegistry::new();
@@ -701,6 +739,7 @@ mod tests {
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         let mut registry = HitAreaRegistry::new();
@@ -742,6 +781,7 @@ mod tests {
             overlay: Some(&overlay),
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         let mut registry = HitAreaRegistry::new();

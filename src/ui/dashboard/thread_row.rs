@@ -769,6 +769,7 @@ mod tests {
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         terminal
@@ -866,6 +867,7 @@ mod tests {
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         terminal
@@ -952,6 +954,7 @@ mod tests {
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         terminal
@@ -1022,6 +1025,7 @@ mod tests {
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         terminal
@@ -1102,6 +1106,7 @@ mod tests {
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         terminal
@@ -1208,6 +1213,7 @@ mod tests {
                 overlay: None,
                 system_stats: &system_stats,
                 theme: &theme,
+                question_state: None,
             };
 
             terminal
@@ -1283,6 +1289,7 @@ mod tests {
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         terminal

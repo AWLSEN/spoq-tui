@@ -306,6 +306,7 @@ mod tests {
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
+            question_state: None,
         };
 
         // Create registry and register a tooltip hover area

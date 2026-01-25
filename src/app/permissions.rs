@@ -616,6 +616,50 @@ impl App {
         true
     }
 
+    // ========================================================================
+    // Dashboard Question Submission
+    // ========================================================================
+
+    /// Submit dashboard question response via WebSocket
+    ///
+    /// Called when user confirms selection in dashboard question overlay.
+    /// Collects answers from the dashboard question state and sends via WebSocket.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread this question belongs to
+    /// * `request_id` - The WebSocket request ID for the response
+    /// * `answers` - The collected answers (question -> answer)
+    ///
+    /// Response format: `{type: "command_response", request_id, result: {status: "success", data: {allowed: true, message: answers_json}}}`
+    pub fn submit_dashboard_question(
+        &mut self,
+        thread_id: &str,
+        request_id: &str,
+        answers: std::collections::HashMap<String, String>,
+    ) {
+        info!(
+            "Submitting dashboard question response for thread {} (request_id: {})",
+            thread_id, request_id
+        );
+
+        // Send the response via WebSocket
+        self.send_question_response(request_id, answers);
+
+        // Clear the pending question data for this thread
+        self.dashboard.clear_pending_question(thread_id);
+
+        // Collapse the overlay
+        self.dashboard.collapse_overlay();
+
+        // Mark UI as dirty
+        self.mark_dirty();
+
+        debug!(
+            "Dashboard question submitted and overlay closed for thread {}",
+            thread_id
+        );
+    }
+
     /// Send question answers via WebSocket
     fn send_question_response(
         &self,
@@ -1445,5 +1489,126 @@ mod tests {
         // Since second question is not answered, should advance to it
         assert!(!result); // Not submitted yet
         assert_eq!(app.question_state.tab_index, 1); // Back to unanswered question
+    }
+
+    // ============= Dashboard Question Submission Tests =============
+
+    #[tokio::test]
+    async fn test_submit_dashboard_question_sends_ws_message() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let (mut app, mut rx) = create_test_app_with_ws();
+
+        // Set up pending question in dashboard
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which option?".to_string(),
+                header: "Options".to_string(),
+                options: vec![QuestionOption {
+                    label: "Option A".to_string(),
+                    description: "First option".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+        app.dashboard
+            .set_pending_question("test-thread", "req-dashboard".to_string(), question_data);
+
+        // Prepare answers
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Which option?".to_string(), "Option A".to_string());
+
+        // Submit the question
+        app.submit_dashboard_question("test-thread", "req-dashboard", answers);
+
+        // Verify WebSocket message was sent
+        let msg = rx.recv().await.unwrap();
+        let resp = extract_command_response(msg);
+        assert_eq!(resp.request_id, "req-dashboard");
+        assert_eq!(resp.result.status, "success");
+        assert!(resp.result.data.allowed); // Always true for questions
+        assert!(resp.result.data.message.is_some());
+
+        // Verify message contains the answer as JSON
+        let message = resp.result.data.message.unwrap();
+        assert!(message.contains("Option A"));
+
+        // Verify pending question is cleared
+        assert!(app.dashboard.get_pending_question("test-thread").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_submit_dashboard_question_closes_overlay() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+        use crate::models::{Thread, ThreadMode, ThreadType};
+        use chrono::Utc;
+
+        let (mut app, _rx) = create_test_app_with_ws();
+
+        // Add a thread and set pending question
+        let thread = Thread {
+            id: "t1".to_string(),
+            title: "Test Thread".to_string(),
+            description: None,
+            preview: String::new(),
+            updated_at: Utc::now(),
+            thread_type: ThreadType::Conversation,
+            mode: ThreadMode::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
+            working_directory: None,
+            status: None,
+            verified: None,
+            verified_at: None,
+        };
+        app.dashboard.add_thread(thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Test?".to_string(),
+                header: "Test".to_string(),
+                options: vec![QuestionOption {
+                    label: "A".to_string(),
+                    description: "Option A".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+        app.dashboard
+            .set_pending_question("t1", "req-overlay".to_string(), question_data);
+
+        // Expand thread to open overlay
+        app.dashboard.expand_thread("t1", 10);
+        assert!(app.dashboard.overlay().is_some());
+
+        // Submit question
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Test?".to_string(), "A".to_string());
+        app.submit_dashboard_question("t1", "req-overlay", answers);
+
+        // Verify overlay is closed
+        assert!(app.dashboard.overlay().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_submit_dashboard_question_multi_select_comma_separated() {
+        let (mut app, mut rx) = create_test_app_with_ws();
+
+        // Prepare multi-select answers (comma-separated)
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Select features".to_string(), "Feature A, Feature B".to_string());
+
+        // Submit
+        app.submit_dashboard_question("t1", "req-multi", answers);
+
+        // Verify message contains comma-separated values
+        let msg = rx.recv().await.unwrap();
+        let resp = extract_command_response(msg);
+        let message = resp.result.data.message.unwrap();
+        assert!(message.contains("Feature A, Feature B"));
     }
 }

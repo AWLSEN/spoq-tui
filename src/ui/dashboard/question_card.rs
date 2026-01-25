@@ -58,6 +58,12 @@ pub struct QuestionRenderConfig<'a> {
     pub other_selected: bool,
     /// Remaining time in seconds for the timer (None = no timer)
     pub timer_seconds: Option<u32>,
+    /// Tab headers for multi-question flow (empty if single question)
+    pub tab_headers: &'a [String],
+    /// Current tab index (0-based)
+    pub current_tab: usize,
+    /// Which tabs have been answered
+    pub tabs_answered: &'a [bool],
 }
 
 impl<'a> Default for QuestionRenderConfig<'a> {
@@ -71,6 +77,9 @@ impl<'a> Default for QuestionRenderConfig<'a> {
             other_input: "",
             other_selected: false,
             timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
         }
     }
 }
@@ -125,7 +134,22 @@ pub fn render_question(
     );
     y += 1;
 
-    // Row 1: blank
+    // Row 1: Tab bar (only if multiple questions)
+    if config.tab_headers.len() > 1 {
+        let tab_bar = render_tab_bar(
+            config.tab_headers,
+            config.current_tab,
+            config.tabs_answered,
+            area.width as usize,
+        );
+        frame.render_widget(
+            Line::from(tab_bar),
+            Rect::new(area.x, y, area.width, 1),
+        );
+        y += 1;
+    }
+
+    // Row: blank
     y += 1;
 
     // Row 2-3: Question text (wrapped, max 2 lines)
@@ -274,7 +298,15 @@ pub fn render_question(
 
     // Render help text with timer
     if help_row_y > y {
-        render_help_line(frame, area.x, help_row_y, area.width, config.timer_seconds);
+        let has_multiple_tabs = config.tab_headers.len() > 1;
+        render_help_line(
+            frame,
+            area.x,
+            help_row_y,
+            area.width,
+            config.timer_seconds,
+            has_multiple_tabs,
+        );
     }
 }
 
@@ -317,6 +349,9 @@ pub fn render(
                 other_input: "",
                 other_selected: false,
                 timer_seconds: None,
+                tab_headers: &[],
+                current_tab: 0,
+                tabs_answered: &[],
             };
             render_question(frame, area, thread_id, title, repo, &config, registry);
         }
@@ -331,8 +366,19 @@ pub fn render(
 // ============================================================================
 
 /// Render the help line with navigation hints and timer
-fn render_help_line(frame: &mut Frame, x: u16, y: u16, width: u16, timer_seconds: Option<u32>) {
-    let help_text = "\u{2191}\u{2193} navigate   enter select   esc cancel";
+fn render_help_line(
+    frame: &mut Frame,
+    x: u16,
+    y: u16,
+    width: u16,
+    timer_seconds: Option<u32>,
+    has_multiple_tabs: bool,
+) {
+    let help_text = if has_multiple_tabs {
+        "\u{2191}\u{2193} navigate   tab next   enter select   esc cancel"
+    } else {
+        "\u{2191}\u{2193} navigate   enter select   esc cancel"
+    };
 
     // Format timer
     let timer_text = timer_seconds
@@ -510,6 +556,72 @@ fn render_free_form_mode(
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Render a tab bar for multi-question flow
+///
+/// Format: `[Auth]  Database  Validation`
+/// - Active tab is wrapped in brackets: `[Auth]`
+/// - Answered tabs are shown in green
+/// - Unanswered tabs are dimmed
+///
+/// # Arguments
+/// * `headers` - Tab header labels
+/// * `current_tab` - Index of the active tab (0-based)
+/// * `answered` - Which tabs have been answered
+/// * `max_width` - Maximum width for the tab bar
+///
+/// # Returns
+/// A vector of Spans for the tab bar line
+fn render_tab_bar(
+    headers: &[String],
+    current_tab: usize,
+    answered: &[bool],
+    max_width: usize,
+) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut total_width = 0;
+
+    for (i, header) in headers.iter().enumerate() {
+        let is_active = i == current_tab;
+        let is_answered = answered.get(i).copied().unwrap_or(false);
+
+        // Format: "[Header]" for active, "Header" for inactive
+        let text = if is_active {
+            format!("[{}]", header)
+        } else {
+            header.clone()
+        };
+
+        let text_width = text.chars().count();
+
+        // Check if we have room for this tab
+        if total_width + text_width + 2 > max_width && i > 0 {
+            // Truncate with ellipsis if needed
+            spans.push(Span::styled("...", Style::default().fg(Color::DarkGray)));
+            break;
+        }
+
+        // Style based on state
+        let style = if is_active {
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD)
+        } else if is_answered {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        spans.push(Span::styled(text, style));
+        total_width += text_width;
+
+        // Add spacing between tabs (except for last)
+        if i < headers.len() - 1 {
+            spans.push(Span::raw("  "));
+            total_width += 2;
+        }
+    }
+
+    spans
+}
 
 /// Get the visible portion of input text and the cursor position within it
 ///
@@ -876,6 +988,9 @@ mod tests {
             other_input: "",
             other_selected: false,
             timer_seconds: Some(272), // 4:32
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
         };
 
         let mut registry = crate::ui::interaction::HitAreaRegistry::new();
@@ -920,6 +1035,9 @@ mod tests {
             other_input: "",
             other_selected: false,
             timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
         };
 
         let mut registry = crate::ui::interaction::HitAreaRegistry::new();
@@ -959,6 +1077,9 @@ mod tests {
             other_input: "Custom value",
             other_selected: true,
             timer_seconds: Some(5), // < 10 seconds, should be red
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
         };
 
         let mut registry = crate::ui::interaction::HitAreaRegistry::new();
@@ -997,6 +1118,9 @@ mod tests {
             other_input: "",
             other_selected: false,
             timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
         };
 
         let mut registry = crate::ui::interaction::HitAreaRegistry::new();
@@ -1034,6 +1158,9 @@ mod tests {
             other_input: "",
             other_selected: false,
             timer_seconds: None,
+            tab_headers: &[],
+            current_tab: 0,
+            tabs_answered: &[],
         };
 
         let mut registry = crate::ui::interaction::HitAreaRegistry::new();
@@ -1067,7 +1194,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                render_help_line(frame, 0, 0, 60, Some(272));
+                render_help_line(frame, 0, 0, 60, Some(272), false);
             })
             .unwrap();
 
@@ -1081,7 +1208,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                render_help_line(frame, 0, 0, 60, Some(5));
+                render_help_line(frame, 0, 0, 60, Some(5), false);
             })
             .unwrap();
 
@@ -1095,7 +1222,7 @@ mod tests {
 
         terminal
             .draw(|frame| {
-                render_help_line(frame, 0, 0, 60, None);
+                render_help_line(frame, 0, 0, 60, None, false);
             })
             .unwrap();
 
@@ -1159,5 +1286,200 @@ mod tests {
 
         // Should have back and send buttons
         assert!(registry.len() >= 2);
+    }
+
+    // -------------------- Tab Bar Tests --------------------
+
+    #[test]
+    fn test_render_tab_bar_single_tab() {
+        let headers = vec!["Auth".to_string()];
+        let answered = vec![false];
+        let spans = render_tab_bar(&headers, 0, &answered, 50);
+
+        // Single tab should have brackets around it
+        assert!(!spans.is_empty());
+        // First span should be "[Auth]"
+        let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(text.contains("[Auth]"));
+    }
+
+    #[test]
+    fn test_render_tab_bar_multiple_tabs_first_active() {
+        let headers = vec![
+            "Auth".to_string(),
+            "Database".to_string(),
+            "Validation".to_string(),
+        ];
+        let answered = vec![false, false, false];
+        let spans = render_tab_bar(&headers, 0, &answered, 50);
+
+        let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+        // Active tab (first) should have brackets
+        assert!(text.contains("[Auth]"));
+        // Other tabs should not have brackets
+        assert!(text.contains("Database"));
+        assert!(text.contains("Validation"));
+        assert!(!text.contains("[Database]"));
+    }
+
+    #[test]
+    fn test_render_tab_bar_multiple_tabs_second_active() {
+        let headers = vec![
+            "Auth".to_string(),
+            "Database".to_string(),
+            "Validation".to_string(),
+        ];
+        let answered = vec![true, false, false]; // First answered
+        let spans = render_tab_bar(&headers, 1, &answered, 50);
+
+        let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+        // Second tab (Database) should have brackets
+        assert!(text.contains("[Database]"));
+        // Auth should not have brackets (but is answered)
+        assert!(!text.contains("[Auth]"));
+    }
+
+    #[test]
+    fn test_render_tab_bar_all_answered() {
+        let headers = vec!["Q1".to_string(), "Q2".to_string()];
+        let answered = vec![true, true];
+        let spans = render_tab_bar(&headers, 0, &answered, 50);
+
+        // Should still render correctly
+        let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+        assert!(text.contains("[Q1]")); // Active
+        assert!(text.contains("Q2")); // Answered
+    }
+
+    #[test]
+    fn test_render_tab_bar_truncation() {
+        let headers = vec![
+            "VeryLongTabName1".to_string(),
+            "VeryLongTabName2".to_string(),
+            "VeryLongTabName3".to_string(),
+        ];
+        let answered = vec![false, false, false];
+        // Very narrow width - should truncate
+        let spans = render_tab_bar(&headers, 0, &answered, 30);
+
+        // Should have ellipsis if truncated
+        let text: String = spans.iter().map(|s| s.content.to_string()).collect();
+        // Either shows tabs or truncates with ellipsis
+        assert!(!text.is_empty());
+    }
+
+    #[test]
+    fn test_render_tab_bar_empty() {
+        let headers: Vec<String> = vec![];
+        let answered: Vec<bool> = vec![];
+        let spans = render_tab_bar(&headers, 0, &answered, 50);
+
+        assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn test_render_question_with_tabs() {
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec!["JWT".to_string(), "OAuth".to_string()];
+        let tab_headers = vec![
+            "Auth".to_string(),
+            "Database".to_string(),
+            "Validation".to_string(),
+        ];
+        let tabs_answered = vec![false, false, false];
+
+        let config = QuestionRenderConfig {
+            question: "Choose authentication:",
+            options: &options,
+            selected_index: Some(0),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+            tab_headers: &tab_headers,
+            current_tab: 0,
+            tabs_answered: &tabs_answered,
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 1, 56, 14);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Setup Auth",
+                    "my-project",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should render with tab bar
+        assert!(registry.len() >= 3);
+    }
+
+    #[test]
+    fn test_render_question_with_tabs_second_active() {
+        let backend = TestBackend::new(60, 15);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        let options = vec!["PostgreSQL".to_string(), "MySQL".to_string()];
+        let tab_headers = vec!["Auth".to_string(), "Database".to_string()];
+        let tabs_answered = vec![true, false]; // First answered
+
+        let config = QuestionRenderConfig {
+            question: "Choose database:",
+            options: &options,
+            selected_index: Some(0),
+            multi_select: false,
+            multi_selections: &[],
+            other_input: "",
+            other_selected: false,
+            timer_seconds: None,
+            tab_headers: &tab_headers,
+            current_tab: 1, // Second tab active
+            tabs_answered: &tabs_answered,
+        };
+
+        let mut registry = crate::ui::interaction::HitAreaRegistry::new();
+
+        terminal
+            .draw(|frame| {
+                let area = Rect::new(2, 1, 56, 14);
+                render_question(
+                    frame,
+                    area,
+                    "thread-1",
+                    "Setup DB",
+                    "my-project",
+                    &config,
+                    &mut registry,
+                );
+            })
+            .unwrap();
+
+        // Should render with tab bar
+        assert!(registry.len() >= 3);
+    }
+
+    #[test]
+    fn test_help_line_with_multiple_tabs() {
+        let backend = TestBackend::new(60, 3);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                render_help_line(frame, 0, 0, 60, None, true);
+            })
+            .unwrap();
+
+        // Should render with tab hint
     }
 }

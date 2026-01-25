@@ -1043,8 +1043,8 @@ impl App {
                 request_id,
                 question_data,
             } => {
-                // Store the question data in dashboard state
-                self.dashboard.set_pending_question(&thread_id, question_data.clone());
+                // Store the question data in dashboard state (with request_id for WebSocket response)
+                self.dashboard.set_pending_question(&thread_id, request_id.clone(), question_data.clone());
 
                 // Emit StateChange for pending question
                 emit_debug(

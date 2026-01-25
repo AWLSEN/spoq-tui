@@ -5,6 +5,7 @@
 
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::ThreadMode;
+use crate::state::dashboard::DashboardQuestionState;
 use crate::state::session::AskUserQuestionData;
 
 // ============================================================================
@@ -358,6 +359,8 @@ pub struct RenderContext<'a> {
     pub system_stats: &'a super::SystemStats,
     /// Theme colors
     pub theme: &'a Theme,
+    /// Question navigation state for multi-question flow
+    pub question_state: Option<&'a DashboardQuestionState>,
 }
 
 impl<'a> RenderContext<'a> {
@@ -375,6 +378,7 @@ impl<'a> RenderContext<'a> {
             overlay: None,
             system_stats,
             theme,
+            question_state: None,
         }
     }
 
@@ -387,6 +391,12 @@ impl<'a> RenderContext<'a> {
     /// Set overlay state
     pub fn with_overlay(mut self, overlay: Option<&'a OverlayState>) -> Self {
         self.overlay = overlay;
+        self
+    }
+
+    /// Set question navigation state
+    pub fn with_question_state(mut self, state: Option<&'a DashboardQuestionState>) -> Self {
+        self.question_state = state;
         self
     }
 
