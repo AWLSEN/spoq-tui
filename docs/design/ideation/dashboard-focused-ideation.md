@@ -130,22 +130,67 @@ Short solid line (~10% width) on left side separates:
 
   ────────
 
-  API Endpoints          ~/api       exec       ●●●●○○○  4/7                       12m
-  Test Suite             ~/tui       exec       ●●○○○○○  2/5                        3m
-  Docs Generator         ~/docs      exec       ●●●●●○○  5/7                        8m
+  API Endpoints          ~/api       exec       Edit: handlers.rs                  12m
+  Test Suite             ~/tui       exec       Bash: npm test                      3m
+  Docs Generator         ~/docs      exec       Read: index.md                      8m
 ```
 
 ### Thread Row Structure
 
-| Field | Description | Examples |
-|-------|-------------|----------|
-| **Title** | Thread name | `Auth Refactor`, `API Endpoints` |
-| **Directory** | Repository path | `~/api`, `~/tui`, `~/docs` |
-| **Mode** | Thread type | `plan`, `normal`, `exec` |
-| **Status** | Current state | `waiting`, `question`, `done`, `paused` |
-| **Progress** | Phase indicator (exec only) | `●●●○○○ 3/6` |
-| **Time** | Duration or age | `12m`, `3h ago`, `2d ago` |
-| **Actions** | Context-specific buttons | `[approve]`, `[reject]`, `[answer]`, `[verify]` |
+**Non-Action Threads** (Working autonomously below separator):
+
+| Field | Width | Description | Examples |
+|-------|-------|-------------|----------|
+| **Title** | 30% | Thread name | `Auth Refactor`, `API Endpoints` |
+| **Repo** | 14% | Repository path | `~/api`, `~/tui`, `~/docs` |
+| **Mode** | 9% | Thread type | `plan`, `normal`, `exec` |
+| **Activity** | 27% | Current activity or status | `Read: schema.ts`, `Thinking...`, `done` |
+| **Time** | 10% | Duration or age | `12m`, `3h`, `2d` |
+
+**Action Threads** (Above separator, needs user input):
+
+| Field | Width | Description | Examples |
+|-------|-------|-------------|----------|
+| **Title** | 30% | Thread name | `Auth Refactor`, `Settings Page` |
+| **Repo** | 14% | Repository path | `~/api`, `~/tui` |
+| **Mode** | 9% | Thread type | `plan`, `normal` |
+| **Status** | 17% | Current state | `waiting`, `question` |
+| **Actions** | 20% | Context-specific buttons | `[approve] [reject]`, `[answer]` |
+
+### Activity Column Display Logic
+
+**For non-action threads** (working autonomously):
+
+| Thread State | Activity Shows | Data Source |
+|--------------|----------------|-------------|
+| Running + tool active | `Read: main.rs` | ToolExecuting.display_name |
+| Running + tool active | `Edit: schema.ts` | ToolExecuting.display_name |
+| Running + tool active | `Bash: npm test` | ToolExecuting.display_name |
+| Running + no tool | `Thinking...` | Fallback when no active tool |
+| Idle | `idle` | Status |
+| Done | `done` | Status |
+| Error | `error` | Status |
+
+**For action threads** (above separator):
+
+| Thread State | Display Mode |
+|--------------|--------------|
+| Waiting (plan approval) | Uses old layout: Status column + `[approve] [reject]` actions |
+| Question | Uses old layout: Status column + `[answer]` action |
+| Ready to test | Uses old layout: Status column + `[verify] [issue] [archive]` actions |
+
+### Example: New Column Layout for Non-Action Threads
+
+```
+Title (30%)       | Repo (14%) | Mode (9%) | Activity (27%)            | Time (10%)
+──────────────────────────────────────────────────────────────────────────────────────
+API Endpoints       ~/api        exec        Edit: handlers.rs              12m
+Auth Refactor       ~/api        plan        Read: schema.ts                 3m
+Settings Page       ~/tui        normal      Thinking...                     1m
+Test Runner         ~/test       exec        Bash: npm test                  5m
+DB Migration        ~/db         normal      idle                            3h
+Cache Layer         ~/api        done        done                            4h
+```
 
 ### Action Buttons by State
 
@@ -221,10 +266,10 @@ All interactions are touch/click-based. Keyboard shortcuts exist as accelerators
 ║                                                                                                ║
 ║  ────────                                                                                     ║
 ║                                                                                                ║
-║  API Endpoints          ~/api       exec       ●●●●○○○  4/7                           12m     ║
-║  Test Suite             ~/tui       exec       ●●○○○○○  2/5                            3m     ║
-║  Docs Generator         ~/docs      exec       ●●●●●○○  5/7                            8m     ║
-║  Search Index           ~/search    exec       ●●●○○○○  3/6                            5m     ║
+║  API Endpoints          ~/api       exec       Edit: handlers.rs                      12m     ║
+║  Test Suite             ~/tui       exec       Bash: npm test                          3m     ║
+║  Docs Generator         ~/docs      exec       Read: index.md                          8m     ║
+║  Search Index           ~/search    exec       Thinking...                             5m     ║
 ║                                                                                                ║
 ║                                                                                                ║
 ║  ────────────────────────────────────────────────────────────────────────────────────────     ║
@@ -257,12 +302,12 @@ All interactions are touch/click-based. Keyboard shortcuts exist as accelerators
 ║                                                                                                ║
 ║  ────────                                                                                     ║
 ║                                                                                                ║
-║  API Endpoints          ~/api       exec       ●●●●○○○  4/7                           12m     ║
-║  Test Suite             ~/tui       exec       ●●○○○○○  2/5                            3m     ║
-║  Docs Generator         ~/docs      exec       ●●●●●○○  5/7                            8m     ║
-║  Search Index           ~/search    exec       ●●●○○○○  3/6                            5m     ║
-║  Lint Fixes             ~/lib       exec       ●○○○○○○  1/6                            1m     ║
-║  DB Optimize            ~/db        exec       ●●●●○○○  4/7                            6m     ║
+║  API Endpoints          ~/api       exec       Edit: handlers.rs                      12m     ║
+║  Test Suite             ~/tui       exec       Bash: npm test                          3m     ║
+║  Docs Generator         ~/docs      exec       Read: index.md                          8m     ║
+║  Search Index           ~/search    exec       Thinking...                             5m     ║
+║  Lint Fixes             ~/lib       exec       Bash: cargo clippy                      1m     ║
+║  DB Optimize            ~/db        exec       Edit: migrations.sql                    6m     ║
 ║  + 15 more                                                                                    ║
 ║                                                                                                ║
 ║  ────────────────────────────────────────────────────────────────────────────────────────     ║
@@ -369,9 +414,9 @@ When no threads need user attention:
 ║                                                                                                ║
 ║  ────────                                                                                     ║
 ║                                                                                                ║
-║  API Endpoints          ~/api       exec       ●●●●○○○  4/7                           12m     ║
-║  Test Suite             ~/tui       exec       ●●○○○○○  2/5                            3m     ║
-║  Docs Generator         ~/docs      exec       ●●●●●○○  5/7                            8m     ║
+║  API Endpoints          ~/api       exec       Edit: handlers.rs                      12m     ║
+║  Test Suite             ~/tui       exec       Bash: npm test                          3m     ║
+║  Docs Generator         ~/docs      exec       Read: index.md                          8m     ║
 ║                                                                                                ║
 ║  ────────────────────────────────────────────────────────────────────────────────────────     ║
 ║  ╭────────────────────────────────────────────────────────────────────────────────────────╮   ║
@@ -406,7 +451,7 @@ When no threads need user attention:
 ║                                                                                                ║
 ║  ────────                                                                                     ║
 ║                                                                                                ║
-║  API Endpoints          ~/api       exec       ●●●●○○○  4/7                           12m     ║
+║  API Endpoints          ~/api       exec       Edit: handlers.rs                      12m     ║
 ║  + 114 more                                                                                   ║
 ║                                                                                                ║
 ║  ────────────────────────────────────────────────────────────────────────────────────────     ║
@@ -435,7 +480,7 @@ When a thread row expands (to show question, plan details, etc.), it **overlays*
 
   ────────
 
-  API Endpoints          ~/api       exec       ●●●●○○○  4/7                           12m
+  API Endpoints          ~/api       exec       Edit: handlers.rs                      12m
 ```
 
 ### Expanded: Question with Options
