@@ -448,6 +448,17 @@ mod tests {
         assert_eq!(result, "●●●●●●●●●●○○○○○○○○○○ 10/20");
     }
 
+    // -------------------- render_phase_circles Tests --------------------
+
+    #[test]
+    fn test_render_phase_circles() {
+        assert_eq!(render_phase_circles(3, 6), "●●●○○○");
+        assert_eq!(render_phase_circles(0, 5), "○○○○○");
+        assert_eq!(render_phase_circles(4, 4), "●●●●");
+        assert_eq!(render_phase_circles(0, 0), "");
+        assert_eq!(render_phase_circles(1, 3), "●○○");
+    }
+
     // -------------------- truncate Tests --------------------
 
     #[test]
