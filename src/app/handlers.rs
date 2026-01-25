@@ -1037,6 +1037,31 @@ impl App {
                     Some(&thread_id),
                 );
             }
+
+            AppMessage::PendingQuestion {
+                thread_id,
+                request_id,
+                question_data,
+            } => {
+                // Store the question data in dashboard state
+                self.dashboard.set_pending_question(&thread_id, question_data.clone());
+
+                // Emit StateChange for pending question
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::DashboardState,
+                        "Pending question stored",
+                        format!(
+                            "thread_id: {}, request_id: {}, questions: {}",
+                            thread_id,
+                            request_id,
+                            question_data.questions.len()
+                        ),
+                    )),
+                    Some(&thread_id),
+                );
+            }
         }
     }
 }

@@ -84,6 +84,7 @@ fn test_serialize_command_response_without_message() {
 fn test_roundtrip_serialization() {
     let original = WsIncomingMessage::PermissionRequest(WsPermissionRequest {
         request_id: "req-789".to_string(),
+        thread_id: Some("thread-456".to_string()),
         tool_name: "Read".to_string(),
         tool_input: serde_json::json!({"file_path": "/etc/hosts"}),
         description: "Read hosts file".to_string(),
@@ -96,6 +97,7 @@ fn test_roundtrip_serialization() {
     match parsed {
         WsIncomingMessage::PermissionRequest(req) => {
             assert_eq!(req.request_id, "req-789");
+            assert_eq!(req.thread_id, Some("thread-456".to_string()));
             assert_eq!(req.tool_name, "Read");
             assert_eq!(req.description, "Read hosts file");
             assert_eq!(req.timestamp, 9876543210);

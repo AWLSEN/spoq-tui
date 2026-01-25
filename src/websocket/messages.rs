@@ -318,6 +318,72 @@ mod tests {
                 assert_eq!(req.tool_name, "Bash");
                 assert_eq!(req.description, "List directory contents");
                 assert_eq!(req.timestamp, 1234567890);
+                // thread_id should be None when not present
+                assert!(req.thread_id.is_none());
+            }
+            _ => panic!("Unexpected message type"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_permission_request_with_thread_id() {
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "perm-uuid",
+            "thread_id": "thread-123",
+            "tool_name": "AskUserQuestion",
+            "tool_input": {
+                "questions": [
+                    {
+                        "question": "Which authentication method?",
+                        "header": "Auth",
+                        "options": [
+                            {"label": "JWT", "description": "Stateless tokens"},
+                            {"label": "Sessions", "description": "Server-side"}
+                        ],
+                        "multiSelect": false
+                    }
+                ],
+                "answers": {}
+            },
+            "description": "Ask user about authentication",
+            "timestamp": 1234567890
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PermissionRequest(req) => {
+                assert_eq!(req.request_id, "perm-uuid");
+                assert_eq!(req.thread_id, Some("thread-123".to_string()));
+                assert_eq!(req.tool_name, "AskUserQuestion");
+                assert_eq!(req.description, "Ask user about authentication");
+                assert_eq!(req.timestamp, 1234567890);
+                // Verify tool_input structure
+                assert!(req.tool_input["questions"].is_array());
+                assert_eq!(req.tool_input["questions"].as_array().unwrap().len(), 1);
+            }
+            _ => panic!("Unexpected message type"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_permission_request_with_null_thread_id() {
+        // Test that null thread_id deserializes to None
+        let json = r#"{
+            "type": "permission_request",
+            "request_id": "req-null-thread",
+            "thread_id": null,
+            "tool_name": "Bash",
+            "tool_input": {},
+            "description": "Test",
+            "timestamp": 1234567890
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PermissionRequest(req) => {
+                assert_eq!(req.request_id, "req-null-thread");
+                assert!(req.thread_id.is_none());
             }
             _ => panic!("Unexpected message type"),
         }
@@ -375,6 +441,7 @@ mod tests {
     fn test_roundtrip_permission_request() {
         let original = WsIncomingMessage::PermissionRequest(WsPermissionRequest {
             request_id: "req-789".to_string(),
+            thread_id: Some("thread-456".to_string()),
             tool_name: "Read".to_string(),
             tool_input: serde_json::json!({"file_path": "/etc/hosts"}),
             description: "Read hosts file".to_string(),
@@ -387,6 +454,7 @@ mod tests {
         match parsed {
             WsIncomingMessage::PermissionRequest(req) => {
                 assert_eq!(req.request_id, "req-789");
+                assert_eq!(req.thread_id, Some("thread-456".to_string()));
                 assert_eq!(req.tool_name, "Read");
                 assert_eq!(req.description, "Read hosts file");
                 assert_eq!(req.timestamp, 9876543210);
@@ -513,6 +581,7 @@ mod tests {
     fn test_ws_permission_request_clone() {
         let req = WsPermissionRequest {
             request_id: "req-clone".to_string(),
+            thread_id: Some("thread-123".to_string()),
             tool_name: "Test".to_string(),
             tool_input: serde_json::json!({"key": "value"}),
             description: "Test description".to_string(),
@@ -521,6 +590,7 @@ mod tests {
 
         let cloned = req.clone();
         assert_eq!(req.request_id, cloned.request_id);
+        assert_eq!(req.thread_id, cloned.thread_id);
         assert_eq!(req.tool_name, cloned.tool_name);
         assert_eq!(req.description, cloned.description);
         assert_eq!(req.timestamp, cloned.timestamp);
@@ -530,6 +600,7 @@ mod tests {
     fn test_ws_permission_request_debug() {
         let req = WsPermissionRequest {
             request_id: "req-debug".to_string(),
+            thread_id: None,
             tool_name: "DebugTool".to_string(),
             tool_input: serde_json::json!({"test": true}),
             description: "Debug test".to_string(),
