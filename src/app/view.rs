@@ -71,22 +71,6 @@ impl App {
 
         // Build dashboard view state
         let dashboard = DashboardViewState {
-            filter: self.dashboard.filter().and_then(|f| {
-                // Convert from ui::dashboard::FilterState to view_state::dashboard_view::FilterState
-                // Note: ui::dashboard::FilterState::All maps to None in the view state
-                match f {
-                    crate::ui::dashboard::FilterState::All => None,
-                    crate::ui::dashboard::FilterState::Working => {
-                        Some(crate::view_state::dashboard_view::FilterState::Working)
-                    }
-                    crate::ui::dashboard::FilterState::ReadyToTest => {
-                        Some(crate::view_state::dashboard_view::FilterState::ReadyToTest)
-                    }
-                    crate::ui::dashboard::FilterState::Idle => {
-                        Some(crate::view_state::dashboard_view::FilterState::Idle)
-                    }
-                }
-            }),
             has_overlay: self.dashboard.overlay().is_some(),
             thread_count: self.dashboard.thread_count(),
             action_count: self

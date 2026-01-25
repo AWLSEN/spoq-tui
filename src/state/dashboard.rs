@@ -7,7 +7,7 @@ use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor}
 use crate::models::{Thread, ThreadMode};
 use crate::state::session::AskUserQuestionData;
 use crate::view_state::{
-    FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
+    OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
 use crate::websocket::messages::PhaseStatus;
 use std::collections::{HashMap, HashSet};
@@ -277,8 +277,6 @@ pub struct DashboardState {
     /// Stores (request_id, question_data) tuple for WebSocket response
     pending_questions: HashMap<String, (String, AskUserQuestionData)>,
 
-    /// Current filter state (None means show all)
-    filter: Option<FilterState>,
     /// Current overlay state (if an overlay is open)
     overlay: Option<OverlayState>,
     /// Navigation state for question overlay (when Question overlay is open)
@@ -309,7 +307,6 @@ impl DashboardState {
             locally_verified: HashSet::new(),
             phase_progress: HashMap::new(),
             pending_questions: HashMap::new(),
-            filter: None,
             overlay: None,
             question_state: None,
             aggregate: Aggregate::new(),
@@ -562,25 +559,6 @@ impl DashboardState {
     // ========================================================================
     // UI State (from click handlers)
     // ========================================================================
-
-    /// Toggle a filter on/off (set if different, clear if same)
-    pub fn toggle_filter(&mut self, filter: FilterState) {
-        if self.filter == Some(filter) {
-            self.filter = None;
-        } else {
-            self.filter = Some(filter);
-        }
-    }
-
-    /// Clear any active filter
-    pub fn clear_filter(&mut self) {
-        self.filter = None;
-    }
-
-    /// Get current filter state
-    pub fn filter(&self) -> Option<FilterState> {
-        self.filter
-    }
 
     /// Expand a thread to show its overlay
     ///
@@ -1011,8 +989,7 @@ impl DashboardState {
         // Ensure thread views are fresh before building context
         self.compute_thread_views();
 
-        RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme, repos)
-            .with_filter(self.filter)
+        RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme)
             .with_overlay(self.overlay.as_ref())
             .with_question_state(self.question_state.as_ref())
     }
@@ -1209,45 +1186,6 @@ mod tests {
             verified: None,
             verified_at: None,
         }
-    }
-
-    // -------------------- Filter Tests --------------------
-
-    #[test]
-    fn test_toggle_filter_sets_filter() {
-        let mut state = DashboardState::new();
-        assert_eq!(state.filter(), None);
-
-        state.toggle_filter(FilterState::Working);
-        assert_eq!(state.filter(), Some(FilterState::Working));
-    }
-
-    #[test]
-    fn test_toggle_filter_clears_same_filter() {
-        let mut state = DashboardState::new();
-        state.toggle_filter(FilterState::Working);
-        assert_eq!(state.filter(), Some(FilterState::Working));
-
-        state.toggle_filter(FilterState::Working);
-        assert_eq!(state.filter(), None);
-    }
-
-    #[test]
-    fn test_toggle_filter_switches_filter() {
-        let mut state = DashboardState::new();
-        state.toggle_filter(FilterState::Working);
-        assert_eq!(state.filter(), Some(FilterState::Working));
-
-        state.toggle_filter(FilterState::Idle);
-        assert_eq!(state.filter(), Some(FilterState::Idle));
-    }
-
-    #[test]
-    fn test_clear_filter() {
-        let mut state = DashboardState::new();
-        state.toggle_filter(FilterState::Working);
-        state.clear_filter();
-        assert_eq!(state.filter(), None);
     }
 
     // -------------------- Overlay Tests --------------------

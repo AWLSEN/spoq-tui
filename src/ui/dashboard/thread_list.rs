@@ -1,14 +1,12 @@
 //! Thread list component for the dashboard
 //!
 //! Renders the list of threads with a separator between need-action and autonomous threads.
-//! Supports both split view (for All filter) and filtered flat view.
 
 use ratatui::{layout::Rect, style::Style, text::Span, Frame};
 
 use super::states;
 use super::thread_row;
-use super::{FilterState, RenderContext, ThreadView};
-use crate::models::dashboard::ThreadStatus;
+use super::{RenderContext, ThreadView};
 use crate::ui::interaction::HitAreaRegistry;
 
 // ============================================================================
@@ -35,27 +33,19 @@ const THREAD_LIST_WIDTH_PERCENT: f32 = 0.915;
 ///
 /// # Layout
 ///
-/// Two modes based on filter state:
-///
-/// ## Split View (None or All filter)
+/// Split view showing all threads:
 /// ```text
 /// [need_action threads - max 5]
 /// [+ N more if needed]
-/// [separator line ────────]
+/// [separator line --------]
 /// [autonomous threads - fill remaining space]
-/// [+ N more if needed]
-/// ```
-///
-/// ## Filtered View (Working, ReadyToTest, Idle filters)
-/// ```text
-/// [filtered threads - scrollable list]
 /// [+ N more if needed]
 /// ```
 ///
 /// # Arguments
 /// * `frame` - The ratatui frame to render into
 /// * `area` - The rectangle area allocated for the thread list
-/// * `ctx` - The render context containing thread views and filter state
+/// * `ctx` - The render context containing thread views
 /// * `registry` - Hit area registry for click handling
 pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut HitAreaRegistry) {
     // Check minimum height requirement
@@ -66,24 +56,15 @@ pub fn render(frame: &mut Frame, area: Rect, ctx: &RenderContext, registry: &mut
     // Calculate centered area with 84% width
     let centered_area = calculate_centered_area(area);
 
-    match ctx.filter {
-        None | Some(FilterState::All) => {
-            // Split mode - separate need_action from autonomous
-            render_split_view(frame, centered_area, ctx, registry);
-        }
-        Some(_) => {
-            // Flat mode - filtered list
-            render_filtered_view(frame, centered_area, ctx, registry);
-        }
-    }
+    // Always use split view - no filter modes
+    render_split_view(frame, centered_area, ctx, registry);
 }
 
 /// Calculate a horizontally centered area with 84% width
 ///
 /// Returns a centered rectangle using 84% of the available width (8% margin on each side).
-/// This matches the status bar's width calculation for consistent horizontal alignment.
 fn calculate_centered_area(area: Rect) -> Rect {
-    // Calculate 84% width (8% margin on each side), matching status bar
+    // Calculate 84% width (8% margin on each side)
     let card_width = (area.width as f32 * THREAD_LIST_WIDTH_PERCENT).round() as u16;
     let left_padding = (area.width - card_width) / 2;
 
@@ -91,7 +72,7 @@ fn calculate_centered_area(area: Rect) -> Rect {
 }
 
 // ============================================================================
-// Split View (All/None filter)
+// Split View
 // ============================================================================
 
 /// Render split view with need-action and autonomous sections
@@ -192,68 +173,6 @@ fn render_split_view(
 }
 
 // ============================================================================
-// Filtered View
-// ============================================================================
-
-/// Render filtered flat view based on filter state
-fn render_filtered_view(
-    frame: &mut Frame,
-    area: Rect,
-    ctx: &RenderContext,
-    registry: &mut HitAreaRegistry,
-) {
-    // Filter threads based on ctx.filter
-    let filtered_threads: Vec<&ThreadView> = ctx
-        .threads
-        .iter()
-        .filter(|t| match ctx.filter {
-            Some(FilterState::Working) => {
-                matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting)
-            }
-            Some(FilterState::ReadyToTest) => t.status == ThreadStatus::Done,
-            Some(FilterState::Idle) => {
-                matches!(t.status, ThreadStatus::Idle | ThreadStatus::Error)
-            }
-            _ => true,
-        })
-        .collect();
-
-    // No separator, scrollable list (for now render without scroll state)
-    let max_visible = area.height as usize;
-    for (i, thread) in filtered_threads.iter().take(max_visible).enumerate() {
-        let row_rect = Rect::new(area.x, area.y + i as u16, area.width, 1);
-        thread_row::render(frame, row_rect, thread, ctx, registry);
-    }
-
-    // Show "+ N more" if there are more threads than visible
-    if filtered_threads.len() > max_visible {
-        let more_text = format!("+ {} more", filtered_threads.len() - max_visible);
-        // Show at bottom of area, overwriting the last row if needed
-        let row_y = area.bottom().saturating_sub(1);
-        frame.render_widget(
-            Span::styled(more_text, Style::default()),
-            Rect::new(area.x + 2, row_y, area.width.saturating_sub(2), 1),
-        );
-    }
-
-    // Show empty state message if no threads match filter
-    if filtered_threads.is_empty() {
-        let empty_text = match ctx.filter {
-            Some(FilterState::Working) => "No working threads",
-            Some(FilterState::ReadyToTest) => "No threads ready to test",
-            Some(FilterState::Idle) => "No idle threads",
-            _ => "No threads",
-        };
-        let text_width = empty_text.len() as u16;
-        let x_offset = area.width.saturating_sub(text_width) / 2;
-        frame.render_widget(
-            Span::raw(empty_text),
-            Rect::new(area.x + x_offset, area.y, text_width, 1),
-        );
-    }
-}
-
-// ============================================================================
 // Tests
 // ============================================================================
 
@@ -349,82 +268,6 @@ mod tests {
         assert_eq!(autonomous.len(), 0);
     }
 
-    // -------------------- Filter Tests --------------------
-
-    #[test]
-    fn test_filter_threads_working() {
-        let threads = make_test_threads();
-        let filtered: Vec<&ThreadView> = threads
-            .iter()
-            .filter(|t| matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting))
-            .collect();
-
-        // Should include Running and Waiting threads
-        // From make_test_threads: 2 Waiting (id=1,3) + 1 Running (id=4) = 3 working threads
-        assert_eq!(filtered.len(), 3);
-        for t in &filtered {
-            assert!(
-                matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting),
-                "Expected working status for thread {}",
-                t.id
-            );
-        }
-    }
-
-    #[test]
-    fn test_filter_threads_ready_to_test() {
-        let threads = make_test_threads();
-        let filtered: Vec<&ThreadView> = threads
-            .iter()
-            .filter(|t| t.status == ThreadStatus::Done)
-            .collect();
-
-        // Should only include Done threads
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].status, ThreadStatus::Done);
-    }
-
-    #[test]
-    fn test_filter_threads_idle() {
-        let threads = make_test_threads();
-        let filtered: Vec<&ThreadView> = threads
-            .iter()
-            .filter(|t| matches!(t.status, ThreadStatus::Idle | ThreadStatus::Error))
-            .collect();
-
-        // Should include Idle and Error threads
-        assert_eq!(filtered.len(), 2); // 1 Idle + 1 Error
-        for t in &filtered {
-            assert!(
-                matches!(t.status, ThreadStatus::Idle | ThreadStatus::Error),
-                "Expected idle status for thread {}",
-                t.id
-            );
-        }
-    }
-
-    #[test]
-    fn test_filter_threads_all() {
-        let threads = make_test_threads();
-        let filtered: Vec<&ThreadView> = threads.iter().collect();
-
-        assert_eq!(filtered.len(), threads.len());
-    }
-
-    #[test]
-    fn test_filter_threads_empty_result() {
-        let threads = vec![
-            make_thread("1", "T1", false, ThreadStatus::Running),
-            make_thread("2", "T2", false, ThreadStatus::Running),
-        ];
-        let filtered: Vec<&ThreadView> = threads
-            .iter()
-            .filter(|t| t.status == ThreadStatus::Done)
-            .collect();
-
-        assert_eq!(filtered.len(), 0);
-    }
-
     // -------------------- Edge Case Tests --------------------
 
     #[test]
@@ -443,23 +286,6 @@ mod tests {
         assert_eq!(need_action[1].id, "c");
         assert_eq!(autonomous[0].id, "b");
         assert_eq!(autonomous[1].id, "d");
-    }
-
-    #[test]
-    fn test_filter_preserves_order() {
-        let threads = vec![
-            make_thread("a", "First", false, ThreadStatus::Running),
-            make_thread("b", "Second", false, ThreadStatus::Done),
-            make_thread("c", "Third", false, ThreadStatus::Running),
-        ];
-        let filtered: Vec<&ThreadView> = threads
-            .iter()
-            .filter(|t| matches!(t.status, ThreadStatus::Running | ThreadStatus::Waiting))
-            .collect();
-
-        assert_eq!(filtered.len(), 2);
-        assert_eq!(filtered[0].id, "a");
-        assert_eq!(filtered[1].id, "c");
     }
 
     #[test]

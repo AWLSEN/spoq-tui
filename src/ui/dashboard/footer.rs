@@ -8,7 +8,7 @@ use crate::ui::dashboard::RenderContext;
 ///
 /// Returns appropriate hint text depending on whether:
 /// - An overlay is open (show "esc close")
-/// - Default state (empty)
+/// - Default state (no hint needed)
 ///
 /// # Arguments
 /// * `ctx` - The render context containing overlay state
@@ -19,7 +19,7 @@ pub fn get_footer_hint(ctx: &RenderContext) -> &'static str {
     if ctx.overlay.is_some() {
         "esc close"
     } else {
-        ""
+        "" // No filter functionality, so no hint needed
     }
 }
 
@@ -114,7 +114,7 @@ mod tests {
         };
 
         let ctx =
-            RenderContext::new(&threads, &aggregate, &stats, &theme, &[]).with_overlay(Some(&overlay));
+            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }
