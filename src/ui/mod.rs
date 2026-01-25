@@ -25,7 +25,6 @@ pub mod dashboard;
 mod folder_picker;
 mod helpers;
 pub mod input;
-pub mod interaction;
 mod layout;
 pub mod messages;
 pub mod prepare;
@@ -50,9 +49,6 @@ pub use layout::{
 pub use helpers::{
     format_tool_args, is_terminal_too_small, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
-
-// Re-export interaction types for backward compatibility
-pub use interaction::{ClickAction, HitAreaRegistry};
 
 // Re-export rendering functions for external use
 pub use messages::{estimate_wrapped_line_count, truncate_preview};
