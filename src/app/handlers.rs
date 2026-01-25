@@ -449,6 +449,9 @@ impl App {
                     title.clone(),
                     description.clone(),
                 );
+                // Also update dashboard state so thread views reflect the new title
+                self.dashboard
+                    .update_thread_metadata(&thread_id, title.clone(), description.clone());
                 log_thread_update(&format!(
                     "Cache update result: id={}, success={}",
                     thread_id, updated

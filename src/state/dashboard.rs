@@ -219,6 +219,26 @@ impl DashboardState {
         self.thread_views_dirty = true;
     }
 
+    /// Update a thread's title and/or description
+    ///
+    /// Called when receiving thread_updated events from WebSocket.
+    pub fn update_thread_metadata(
+        &mut self,
+        thread_id: &str,
+        title: Option<String>,
+        description: Option<String>,
+    ) {
+        if let Some(thread) = self.threads.get_mut(thread_id) {
+            if let Some(t) = title {
+                thread.title = t;
+            }
+            if let Some(d) = description {
+                thread.description = Some(d);
+            }
+            self.thread_views_dirty = true;
+        }
+    }
+
     /// Update a thread's mode (normal, plan, exec)
     ///
     /// Called when receiving thread mode updates from WebSocket.
