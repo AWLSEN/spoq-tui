@@ -253,12 +253,13 @@ impl App {
     pub fn handle_permission_key(&mut self, key: char) -> bool {
         info!("handle_permission_key called with key: '{}'", key);
 
-        // Check top thread type - if UserInput, Y/N should do nothing
-        if matches!(key, 'y' | 'Y' | 'n' | 'N') {
+        // Check top thread type - if UserInput, Y/N/A should do nothing
+        // (A key will be used to open dialog instead)
+        if matches!(key, 'y' | 'Y' | 'n' | 'N' | 'a' | 'A') {
             if let Some((_, wf)) = self.dashboard.get_top_needs_action_thread() {
                 if matches!(wf, WaitingFor::UserInput) {
-                    info!("Ignoring Y/N key because top thread is UserInput");
-                    return false; // Ignore Y/N when top thread is UserInput
+                    info!("Ignoring Y/N/A key because top thread is UserInput");
+                    return false; // Ignore Y/N/A when top thread is UserInput
                 }
             }
         }

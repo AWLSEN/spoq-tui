@@ -248,45 +248,33 @@ impl App {
                     self.approve_permission(&permission_id);
                 } else {
                     use crate::state::PermissionRequest;
-                    let is_ask_question = tool_name == "AskUserQuestion";
 
-                    // AskUserQuestion uses dashboard overlays (opened with 'A' key),
-                    // NOT the permission Y/N/A prompt system, so don't set pending_permission
-                    if is_ask_question {
-                        // Initialize question state - will be opened via dashboard 'A' key
+                    // Store permission request for user approval
+                    self.session_state
+                        .set_pending_permission(PermissionRequest {
+                            permission_id: permission_id.clone(),
+                            tool_name: tool_name.clone(),
+                            description,
+                            context: None, // Context will be extracted from tool_input in UI
+                            tool_input,
+                            received_at: std::time::Instant::now(),
+                        });
+
+                    // AskUserQuestion requires auto-initialization of question state
+                    if tool_name == "AskUserQuestion" {
                         self.init_question_state();
-                        emit_debug(
-                            &self.debug_tx,
-                            DebugEventKind::StateChange(StateChangeData::new(
-                                StateType::SessionState,
-                                "AskUserQuestion pending",
-                                format!("id: {}", permission_id),
-                            )),
-                            None,
-                        );
-                    } else {
-                        // Store permission request for user approval via Y/N/A keys
-                        self.session_state
-                            .set_pending_permission(PermissionRequest {
-                                permission_id: permission_id.clone(),
-                                tool_name: tool_name.clone(),
-                                description,
-                                context: None, // Context will be extracted from tool_input in UI
-                                tool_input,
-                                received_at: std::time::Instant::now(),
-                            });
-
-                        // Emit StateChange for pending permission
-                        emit_debug(
-                            &self.debug_tx,
-                            DebugEventKind::StateChange(StateChangeData::new(
-                                StateType::SessionState,
-                                "Permission pending",
-                                format!("tool: {}, id: {}", tool_name, permission_id),
-                            )),
-                            None,
-                        );
                     }
+
+                    // Emit StateChange for pending permission
+                    emit_debug(
+                        &self.debug_tx,
+                        DebugEventKind::StateChange(StateChangeData::new(
+                            StateType::SessionState,
+                            "Permission pending",
+                            format!("tool: {}, id: {}", tool_name, permission_id),
+                        )),
+                        None,
+                    );
                 }
             }
             AppMessage::ToolStarted {
