@@ -134,16 +134,24 @@ impl Thread {
     /// Get effective status based on agent events or stored status
     ///
     /// Priority:
-    /// 1. Agent events (most current)
-    /// 2. Stored status field
-    /// 3. Default to Idle
+    /// 1. Explicit Waiting status from backend (authoritative)
+    /// 2. Agent events (most current)
+    /// 3. Stored status field
+    /// 4. Default to Idle
     ///
     /// The agent_events map contains (state, current_operation) tuples.
     pub fn effective_status(
         &self,
         agent_events: &HashMap<String, (String, Option<String>)>,
     ) -> ThreadStatus {
-        // First check agent events for real-time status
+        // Check if backend has explicitly set Waiting status
+        // This represents an authoritative state (e.g., permission request)
+        // that should not be overridden by agent events
+        if self.status == Some(ThreadStatus::Waiting) {
+            return ThreadStatus::Waiting;
+        }
+
+        // Check agent events for real-time status
         if let Some((state, _current_operation)) = agent_events.get(&self.id) {
             return infer_status_from_agent_state(state);
         }
