@@ -1516,7 +1516,9 @@ count_in_progress_phases() {
 # Returns: Total number of circles
 count_total_phases() {
     local pattern="$1"
-    echo -n "$pattern" | wc -c | tr -d ' '
+    # Count circle characters (not bytes, since these are multi-byte UTF-8)
+    # Use grep -o to count individual circle characters
+    echo "$pattern" | grep -o '[●○◐◑]' | wc -l | tr -d ' '
 }
 
 # Verify circles match expected state
