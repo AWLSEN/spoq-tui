@@ -875,6 +875,19 @@ where
                                 KeyCode::Char('t') if app.focus != Focus::Input && app.screen == Screen::Conversation => {
                                     app.toggle_reasoning();
                                 }
+                                // 'A' to open first user input question dialog in dashboard view
+                                KeyCode::Char('a') | KeyCode::Char('A') if app.focus != Focus::Input && app.screen == Screen::CommandDeck => {
+                                    // Check if an overlay is NOT already open
+                                    if app.dashboard.overlay().is_none() {
+                                        // Find first thread waiting for user input
+                                        if let Some(thread_id) = app.dashboard.find_first_user_input_thread() {
+                                            // Use a reasonable anchor_y for keyboard-triggered overlay
+                                            // (middle of screen is typical for non-click interactions)
+                                            let computed_anchor_y = app.terminal_height / 2;
+                                            app.dashboard.expand_thread(&thread_id, computed_anchor_y);
+                                        }
+                                    }
+                                }
                                 // Note: Custom mouse selection removed - native terminal selection now handles copy
                                 _ => {}
                             }

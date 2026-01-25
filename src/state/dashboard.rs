@@ -5,6 +5,7 @@
 
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::{Thread, ThreadMode};
+use crate::state::session::AskUserQuestionData;
 use crate::view_state::{
     FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
@@ -82,6 +83,8 @@ pub struct DashboardState {
     locally_verified: HashSet<String>,
     /// Phase progress data by thread_id during plan execution
     phase_progress: HashMap<String, PhaseProgressData>,
+    /// Pending question data by thread_id (for AskUserQuestion tool)
+    pending_questions: HashMap<String, AskUserQuestionData>,
 
     /// Current filter state (None means show all)
     filter: Option<FilterState>,
@@ -112,6 +115,7 @@ impl DashboardState {
             plan_requests: HashMap::new(),
             locally_verified: HashSet::new(),
             phase_progress: HashMap::new(),
+            pending_questions: HashMap::new(),
             filter: None,
             overlay: None,
             aggregate: Aggregate::new(),
@@ -283,6 +287,30 @@ impl DashboardState {
     /// Get phase progress for a thread
     pub fn get_phase_progress(&self, thread_id: &str) -> Option<&PhaseProgressData> {
         self.phase_progress.get(thread_id)
+    }
+
+    /// Store pending question data for a thread
+    ///
+    /// Called when receiving an AskUserQuestion permission request from WebSocket.
+    /// This stores the question data so it can be displayed in the UI when the
+    /// user interacts with the thread.
+    pub fn set_pending_question(&mut self, thread_id: &str, question_data: AskUserQuestionData) {
+        self.pending_questions
+            .insert(thread_id.to_string(), question_data);
+        self.thread_views_dirty = true;
+    }
+
+    /// Get pending question data for a thread
+    pub fn get_pending_question(&self, thread_id: &str) -> Option<&AskUserQuestionData> {
+        self.pending_questions.get(thread_id)
+    }
+
+    /// Clear pending question data for a thread
+    ///
+    /// Called after the user has answered the question or the request is cancelled.
+    pub fn clear_pending_question(&mut self, thread_id: &str) {
+        self.pending_questions.remove(thread_id);
+        self.thread_views_dirty = true;
     }
 
     // ========================================================================
@@ -507,6 +535,24 @@ impl DashboardState {
     /// Check if a thread is locally verified
     pub fn is_locally_verified(&self, thread_id: &str) -> bool {
         self.locally_verified.contains(thread_id)
+    }
+
+    /// Find the first thread waiting for user input
+    ///
+    /// Returns the thread_id of the first thread with `WaitingFor::UserInput` status,
+    /// following the same pattern as permission handling - topmost "needs action" thread.
+    /// Threads are sorted by needs_action first, then by updated_at (most recent first).
+    pub fn find_first_user_input_thread(&self) -> Option<String> {
+        // Iterate through thread views (already sorted: needs_action first, then by updated_at)
+        for view in &self.thread_views {
+            // Check if this thread is waiting for user input
+            if let Some(wf) = self.waiting_for.get(&view.id) {
+                if matches!(wf, WaitingFor::UserInput) {
+                    return Some(view.id.clone());
+                }
+            }
+        }
+        None
     }
 
     // ========================================================================
@@ -1485,5 +1531,319 @@ mod tests {
         let ctx = state.build_render_context(&stats, &theme);
         let view = &ctx.threads[0];
         assert!(view.needs_action); // Waiting threads need action
+    }
+
+    // -------------------- find_first_user_input_thread Tests --------------------
+
+    #[test]
+    fn test_find_first_user_input_thread_returns_first_match() {
+        let mut state = DashboardState::new();
+
+        // Add three threads
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Idle);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t1".to_string(), t1);
+
+        let mut t2 = make_thread("t2", "Thread 2");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now() - chrono::Duration::seconds(5);
+        state.threads.insert("t2".to_string(), t2);
+
+        let mut t3 = make_thread("t3", "Thread 3");
+        t3.status = Some(ThreadStatus::Waiting);
+        t3.updated_at = Utc::now();
+        state.threads.insert("t3".to_string(), t3);
+
+        // Set waiting states - both t2 and t3 waiting for user input
+        state.waiting_for.insert("t2".to_string(), WaitingFor::UserInput);
+        state.waiting_for.insert("t3".to_string(), WaitingFor::UserInput);
+
+        // Compute views to ensure sorting is correct
+        state.thread_views_dirty = true;
+        state.compute_thread_views();
+
+        // Should return t3 (most recent waiting thread)
+        let result = state.find_first_user_input_thread();
+        assert_eq!(result, Some("t3".to_string()));
+    }
+
+    #[test]
+    fn test_find_first_user_input_thread_returns_none_when_no_match() {
+        let mut state = DashboardState::new();
+
+        // Add thread but with different waiting state
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        state.threads.insert("t1".to_string(), t1);
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "req-1".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+
+        state.thread_views_dirty = true;
+        state.compute_thread_views();
+
+        // Should return None since no thread has UserInput waiting state
+        let result = state.find_first_user_input_thread();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_find_first_user_input_thread_returns_none_when_empty() {
+        let state = DashboardState::new();
+
+        // Empty state should return None
+        let result = state.find_first_user_input_thread();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_find_first_user_input_thread_skips_non_user_input() {
+        let mut state = DashboardState::new();
+
+        // Add threads with different waiting states
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t1".to_string(), t1);
+
+        let mut t2 = make_thread("t2", "Thread 2");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now() - chrono::Duration::seconds(5);
+        state.threads.insert("t2".to_string(), t2);
+
+        let mut t3 = make_thread("t3", "Thread 3");
+        t3.status = Some(ThreadStatus::Waiting);
+        t3.updated_at = Utc::now();
+        state.threads.insert("t3".to_string(), t3);
+
+        // t1 = Plan approval, t2 = UserInput, t3 = Permission
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::PlanApproval {
+                request_id: "plan-1".to_string(),
+            },
+        );
+        state.waiting_for.insert("t2".to_string(), WaitingFor::UserInput);
+        state.waiting_for.insert(
+            "t3".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-1".to_string(),
+                tool_name: "Edit".to_string(),
+            },
+        );
+
+        state.thread_views_dirty = true;
+        state.compute_thread_views();
+
+        // Should return t2 (only UserInput thread)
+        let result = state.find_first_user_input_thread();
+        assert_eq!(result, Some("t2".to_string()));
+    }
+
+    // -------------------- Pending Question Tests --------------------
+
+    #[test]
+    fn test_set_pending_question() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which auth method?".to_string(),
+                header: "Auth".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "JWT".to_string(),
+                        description: "Stateless tokens".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Sessions".to_string(),
+                        description: "Server-side".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("thread-123", question_data.clone());
+
+        let result = state.get_pending_question("thread-123");
+        assert!(result.is_some());
+        let stored = result.unwrap();
+        assert_eq!(stored.questions.len(), 1);
+        assert_eq!(stored.questions[0].question, "Which auth method?");
+        assert_eq!(stored.questions[0].options.len(), 2);
+    }
+
+    #[test]
+    fn test_set_pending_question_marks_dirty() {
+        use crate::state::session::{AskUserQuestionData, Question};
+
+        let mut state = DashboardState::new();
+        state.thread_views_dirty = false;
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Test?".to_string(),
+                header: "Test".to_string(),
+                options: vec![],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("thread-123", question_data);
+        assert!(state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_get_pending_question_nonexistent() {
+        let state = DashboardState::new();
+        assert!(state.get_pending_question("nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_clear_pending_question() {
+        use crate::state::session::{AskUserQuestionData, Question};
+
+        let mut state = DashboardState::new();
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Test?".to_string(),
+                header: "Test".to_string(),
+                options: vec![],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("thread-123", question_data);
+        assert!(state.get_pending_question("thread-123").is_some());
+
+        state.clear_pending_question("thread-123");
+        assert!(state.get_pending_question("thread-123").is_none());
+    }
+
+    #[test]
+    fn test_clear_pending_question_marks_dirty() {
+        use crate::state::session::{AskUserQuestionData, Question};
+
+        let mut state = DashboardState::new();
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Test?".to_string(),
+                header: "Test".to_string(),
+                options: vec![],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("thread-123", question_data);
+        state.thread_views_dirty = false;
+
+        state.clear_pending_question("thread-123");
+        assert!(state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_pending_questions_multiple_threads() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+
+        let q1 = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Question 1?".to_string(),
+                header: "Q1".to_string(),
+                options: vec![QuestionOption {
+                    label: "A".to_string(),
+                    description: "Option A".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let q2 = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Question 2?".to_string(),
+                header: "Q2".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "X".to_string(),
+                        description: "Option X".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Y".to_string(),
+                        description: "Option Y".to_string(),
+                    },
+                ],
+                multi_select: true,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("thread-1", q1);
+        state.set_pending_question("thread-2", q2);
+
+        let result1 = state.get_pending_question("thread-1").unwrap();
+        let result2 = state.get_pending_question("thread-2").unwrap();
+
+        assert_eq!(result1.questions[0].header, "Q1");
+        assert_eq!(result2.questions[0].header, "Q2");
+        assert!(!result1.questions[0].multi_select);
+        assert!(result2.questions[0].multi_select);
+    }
+
+    #[test]
+    fn test_set_pending_question_replaces_existing() {
+        use crate::state::session::{AskUserQuestionData, Question};
+
+        let mut state = DashboardState::new();
+
+        let q1 = AskUserQuestionData {
+            questions: vec![Question {
+                question: "First question?".to_string(),
+                header: "First".to_string(),
+                options: vec![],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        let q2 = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Second question?".to_string(),
+                header: "Second".to_string(),
+                options: vec![],
+                multi_select: true,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("thread-123", q1);
+        state.set_pending_question("thread-123", q2);
+
+        let result = state.get_pending_question("thread-123").unwrap();
+        assert_eq!(result.questions[0].header, "Second");
+        assert!(result.questions[0].multi_select);
+    }
+
+    #[test]
+    fn test_clear_nonexistent_pending_question_does_not_panic() {
+        let mut state = DashboardState::new();
+        // Should not panic when clearing a nonexistent question
+        state.clear_pending_question("nonexistent");
+        assert!(state.get_pending_question("nonexistent").is_none());
     }
 }

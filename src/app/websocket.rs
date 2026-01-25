@@ -6,6 +6,7 @@
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
+use crate::state::session::AskUserQuestionData;
 use crate::view_state::SystemStats;
 use crate::websocket::{WsClient, WsClientConfig, WsConnectionState, WsIncomingMessage};
 
@@ -124,6 +125,37 @@ fn route_ws_message(
                 "Received permission request: {} for tool {}",
                 req.request_id, req.tool_name
             );
+
+            // Check if this is an AskUserQuestion request and extract question data
+            if req.tool_name == "AskUserQuestion" {
+                if let Some(thread_id) = &req.thread_id {
+                    // Try to parse the question data from tool_input
+                    match serde_json::from_value::<AskUserQuestionData>(req.tool_input.clone()) {
+                        Ok(question_data) => {
+                            info!(
+                                "Extracted AskUserQuestion data for thread {}: {} questions",
+                                thread_id,
+                                question_data.questions.len()
+                            );
+                            // Send the pending question message
+                            let _ = message_tx.send(AppMessage::PendingQuestion {
+                                thread_id: thread_id.clone(),
+                                request_id: req.request_id.clone(),
+                                question_data,
+                            });
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Failed to parse AskUserQuestion data for thread {}: {}",
+                                thread_id, e
+                            );
+                        }
+                    }
+                } else {
+                    warn!("AskUserQuestion request missing thread_id: {}", req.request_id);
+                }
+            }
+
             message_tx
                 .send(AppMessage::PermissionRequested {
                     permission_id: req.request_id,
@@ -291,6 +323,7 @@ mod tests {
 
         let ws_msg = WsIncomingMessage::PermissionRequest(crate::websocket::WsPermissionRequest {
             request_id: "req-123".to_string(),
+            thread_id: Some("thread-456".to_string()),
             tool_name: "Bash".to_string(),
             tool_input: serde_json::json!({"command": "ls -la"}),
             description: "List directory contents".to_string(),
@@ -317,6 +350,155 @@ mod tests {
                 assert!(tool_input.is_some());
             }
             _ => panic!("Expected PermissionRequested message"),
+        }
+    }
+
+    #[test]
+    fn test_route_ask_user_question_permission_request() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        // Create an AskUserQuestion permission request
+        let ws_msg = WsIncomingMessage::PermissionRequest(crate::websocket::WsPermissionRequest {
+            request_id: "perm-uuid-123".to_string(),
+            thread_id: Some("thread-123".to_string()),
+            tool_name: "AskUserQuestion".to_string(),
+            tool_input: serde_json::json!({
+                "questions": [
+                    {
+                        "question": "Which authentication method?",
+                        "header": "Auth",
+                        "options": [
+                            {"label": "JWT", "description": "Stateless tokens"},
+                            {"label": "Sessions", "description": "Server-side"}
+                        ],
+                        "multiSelect": false
+                    }
+                ],
+                "answers": {}
+            }),
+            description: "Ask user about authentication".to_string(),
+            timestamp: 1234567890,
+        });
+
+        let result = route_ws_message(ws_msg, &tx);
+        assert!(result.is_ok());
+
+        // First message should be PendingQuestion
+        let first_msg = rx.try_recv();
+        assert!(first_msg.is_ok());
+
+        match first_msg.unwrap() {
+            AppMessage::PendingQuestion {
+                thread_id,
+                request_id,
+                question_data,
+            } => {
+                assert_eq!(thread_id, "thread-123");
+                assert_eq!(request_id, "perm-uuid-123");
+                assert_eq!(question_data.questions.len(), 1);
+                assert_eq!(question_data.questions[0].question, "Which authentication method?");
+                assert_eq!(question_data.questions[0].header, "Auth");
+                assert_eq!(question_data.questions[0].options.len(), 2);
+                assert_eq!(question_data.questions[0].options[0].label, "JWT");
+                assert!(!question_data.questions[0].multi_select);
+            }
+            other => panic!("Expected PendingQuestion message, got {:?}", other),
+        }
+
+        // Second message should be PermissionRequested
+        let second_msg = rx.try_recv();
+        assert!(second_msg.is_ok());
+
+        match second_msg.unwrap() {
+            AppMessage::PermissionRequested {
+                permission_id,
+                tool_name,
+                description,
+                tool_input,
+            } => {
+                assert_eq!(permission_id, "perm-uuid-123");
+                assert_eq!(tool_name, "AskUserQuestion");
+                assert_eq!(description, "Ask user about authentication");
+                assert!(tool_input.is_some());
+            }
+            other => panic!("Expected PermissionRequested message, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_route_ask_user_question_without_thread_id() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        // AskUserQuestion without thread_id should still route the permission request
+        // but not send a PendingQuestion message
+        let ws_msg = WsIncomingMessage::PermissionRequest(crate::websocket::WsPermissionRequest {
+            request_id: "perm-no-thread".to_string(),
+            thread_id: None,
+            tool_name: "AskUserQuestion".to_string(),
+            tool_input: serde_json::json!({
+                "questions": [{"question": "Test?", "header": "T", "options": []}],
+                "answers": {}
+            }),
+            description: "Test question".to_string(),
+            timestamp: 1234567890,
+        });
+
+        let result = route_ws_message(ws_msg, &tx);
+        assert!(result.is_ok());
+
+        // Should only receive PermissionRequested (no PendingQuestion without thread_id)
+        let msg = rx.try_recv();
+        assert!(msg.is_ok());
+
+        match msg.unwrap() {
+            AppMessage::PermissionRequested { permission_id, .. } => {
+                assert_eq!(permission_id, "perm-no-thread");
+            }
+            other => panic!("Expected PermissionRequested message, got {:?}", other),
+        }
+
+        // No more messages
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn test_route_ask_user_question_with_multi_select() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let ws_msg = WsIncomingMessage::PermissionRequest(crate::websocket::WsPermissionRequest {
+            request_id: "perm-multi".to_string(),
+            thread_id: Some("thread-multi".to_string()),
+            tool_name: "AskUserQuestion".to_string(),
+            tool_input: serde_json::json!({
+                "questions": [
+                    {
+                        "question": "Select features to enable",
+                        "header": "Features",
+                        "options": [
+                            {"label": "Dark mode", "description": "Enable dark theme"},
+                            {"label": "Notifications", "description": "Push notifications"},
+                            {"label": "Analytics", "description": "Usage analytics"}
+                        ],
+                        "multiSelect": true
+                    }
+                ],
+                "answers": {}
+            }),
+            description: "Select features".to_string(),
+            timestamp: 1234567890,
+        });
+
+        let result = route_ws_message(ws_msg, &tx);
+        assert!(result.is_ok());
+
+        // First message should be PendingQuestion
+        let msg = rx.try_recv().unwrap();
+        match msg {
+            AppMessage::PendingQuestion { question_data, .. } => {
+                assert!(question_data.questions[0].multi_select);
+                assert_eq!(question_data.questions[0].options.len(), 3);
+            }
+            other => panic!("Expected PendingQuestion, got {:?}", other),
         }
     }
 

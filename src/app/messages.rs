@@ -2,6 +2,7 @@
 
 use crate::models::dashboard::{PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::{Folder, Thread, ThreadMode};
+use crate::state::session::AskUserQuestionData;
 use crate::state::Todo;
 use crate::ui::dashboard::SystemStats;
 use crate::websocket::messages::PhaseStatus;
@@ -176,6 +177,15 @@ pub enum AppMessage {
     ThreadVerified {
         thread_id: String,
         verified_at: String,
+    },
+    /// Pending question from AskUserQuestion tool
+    ///
+    /// Sent when a permission request with tool_name="AskUserQuestion" is received.
+    /// The question data is extracted from the tool_input and stored in dashboard state.
+    PendingQuestion {
+        thread_id: String,
+        request_id: String,
+        question_data: AskUserQuestionData,
     },
 }
 

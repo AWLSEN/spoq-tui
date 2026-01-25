@@ -70,6 +70,9 @@ pub struct WsAgentStatus {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WsPermissionRequest {
     pub request_id: String,
+    /// Thread ID this request belongs to (optional for backwards compatibility)
+    #[serde(default)]
+    pub thread_id: Option<String>,
     pub tool_name: String,
     pub tool_input: serde_json::Value,
     pub description: String,
