@@ -430,6 +430,32 @@ impl DashboardState {
         self.thread_views_dirty = true;
     }
 
+    /// Update only the current_operation for a thread without changing the state
+    ///
+    /// This is used when ToolExecuting events provide display_name - we want to
+    /// show the tool's display name as the activity without overwriting the agent state.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread to update
+    /// * `current_operation` - Description of what the agent is doing (e.g., "Read: main.rs")
+    pub fn update_current_operation(&mut self, thread_id: &str, current_operation: Option<&str>) {
+        if let Some((state, _)) = self.agent_states.get(thread_id) {
+            // Preserve existing state, update operation
+            let state = state.clone();
+            self.agent_states.insert(
+                thread_id.to_string(),
+                (state, current_operation.map(|s| s.to_string())),
+            );
+        } else {
+            // No existing state - default to "running" since we only get tool events when running
+            self.agent_states.insert(
+                thread_id.to_string(),
+                ("running".to_string(), current_operation.map(|s| s.to_string())),
+            );
+        }
+        self.thread_views_dirty = true;
+    }
+
     /// Mark a thread as verified locally
     pub fn mark_verified_local(&mut self, thread_id: &str) {
         self.locally_verified.insert(thread_id.to_string());
@@ -2039,6 +2065,95 @@ mod tests {
         let view = &views[0];
         // Waiting threads should have None activity_text (uses old layout)
         assert_eq!(view.activity_text, None);
+    }
+
+    // -------------------- update_current_operation Tests --------------------
+
+    #[test]
+    fn test_update_current_operation_updates_existing_thread() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set initial agent state
+        state.update_agent_state("t1", "tool_use", None);
+
+        // Verify no current_operation yet
+        let views = state.compute_thread_views();
+        assert_eq!(views[0].activity_text, Some("Thinking...".to_string()));
+
+        // Update current operation via update_current_operation
+        state.update_current_operation("t1", Some("Read: main.rs"));
+
+        // Verify activity_text reflects the display_name
+        let views = state.compute_thread_views();
+        assert_eq!(views[0].activity_text, Some("Read: main.rs".to_string()));
+
+        // Verify original state was preserved
+        let (state_str, _) = state.agent_states.get("t1").unwrap();
+        assert_eq!(state_str, "tool_use");
+    }
+
+    #[test]
+    fn test_update_current_operation_creates_new_entry_if_missing() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // No agent state exists yet - update_current_operation should create one
+        assert!(!state.agent_states.contains_key("t1"));
+
+        state.update_current_operation("t1", Some("Edit: handlers.rs"));
+
+        // Should have created entry with default "running" state
+        let (state_str, op) = state.agent_states.get("t1").unwrap();
+        assert_eq!(state_str, "running");
+        assert_eq!(op.as_deref(), Some("Edit: handlers.rs"));
+
+        // Verify activity_text reflects the display_name
+        let views = state.compute_thread_views();
+        assert_eq!(views[0].activity_text, Some("Edit: handlers.rs".to_string()));
+    }
+
+    #[test]
+    fn test_update_current_operation_clears_operation() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set initial state with operation
+        state.update_agent_state("t1", "tool_use", Some("Read: main.rs"));
+
+        // Verify operation is set
+        let views = state.compute_thread_views();
+        assert_eq!(views[0].activity_text, Some("Read: main.rs".to_string()));
+
+        // Clear the operation
+        state.update_current_operation("t1", None);
+
+        // Verify activity_text falls back to "Thinking..."
+        let views = state.compute_thread_views();
+        assert_eq!(views[0].activity_text, Some("Thinking...".to_string()));
+    }
+
+    #[test]
+    fn test_update_current_operation_marks_views_dirty() {
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Compute views to clear dirty flag
+        let _ = state.compute_thread_views();
+        assert!(!state.thread_views_dirty);
+
+        // Update current operation
+        state.update_current_operation("t1", Some("Glob: *.rs"));
+
+        // Verify dirty flag is set
+        assert!(state.thread_views_dirty);
     }
 
     // -------------------- build_render_context Cache Tests --------------------

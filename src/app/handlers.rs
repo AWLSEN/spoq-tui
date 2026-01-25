@@ -313,6 +313,9 @@ impl App {
                 // Update the display_name in the message segments
                 self.cache
                     .set_tool_display_name(&thread_id, &tool_call_id, display_name.clone());
+                // Update dashboard state with display_name as current_operation for activity display
+                self.dashboard
+                    .update_current_operation(&thread_id, Some(&display_name));
                 // Emit StateChange for tool executing
                 emit_debug(
                     &self.debug_tx,
