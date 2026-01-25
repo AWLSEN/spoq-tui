@@ -1043,6 +1043,14 @@ impl App {
                 request_id,
                 question_data,
             } => {
+                // Update thread status to Waiting with UserInput (so 'A' key can find it)
+                use crate::models::dashboard::{ThreadStatus, WaitingFor};
+                self.dashboard.update_thread_status(
+                    &thread_id,
+                    ThreadStatus::Waiting,
+                    Some(WaitingFor::UserInput),
+                );
+
                 // Store the question data in dashboard state (with request_id for WebSocket response)
                 self.dashboard.set_pending_question(&thread_id, request_id.clone(), question_data.clone());
 
