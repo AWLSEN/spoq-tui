@@ -449,13 +449,319 @@ EOF
     fi
 }
 
-# Phase 6: Monitor execution progress
-# Monitors Pulsar execution by watching status files
-# Logs progress updates as phases complete
+# ==============================================================================
+# Phase 6: Monitor Execution Functions
+# ==============================================================================
+
+# Configuration for monitoring
+MONITOR_TIMEOUT="${MONITOR_TIMEOUT:-300}"  # Default 5 minutes
+MONITOR_POLL_INTERVAL="${MONITOR_POLL_INTERVAL:-3}"  # Poll every 3 seconds
+CONDUCTOR_LOG_DIR="${CONDUCTOR_LOG_DIR:-$HOME/.conductor/logs}"
+WS_EVENTS_FILE="$TEMP_DIR/ws_events.log"
+
+# Document how to trigger Pulsar manually
+# Usage: trigger_pulsar
+# Note: Pulsar requires interactive Claude session - cannot be automated from bash
+trigger_pulsar() {
+    log_step "PULSAR" "Trigger Pulsar Execution"
+
+    if [ -z "$PLAN_ID" ]; then
+        log_error "PLAN_ID not set - cannot trigger Pulsar"
+        return 1
+    fi
+
+    log_info "Pulsar requires an interactive Claude session to execute."
+    log_info ""
+    echo -e "${E2E_BOLD}To trigger Pulsar execution:${E2E_NC}"
+    echo ""
+    echo "  1. Open Claude Code in a terminal"
+    echo "  2. Navigate to project: cd $(pwd)"
+    echo "  3. Run the command: /pulsar $PLAN_ID"
+    echo ""
+    log_info "Plan ID: $PLAN_ID"
+    log_info "Project: $PROJECT"
+    log_info ""
+
+    # Return success - user will trigger manually
+    return 0
+}
+
+# Monitor conductor logs for phase progress updates
+# Usage: monitor_conductor_logs &
+# Writes extracted events to WS_EVENTS_FILE
+monitor_conductor_logs() {
+    local log_file=""
+
+    # Find the most recent conductor log file
+    if [ -d "$CONDUCTOR_LOG_DIR" ]; then
+        log_file=$(ls -t "$CONDUCTOR_LOG_DIR"/*.log 2>/dev/null | head -1)
+    fi
+
+    # Also check common alternative locations
+    if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
+        local alt_dirs=(
+            "$HOME/.conductor/logs"
+            "$HOME/comms/conductor/logs"
+            "/tmp/conductor/logs"
+        )
+        for dir in "${alt_dirs[@]}"; do
+            if [ -d "$dir" ]; then
+                log_file=$(ls -t "$dir"/*.log 2>/dev/null | head -1)
+                [ -f "$log_file" ] && break
+            fi
+        done
+    fi
+
+    if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
+        log_warn "No conductor log file found in $CONDUCTOR_LOG_DIR"
+        log_info "Will rely on status file polling for progress updates"
+        return 0
+    fi
+
+    log_info "Monitoring conductor log: $log_file"
+
+    # Initialize events file
+    mkdir -p "$TEMP_DIR"
+    > "$WS_EVENTS_FILE"
+
+    # Tail the log file and extract phase_progress_update events
+    # Run until parent process signals stop or timeout
+    tail -f "$log_file" 2>/dev/null | while IFS= read -r line; do
+        # Look for phase_progress_update in the log line
+        if echo "$line" | grep -q "phase_progress_update"; then
+            local timestamp
+            timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            # Try to extract JSON payload
+            local json_payload
+            json_payload=$(echo "$line" | grep -oE '\{[^}]+phase_progress_update[^}]+\}' || echo "$line")
+
+            # Log to events file
+            echo "[$timestamp] $json_payload" >> "$WS_EVENTS_FILE"
+
+            # Also log to console
+            log_debug "WebSocket event: phase_progress_update detected"
+        fi
+
+        # Check for plan completion messages
+        if echo "$line" | grep -q "plan.*completed\|all.*phases.*complete"; then
+            log_info "Detected plan completion in logs"
+            echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PLAN_COMPLETED" >> "$WS_EVENTS_FILE"
+        fi
+    done &
+
+    # Store the background process PID for cleanup
+    CONDUCTOR_LOG_PID=$!
+    log_debug "Started conductor log monitor (PID: $CONDUCTOR_LOG_PID)"
+}
+
+# Wait for all phases to complete by polling status files
+# Usage: wait_for_phase_completion [timeout_seconds]
+# Returns: 0 if all phases completed, 1 if timeout or error
+wait_for_phase_completion() {
+    local timeout="${1:-$MONITOR_TIMEOUT}"
+    local poll_interval="${2:-$MONITOR_POLL_INTERVAL}"
+    local start_time
+    start_time=$(date +%s)
+    local status_dir="$HOME/comms/plans/$PROJECT/active/$PLAN_ID/status"
+
+    if [ -z "$PLAN_ID" ]; then
+        log_error "PLAN_ID not set - cannot monitor phases"
+        return 1
+    fi
+
+    log_info "Monitoring phase completion in: $status_dir"
+    log_info "Timeout: ${timeout}s, Poll interval: ${poll_interval}s"
+    log_info "Total phases expected: $TOTAL_PHASES"
+    echo ""
+
+    local last_completed=0
+    local last_running=""
+
+    while true; do
+        local current_time
+        current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+
+        # Check timeout
+        if [ "$elapsed" -ge "$timeout" ]; then
+            log_error "Timeout waiting for phase completion after ${elapsed}s"
+            return 1
+        fi
+
+        # Count completed phases
+        local completed=0
+        local running=""
+        local pending=0
+        local failed=0
+
+        for phase in $(seq 1 "$TOTAL_PHASES"); do
+            local status_file="$status_dir/phase-${phase}.status"
+
+            if [ -f "$status_file" ]; then
+                local status
+                status=$(jq -r '.status // "unknown"' "$status_file" 2>/dev/null || echo "unknown")
+
+                case "$status" in
+                    completed)
+                        completed=$((completed + 1))
+                        ;;
+                    running|in_progress)
+                        running="$phase"
+                        ;;
+                    failed)
+                        failed=$((failed + 1))
+                        ;;
+                    pending|*)
+                        pending=$((pending + 1))
+                        ;;
+                esac
+            else
+                pending=$((pending + 1))
+            fi
+        done
+
+        # Log progress if changed
+        if [ "$completed" -ne "$last_completed" ] || [ "$running" != "$last_running" ]; then
+            local progress_msg="Progress: $completed/$TOTAL_PHASES completed"
+            [ -n "$running" ] && progress_msg="$progress_msg, phase $running running"
+            [ "$pending" -gt 0 ] && progress_msg="$progress_msg, $pending pending"
+            [ "$failed" -gt 0 ] && progress_msg="$progress_msg, $failed failed"
+
+            log_info "$progress_msg"
+            last_completed=$completed
+            last_running=$running
+        fi
+
+        # Check if all phases are completed
+        if [ "$completed" -eq "$TOTAL_PHASES" ]; then
+            log_success "All $TOTAL_PHASES phases completed successfully!"
+            return 0
+        fi
+
+        # Check for failures
+        if [ "$failed" -gt 0 ]; then
+            log_error "$failed phase(s) failed"
+            return 1
+        fi
+
+        # Wait before next poll
+        sleep "$poll_interval"
+    done
+}
+
+# Extract WebSocket events from the events log file
+# Usage: extract_websocket_events
+# Outputs: Summary of captured WebSocket events
+extract_websocket_events() {
+    if [ ! -f "$WS_EVENTS_FILE" ]; then
+        log_warn "No WebSocket events file found"
+        return 0
+    fi
+
+    local event_count
+    event_count=$(wc -l < "$WS_EVENTS_FILE" | tr -d ' ')
+
+    if [ "$event_count" -eq 0 ]; then
+        log_info "No WebSocket events captured"
+        return 0
+    fi
+
+    log_step "WS EVENTS" "Captured WebSocket Events ($event_count total)"
+
+    # Show the events
+    while IFS= read -r line; do
+        echo "  $line"
+    done < "$WS_EVENTS_FILE"
+
+    # Count phase_progress_update events specifically
+    local progress_events
+    progress_events=$(grep -c "phase_progress_update" "$WS_EVENTS_FILE" 2>/dev/null || echo "0")
+
+    echo ""
+    log_info "Summary: $progress_events phase_progress_update events captured"
+
+    # Copy to a more permanent location if needed
+    if [ -d "$SCREENSHOT_DIR" ]; then
+        cp "$WS_EVENTS_FILE" "$SCREENSHOT_DIR/ws_events_$(date +%Y%m%d_%H%M%S).log"
+        log_success "Events saved to $SCREENSHOT_DIR"
+    fi
+
+    return 0
+}
+
+# Stop the conductor log monitor
+# Usage: stop_conductor_log_monitor
+stop_conductor_log_monitor() {
+    if [ -n "${CONDUCTOR_LOG_PID:-}" ]; then
+        kill "$CONDUCTOR_LOG_PID" 2>/dev/null || true
+        log_debug "Stopped conductor log monitor (PID: $CONDUCTOR_LOG_PID)"
+        unset CONDUCTOR_LOG_PID
+    fi
+}
+
+# Main monitoring orchestration function
+# Usage: monitor_execution
+# Monitors Pulsar execution by watching status files and logs
 monitor_execution() {
-    log_warn "monitor_execution: Not yet implemented (Phase 6)"
-    # TODO: Implement status file monitoring loop
-    # Expected to watch: ~/comms/plans/$PROJECT/active/$PLAN_ID/status/
+    log_step "MONITOR" "Starting Execution Monitor"
+
+    if [ -z "$PLAN_ID" ]; then
+        log_error "PLAN_ID not set - cannot monitor execution"
+        return 1
+    fi
+
+    local status_dir="$HOME/comms/plans/$PROJECT/active/$PLAN_ID/status"
+
+    # Display trigger instructions
+    trigger_pulsar
+    echo ""
+
+    # Prompt for user action or auto-proceed
+    local auto_delay=30
+    log_info "Waiting for Pulsar to be triggered..."
+    log_info "Press Enter when Pulsar is running, or wait ${auto_delay}s to auto-proceed..."
+
+    # Read with timeout
+    if read -t "$auto_delay" -r; then
+        log_info "User confirmed - starting monitoring"
+    else
+        log_info "Auto-proceeding after ${auto_delay}s delay"
+    fi
+    echo ""
+
+    # Start background log monitoring
+    monitor_conductor_logs
+
+    # Ensure cleanup on exit
+    trap 'stop_conductor_log_monitor' EXIT
+
+    # Wait for phases to complete
+    log_step "POLLING" "Waiting for Phase Completion"
+
+    if wait_for_phase_completion; then
+        log_success "Pulsar execution completed successfully"
+
+        # Extract and display WebSocket events
+        echo ""
+        extract_websocket_events
+
+        # Stop log monitoring
+        stop_conductor_log_monitor
+
+        return 0
+    else
+        log_error "Pulsar execution did not complete successfully"
+
+        # Still extract any events we captured
+        echo ""
+        extract_websocket_events
+
+        # Stop log monitoring
+        stop_conductor_log_monitor
+
+        return 1
+    fi
 }
 
 # ==============================================================================
