@@ -179,12 +179,142 @@ create_thread_via_api() {
 }
 
 # Phase 5: Generate Nova plan
-# Generates a Nova plan for the thread using the API
+# Generates a Nova plan locally (no API call needed)
 # Sets PLAN_ID global variable on success
 generate_nova_plan() {
-    log_warn "generate_nova_plan: Not yet implemented (Phase 5)"
-    # TODO: Implement API call to generate plan
-    # Expected to set: PLAN_ID
+    log_step "PLAN" "Generating Nova-format plan"
+
+    # Generate plan ID in plan-YYYYMMDD-HHMM format
+    PLAN_ID="plan-$(date +%Y%m%d-%H%M)"
+    log_info "Generated plan ID: $PLAN_ID"
+
+    # Get plan directory path using helper
+    local plan_dir
+    plan_dir=$(get_plan_dir)
+    local status_dir="$plan_dir/status"
+
+    # Create directory structure
+    mkdir -p "$status_dir"
+    log_success "Created plan directory: $plan_dir"
+    log_success "Created status directory: $status_dir"
+
+    # Generate timestamps
+    local created_at
+    created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Get thread ID (use global or generate one)
+    local thread_id_value="${THREAD_ID:-null}"
+    if [ "$thread_id_value" != "null" ]; then
+        thread_id_value="\"$THREAD_ID\""
+    fi
+
+    # Write plan markdown file
+    local plan_file="$plan_dir.md"
+    cat > "$plan_file" << EOF
+# Plan: E2E Test Auto-Generated Plan
+
+## Metadata
+- **ID**: ${PLAN_ID}
+- **Project**: ${PROJECT}
+- **Project Path**: /Users/sam/tui_spoq
+- **Thread ID**: ${thread_id_value}
+- **Type**: test
+- **Status**: active
+- **Execution Mode**: interactive
+- **Created**: ${created_at}
+- **Worktree**: null
+
+## Summary
+Auto-generated 5-phase plan for E2E testing of TUI progress circles.
+
+Each phase performs a simple file operation in /tmp to verify phase execution and status tracking.
+
+## Phases
+
+### Phase 1: Create test file
+- **Description**: Create a test file in /tmp to verify phase execution starts correctly
+- **Files**: \`/tmp/e2e_test_file.txt\` (NEW)
+- **Complexity**: Low
+- **Complexity Reasoning**: Simple file creation with echo command
+- **Recommended Agent**: sonnet
+
+### Phase 2: Append to test file
+- **Description**: Append a timestamp line to the test file to verify modifications work
+- **Files**: \`/tmp/e2e_test_file.txt\` (MODIFY)
+- **Complexity**: Low
+- **Complexity Reasoning**: Simple file append operation
+- **Recommended Agent**: sonnet
+
+### Phase 3: Create second test file
+- **Description**: Create a second test file to verify multiple file operations
+- **Files**: \`/tmp/e2e_test_file_2.txt\` (NEW)
+- **Complexity**: Low
+- **Complexity Reasoning**: Simple file creation
+- **Recommended Agent**: sonnet
+
+### Phase 4: Read and verify files
+- **Description**: Read both test files and verify their contents match expectations
+- **Files**: \`/tmp/e2e_test_file.txt\` (READ), \`/tmp/e2e_test_file_2.txt\` (READ)
+- **Complexity**: Low
+- **Complexity Reasoning**: Simple file read and content verification
+- **Recommended Agent**: sonnet
+
+### Phase 5: Cleanup test files
+- **Description**: Delete the test files created during the E2E test
+- **Files**: \`/tmp/e2e_test_file.txt\` (DELETE), \`/tmp/e2e_test_file_2.txt\` (DELETE)
+- **Complexity**: Low
+- **Complexity Reasoning**: Simple file deletion
+- **Recommended Agent**: sonnet
+
+## Parallelization Analysis
+
+\`\`\`
+Phase 1 (Create file) ──→ Phase 2 (Append) ──→ Phase 4 (Read/Verify) ──→ Phase 5 (Cleanup)
+                                                      ↑
+Phase 3 (Create second file) ─────────────────────────┘
+\`\`\`
+
+**Analysis:**
+- Phase 1 must complete before Phase 2 (file must exist to append)
+- Phase 3 is independent of Phases 1-2
+- Phase 4 depends on both Phase 2 and Phase 3
+- Phase 5 depends on Phase 4
+
+**Execution Strategy:**
+| Round | Phases | Why |
+|-------|--------|-----|
+| 1 | Phase 1, Phase 3 | Both are independent file creations |
+| 2 | Phase 2 | Depends on Phase 1 |
+| 3 | Phase 4 | Depends on Phases 2, 3 |
+| 4 | Phase 5 | Depends on Phase 4 |
+
+## Test Strategy
+
+**After execution, verify:**
+1. All 5 phases completed successfully
+2. Status files show \`completed\` status for each phase
+3. TUI showed progress circles updating from \`○○○○○\` to \`●●●●●\`
+4. Test files were properly created and cleaned up
+
+## Rollback Strategy
+
+1. If any phase fails: Check status files for error details
+2. Cleanup: \`rm -f /tmp/e2e_test_file*.txt\`
+3. Remove plan: \`rm -rf ${plan_dir} ${plan_file}\`
+EOF
+
+    log_success "Created plan file: $plan_file"
+    log_info "Plan ID set to: $PLAN_ID"
+    log_info "Plan directory: $plan_dir"
+
+    # Verify the plan was created correctly
+    if [ -f "$plan_file" ] && [ -d "$status_dir" ]; then
+        log_success "Nova plan generated successfully"
+        return 0
+    else
+        log_error "Failed to generate Nova plan"
+        return 1
+    fi
 }
 
 # Phase 6: Monitor execution progress
