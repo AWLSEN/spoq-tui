@@ -52,9 +52,6 @@ SCREENSHOT_DIR="$TEMP_DIR/screenshots"
 
 # API configuration
 API_BASE_URL="${API_BASE_URL:-http://localhost:8000}"
-API_CREATE_THREAD="/api/threads"
-API_GENERATE_PLAN="/api/plans/generate"
-API_TRIGGER_PULSAR="/api/plans/execute"
 
 # TUI binary path
 TUI_BINARY="./target/release/spoq"
