@@ -14,7 +14,7 @@ use spoq::models::dashboard::{
 use spoq::models::{Thread, ThreadMode, ThreadType};
 use spoq::state::DashboardState;
 use spoq::ui::dashboard::{
-    FilterState, OverlayState, RenderContext, SystemStats, Theme, ThreadView,
+    OverlayState, RenderContext, SystemStats, Theme, ThreadView,
 };
 use spoq::ui::interaction::{ClickAction, HitAreaRegistry};
 use std::collections::HashMap;
@@ -53,7 +53,6 @@ fn test_dashboard_renders_with_zero_threads() {
 
     // Verify empty state
     assert_eq!(state.thread_count(), 0);
-    assert!(state.filter().is_none());
     assert!(state.overlay().is_none());
 
     // Build render context
@@ -202,96 +201,6 @@ fn test_dashboard_agent_state_overrides_stored_status() {
 
     // Agent state should override stored status
     assert_eq!(view.status, ThreadStatus::Running);
-}
-
-// ============================================================================
-// Filter State Changes
-// ============================================================================
-
-#[test]
-fn test_filter_state_changes_displayed_threads() {
-    let mut state = DashboardState::new();
-
-    let threads = vec![
-        make_test_thread("t1", "Running 1", Some(ThreadStatus::Running)),
-        make_test_thread("t2", "Running 2", Some(ThreadStatus::Running)),
-        make_test_thread("t3", "Waiting", Some(ThreadStatus::Waiting)),
-        make_test_thread("t4", "Done 1", Some(ThreadStatus::Done)),
-        make_test_thread("t5", "Done 2", Some(ThreadStatus::Done)),
-        make_test_thread("t6", "Idle", Some(ThreadStatus::Idle)),
-        make_test_thread("t7", "Error", Some(ThreadStatus::Error)),
-    ];
-
-    let agent_states = HashMap::new();
-    state.set_threads(threads, &agent_states);
-
-    let _views = state.compute_thread_views();
-    let stats = SystemStats::default();
-    let theme = Theme::default();
-
-    // No filter - all threads
-    let ctx = state.build_render_context(&stats, &theme);
-    assert_eq!(ctx.filtered_threads().len(), 7);
-
-    // Working filter - Running + Waiting = 3
-    state.toggle_filter(FilterState::Working);
-    let ctx = state.build_render_context(&stats, &theme);
-    assert_eq!(ctx.filtered_threads().len(), 3);
-
-    // ReadyToTest filter - Done = 2
-    state.toggle_filter(FilterState::ReadyToTest);
-    let ctx = state.build_render_context(&stats, &theme);
-    assert_eq!(ctx.filtered_threads().len(), 2);
-
-    // Idle filter - Idle + Error = 2
-    state.toggle_filter(FilterState::Idle);
-    let ctx = state.build_render_context(&stats, &theme);
-    assert_eq!(ctx.filtered_threads().len(), 2);
-
-    // Toggle same filter off
-    state.toggle_filter(FilterState::Idle);
-    let ctx = state.build_render_context(&stats, &theme);
-    assert_eq!(ctx.filtered_threads().len(), 7);
-}
-
-#[test]
-fn test_filter_state_cycling() {
-    // Test filter state cycling through next/prev
-    let filter = FilterState::All;
-
-    assert_eq!(filter.next(), FilterState::Working);
-    assert_eq!(filter.next().next(), FilterState::ReadyToTest);
-    assert_eq!(filter.next().next().next(), FilterState::Idle);
-    assert_eq!(filter.next().next().next().next(), FilterState::All);
-
-    assert_eq!(filter.prev(), FilterState::Idle);
-    assert_eq!(filter.prev().prev(), FilterState::ReadyToTest);
-}
-
-#[test]
-fn test_filter_state_matches_status() {
-    // All matches everything
-    assert!(FilterState::All.matches(ThreadStatus::Idle));
-    assert!(FilterState::All.matches(ThreadStatus::Running));
-    assert!(FilterState::All.matches(ThreadStatus::Waiting));
-    assert!(FilterState::All.matches(ThreadStatus::Done));
-    assert!(FilterState::All.matches(ThreadStatus::Error));
-
-    // Working matches Running and Waiting
-    assert!(FilterState::Working.matches(ThreadStatus::Running));
-    assert!(FilterState::Working.matches(ThreadStatus::Waiting));
-    assert!(!FilterState::Working.matches(ThreadStatus::Idle));
-    assert!(!FilterState::Working.matches(ThreadStatus::Done));
-    assert!(!FilterState::Working.matches(ThreadStatus::Error));
-
-    // ReadyToTest matches Done
-    assert!(FilterState::ReadyToTest.matches(ThreadStatus::Done));
-    assert!(!FilterState::ReadyToTest.matches(ThreadStatus::Running));
-
-    // Idle matches Idle and Error
-    assert!(FilterState::Idle.matches(ThreadStatus::Idle));
-    assert!(FilterState::Idle.matches(ThreadStatus::Error));
-    assert!(!FilterState::Idle.matches(ThreadStatus::Running));
 }
 
 // ============================================================================
