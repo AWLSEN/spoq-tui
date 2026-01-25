@@ -1953,10 +1953,10 @@ mod tests {
         thread.status = Some(ThreadStatus::Running);
         state.threads.insert("t1".to_string(), thread);
 
-        // Simulate agent state with current operation
+        // Simulate agent state with current operation (use "tool_use" which maps to Running)
         state
             .agent_states
-            .insert("t1".to_string(), ("processing".to_string(), Some("Read: main.rs".to_string())));
+            .insert("t1".to_string(), ("tool_use".to_string(), Some("Read: main.rs".to_string())));
 
         let views = state.compute_thread_views();
 
@@ -1972,10 +1972,10 @@ mod tests {
         thread.status = Some(ThreadStatus::Running);
         state.threads.insert("t1".to_string(), thread);
 
-        // Simulate agent state without current operation
+        // Simulate agent state without current operation (use "thinking" which maps to Running)
         state
             .agent_states
-            .insert("t1".to_string(), ("processing".to_string(), None));
+            .insert("t1".to_string(), ("thinking".to_string(), None));
 
         let views = state.compute_thread_views();
 
