@@ -194,9 +194,9 @@ pub struct ProvisionPendingResponse {
     pub provider_instance_id: i64,
     #[serde(default)]
     pub provider_order_id: Option<String>,
-    pub plan_id: i64,
-    pub template_id: i64,
-    pub data_center_id: i64,
+    pub plan_id: String,
+    pub template_id: i32,
+    pub data_center_id: i32,
     pub jwt_secret: String,
     pub ssh_password: String,
     pub message: String,
@@ -210,9 +210,12 @@ pub struct ConfirmVpsRequest {
     pub provider_instance_id: i64,
     #[serde(default)]
     pub provider_order_id: Option<String>,
-    pub plan_id: i64,
-    pub template_id: i64,
-    pub data_center_id: i64,
+    /// Provider identifier: "hostinger" for managed VPS, "byovps" for user-provided VPS.
+    pub provider: String,
+    /// Plan ID from provider. Use "byovps" for BYOVPS.
+    pub plan_id: String,
+    pub template_id: i32,
+    pub data_center_id: i32,
     pub jwt_secret: String,
     pub ssh_password: String,
 }

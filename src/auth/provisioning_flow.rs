@@ -943,7 +943,7 @@ fn run_byovps_flow_with_retry(
                                         provider_instance_id: 0,
                                         provider_order_id: None,
                                         provider: "byovps".to_string(),
-                                        plan_id: 0,
+                                        plan_id: "byovps".to_string(),
                                         template_id: 0,
                                         data_center_id: 0,
                                         jwt_secret: pending.jwt_secret.clone(),
@@ -1331,7 +1331,7 @@ fn run_byovps_flow(
         provider_instance_id: 0, // Not applicable for BYOVPS
         provider_order_id: None,
         provider: "byovps".to_string(),
-        plan_id: 0, // Not applicable for BYOVPS
+        plan_id: "byovps".to_string(), // Not applicable for BYOVPS
         template_id: 0, // Not applicable for BYOVPS
         data_center_id: 0, // Not applicable for BYOVPS
         jwt_secret: pending_response.jwt_secret.clone(),
