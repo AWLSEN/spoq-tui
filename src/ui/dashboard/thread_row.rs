@@ -59,18 +59,27 @@ pub fn render(
 
     // For threads that need action, skip time column to give more space to buttons
     // needs_action threads: 23+10+7+10+12 = 62%, leaving 38% for actions
-    // other threads: 23+10+7+10+12+6 = 68%, leaving 32% for actions
+    // other threads: 28+14+9+14+15+10 = 90%, leaving 10% for right-aligned Verify button
     let show_time = !thread.needs_action;
 
-    let title_width = ((area.width as f32) * 0.23) as u16;
-    let repo_width = ((area.width as f32) * 0.10) as u16;
-    let mode_width = ((area.width as f32) * 0.07) as u16;
-    let status_width = ((area.width as f32) * 0.10) as u16;
-    let progress_width = ((area.width as f32) * 0.12) as u16;
-    let time_width = if show_time {
-        ((area.width as f32) * 0.06) as u16
+    let (title_width, repo_width, mode_width, status_width, progress_width, time_width) = if thread.needs_action {
+        // needs_action threads: keep original percentages
+        let title_width = ((area.width as f32) * 0.23) as u16;
+        let repo_width = ((area.width as f32) * 0.10) as u16;
+        let mode_width = ((area.width as f32) * 0.07) as u16;
+        let status_width = ((area.width as f32) * 0.10) as u16;
+        let progress_width = ((area.width as f32) * 0.12) as u16;
+        let time_width = 0; // no time column for needs_action
+        (title_width, repo_width, mode_width, status_width, progress_width, time_width)
     } else {
-        0
+        // non-need-action threads: expand columns to use ~90% of width
+        let title_width = ((area.width as f32) * 0.28) as u16;
+        let repo_width = ((area.width as f32) * 0.14) as u16;
+        let mode_width = ((area.width as f32) * 0.09) as u16;
+        let status_width = ((area.width as f32) * 0.14) as u16;
+        let progress_width = ((area.width as f32) * 0.15) as u16;
+        let time_width = ((area.width as f32) * 0.10) as u16;
+        (title_width, repo_width, mode_width, status_width, progress_width, time_width)
     };
 
     // Track current x position
@@ -136,7 +145,9 @@ pub fn render(
     }
 
     // Action buttons (based on status and waiting_for)
-    render_actions(frame, x, y, area, thread, ctx, registry, false);
+    // Use right-align for non-need-action threads (e.g., Done with Verify button)
+    let right_align = !thread.needs_action;
+    render_actions(frame, x, y, area, thread, ctx, registry, right_align);
 }
 
 // ============================================================================
