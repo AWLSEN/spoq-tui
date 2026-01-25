@@ -630,6 +630,7 @@ where
                                         if app.folder_picker_backspace() {
                                             // Filter was empty, close picker and remove @
                                             app.textarea.backspace(); // Remove the @
+                                            app.reset_cursor_blink();
                                             app.close_folder_picker();
                                         }
                                         continue;
@@ -812,32 +813,38 @@ where
                                     // Alt+Backspace: Delete word backward
                                     KeyCode::Backspace if key.modifiers.contains(KeyModifiers::ALT) => {
                                         app.textarea.delete_word_backward();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     // Super+Backspace (Cmd+Backspace): Delete to line start
                                     // Note: Most terminals intercept this, so Ctrl+U is the reliable alternative
                                     KeyCode::Backspace if key.modifiers.contains(KeyModifiers::SUPER) => {
                                         app.textarea.delete_to_line_start();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     // Alt+Left: Move cursor word left
                                     KeyCode::Left if key.modifiers.contains(KeyModifiers::ALT) => {
                                         app.textarea.move_cursor_word_left();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     // Super+Left (Cmd+Left): Move cursor to line start
                                     KeyCode::Left if key.modifiers.contains(KeyModifiers::SUPER) => {
                                         app.textarea.move_cursor_home();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     // Alt+Right: Move cursor word right
                                     KeyCode::Right if key.modifiers.contains(KeyModifiers::ALT) => {
                                         app.textarea.move_cursor_word_right();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     // Super+Right (Cmd+Right): Move cursor to line end
                                     KeyCode::Right if key.modifiers.contains(KeyModifiers::SUPER) => {
                                         app.textarea.move_cursor_end();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     _ => {}
@@ -849,12 +856,14 @@ where
                                     // Works in ALL terminals (unlike Cmd+Backspace which terminals intercept)
                                     KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                         app.textarea.delete_to_line_start();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     // Ctrl+J = ASCII LF (newline) - works in ALL terminals
                                     // MUST come before plain Char(c) handler
                                     KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                         app.textarea.insert_newline();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     // Plain characters (no modifiers or only SHIFT)
@@ -882,6 +891,7 @@ where
                                             if app.is_folder_picker_trigger(line_content, col) {
                                                 // Insert the @ character first
                                                 app.textarea.insert_char('@');
+                                                app.reset_cursor_blink();
                                                 // Then open the folder picker
                                                 app.open_folder_picker();
                                                 continue;
@@ -902,6 +912,7 @@ where
 
                                         // Normal character insertion
                                         app.textarea.insert_char(char_to_insert);
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Backspace => {
@@ -910,19 +921,23 @@ where
                                             app.clear_folder();
                                         } else {
                                             app.textarea.backspace();
+                                            app.reset_cursor_blink();
                                         }
                                         continue;
                                     }
                                     KeyCode::Delete => {
                                         app.textarea.delete_char();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Left => {
                                         app.textarea.move_cursor_left();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Right => {
                                         app.textarea.move_cursor_right();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Up => {
@@ -932,10 +947,12 @@ where
                                             if let Some(history_entry) = app.input_history.navigate_up(&current_content) {
                                                 let entry = history_entry.to_string();
                                                 app.textarea.set_content(&entry);
+                                                app.reset_cursor_blink();
                                             }
                                         } else {
                                             // Normal cursor movement
                                             app.textarea.move_cursor_up();
+                                            app.reset_cursor_blink();
                                         }
                                         continue;
                                     }
@@ -947,40 +964,48 @@ where
                                                 if let Some(history_entry) = app.input_history.navigate_down() {
                                                     let entry = history_entry.to_string();
                                                     app.textarea.set_content(&entry);
+                                                    app.reset_cursor_blink();
                                                 } else {
                                                     // At bottom of history, restore original input
                                                     let original = app.input_history.get_current_input().to_string();
                                                     app.textarea.set_content(&original);
+                                                    app.reset_cursor_blink();
                                                 }
                                             }
                                             // If not navigating, Down on last line does nothing
                                         } else {
                                             // Normal cursor movement in multi-line input
                                             app.textarea.move_cursor_down();
+                                            app.reset_cursor_blink();
                                         }
                                         continue;
                                     }
                                     KeyCode::Home => {
                                         app.textarea.move_cursor_home();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::End => {
                                         app.textarea.move_cursor_end();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
                                         // Shift+Enter inserts a newline (works in Kitty protocol terminals)
                                         app.textarea.insert_newline();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::ALT) => {
                                         // Alt+Enter inserts a newline
                                         app.textarea.insert_newline();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                         // Ctrl+Enter inserts a newline (fallback - may not work in all terminals)
                                         app.textarea.insert_newline();
+                                        app.reset_cursor_blink();
                                         continue;
                                     }
                                     KeyCode::Enter => {
@@ -1166,11 +1191,13 @@ where
                             if app.should_summarize_paste(&text) {
                                 // Insert as atomic token
                                 app.textarea.insert_paste_token(text);
+                                app.reset_cursor_blink();
                             } else {
                                 // Insert normally character by character
                                 for ch in text.chars() {
                                     app.textarea.insert_char(ch);
                                 }
+                                app.reset_cursor_blink();
                             }
 
                             app.mark_dirty();
