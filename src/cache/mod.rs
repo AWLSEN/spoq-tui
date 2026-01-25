@@ -30,6 +30,9 @@ pub struct ThreadCache {
     /// When a thread is reconciled, we keep track so streaming tokens using
     /// the old pending ID can be redirected to the correct thread.
     pub(crate) pending_to_real: HashMap<String, String>,
+    /// Pending title updates for threads that haven't been reconciled yet.
+    /// Maps thread_id → (title, description). These are applied after reconciliation.
+    pub(crate) pending_title_updates: HashMap<String, (String, Option<String>)>,
     /// Inline errors per thread (displayed as banners)
     pub(crate) errors: HashMap<String, Vec<ErrorInfo>>,
     /// Index of currently focused error (for dismiss with 'd' key)
@@ -57,6 +60,7 @@ impl ThreadCache {
         self.threads.clear();
         self.messages.clear();
         self.thread_order.clear();
+        self.pending_title_updates.clear();
         self.errors.clear();
         self.focused_error_index = 0;
         self.last_accessed.clear();

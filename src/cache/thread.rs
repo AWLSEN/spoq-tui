@@ -264,13 +264,18 @@ impl ThreadCache {
     /// This method updates the title and/or description of a thread.
     /// It handles pending-to-real ID mapping automatically.
     ///
+    /// If the thread doesn't exist yet (race condition where title update arrives
+    /// before thread reconciliation), the update is queued and will be applied
+    /// when the thread is reconciled.
+    ///
     /// # Arguments
     /// * `thread_id` - The thread ID (can be pending or real ID)
     /// * `title` - Optional new title for the thread
     /// * `description` - Optional new description for the thread
     ///
     /// # Returns
-    /// `true` if the thread was found and updated, `false` if the thread doesn't exist.
+    /// `true` if the thread was found and updated immediately,
+    /// `false` if the update was queued for later application.
     pub fn update_thread_metadata(
         &mut self,
         thread_id: &str,
@@ -294,7 +299,32 @@ impl ThreadCache {
 
             true
         } else {
+            // Thread not found - queue the update for when it's reconciled
+            // Only queue if we have something to update
+            if let Some(new_title) = title {
+                self.pending_title_updates
+                    .insert(thread_id.to_string(), (new_title, description));
+            }
             false
+        }
+    }
+
+    /// Apply any pending title updates for a thread after reconciliation.
+    ///
+    /// This should be called after `reconcile_thread_id()` to flush any queued
+    /// title updates that arrived before the thread was reconciled.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The real thread ID (after reconciliation)
+    pub fn apply_pending_title_updates(&mut self, thread_id: &str) {
+        // Check if there are pending updates for this thread_id
+        if let Some((title, description)) = self.pending_title_updates.remove(thread_id) {
+            if let Some(thread) = self.threads.get_mut(thread_id) {
+                thread.title = title;
+                if let Some(desc) = description {
+                    thread.description = Some(desc);
+                }
+            }
         }
     }
 
@@ -1158,5 +1188,135 @@ mod tests {
         let thread = cache.get_thread(&thread_id).unwrap();
         assert_eq!(thread.title, "Updated title");
         assert_eq!(thread.description, Some("Updated description".to_string()));
+    }
+
+    // ============= Pending Title Updates Queue Tests =============
+
+    #[test]
+    fn test_update_thread_metadata_queues_for_nonexistent_thread() {
+        let mut cache = ThreadCache::new();
+
+        // Try to update a thread that doesn't exist yet
+        let updated = cache.update_thread_metadata(
+            "future-thread-id",
+            Some("Queued Title".to_string()),
+            Some("Queued Description".to_string()),
+        );
+
+        // Should return false since thread doesn't exist
+        assert!(!updated);
+
+        // Update should be queued
+        assert!(cache.pending_title_updates.contains_key("future-thread-id"));
+        let (title, desc) = cache.pending_title_updates.get("future-thread-id").unwrap();
+        assert_eq!(title, "Queued Title");
+        assert_eq!(desc, &Some("Queued Description".to_string()));
+    }
+
+    #[test]
+    fn test_update_thread_metadata_does_not_queue_without_title() {
+        let mut cache = ThreadCache::new();
+
+        // Try to update with only description (no title)
+        let updated = cache.update_thread_metadata(
+            "future-thread-id",
+            None,
+            Some("Description only".to_string()),
+        );
+
+        // Should return false since thread doesn't exist
+        assert!(!updated);
+
+        // Should NOT be queued since there's no title
+        assert!(!cache.pending_title_updates.contains_key("future-thread-id"));
+    }
+
+    #[test]
+    fn test_apply_pending_title_updates_applies_queued_update() {
+        let mut cache = ThreadCache::new();
+
+        // Queue an update for a thread that doesn't exist yet
+        cache.pending_title_updates.insert(
+            "thread-123".to_string(),
+            ("Queued Title".to_string(), Some("Queued Description".to_string())),
+        );
+
+        // Create the thread (simulating reconciliation)
+        let thread_id = cache.create_stub_thread("Original title".to_string());
+        // Manually set the thread ID to match the queued update
+        if let Some(mut thread) = cache.threads.remove(&thread_id) {
+            thread.id = "thread-123".to_string();
+            cache.threads.insert("thread-123".to_string(), thread);
+            cache.thread_order.retain(|id| id != &thread_id);
+            cache.thread_order.insert(0, "thread-123".to_string());
+        }
+
+        // Apply pending updates
+        cache.apply_pending_title_updates("thread-123");
+
+        // Verify the update was applied
+        let thread = cache.get_thread("thread-123").unwrap();
+        assert_eq!(thread.title, "Queued Title");
+        assert_eq!(thread.description, Some("Queued Description".to_string()));
+
+        // Queue should be cleared
+        assert!(!cache.pending_title_updates.contains_key("thread-123"));
+    }
+
+    #[test]
+    fn test_apply_pending_title_updates_no_op_if_no_pending() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_stub_thread("Original title".to_string());
+
+        // Apply pending updates when there are none
+        cache.apply_pending_title_updates(&thread_id);
+
+        // Thread should be unchanged
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "Original title");
+        assert!(thread.description.is_none());
+    }
+
+    #[test]
+    fn test_apply_pending_title_updates_with_title_only() {
+        let mut cache = ThreadCache::new();
+        let thread_id = cache.create_stub_thread("Original title".to_string());
+
+        // Queue an update with title only
+        cache.pending_title_updates.insert(
+            thread_id.clone(),
+            ("New Title".to_string(), None),
+        );
+
+        // Apply pending updates
+        cache.apply_pending_title_updates(&thread_id);
+
+        // Verify only title was updated
+        let thread = cache.get_thread(&thread_id).unwrap();
+        assert_eq!(thread.title, "New Title");
+        assert!(thread.description.is_none());
+    }
+
+    #[test]
+    fn test_pending_title_updates_cleared_on_cache_clear() {
+        let mut cache = ThreadCache::new();
+
+        // Queue some updates
+        cache.pending_title_updates.insert(
+            "thread-1".to_string(),
+            ("Title 1".to_string(), None),
+        );
+        cache.pending_title_updates.insert(
+            "thread-2".to_string(),
+            ("Title 2".to_string(), Some("Desc 2".to_string())),
+        );
+
+        assert_eq!(cache.pending_title_updates.len(), 2);
+
+        // Clear the cache
+        cache.clear();
+
+        // Pending updates should be cleared
+        assert!(cache.pending_title_updates.is_empty());
     }
 }

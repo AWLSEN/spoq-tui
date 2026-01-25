@@ -32,6 +32,9 @@ pub enum WsIncomingMessage {
     /// Thread verification notification
     #[serde(rename = "thread_verified")]
     ThreadVerified(WsThreadVerified),
+    /// Thread metadata updated (title, description)
+    #[serde(rename = "thread_updated")]
+    ThreadUpdated(WsThreadUpdated),
     /// System metrics update (CPU, RAM usage)
     #[serde(rename = "system_metrics_update")]
     SystemMetricsUpdate(WsSystemMetricsUpdate),
@@ -185,6 +188,21 @@ pub struct WsThreadVerified {
     pub verified_at: String,
     /// When this notification was sent (ISO8601 timestamp string)
     pub timestamp: String,
+}
+
+/// Thread metadata updated notification
+///
+/// Sent when a thread's title or description has been updated
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsThreadUpdated {
+    /// Thread ID being updated
+    pub thread_id: String,
+    /// Updated title
+    pub title: String,
+    /// Updated description
+    pub description: String,
+    /// When this update occurred (Unix milliseconds)
+    pub timestamp: u64,
 }
 
 /// System metrics update from backend
@@ -1532,6 +1550,71 @@ mod tests {
                 assert_eq!(update.timestamp, "2026-01-25T14:45:00.123Z");
             }
             _ => panic!("Expected ThreadModeUpdate"),
+        }
+    }
+
+    // -------------------- Thread Updated Tests --------------------
+
+    #[test]
+    fn test_deserialize_thread_updated() {
+        let json = r#"{
+            "type": "thread_updated",
+            "thread_id": "thread-123",
+            "title": "Updated Thread Title",
+            "description": "This is the updated description",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ThreadUpdated(update) => {
+                assert_eq!(update.thread_id, "thread-123");
+                assert_eq!(update.title, "Updated Thread Title");
+                assert_eq!(update.description, "This is the updated description");
+                assert_eq!(update.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ThreadUpdated"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_thread_updated() {
+        let update = WsThreadUpdated {
+            thread_id: "thread-serialize".to_string(),
+            title: "New Title".to_string(),
+            description: "New Description".to_string(),
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&update).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-serialize");
+        assert_eq!(parsed["title"], "New Title");
+        assert_eq!(parsed["description"], "New Description");
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+    }
+
+    #[test]
+    fn test_roundtrip_thread_updated() {
+        let original = WsIncomingMessage::ThreadUpdated(WsThreadUpdated {
+            thread_id: "thread-roundtrip".to_string(),
+            title: "Test Title".to_string(),
+            description: "Test Description".to_string(),
+            timestamp: 1705315800000,
+        });
+
+        let json = serde_json::to_string(&original).unwrap();
+        let parsed: WsIncomingMessage = serde_json::from_str(&json).unwrap();
+
+        match parsed {
+            WsIncomingMessage::ThreadUpdated(update) => {
+                assert_eq!(update.thread_id, "thread-roundtrip");
+                assert_eq!(update.title, "Test Title");
+                assert_eq!(update.description, "Test Description");
+                assert_eq!(update.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ThreadUpdated"),
         }
     }
 

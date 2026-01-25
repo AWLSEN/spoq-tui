@@ -246,6 +246,20 @@ fn route_ws_message(
                 })
                 .map_err(|e| format!("Failed to send ThreadVerified: {}", e))
         }
+        WsIncomingMessage::ThreadUpdated(update) => {
+            // Thread metadata update notification
+            info!(
+                "Received thread updated: thread={}, title={}, description={}",
+                update.thread_id, update.title, update.description
+            );
+            message_tx
+                .send(AppMessage::ThreadMetadataUpdated {
+                    thread_id: update.thread_id,
+                    title: Some(update.title),
+                    description: Some(update.description),
+                })
+                .map_err(|e| format!("Failed to send ThreadMetadataUpdated: {}", e))
+        }
         WsIncomingMessage::SystemMetricsUpdate(metrics) => {
             // System metrics update - convert MB to GB for SystemStats
             let stats = SystemStats::new(
