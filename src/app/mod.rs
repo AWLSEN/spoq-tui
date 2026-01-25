@@ -283,6 +283,8 @@ pub struct App {
     pub system_stats: SystemStats,
     /// Timestamp of last Ctrl+C press (for double-press exit detection)
     pub last_ctrl_c_time: Option<std::time::Instant>,
+    /// Cursor blink visibility state (updated each tick)
+    pub cursor_blink_visible: bool,
 }
 
 impl App {
@@ -462,6 +464,7 @@ impl App {
             vps_url,
             system_stats: SystemStats::default(),
             last_ctrl_c_time: None,
+            cursor_blink_visible: true,
         })
     }
 

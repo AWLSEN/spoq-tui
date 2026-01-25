@@ -50,6 +50,10 @@ impl App {
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
 
+        // Update cursor blink visibility (~500ms toggle at 60fps)
+        // Visible when (tick_count / 31) is even, giving ~31 ticks per half-cycle
+        self.cursor_blink_visible = (self.tick_count / 31) % 2 == 0;
+
         // Only update smooth scrolling if there's meaningful velocity
         const VELOCITY_THRESHOLD: f32 = 0.1;
         let has_velocity = self.scroll_velocity.abs() > VELOCITY_THRESHOLD;

@@ -191,10 +191,19 @@ impl Widget for InputWithChipWidget<'_, '_> {
 // Input Section Builder (Unified Scroll)
 // ============================================================================
 
-/// Build the input section as content lines for unified scroll.
+/// Build the input section as content lines for unified scroll with cursor blinking.
 ///
-/// Returns lines for: top border, input content, bottom border, keybinds.
-pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>> {
+/// Returns lines for: top border, input content (with blinking cursor), bottom border, keybinds.
+///
+/// # Arguments
+/// * `app` - The application state
+/// * `viewport_width` - Width of the viewport in characters
+/// * `cursor_visible` - Whether to show the cursor (for blink support)
+pub fn build_input_section_with_cursor(
+    app: &App,
+    viewport_width: u16,
+    cursor_visible: bool,
+) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let border_width = viewport_width as usize;
 
@@ -225,9 +234,33 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
         Style::default().fg(COLOR_ACCENT),
     )));
 
-    // 3. Input content lines (raw text only)
-    for text_line in app.textarea.lines() {
-        lines.push(Line::from(format!("  {}", text_line)));
+    // 3. Input content lines with optional blinking cursor
+    let (cursor_row, cursor_col) = app.textarea.cursor();
+    for (line_idx, text_line) in app.textarea.lines().iter().enumerate() {
+        if cursor_visible && line_idx == cursor_row {
+            // Insert cursor at the cursor position
+            let text = text_line.as_str();
+            let col = cursor_col.min(text.len());
+            let before_cursor = text[..col].to_string();
+            let cursor_char = if col < text.len() {
+                text.chars().nth(col).map(|c| c.to_string()).unwrap_or_else(|| " ".to_string())
+            } else {
+                " ".to_string()
+            };
+            let after_cursor = if col + 1 < text.len() {
+                text[col + cursor_char.len()..].to_string()
+            } else {
+                String::new()
+            };
+
+            lines.push(Line::from(vec![
+                Span::raw(format!("  {}", before_cursor)),
+                Span::styled(cursor_char, Style::default().fg(Color::Black).bg(Color::White)),
+                Span::raw(after_cursor),
+            ]));
+        } else {
+            lines.push(Line::from(format!("  {}", text_line)));
+        }
     }
 
     // 4. Input bottom border (full-width horizontal line)
@@ -249,6 +282,16 @@ pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>>
     ]));
 
     lines
+}
+
+/// Build the input section as content lines for unified scroll.
+///
+/// This is a convenience wrapper around `build_input_section_with_cursor` that
+/// uses `app.cursor_blink_visible` for cursor visibility.
+///
+/// Returns lines for: top border, input content (with blinking cursor), bottom border, keybinds.
+pub fn build_input_section(app: &App, viewport_width: u16) -> Vec<Line<'static>> {
+    build_input_section_with_cursor(app, viewport_width, app.cursor_blink_visible)
 }
 
 #[cfg(test)]
