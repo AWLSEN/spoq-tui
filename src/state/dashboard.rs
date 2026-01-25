@@ -1081,6 +1081,21 @@ impl DashboardState {
         None
     }
 
+    /// Get the top thread that needs action
+    ///
+    /// Returns the first thread that needs action and its waiting type.
+    /// Threads are sorted by needs_action first, then by updated_at (most recent first).
+    pub fn get_top_needs_action_thread(&self) -> Option<(String, WaitingFor)> {
+        for view in &self.thread_views {
+            if view.needs_action {
+                if let Some(wf) = self.waiting_for.get(&view.id) {
+                    return Some((view.id.clone(), wf.clone()));
+                }
+            }
+        }
+        None
+    }
+
     // ========================================================================
     // Private Helpers
     // ========================================================================
