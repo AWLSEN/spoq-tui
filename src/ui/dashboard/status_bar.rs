@@ -529,17 +529,19 @@ mod tests {
         // Test that when the idle segment is very narrow, the label doesn't cause truncation
         // This prevents the stray "i" character bug
 
-        // Scenario: Very narrow idle segment (e.g., 5 chars) with label "idle 15" (7 chars)
+        // Scenario: Very narrow idle segment with label "idle 15" (7 chars)
         // The label should not render to avoid showing partial characters like "i"
         let widths = calculate_segment_widths(40, 30, 5, 80);
 
-        // Idle segment is only 5 chars wide (80 - 40 - 30 - 5 = 5)
-        // "idle 15" is 7 chars, so it shouldn't fit even with truncation
-        assert_eq!(widths.idle, 5);
+        // With 40 working + 30 ready + 5 idle = 75 total:
+        // working: 40/75 * 80 = 42.66 -> 42
+        // ready: 30/75 * 80 = 32.00 -> 32
+        // idle: 80 - 42 - 32 = 6
+        assert_eq!(widths.idle, 6);
 
-        // The actual rendering logic will check: remaining_space >= idle_label_len
-        // If idle_label = "idle 15" (7 chars) and remaining_space < 7, it won't render
-        // This test just validates the width calculation is correct
+        // "idle 15" is 7 chars, so with only 6 chars available, it won't fully fit
+        // The rendering logic checks: remaining_space >= idle_label_len
+        // Since 6 < 7, the label won't render, preventing truncation
     }
 
     #[test]
