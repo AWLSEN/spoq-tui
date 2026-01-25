@@ -876,16 +876,323 @@ capture_tui_state() {
     return 0
 }
 
-# Phase 8: Main test orchestration
+# ==============================================================================
+# Phase 8: Verification Functions
+# ==============================================================================
+
+# Verify all phases completed successfully
+# Usage: verify_all_phases_completed
+# Returns: 0 if all phases completed, 1 otherwise
+verify_all_phases_completed() {
+    log_step "VERIFY" "Verifying phase completion"
+
+    if [ -z "$PLAN_ID" ]; then
+        log_error "PLAN_ID not set - cannot verify phases"
+        return 1
+    fi
+
+    local status_dir="$HOME/comms/plans/$PROJECT/active/$PLAN_ID/status"
+
+    if [ ! -d "$status_dir" ]; then
+        log_error "Status directory not found: $status_dir"
+        return 1
+    fi
+
+    local all_completed=true
+    local completed_count=0
+
+    for phase in $(seq 1 "$TOTAL_PHASES"); do
+        local status_file="$status_dir/phase-${phase}.status"
+
+        if [ ! -f "$status_file" ]; then
+            log_error "Phase $phase: Status file missing"
+            all_completed=false
+            continue
+        fi
+
+        local status
+        status=$(jq -r '.status // "unknown"' "$status_file" 2>/dev/null || echo "unknown")
+
+        if [ "$status" = "completed" ]; then
+            log_success "Phase $phase: completed"
+            completed_count=$((completed_count + 1))
+        else
+            log_error "Phase $phase: $status (expected: completed)"
+            all_completed=false
+        fi
+    done
+
+    echo ""
+    if [ "$all_completed" = true ]; then
+        log_success "All $TOTAL_PHASES phases completed successfully"
+        return 0
+    else
+        log_error "Phase verification failed: $completed_count/$TOTAL_PHASES completed"
+        return 1
+    fi
+}
+
+# Generate summary report
+# Usage: generate_summary_report <results_array_name>
+# Prints a formatted summary of test results
+generate_summary_report() {
+    log_separator
+    echo "  E2E Test Summary Report"
+    log_separator
+    echo ""
+
+    # Test metadata
+    log_info "Test Configuration:"
+    echo "  Project:      $PROJECT"
+    echo "  Plan ID:      ${PLAN_ID:-N/A}"
+    echo "  Thread ID:    ${THREAD_ID:-N/A}"
+    echo "  Total Phases: $TOTAL_PHASES"
+    echo ""
+
+    # Results tracking
+    local total_steps=0
+    local passed_steps=0
+    local failed_steps=0
+
+    # Step 1: Prerequisites
+    log_info "Step 1: Prerequisites Check"
+    if check_prerequisites > /dev/null 2>&1; then
+        echo "  Status: PASS"
+        passed_steps=$((passed_steps + 1))
+    else
+        echo "  Status: FAIL"
+        failed_steps=$((failed_steps + 1))
+    fi
+    total_steps=$((total_steps + 1))
+    echo ""
+
+    # Step 2: Thread Creation
+    log_info "Step 2: Thread Creation"
+    if [ -n "${THREAD_ID:-}" ]; then
+        echo "  Status: PASS (Thread ID: $THREAD_ID)"
+        passed_steps=$((passed_steps + 1))
+    else
+        echo "  Status: FAIL (No thread ID)"
+        failed_steps=$((failed_steps + 1))
+    fi
+    total_steps=$((total_steps + 1))
+    echo ""
+
+    # Step 3: Plan Generation
+    log_info "Step 3: Plan Generation"
+    if [ -n "${PLAN_ID:-}" ]; then
+        local plan_file="$HOME/comms/plans/$PROJECT/active/${PLAN_ID}.md"
+        if [ -f "$plan_file" ]; then
+            echo "  Status: PASS (Plan ID: $PLAN_ID)"
+            passed_steps=$((passed_steps + 1))
+        else
+            echo "  Status: FAIL (Plan file not found)"
+            failed_steps=$((failed_steps + 1))
+        fi
+    else
+        echo "  Status: FAIL (No plan ID)"
+        failed_steps=$((failed_steps + 1))
+    fi
+    total_steps=$((total_steps + 1))
+    echo ""
+
+    # Step 4: Phase Completion
+    log_info "Step 4: Phase Completion Verification"
+    if [ -n "${PLAN_ID:-}" ]; then
+        if verify_all_phases_completed > /dev/null 2>&1; then
+            echo "  Status: PASS (All phases completed)"
+            passed_steps=$((passed_steps + 1))
+        else
+            echo "  Status: FAIL (Some phases incomplete)"
+            failed_steps=$((failed_steps + 1))
+        fi
+    else
+        echo "  Status: SKIP (No plan to verify)"
+    fi
+    total_steps=$((total_steps + 1))
+    echo ""
+
+    # Step 5: Screenshot Capture
+    log_info "Step 5: Screenshot Capture"
+    if [ -d "$SCREENSHOT_DIR" ]; then
+        local screenshot_count
+        screenshot_count=$(find "$SCREENSHOT_DIR" -type f -name "*.png" 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$screenshot_count" -gt 0 ]; then
+            echo "  Status: PASS ($screenshot_count screenshot(s) captured)"
+            passed_steps=$((passed_steps + 1))
+        else
+            echo "  Status: WARN (No screenshots found)"
+            passed_steps=$((passed_steps + 1))
+        fi
+    else
+        echo "  Status: SKIP (Screenshot directory not found)"
+    fi
+    total_steps=$((total_steps + 1))
+    echo ""
+
+    # Overall summary
+    log_separator
+    echo "  Overall Results"
+    log_separator
+    echo ""
+    echo "  Total Steps:  $total_steps"
+    echo "  Passed:       $passed_steps"
+    echo "  Failed:       $failed_steps"
+    echo ""
+
+    # Final verdict
+    if [ "$failed_steps" -eq 0 ]; then
+        log_success "E2E TEST PASSED"
+        echo ""
+        echo "  All test steps completed successfully!"
+        echo "  Screenshots saved to: $SCREENSHOT_DIR"
+        return 0
+    else
+        log_error "E2E TEST FAILED"
+        echo ""
+        echo "  $failed_steps step(s) failed. Review the output above for details."
+        return 1
+    fi
+}
+
+# ==============================================================================
+# Phase 8: Main Test Orchestration
+# ==============================================================================
+
 # Orchestrates the full E2E test flow
+# Usage: run_real_e2e_test
+# Returns: 0 if all tests pass, 1 if any fail
 run_real_e2e_test() {
-    log_warn "run_real_e2e_test: Not yet implemented (Phase 8)"
-    # TODO: Implement main test flow:
-    # 1. Call create_thread_via_api
-    # 2. Call generate_nova_plan
-    # 3. Call monitor_execution (in background)
-    # 4. Call capture_screenshot at key moments
-    # 5. Verify results
+    local exit_code=0
+
+    log_step "E2E TEST" "Starting Real Pulsar E2E Test"
+    echo ""
+
+    # Step 1: Create temp directory for artifacts
+    log_info "Step 1: Creating temporary directories"
+    mkdir -p "$TEMP_DIR"
+    mkdir -p "$SCREENSHOT_DIR"
+    log_success "Directories created: $TEMP_DIR"
+    echo ""
+
+    # Step 2: Check prerequisites
+    log_info "Step 2: Checking prerequisites"
+    if ! check_prerequisites; then
+        log_error "Prerequisites check failed - cannot continue"
+        generate_summary_report
+        return 1
+    fi
+    echo ""
+
+    # Step 3: Start TUI if needed
+    log_info "Step 3: Starting TUI if needed"
+    if ! start_tui_if_needed; then
+        log_warn "TUI not started - screenshots may not be available"
+    fi
+    echo ""
+
+    # Step 4: Create thread via API
+    log_info "Step 4: Creating thread via API"
+    if create_thread_via_api; then
+        log_success "Thread created: $THREAD_ID"
+    else
+        log_error "Failed to create thread"
+        exit_code=1
+        # Continue to next step even if this fails
+    fi
+    echo ""
+
+    # Step 5: Generate Nova plan
+    log_info "Step 5: Generating Nova plan with $TOTAL_PHASES phases"
+    if generate_nova_plan; then
+        log_success "Plan generated: $PLAN_ID"
+        log_info "Plan location: $HOME/comms/plans/$PROJECT/active/$PLAN_ID"
+    else
+        log_error "Failed to generate plan"
+        generate_summary_report
+        return 1
+    fi
+    echo ""
+
+    # Step 6: Display instructions to run Pulsar manually
+    log_info "Step 6: Pulsar execution instructions"
+    log_separator
+    echo ""
+    echo "  MANUAL ACTION REQUIRED"
+    echo ""
+    echo "  To execute this plan with Pulsar:"
+    echo ""
+    echo "    1. Open Claude Code in a terminal"
+    echo "    2. Navigate to: cd $(pwd)"
+    echo "    3. Run the command: /pulsar $PLAN_ID"
+    echo ""
+    log_separator
+    echo ""
+    log_info "The test will now monitor for execution progress..."
+    echo ""
+
+    # Step 7: Monitor logs while Pulsar executes
+    log_info "Step 7: Monitoring Pulsar execution"
+    if monitor_execution; then
+        log_success "Pulsar execution monitored successfully"
+    else
+        log_error "Monitoring detected issues or timeout"
+        exit_code=1
+        # Continue to verification anyway
+    fi
+    echo ""
+
+    # Step 8: Take screenshot at final state
+    log_info "Step 8: Capturing final TUI state"
+    if capture_tui_state "final_state"; then
+        log_success "Screenshot captured"
+    else
+        log_warn "Screenshot capture encountered issues"
+    fi
+    echo ""
+
+    # Step 9: Verify all phases completed
+    log_info "Step 9: Verifying phase completion"
+    if verify_all_phases_completed; then
+        log_success "All phases verified as completed"
+    else
+        log_error "Phase verification failed"
+        exit_code=1
+    fi
+    echo ""
+
+    # Step 10: Generate summary report
+    log_info "Step 10: Generating summary report"
+    echo ""
+    if generate_summary_report; then
+        log_success "Summary report generated"
+    else
+        log_error "Summary report indicates test failures"
+        exit_code=1
+    fi
+
+    # Step 11: Optional cleanup prompt
+    echo ""
+    log_separator
+    log_info "Test artifacts saved to: $TEMP_DIR"
+    log_info "Screenshots saved to: $SCREENSHOT_DIR"
+
+    if [ -n "${PLAN_ID:-}" ]; then
+        log_info "Plan directory: $HOME/comms/plans/$PROJECT/active/$PLAN_ID"
+    fi
+
+    echo ""
+    read -p "Clean up test artifacts? [y/N] " -n 1 -r
+    echo
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Cleaning up..."
+        cmd_cleanup
+    else
+        log_info "Keeping test artifacts for review"
+    fi
+
+    return $exit_code
 }
 
 # ==============================================================================
@@ -954,18 +1261,8 @@ cmd_run() {
     log_separator
     echo ""
 
-    # Setup environment
-    cmd_setup || return 1
-    echo ""
-
-    # Run main test
+    # Run main test (which includes setup and cleanup prompts)
     run_real_e2e_test
-
-    # Prompt for cleanup
-    echo ""
-    log_separator
-    read -p "Press Enter to cleanup test files (or Ctrl+C to keep them)..."
-    cmd_cleanup
 }
 
 # ==============================================================================
