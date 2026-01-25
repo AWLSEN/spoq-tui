@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::models::dashboard::WaitingFor;
 use crate::state::session::AskUserQuestionState;
 use crate::ui::input::parse_ask_user_question;
 use crate::websocket::{
@@ -251,6 +252,17 @@ impl App {
     /// Returns true if a permission was handled, false if no pending permission
     pub fn handle_permission_key(&mut self, key: char) -> bool {
         info!("handle_permission_key called with key: '{}'", key);
+
+        // Check top thread type - if UserInput, Y/N should do nothing
+        if matches!(key, 'y' | 'Y' | 'n' | 'N') {
+            if let Some((_, wf)) = self.dashboard.get_top_needs_action_thread() {
+                if matches!(wf, WaitingFor::UserInput) {
+                    info!("Ignoring Y/N key because top thread is UserInput");
+                    return false; // Ignore Y/N when top thread is UserInput
+                }
+            }
+        }
+
         if let Some(ref perm) = self.session_state.pending_permission.clone() {
             info!(
                 "Pending permission found: {} for tool {}",
