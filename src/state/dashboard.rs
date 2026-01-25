@@ -3366,4 +3366,353 @@ mod tests {
         assert_eq!(thread_id, "t1");
         assert!(matches!(waiting_for, WaitingFor::UserInput));
     }
+
+    // -------------------- build_question_answers Tests --------------------
+    // These tests verify the answers HashMap is built correctly for WebSocket response
+
+    #[test]
+    fn test_build_question_answers_single_select() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which framework should we use?".to_string(),
+                header: "Framework".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "React".to_string(),
+                        description: "UI library".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Vue".to_string(),
+                        description: "Progressive framework".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Angular".to_string(),
+                        description: "Full framework".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-single-select".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Select "Vue" (index 1)
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(Some(1));
+        }
+
+        let result = state.build_question_answers();
+        assert!(result.is_some());
+        let (thread_id, request_id, answers) = result.unwrap();
+
+        assert_eq!(thread_id, "t1");
+        assert_eq!(request_id, "req-single-select");
+        assert_eq!(answers.len(), 1);
+        assert_eq!(
+            answers.get("Which framework should we use?"),
+            Some(&"Vue".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_question_answers_multi_select() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Select testing tools".to_string(),
+                header: "Testing".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "Jest".to_string(),
+                        description: "Unit testing".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Cypress".to_string(),
+                        description: "E2E testing".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Playwright".to_string(),
+                        description: "Browser testing".to_string(),
+                    },
+                ],
+                multi_select: true,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-multi-select".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Select Jest and Playwright (indices 0 and 2)
+        if let Some(qs) = &mut state.question_state {
+            qs.toggle_multi_selection(0);
+            qs.toggle_multi_selection(2);
+        }
+
+        let result = state.build_question_answers();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+
+        assert_eq!(answers.len(), 1);
+        let answer = answers.get("Select testing tools").unwrap();
+        // Multi-select answers are comma-separated
+        assert!(answer.contains("Jest"));
+        assert!(answer.contains("Playwright"));
+        assert!(!answer.contains("Cypress"));
+    }
+
+    #[test]
+    fn test_build_question_answers_other_text() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which database?".to_string(),
+                header: "Database".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "PostgreSQL".to_string(),
+                        description: "Relational DB".to_string(),
+                    },
+                    QuestionOption {
+                        label: "MongoDB".to_string(),
+                        description: "Document DB".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-other".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Select "Other" (None) and enter custom text
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(None);
+            qs.push_other_char('S');
+            qs.push_other_char('Q');
+            qs.push_other_char('L');
+            qs.push_other_char('i');
+            qs.push_other_char('t');
+            qs.push_other_char('e');
+        }
+
+        let result = state.build_question_answers();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+
+        assert_eq!(answers.len(), 1);
+        assert_eq!(
+            answers.get("Which database?"),
+            Some(&"SQLite".to_string())
+        );
+    }
+
+    #[test]
+    fn test_build_question_answers_multi_select_with_other() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Select features".to_string(),
+                header: "Features".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "Auth".to_string(),
+                        description: "Authentication".to_string(),
+                    },
+                    QuestionOption {
+                        label: "API".to_string(),
+                        description: "REST API".to_string(),
+                    },
+                ],
+                multi_select: true,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-multi-other".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Select "Auth" and add "Other" text
+        if let Some(qs) = &mut state.question_state {
+            qs.toggle_multi_selection(0);
+            qs.push_other_char('C');
+            qs.push_other_char('a');
+            qs.push_other_char('c');
+            qs.push_other_char('h');
+            qs.push_other_char('e');
+        }
+
+        let result = state.build_question_answers();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+
+        let answer = answers.get("Select features").unwrap();
+        // Should include both the selected option and the other text
+        assert!(answer.contains("Auth"));
+        assert!(answer.contains("Cache"));
+    }
+
+    #[test]
+    fn test_build_question_answers_multiple_questions() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let question_data = AskUserQuestionData {
+            questions: vec![
+                Question {
+                    question: "Which language?".to_string(),
+                    header: "Language".to_string(),
+                    options: vec![
+                        QuestionOption {
+                            label: "Rust".to_string(),
+                            description: "Systems language".to_string(),
+                        },
+                        QuestionOption {
+                            label: "Go".to_string(),
+                            description: "Simple language".to_string(),
+                        },
+                    ],
+                    multi_select: false,
+                },
+                Question {
+                    question: "Which framework?".to_string(),
+                    header: "Framework".to_string(),
+                    options: vec![
+                        QuestionOption {
+                            label: "Actix".to_string(),
+                            description: "Fast web framework".to_string(),
+                        },
+                        QuestionOption {
+                            label: "Axum".to_string(),
+                            description: "Ergonomic framework".to_string(),
+                        },
+                    ],
+                    multi_select: false,
+                },
+            ],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-multi-question".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Answer first question: select "Rust"
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(Some(0));
+            // Move to second tab
+            qs.tab_index = 1;
+            // Select "Axum" for second question
+            qs.selections[1] = Some(1);
+        }
+
+        let result = state.build_question_answers();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+
+        assert_eq!(answers.len(), 2);
+        assert_eq!(answers.get("Which language?"), Some(&"Rust".to_string()));
+        assert_eq!(answers.get("Which framework?"), Some(&"Axum".to_string()));
+    }
+
+    #[test]
+    fn test_build_question_answers_uses_question_text_as_key() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // The question text (not header) should be used as the HashMap key
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "What is your preferred authentication method?".to_string(),
+                header: "Auth".to_string(), // Short header for UI
+                options: vec![QuestionOption {
+                    label: "OAuth 2.0".to_string(),
+                    description: "Industry standard".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-key".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(Some(0));
+        }
+
+        let result = state.build_question_answers();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+
+        // Key should be the full question text, not the header
+        assert!(answers.contains_key("What is your preferred authentication method?"));
+        assert!(!answers.contains_key("Auth"));
+    }
+
+    #[test]
+    fn test_build_question_answers_uses_option_label_as_value() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // The option label (not description) should be used as the value
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Select tool".to_string(),
+                header: "Tool".to_string(),
+                options: vec![QuestionOption {
+                    label: "ESLint".to_string(),
+                    description: "JavaScript linter with extensive rule set".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state.set_pending_question("t1", "req-value".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        if let Some(qs) = &mut state.question_state {
+            qs.set_current_selection(Some(0));
+        }
+
+        let result = state.build_question_answers();
+        assert!(result.is_some());
+        let (_, _, answers) = result.unwrap();
+
+        // Value should be the option label, not description
+        assert_eq!(answers.get("Select tool"), Some(&"ESLint".to_string()));
+    }
 }

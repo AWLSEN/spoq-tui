@@ -1913,4 +1913,323 @@ mod tests {
             _ => panic!("Expected SystemMetricsUpdate"),
         }
     }
+
+    // -------------------- Question Response Payload Tests --------------------
+    // These tests verify the WebSocket response format matches what spoq-conductor expects
+
+    #[test]
+    fn test_question_response_payload_format_matches_conductor() {
+        // Build the response as the TUI does in send_question_response()
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Which auth method?".to_string(), "JWT".to_string());
+        answers.insert("Which database?".to_string(), "PostgreSQL".to_string());
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_test-123".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // Verify structure matches conductor expectations:
+        // - type: "command_response"
+        // - request_id: string
+        // - result.status: "success"
+        // - result.data.allowed: boolean
+        // - result.data.message: string (JSON-encoded answers)
+        assert_eq!(parsed["type"], "command_response");
+        assert_eq!(parsed["request_id"], "perm_test-123");
+        assert_eq!(parsed["result"]["status"], "success");
+        assert_eq!(parsed["result"]["data"]["allowed"], true);
+
+        // Verify message is a valid JSON string that can be parsed
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+        assert_eq!(parsed_answers.get("Which auth method?"), Some(&"JWT".to_string()));
+        assert_eq!(parsed_answers.get("Which database?"), Some(&"PostgreSQL".to_string()));
+    }
+
+    #[test]
+    fn test_question_response_single_answer() {
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Which framework?".to_string(), "React".to_string());
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_single".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // Verify the message can be parsed back to get the answer
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+        assert_eq!(parsed_answers.len(), 1);
+        assert_eq!(parsed_answers.get("Which framework?"), Some(&"React".to_string()));
+    }
+
+    #[test]
+    fn test_question_response_multi_select_comma_separated() {
+        // Multi-select answers are joined with ", " in build_question_answers()
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Select features".to_string(), "Linting, Unit tests, E2E tests".to_string());
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_multi".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+        assert_eq!(
+            parsed_answers.get("Select features"),
+            Some(&"Linting, Unit tests, E2E tests".to_string())
+        );
+    }
+
+    #[test]
+    fn test_question_response_with_other_text() {
+        // "Other" option uses custom text
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Which framework?".to_string(), "Custom framework XYZ".to_string());
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_other".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+        assert_eq!(
+            parsed_answers.get("Which framework?"),
+            Some(&"Custom framework XYZ".to_string())
+        );
+    }
+
+    #[test]
+    fn test_question_response_multi_select_with_other() {
+        // Multi-select can include "Other" text appended
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Select features".to_string(), "Linting, Unit tests, Custom feature ABC".to_string());
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_multi_other".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+        assert_eq!(
+            parsed_answers.get("Select features"),
+            Some(&"Linting, Unit tests, Custom feature ABC".to_string())
+        );
+    }
+
+    #[test]
+    fn test_question_response_empty_answers_still_valid() {
+        // Edge case: no answers (shouldn't happen in practice but should be valid JSON)
+        let answers: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_empty".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+        assert!(parsed_answers.is_empty());
+    }
+
+    #[test]
+    fn test_question_response_special_characters_in_answers() {
+        // Answers may contain special characters that need proper JSON escaping
+        let mut answers = std::collections::HashMap::new();
+        answers.insert(
+            "Describe your approach".to_string(),
+            "Use \"quotes\" and 'apostrophes'\nWith newlines\tand tabs".to_string(),
+        );
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_special".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // The message should be valid JSON that can be parsed
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+
+        let answer = parsed_answers.get("Describe your approach").unwrap();
+        assert!(answer.contains("\"quotes\""));
+        assert!(answer.contains('\n'));
+        assert!(answer.contains('\t'));
+    }
+
+    #[test]
+    fn test_question_response_unicode_in_answers() {
+        let mut answers = std::collections::HashMap::new();
+        answers.insert(
+            "Preferred language".to_string(),
+            "日本語 (Japanese) 🇯🇵".to_string(),
+        );
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_unicode".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        let message_str = parsed["result"]["data"]["message"].as_str().unwrap();
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(message_str).unwrap();
+
+        let answer = parsed_answers.get("Preferred language").unwrap();
+        assert!(answer.contains("日本語"));
+        assert!(answer.contains("🇯🇵"));
+    }
+
+    #[test]
+    fn test_question_response_conductor_compatible_deserialization() {
+        // Simulate what conductor does: deserialize as CommandResult
+        // This test validates the TUI's output can be parsed by conductor
+
+        let mut answers = std::collections::HashMap::new();
+        answers.insert("Question 1".to_string(), "Answer 1".to_string());
+        answers.insert("Question 2".to_string(), "Answer 2".to_string());
+
+        let answers_value = serde_json::to_value(&answers).unwrap_or_default();
+
+        let response = WsCommandResponse {
+            type_: "command_response".to_string(),
+            request_id: "perm_conductor".to_string(),
+            result: WsCommandResult {
+                status: "success".to_string(),
+                data: WsPermissionData {
+                    allowed: true,
+                    message: Some(answers_value.to_string()),
+                },
+            },
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        // Conductor extracts: data.allowed as bool, data.message as str
+        let result = &parsed["result"];
+        let data = &result["data"];
+
+        let allowed = data.get("allowed").and_then(serde_json::Value::as_bool).unwrap_or(false);
+        let message = data
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .to_string();
+
+        assert!(allowed);
+        assert!(!message.is_empty());
+
+        // Conductor passes this message string back to the MCP tool
+        // The MCP tool can then parse it as JSON to get the answers
+        let parsed_answers: std::collections::HashMap<String, String> =
+            serde_json::from_str(&message).unwrap();
+        assert_eq!(parsed_answers.len(), 2);
+        assert_eq!(parsed_answers.get("Question 1"), Some(&"Answer 1".to_string()));
+        assert_eq!(parsed_answers.get("Question 2"), Some(&"Answer 2".to_string()));
+    }
 }
