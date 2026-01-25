@@ -893,23 +893,17 @@ fn run_byovps_flow_with_retry(
                         "Request timed out, checking health...",
                     );
 
-                    // Fetch VPS status to get the actual hostname
-                    let mut client = CentralApiClient::new();
-                    if let Some(ref token) = credentials.access_token {
-                        client = client.with_auth(token);
-                    }
-                    if let Some(ref refresh) = credentials.refresh_token {
-                        client = client.with_refresh_token(refresh);
-                    }
-
-                    let health_url = match runtime.block_on(client.fetch_user_vps()) {
-                        Ok(Some(vps)) if vps.hostname.is_some() => {
-                            format!("https://{}", vps.hostname.unwrap())
-                        }
-                        _ => {
-                            // Fallback to IP-based health check if we can't get hostname
-                            format!("http://{}:8080", byovps_creds.vps_ip)
-                        }
+                    // In health-first pattern, we don't have a DB record yet.
+                    // Construct hostname from username pattern or fallback to IP.
+                    // Username format: {name}.spoq.dev
+                    let health_url = if !byovps_creds.ssh_username.is_empty()
+                        && byovps_creds.ssh_username != "root"
+                    {
+                        // Use the expected hostname pattern
+                        format!("https://{}.spoq.dev", byovps_creds.ssh_username)
+                    } else {
+                        // Fallback to IP-based health check (conductor runs on port 8000)
+                        format!("http://{}:8000", byovps_creds.vps_ip)
                     };
                     match wait_for_health_with_ui(
                         runtime,
@@ -924,8 +918,64 @@ fn run_byovps_flow_with_retry(
                             );
                             cli_output::print_step_end();
 
-                            // STEP 4: CREDENTIAL SYNC
-                            cli_output::print_step_start(4, "CREDENTIAL SYNC");
+                            // STEP 4: CONFIRM VPS (Create DB record in recovery)
+                            cli_output::print_step_start(4, "CONFIRMING VPS");
+
+                            // Re-call provision to get jwt_secret (API is idempotent now)
+                            let mut client = CentralApiClient::new();
+                            if let Some(ref token) = credentials.access_token {
+                                client = client.with_auth(token);
+                            }
+                            if let Some(ref refresh) = credentials.refresh_token {
+                                client = client.with_refresh_token(refresh);
+                            }
+
+                            match runtime.block_on(client.provision_byovps_pending(
+                                &byovps_creds.vps_ip,
+                                &byovps_creds.ssh_username,
+                                &byovps_creds.ssh_password,
+                            )) {
+                                Ok(pending) => {
+                                    // Build ConfirmVpsRequest with BYOVPS-specific values
+                                    let confirm_request = ConfirmVpsRequest {
+                                        hostname: pending.hostname.clone(),
+                                        ip_address: pending.ip_address.clone(),
+                                        provider_instance_id: 0,
+                                        provider_order_id: None,
+                                        provider: "byovps".to_string(),
+                                        plan_id: 0,
+                                        template_id: 0,
+                                        data_center_id: 0,
+                                        jwt_secret: pending.jwt_secret.clone(),
+                                        ssh_password: pending.ssh_password.clone(),
+                                    };
+
+                                    match runtime.block_on(client.confirm_vps(confirm_request)) {
+                                        Ok(_) => {
+                                            cli_output::print_step_line(
+                                                icons::SUCCESS,
+                                                "VPS confirmed in backend",
+                                            );
+                                        }
+                                        Err(e) => {
+                                            cli_output::print_step_line(
+                                                icons::WARNING,
+                                                &format!("Failed to confirm VPS: {}", e),
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    cli_output::print_step_line(
+                                        icons::WARNING,
+                                        &format!("Failed to get pending data: {}", e),
+                                    );
+                                }
+                            }
+                            cli_output::print_step_end();
+
+                            // STEP 5: CREDENTIAL SYNC
+                            cli_output::print_step_start(5, "CREDENTIAL SYNC");
                             match runtime.block_on(sync_credentials(
                                 &byovps_creds.vps_ip,
                                 &byovps_creds.ssh_username,
@@ -958,8 +1008,8 @@ fn run_byovps_flow_with_retry(
                             }
                             cli_output::print_step_end();
 
-                            // STEP 5: VERIFICATION
-                            cli_output::print_step_start(5, "VERIFICATION");
+                            // STEP 6: VERIFICATION
+                            cli_output::print_step_start(6, "VERIFICATION");
                             let mut has_warnings = false;
                             match super::token_verification::verify_vps_tokens(
                                 &byovps_creds.vps_ip,
