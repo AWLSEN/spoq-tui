@@ -802,6 +802,19 @@ mod tests {
         assert!(found_approve, "ApproveThread action not found in hit areas");
         assert!(found_reject, "RejectThread action not found in hit areas");
         assert!(found_always, "AllowToolAlways action not found in hit areas");
+
+        // Also verify that the info icon is registered with correct tooltip content
+        let mut found_info_icon = false;
+        for x in 0..200 {
+            if let Some(action) = registry.hit_test(x, 0) {
+                if let ClickAction::HoverInfoIcon { content, .. } = action {
+                    assert_eq!(content, "Permission request for tool: test_tool");
+                    found_info_icon = true;
+                    break;
+                }
+            }
+        }
+        assert!(found_info_icon, "Info icon with tooltip not found for permission state");
     }
 
     #[test]
@@ -878,6 +891,18 @@ mod tests {
 
         assert!(found_approve, "ApproveThread action not found for plan approval");
         assert!(found_reject, "RejectThread action not found for plan approval");
+
+        // Verify that NO info icon is registered for plan approval (only for permissions)
+        let mut found_info_icon = false;
+        for x in 0..100 {
+            if let Some(action) = registry.hit_test(x, 0) {
+                if matches!(action, ClickAction::HoverInfoIcon { .. }) {
+                    found_info_icon = true;
+                    break;
+                }
+            }
+        }
+        assert!(!found_info_icon, "Info icon should NOT appear for plan approval (only for permissions)");
     }
 
     #[test]
@@ -1127,6 +1152,86 @@ mod tests {
         }
 
         assert!(rightmost_button_x >= 95, "Right-aligned buttons should end near right edge (>= 95), got x={}", rightmost_button_x);
+    }
+
+    #[test]
+    fn test_info_icon_tooltip_content_formatting() {
+        use crate::models::dashboard::{Aggregate, ThreadStatus, WaitingFor};
+        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
+        use crate::view_state::dashboard_view::ThreadView;
+        use crate::view_state::SystemStats;
+        use ratatui::backend::TestBackend;
+        use ratatui::layout::Rect;
+        use ratatui::Terminal;
+
+        // Test with different tool names to verify formatting
+        let tool_names = vec!["Bash", "WebFetch", "Read", "Edit"];
+
+        for tool_name in tool_names {
+            let thread = ThreadView {
+                id: "thread-test".to_string(),
+                title: "Test".to_string(),
+                repository: "repo".to_string(),
+                mode: crate::models::ThreadMode::Normal,
+                status: ThreadStatus::Waiting,
+                waiting_for: Some(WaitingFor::Permission {
+                    request_id: "req-test".to_string(),
+                    tool_name: tool_name.to_string(),
+                }),
+                progress: None,
+                duration: "1m".to_string(),
+                needs_action: true,
+                current_operation: None,
+            };
+
+            let backend = TestBackend::new(200, 1);
+            let mut terminal = Terminal::new(backend).unwrap();
+            let mut registry = HitAreaRegistry::new();
+
+            let theme = crate::view_state::Theme::default();
+            let system_stats = SystemStats {
+                connected: true,
+                cpu_percent: 10.0,
+                ram_used_gb: 2.0,
+                ram_total_gb: 8.0,
+            };
+            let aggregate = Aggregate::new();
+            let threads = vec![];
+
+            let ctx = RenderContext {
+                threads: &threads,
+                aggregate: &aggregate,
+                filter: None,
+                overlay: None,
+                system_stats: &system_stats,
+                theme: &theme,
+            };
+
+            terminal
+                .draw(|frame| {
+                    let area = Rect::new(0, 0, 200, 1);
+                    render(frame, area, &thread, &ctx, &mut registry);
+                })
+                .unwrap();
+
+            // Find the info icon and verify tooltip content format
+            let mut found_tooltip = false;
+            for x in 0..200 {
+                if let Some(action) = registry.hit_test(x, 0) {
+                    if let ClickAction::HoverInfoIcon { content, .. } = action {
+                        let expected_content = format!("Permission request for tool: {}", tool_name);
+                        assert_eq!(
+                            content, expected_content,
+                            "Tooltip content should be formatted as 'Permission request for tool: {}'",
+                            tool_name
+                        );
+                        found_tooltip = true;
+                        break;
+                    }
+                }
+            }
+            assert!(found_tooltip, "Tooltip with formatted content not found for tool: {}", tool_name);
+        }
     }
 
     #[test]
