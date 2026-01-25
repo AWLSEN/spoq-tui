@@ -187,34 +187,46 @@ fn render_actions(
     // Label style: dim
     let label_style = Style::default().fg(ctx.theme.dim);
 
-    // Determine which buttons to show
-    let buttons = match (&thread.status, &thread.waiting_for) {
-        // Permission -> [y] Yes  [n] No  [a] Always
-        (ThreadStatus::Waiting, Some(WaitingFor::Permission { .. })) => {
-            vec![
-                ("[y]", "Yes", ButtonAction::Approve),
-                ("[n]", "No", ButtonAction::Reject),
-                ("[a]", "Always", ButtonAction::Always),
-            ]
+    // Info icon style: dim
+    let info_icon_style = Style::default().fg(ctx.theme.dim);
+
+    // Determine which buttons to show and if we need an info icon
+    let (buttons, show_info_icon, permission_tool) = match (&thread.status, &thread.waiting_for) {
+        // Permission -> (i) [y] Yes  [n] No  [a] Always
+        (ThreadStatus::Waiting, Some(WaitingFor::Permission { tool_name, .. })) => {
+            (
+                vec![
+                    ("[y]", "Yes", ButtonAction::Approve),
+                    ("[n]", "No", ButtonAction::Reject),
+                    ("[a]", "Always", ButtonAction::Always),
+                ],
+                true,
+                Some(tool_name.clone()),
+            )
         }
         // Plan approval -> [y] Yes  [n] No
         (ThreadStatus::Waiting, Some(WaitingFor::PlanApproval { .. })) => {
-            vec![
-                ("[y]", "Yes", ButtonAction::Approve),
-                ("[n]", "No", ButtonAction::Reject),
-            ]
+            (
+                vec![
+                    ("[y]", "Yes", ButtonAction::Approve),
+                    ("[n]", "No", ButtonAction::Reject),
+                ],
+                false,
+                None,
+            )
         }
         // User input -> [a] Answer
         (ThreadStatus::Waiting, Some(WaitingFor::UserInput)) => {
-            vec![("[a]", "Answer", ButtonAction::Answer)]
+            (vec![("[a]", "Answer", ButtonAction::Answer)], false, None)
         }
         // Done -> [v] Verify
-        (ThreadStatus::Done, _) => {
-            vec![("[v]", "Verify", ButtonAction::Verify)]
-        }
+        (ThreadStatus::Done, _) => (vec![("[v]", "Verify", ButtonAction::Verify)], false, None),
         // Idle/Running/Error -> no buttons
-        _ => vec![],
+        _ => (vec![], false, None),
     };
+
+    // Icon width: "(i) " = 3 chars + 1 space = 4
+    let icon_width = if show_info_icon { 4 } else { 0 };
 
     // Calculate total width of all buttons
     let total_button_width: u16 = buttons
@@ -229,14 +241,46 @@ fn render_actions(
         })
         .sum();
 
+    // Right margin for alignment consistency (2 chars)
+    let right_margin = if right_align { 2 } else { 0 };
+
+    // Total width including icon and margin
+    let total_width = icon_width + total_button_width + right_margin;
+
     // Determine starting x position based on alignment
     let mut current_x = if right_align {
-        // Start from right edge, subtract total button width
-        area.x + area.width.saturating_sub(total_button_width)
+        // Start from right edge, subtract total width
+        area.x + area.width.saturating_sub(total_width)
     } else {
         // Left align: start from provided x position
         x
     };
+
+    // Render info icon if needed (for permission buttons)
+    if show_info_icon {
+        // Render "(i) "
+        render_text(buf, current_x, y, "(i)", info_icon_style, area);
+
+        // Register hit area for info icon
+        let icon_rect = Rect::new(current_x, y, 3, 1); // "(i)" is 3 chars
+        let tooltip_content = if let Some(tool_name) = permission_tool {
+            format!("Permission request for tool: {}", tool_name)
+        } else {
+            "Permission request".to_string()
+        };
+
+        registry.register(
+            icon_rect,
+            ClickAction::HoverInfoIcon {
+                content: tooltip_content,
+                anchor_x: current_x,
+                anchor_y: y,
+            },
+            None,
+        );
+
+        current_x += 4; // Move past "(i) " (3 chars + 1 space)
+    }
 
     for (key, label, action) in buttons {
         let key_len = key.len() as u16;
