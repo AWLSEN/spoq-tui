@@ -1117,4 +1117,71 @@ mod tests {
         let wd = app.selected_folder.as_ref().map(|f| f.path.clone());
         assert!(wd.is_none());
     }
+
+    // =========================================================================
+    // reset_cursor_blink tests
+    // =========================================================================
+
+    #[test]
+    fn test_reset_cursor_blink_resets_to_visible() {
+        let mut app = create_test_app();
+        // Initialize blink state and move it to hidden phase
+        app.cursor_blink.reset(0);
+        app.tick_count = 50; // Well past blinkwait (31) + first half cycle (16) = 47
+        app.cursor_blink.update(app.tick_count);
+
+        // Verify cursor is hidden before reset (in second half of blink cycle)
+        assert!(!app.cursor_blink.is_visible(), "Cursor should be hidden at tick 50");
+
+        // Reset cursor blink at current tick
+        app.reset_cursor_blink();
+
+        // After reset, cursor should be visible (solid)
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible after reset");
+    }
+
+    #[test]
+    fn test_reset_cursor_blink_marks_dirty() {
+        let mut app = create_test_app();
+        app.needs_redraw = false;
+
+        app.reset_cursor_blink();
+
+        assert!(app.needs_redraw, "reset_cursor_blink should mark app as dirty");
+    }
+
+    #[test]
+    fn test_reset_cursor_blink_uses_current_tick_count() {
+        let mut app = create_test_app();
+        app.tick_count = 42;
+
+        app.reset_cursor_blink();
+
+        // The reset should use tick_count = 42 as the new base
+        // Cursor should be visible immediately after reset
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible immediately after reset");
+    }
+
+    #[test]
+    fn test_reset_cursor_blink_restarts_blinkwait() {
+        let mut app = create_test_app();
+
+        // Simulate cursor being in blink state
+        app.tick_count = 15; // Well into blinking
+        app.cursor_blink.update(app.tick_count);
+
+        // Reset at tick 20
+        app.tick_count = 20;
+        app.reset_cursor_blink();
+
+        // Should be visible (solid) immediately after reset
+        assert!(app.cursor_blink.is_visible(), "Should be solid after reset");
+
+        // Advance by a few ticks (but stay within blinkwait period)
+        app.tick_count = 25;
+        app.cursor_blink.update(app.tick_count);
+
+        // Should still be visible (within blinkwait window)
+        assert!(app.cursor_blink.is_visible(), "Should remain visible during blinkwait");
+    }
 }
