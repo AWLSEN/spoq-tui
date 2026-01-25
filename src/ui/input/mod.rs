@@ -56,11 +56,11 @@ pub fn render_input_area_with_blink(
     let input_focused = true;
 
     // Calculate cursor visibility for blinking
-    // When blink_enabled is true: cursor blinks based on tick_count
+    // When blink_enabled is true: cursor blinks using app.cursor_blink state
     // When blink_enabled is false: cursor is always visible (static)
     let cursor_visible = if blink_enabled && input_focused {
-        // Blink: visible when (tick_count / 5) is even (same pattern used elsewhere in codebase)
-        (app.tick_count / 5).is_multiple_of(2)
+        // Blink: use centralized blink state
+        app.cursor_blink.is_visible()
     } else {
         // Static: always visible when focused
         input_focused

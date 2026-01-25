@@ -37,6 +37,13 @@ impl App {
         self.mark_dirty();
     }
 
+    /// Reset cursor blink timer - call on any input activity
+    /// This makes cursor solid immediately and restarts blinkwait countdown
+    pub fn reset_cursor_blink(&mut self) {
+        self.cursor_blink.reset(self.tick_count);
+        self.mark_dirty(); // Immediate redraw to show solid cursor
+    }
+
     /// Reset scroll state to bottom (newest content)
     pub fn reset_scroll(&mut self) {
         self.unified_scroll = 0;
