@@ -463,7 +463,32 @@ where
                                 }
 
                                 // Standard permission prompt (y/a/n)
-                                if let KeyCode::Char(c) = key.code {
+                                // Check if 'A' key should open UserInput dialog instead of "Always Allow"
+                                if let KeyCode::Char('a') | KeyCode::Char('A') = key.code {
+                                    if let Some((_, wf)) = app.dashboard.get_top_needs_action_thread() {
+                                        if matches!(wf, spoq::models::dashboard::WaitingFor::UserInput) {
+                                            // Let 'A' fall through to dialog opener (don't consume here)
+                                            // Skip the permission block entirely
+                                        } else {
+                                            // Top thread is Permission/PlanApproval - handle as Always Allow
+                                            if let KeyCode::Char(c) = key.code {
+                                                if app.handle_permission_key(c) {
+                                                    continue;
+                                                }
+                                            }
+                                            continue;
+                                        }
+                                    } else {
+                                        // No top thread - handle as Always Allow
+                                        if let KeyCode::Char(c) = key.code {
+                                            if app.handle_permission_key(c) {
+                                                continue;
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                } else if let KeyCode::Char(c) = key.code {
+                                    // Non-A keys: normal permission handling
                                     // Debug: emit key press to debug system
                                     app.emit_debug_state_change(
                                         "permission_key",
@@ -483,9 +508,12 @@ where
                                         "Key not handled",
                                         &format!("key: '{}' -> not Y/N/A", c),
                                     );
+                                    // When permission is pending, ignore all other keys except Ctrl+C
+                                    continue;
+                                } else {
+                                    // Non-char keys (arrows, etc.) - ignore when permission pending
+                                    continue;
                                 }
-                                // When permission is pending, ignore all other keys except Ctrl+C
-                                continue;
                             }
 
                             // =========================================================
