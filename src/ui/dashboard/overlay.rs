@@ -51,8 +51,18 @@ pub fn render(
     // Calculate card dimensions based on overlay type
     let (anchor_y, card_height) = match overlay {
         OverlayState::Question {
-            anchor_y, options, ..
-        } => (*anchor_y, 6 + options.len() as u16),
+            anchor_y,
+            question_data,
+            ..
+        } => {
+            // Get option count from question_data if available
+            let option_count = question_data
+                .as_ref()
+                .and_then(|qd| qd.questions.first())
+                .map(|q| q.options.len())
+                .unwrap_or(0);
+            (*anchor_y, 6 + option_count as u16)
+        }
         OverlayState::FreeForm { anchor_y, .. } => (*anchor_y, 8),
         OverlayState::Plan {
             anchor_y, summary, ..
@@ -112,10 +122,19 @@ pub fn render(
             thread_id,
             thread_title,
             repository,
-            question,
-            options,
+            question_data,
             ..
         } => {
+            // Extract question text and option labels from question_data
+            let (question_text, option_labels): (String, Vec<String>) = question_data
+                .as_ref()
+                .and_then(|qd| qd.questions.first())
+                .map(|q| {
+                    let labels = q.options.iter().map(|o| o.label.clone()).collect();
+                    (q.question.clone(), labels)
+                })
+                .unwrap_or_else(|| (String::new(), vec![]));
+
             // Question mode: pass None for input to render option buttons
             question_card::render(
                 frame,
@@ -123,8 +142,8 @@ pub fn render(
                 thread_id,
                 thread_title,
                 repository,
-                question,
-                options,
+                &question_text,
+                &option_labels,
                 None,
                 registry,
             );
@@ -133,11 +152,18 @@ pub fn render(
             thread_id,
             thread_title,
             repository,
-            question,
+            question_data,
             input,
             cursor_pos,
             ..
         } => {
+            // Extract question text from question_data for display context
+            let question_text = question_data
+                .as_ref()
+                .and_then(|qd| qd.questions.first())
+                .map(|q| q.question.clone())
+                .unwrap_or_default();
+
             // FreeForm mode: pass Some((input, cursor_pos)) to render text input
             question_card::render(
                 frame,
@@ -145,7 +171,7 @@ pub fn render(
                 thread_id,
                 thread_title,
                 repository,
-                question,
+                &question_text,
                 &[], // No options in FreeForm mode
                 Some((input.as_str(), *cursor_pos)),
                 registry,

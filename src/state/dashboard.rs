@@ -372,13 +372,13 @@ impl DashboardState {
                 return;
             }
             Some(WaitingFor::UserInput) | None => {
-                // Question overlay - thread.pending_question if available
+                // Question overlay - lookup pending question data
+                let question_data = self.pending_questions.get(thread_id).cloned();
                 Some(OverlayState::Question {
                     thread_id: thread_id.to_string(),
                     thread_title: thread.title.clone(),
                     repository: thread.display_repository(),
-                    question: String::new(), // Will be populated from thread data
-                    options: vec![],
+                    question_data,
                     anchor_y,
                 })
             }
@@ -401,9 +401,8 @@ impl DashboardState {
             thread_id: tid,
             thread_title,
             repository,
-            question,
+            question_data,
             anchor_y,
-            ..
         }) = self.overlay.take()
         {
             if tid == thread_id {
@@ -411,7 +410,7 @@ impl DashboardState {
                     thread_id: tid,
                     thread_title,
                     repository,
-                    question,
+                    question_data,
                     input: String::new(),
                     cursor_pos: 0,
                     anchor_y,
@@ -426,7 +425,7 @@ impl DashboardState {
             thread_id: tid,
             thread_title,
             repository,
-            question,
+            question_data,
             anchor_y,
             ..
         }) = self.overlay.take()
@@ -436,8 +435,7 @@ impl DashboardState {
                     thread_id: tid,
                     thread_title,
                     repository,
-                    question,
-                    options: vec![],
+                    question_data,
                     anchor_y,
                 });
             }
@@ -1845,5 +1843,208 @@ mod tests {
         // Should not panic when clearing a nonexistent question
         state.clear_pending_question("nonexistent");
         assert!(state.get_pending_question("nonexistent").is_none());
+    }
+
+    // -------------------- Expand Thread with Question Data Tests --------------------
+
+    #[test]
+    fn test_expand_thread_populates_question_data_from_pending_questions() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set pending question data
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Which auth method?".to_string(),
+                header: "Auth".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "JWT".to_string(),
+                        description: "Stateless tokens".to_string(),
+                    },
+                    QuestionOption {
+                        label: "Sessions".to_string(),
+                        description: "Server-side sessions".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+        state.set_pending_question("t1", question_data);
+
+        // Expand the thread
+        state.expand_thread("t1", 10);
+
+        // Verify the overlay was created with the question data
+        if let Some(OverlayState::Question {
+            thread_id,
+            question_data,
+            ..
+        }) = state.overlay()
+        {
+            assert_eq!(thread_id, "t1");
+            assert!(question_data.is_some());
+            let qd = question_data.as_ref().unwrap();
+            assert_eq!(qd.questions.len(), 1);
+            assert_eq!(qd.questions[0].question, "Which auth method?");
+            assert_eq!(qd.questions[0].options.len(), 2);
+            assert_eq!(qd.questions[0].options[0].label, "JWT");
+            assert_eq!(qd.questions[0].options[1].label, "Sessions");
+        } else {
+            panic!("Expected Question overlay with question_data");
+        }
+    }
+
+    #[test]
+    fn test_expand_thread_with_no_pending_question_has_none_question_data() {
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // No pending question set
+
+        // Expand the thread
+        state.expand_thread("t1", 10);
+
+        // Verify the overlay was created without question data
+        if let Some(OverlayState::Question { question_data, .. }) = state.overlay() {
+            assert!(question_data.is_none());
+        } else {
+            panic!("Expected Question overlay");
+        }
+    }
+
+    #[test]
+    fn test_show_free_form_preserves_question_data() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set pending question data
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Select feature".to_string(),
+                header: "Feature".to_string(),
+                options: vec![QuestionOption {
+                    label: "Feature A".to_string(),
+                    description: "Enable feature A".to_string(),
+                }],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+        state.set_pending_question("t1", question_data);
+
+        // Expand and switch to free form
+        state.expand_thread("t1", 10);
+        state.show_free_form("t1");
+
+        // Verify FreeForm overlay has the question data
+        if let Some(OverlayState::FreeForm { question_data, .. }) = state.overlay() {
+            assert!(question_data.is_some());
+            let qd = question_data.as_ref().unwrap();
+            assert_eq!(qd.questions[0].question, "Select feature");
+        } else {
+            panic!("Expected FreeForm overlay");
+        }
+    }
+
+    #[test]
+    fn test_back_to_options_preserves_question_data() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set pending question data
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Choose option".to_string(),
+                header: "Options".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "A".to_string(),
+                        description: "Option A".to_string(),
+                    },
+                    QuestionOption {
+                        label: "B".to_string(),
+                        description: "Option B".to_string(),
+                    },
+                ],
+                multi_select: true,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+        state.set_pending_question("t1", question_data);
+
+        // Expand, go to free form, then back to options
+        state.expand_thread("t1", 10);
+        state.show_free_form("t1");
+        state.back_to_options("t1");
+
+        // Verify Question overlay still has the question data
+        if let Some(OverlayState::Question { question_data, .. }) = state.overlay() {
+            assert!(question_data.is_some());
+            let qd = question_data.as_ref().unwrap();
+            assert_eq!(qd.questions[0].question, "Choose option");
+            assert!(qd.questions[0].multi_select);
+            assert_eq!(qd.questions[0].options.len(), 2);
+        } else {
+            panic!("Expected Question overlay");
+        }
+    }
+
+    #[test]
+    fn test_expand_thread_with_user_input_waiting_populates_question_data() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set WaitingFor::UserInput
+        state
+            .waiting_for
+            .insert("t1".to_string(), WaitingFor::UserInput);
+
+        // Set pending question data
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Pick database".to_string(),
+                header: "Database".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "PostgreSQL".to_string(),
+                        description: "Relational database".to_string(),
+                    },
+                    QuestionOption {
+                        label: "MongoDB".to_string(),
+                        description: "Document database".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+        state.set_pending_question("t1", question_data);
+
+        // Expand the thread
+        state.expand_thread("t1", 5);
+
+        // Verify the overlay has question data
+        if let Some(OverlayState::Question { question_data, .. }) = state.overlay() {
+            assert!(question_data.is_some());
+            let qd = question_data.as_ref().unwrap();
+            assert_eq!(qd.questions[0].question, "Pick database");
+        } else {
+            panic!("Expected Question overlay");
+        }
     }
 }

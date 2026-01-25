@@ -889,8 +889,7 @@ fn test_render_context_with_overlay() {
         thread_id: "t1".to_string(),
         thread_title: "Test".to_string(),
         repository: "~/repo".to_string(),
-        question: "Continue?".to_string(),
-        options: vec!["Yes".to_string(), "No".to_string()],
+        question_data: None,
         anchor_y: 10,
     };
 

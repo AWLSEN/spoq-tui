@@ -5,6 +5,7 @@
 
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::ThreadMode;
+use crate::state::session::AskUserQuestionData;
 
 // ============================================================================
 // FilterState
@@ -227,13 +228,13 @@ impl ThreadView {
 /// State for overlay dialogs (permission requests, questions, plan approvals)
 #[derive(Debug, Clone)]
 pub enum OverlayState {
-    /// Multiple choice question
+    /// Multiple choice question from AskUserQuestion tool
     Question {
         thread_id: String,
         thread_title: String,
         repository: String,
-        question: String,
-        options: Vec<String>,
+        /// Full question data from the AskUserQuestion tool
+        question_data: Option<AskUserQuestionData>,
         /// Y position to anchor the overlay
         anchor_y: u16,
     },
@@ -242,7 +243,8 @@ pub enum OverlayState {
         thread_id: String,
         thread_title: String,
         repository: String,
-        question: String,
+        /// Full question data from the AskUserQuestion tool (preserved when switching from Question)
+        question_data: Option<AskUserQuestionData>,
         input: String,
         cursor_pos: usize,
         anchor_y: u16,
@@ -639,8 +641,7 @@ mod tests {
             thread_id: "thread-1".to_string(),
             thread_title: "Test Thread".to_string(),
             repository: "~/repo".to_string(),
-            question: "Continue?".to_string(),
-            options: vec!["Yes".to_string(), "No".to_string()],
+            question_data: None,
             anchor_y: 10,
         };
         assert_eq!(overlay.thread_id(), "thread-1");

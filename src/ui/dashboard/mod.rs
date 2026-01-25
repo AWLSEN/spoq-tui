@@ -127,9 +127,14 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
     // Overlay is centered horizontally, positioned near anchor_y vertically
     let overlay_width = (parent_area.width * 80 / 100).min(60);
     let overlay_height = match overlay {
-        OverlayState::Question { options, .. } => {
+        OverlayState::Question { question_data, .. } => {
             // Height based on question content: title + question + options + buttons
-            (4 + options.len() as u16 + 3).min(parent_area.height - 4)
+            let option_count = question_data
+                .as_ref()
+                .and_then(|qd| qd.questions.first())
+                .map(|q| q.options.len())
+                .unwrap_or(0);
+            (4 + option_count as u16 + 3).min(parent_area.height - 4)
         }
         OverlayState::FreeForm { .. } => {
             // Fixed height for free-form input
@@ -168,13 +173,35 @@ mod tests {
 
     #[test]
     fn test_calculate_overlay_area_question() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
         let parent = Rect::new(0, 0, 100, 40);
+
+        // Create question data
+        let question_data = Some(AskUserQuestionData {
+            questions: vec![Question {
+                question: "Continue?".to_string(),
+                header: "Confirmation".to_string(),
+                options: vec![
+                    QuestionOption {
+                        label: "Yes".to_string(),
+                        description: "Proceed".to_string(),
+                    },
+                    QuestionOption {
+                        label: "No".to_string(),
+                        description: "Cancel".to_string(),
+                    },
+                ],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        });
+
         let overlay = OverlayState::Question {
             thread_id: "t1".to_string(),
             thread_title: "Test".to_string(),
             repository: "~/repo".to_string(),
-            question: "Continue?".to_string(),
-            options: vec!["Yes".to_string(), "No".to_string()],
+            question_data,
             anchor_y: 10,
         };
 
@@ -218,12 +245,26 @@ mod tests {
 
     #[test]
     fn test_calculate_overlay_area_free_form() {
+        use crate::state::session::{AskUserQuestionData, Question};
+
         let parent = Rect::new(5, 5, 70, 25);
+
+        // Create question data for context
+        let question_data = Some(AskUserQuestionData {
+            questions: vec![Question {
+                question: "Enter details".to_string(),
+                header: "Input".to_string(),
+                options: vec![],
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        });
+
         let overlay = OverlayState::FreeForm {
             thread_id: "t1".to_string(),
             thread_title: "Test".to_string(),
             repository: "~/repo".to_string(),
-            question: "Enter details".to_string(),
+            question_data,
             input: String::new(),
             cursor_pos: 0,
             anchor_y: 8,

@@ -116,8 +116,7 @@ mod tests {
             thread_id: "t1".to_string(),
             thread_title: "Test".to_string(),
             repository: "~/repo".to_string(),
-            question: "Continue?".to_string(),
-            options: vec!["Yes".to_string(), "No".to_string()],
+            question_data: None,
             anchor_y: 10,
         };
 
@@ -138,7 +137,7 @@ mod tests {
             thread_id: "t1".to_string(),
             thread_title: "Test".to_string(),
             repository: "~/repo".to_string(),
-            question: "Enter details".to_string(),
+            question_data: None,
             input: String::new(),
             cursor_pos: 0,
             anchor_y: 8,
@@ -192,8 +191,7 @@ mod tests {
             thread_id: "t1".to_string(),
             thread_title: "Test".to_string(),
             repository: "~/repo".to_string(),
-            question: "Continue?".to_string(),
-            options: vec!["Yes".to_string(), "No".to_string()],
+            question_data: None,
             anchor_y: 10,
         };
 
