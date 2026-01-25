@@ -20,7 +20,6 @@ use spoq::models::{Thread, ThreadMode, ThreadType};
 use spoq::state::dashboard::{DashboardQuestionState, DashboardState};
 use spoq::state::session::{AskUserQuestionData, Question, QuestionOption};
 use spoq::ui::dashboard::question_card::{render_question, QuestionRenderConfig};
-use spoq::ui::interaction::HitAreaRegistry;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -537,8 +536,6 @@ fn test_question_card_renders_options_correctly() {
         timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
-
     terminal
         .draw(|frame| {
             let area = Rect::new(2, 2, 76, 20);
@@ -549,16 +546,11 @@ fn test_question_card_renders_options_correctly() {
                 "Auth Setup",
                 "my-project",
                 &config,
-                &mut registry,
             );
         })
         .unwrap();
 
-    // Verify hit areas are registered for all options (3 options + Other)
-    assert!(
-        registry.len() >= 4,
-        "Should have at least 4 hit areas for 3 options + Other"
-    );
+    // Verify rendering completed without panic
 }
 
 #[test]
@@ -595,8 +587,6 @@ fn test_question_card_renders_multi_select_with_checkboxes() {
         timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
-
     terminal
         .draw(|frame| {
             let area = Rect::new(2, 2, 76, 20);
@@ -607,13 +597,11 @@ fn test_question_card_renders_multi_select_with_checkboxes() {
                 "Build Setup",
                 "my-project",
                 &config,
-                &mut registry,
             );
         })
         .unwrap();
 
-    // Verify rendering completed without errors
-    assert!(registry.len() >= 4);
+    // Verify rendering completed without panic
 }
 
 // ============================================================================

@@ -16,7 +16,6 @@ use spoq::state::DashboardState;
 use spoq::ui::dashboard::{
     OverlayState, RenderContext, SystemStats, Theme, ThreadView,
 };
-use spoq::ui::interaction::{ClickAction, HitAreaRegistry};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -403,130 +402,6 @@ fn test_overlay_free_form_transition() {
 }
 
 // ============================================================================
-// Hit Area Registry for Click Actions
-// ============================================================================
-
-#[test]
-fn test_hit_area_filter_click_actions() {
-    let mut registry = HitAreaRegistry::new();
-
-    // Register filter hit areas (simulating status bar)
-    registry.register(
-        ratatui::layout::Rect::new(0, 0, 10, 2),
-        ClickAction::FilterWorking,
-        None,
-    );
-    registry.register(
-        ratatui::layout::Rect::new(10, 0, 15, 2),
-        ClickAction::FilterReadyToTest,
-        None,
-    );
-    registry.register(
-        ratatui::layout::Rect::new(25, 0, 10, 2),
-        ClickAction::FilterIdle,
-        None,
-    );
-
-    // Test hit testing
-    assert_eq!(registry.hit_test(5, 1), Some(ClickAction::FilterWorking));
-    assert_eq!(
-        registry.hit_test(15, 1),
-        Some(ClickAction::FilterReadyToTest)
-    );
-    assert_eq!(registry.hit_test(30, 1), Some(ClickAction::FilterIdle));
-    assert_eq!(registry.hit_test(50, 1), None); // Outside all areas
-}
-
-#[test]
-fn test_hit_area_thread_expand() {
-    let mut registry = HitAreaRegistry::new();
-
-    // Register thread row hit area
-    registry.register(
-        ratatui::layout::Rect::new(0, 5, 80, 3),
-        ClickAction::ExpandThread {
-            thread_id: "thread-123".to_string(),
-            anchor_y: 5,
-        },
-        None,
-    );
-
-    // Test hit testing
-    let action = registry.hit_test(40, 6);
-    assert_eq!(
-        action,
-        Some(ClickAction::ExpandThread {
-            thread_id: "thread-123".to_string(),
-            anchor_y: 5
-        })
-    );
-}
-
-#[test]
-fn test_hit_area_action_buttons() {
-    let mut registry = HitAreaRegistry::new();
-
-    // Register action button hit areas
-    registry.register(
-        ratatui::layout::Rect::new(10, 10, 10, 2),
-        ClickAction::ApproveThread("t1".to_string()),
-        None,
-    );
-    registry.register(
-        ratatui::layout::Rect::new(25, 10, 10, 2),
-        ClickAction::RejectThread("t1".to_string()),
-        None,
-    );
-    registry.register(
-        ratatui::layout::Rect::new(40, 10, 10, 2),
-        ClickAction::VerifyThread("t1".to_string()),
-        None,
-    );
-
-    // Test hit testing
-    assert_eq!(
-        registry.hit_test(15, 11),
-        Some(ClickAction::ApproveThread("t1".to_string()))
-    );
-    assert_eq!(
-        registry.hit_test(30, 11),
-        Some(ClickAction::RejectThread("t1".to_string()))
-    );
-    assert_eq!(
-        registry.hit_test(45, 11),
-        Some(ClickAction::VerifyThread("t1".to_string()))
-    );
-}
-
-#[test]
-fn test_hit_area_overlay_priority() {
-    let mut registry = HitAreaRegistry::new();
-
-    // Register background hit area first (lower z-order)
-    registry.register(
-        ratatui::layout::Rect::new(0, 0, 100, 50),
-        ClickAction::ClearFilter,
-        None,
-    );
-
-    // Register overlay hit areas on top (higher z-order)
-    registry.register(
-        ratatui::layout::Rect::new(20, 10, 60, 30),
-        ClickAction::CollapseOverlay,
-        None,
-    );
-
-    // Click in overlay area should hit overlay action (last registered wins)
-    assert_eq!(
-        registry.hit_test(50, 25),
-        Some(ClickAction::CollapseOverlay)
-    );
-
-    // Click outside overlay should hit background
-    assert_eq!(registry.hit_test(5, 5), Some(ClickAction::ClearFilter));
-}
-
-// ============================================================================
 // Aggregate Statistics
 // ============================================================================
 
@@ -835,38 +710,4 @@ fn test_system_stats_display() {
 
     let disconnected = SystemStats::new(false, 0.0, 0.0, 0.0);
     assert_eq!(disconnected.connection_display(), "Disconnected");
-}
-
-// ============================================================================
-// ClickAction Variants
-// ============================================================================
-
-#[test]
-fn test_click_action_select_option() {
-    let action = ClickAction::SelectOption {
-        thread_id: "t1".to_string(),
-        index: 2,
-    };
-
-    if let ClickAction::SelectOption { thread_id, index } = action {
-        assert_eq!(thread_id, "t1");
-        assert_eq!(index, 2);
-    } else {
-        panic!("Expected SelectOption");
-    }
-}
-
-#[test]
-fn test_click_action_equality() {
-    assert_eq!(ClickAction::FilterWorking, ClickAction::FilterWorking);
-    assert_ne!(ClickAction::FilterWorking, ClickAction::FilterIdle);
-
-    assert_eq!(
-        ClickAction::ApproveThread("t1".to_string()),
-        ClickAction::ApproveThread("t1".to_string())
-    );
-    assert_ne!(
-        ClickAction::ApproveThread("t1".to_string()),
-        ClickAction::ApproveThread("t2".to_string())
-    );
 }

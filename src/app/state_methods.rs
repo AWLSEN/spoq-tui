@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use super::{App, AppMessage, ScrollBoundary};
+use super::{App, AppMessage, Focus, Screen, ScrollBoundary};
 
 impl App {
     /// Mark the UI as needing a redraw.
@@ -64,7 +64,13 @@ impl App {
         // - Scroll momentum (velocity > 0)
         // - Streaming (spinner animation)
         // - Boundary hit indicator (fades after a few ticks)
+        // - Cursor blink when conversation input is focused
         if has_velocity || self.is_streaming() || self.scroll_boundary_hit.is_some() {
+            self.mark_dirty();
+        }
+
+        // Redraw for cursor blink when conversation input is focused
+        if self.screen == Screen::Conversation && self.focus == Focus::Input {
             self.mark_dirty();
         }
 

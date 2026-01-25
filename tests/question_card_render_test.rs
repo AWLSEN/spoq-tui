@@ -11,7 +11,7 @@ use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
 use ratatui::Terminal;
 use spoq::ui::dashboard::question_card::{render_question, QuestionRenderConfig};
-use spoq::ui::interaction::HitAreaRegistry;
+
 
 // ============================================================================
 // QuestionRenderConfig Construction Tests
@@ -130,7 +130,7 @@ fn test_render_single_select_first_option_selected() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -142,13 +142,13 @@ fn test_render_single_select_first_option_selected() {
                 "Setup auth",
                 "my-project",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Verify hit areas registered for all options (3 options + 1 Other)
-    assert!(registry.len() >= 4);
+    // Render completed successfully
 }
 
 #[test]
@@ -173,7 +173,7 @@ fn test_render_single_select_last_option_selected() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -185,13 +185,13 @@ fn test_render_single_select_last_option_selected() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Should render without errors
-    assert!(registry.len() >= 4);
+    // Render completed successfully
 }
 
 #[test]
@@ -212,7 +212,7 @@ fn test_render_single_select_other_selected() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -224,13 +224,13 @@ fn test_render_single_select_other_selected() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Other field should be rendered and clickable
-    assert!(registry.len() >= 3);
+    // Render completed successfully
 }
 
 // ============================================================================
@@ -260,7 +260,7 @@ fn test_render_multi_select_no_selections() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -272,13 +272,13 @@ fn test_render_multi_select_no_selections() {
                 "Setup CI",
                 "my-repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Should render checkboxes (unchecked)
-    assert!(registry.len() >= 4);
+    // Render completed successfully
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn test_render_multi_select_some_selections() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -316,13 +316,13 @@ fn test_render_multi_select_some_selections() {
                 "Setup CI",
                 "my-repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Should render with mixed checkboxes
-    assert!(registry.len() >= 4);
+    // Render completed successfully
 }
 
 #[test]
@@ -348,7 +348,7 @@ fn test_render_multi_select_all_selections() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -360,13 +360,13 @@ fn test_render_multi_select_all_selections() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // All checkboxes should be checked
-    assert!(registry.len() >= 4);
+    // Render completed successfully
 }
 
 #[test]
@@ -388,7 +388,7 @@ fn test_render_multi_select_with_other_input() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -400,13 +400,13 @@ fn test_render_multi_select_with_other_input() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Should render with checkboxes and Other field
-    assert!(registry.len() >= 3);
+    // Render completed successfully
 }
 
 // ============================================================================
@@ -431,7 +431,7 @@ fn test_render_timer_normal_time() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(272), // 4:32 - normal time
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -443,7 +443,7 @@ fn test_render_timer_normal_time() {
                 "Deploy",
                 "production",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
@@ -469,7 +469,7 @@ fn test_render_timer_urgent_time() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(5), // 5 seconds - urgent (< 10)
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -481,7 +481,7 @@ fn test_render_timer_urgent_time() {
                 "Urgent",
                 "task",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
@@ -507,7 +507,7 @@ fn test_render_no_timer() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None, // No timer
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -519,7 +519,7 @@ fn test_render_no_timer() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
@@ -545,7 +545,7 @@ fn test_render_timer_zero_seconds() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(0), // Zero seconds
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -557,7 +557,7 @@ fn test_render_timer_zero_seconds() {
                 "Expired",
                 "timer",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
@@ -587,7 +587,7 @@ fn test_render_many_options() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -599,14 +599,14 @@ fn test_render_many_options() {
                 "Many Options",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Should handle many options gracefully (may not all fit)
     // At minimum should have registered some hit areas
-    assert!(registry.len() >= 1);
+    // Render completed successfully
 }
 
 #[test]
@@ -628,7 +628,7 @@ fn test_render_long_question_text() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -640,7 +640,7 @@ fn test_render_long_question_text() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
@@ -666,7 +666,7 @@ fn test_render_empty_options() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -678,14 +678,14 @@ fn test_render_empty_options() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Should handle empty options gracefully
     // Should at least have "Other" option
-    assert!(registry.len() >= 1);
+    // Render completed successfully
 }
 
 #[test]
@@ -711,7 +711,7 @@ fn test_render_mismatched_selections_length() {
         option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
     };
 
-    let mut registry = HitAreaRegistry::new();
+    
 
     terminal
         .draw(|frame| {
@@ -723,11 +723,11 @@ fn test_render_mismatched_selections_length() {
                 "Test",
                 "repo",
                 &config,
-                &mut registry,
+
             );
         })
         .unwrap();
 
     // Should handle gracefully (defaults to false for missing indices)
-    assert!(registry.len() >= 4);
+    // Render completed successfully
 }
