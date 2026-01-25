@@ -320,6 +320,38 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_route_thread_updated() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let ws_msg = WsIncomingMessage::ThreadUpdated(crate::websocket::messages::WsThreadUpdated {
+            thread_id: "thread-456".to_string(),
+            title: "Updated Title".to_string(),
+            description: "Updated description".to_string(),
+            timestamp: 1705315800000,
+        });
+
+        let result = route_ws_message(ws_msg, &tx);
+        assert!(result.is_ok());
+
+        // Verify the message was sent
+        let received = rx.try_recv();
+        assert!(received.is_ok());
+
+        match received.unwrap() {
+            AppMessage::ThreadMetadataUpdated {
+                thread_id,
+                title,
+                description,
+            } => {
+                assert_eq!(thread_id, "thread-456");
+                assert_eq!(title, Some("Updated Title".to_string()));
+                assert_eq!(description, Some("Updated description".to_string()));
+            }
+            _ => panic!("Expected ThreadMetadataUpdated message"),
+        }
+    }
+
     #[tokio::test]
     async fn test_start_websocket_connection_failure() {
         // Try to connect to a non-existent server

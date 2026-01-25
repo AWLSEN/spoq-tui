@@ -44,19 +44,6 @@ pub fn render(
 
     let buf = frame.buffer_mut();
 
-    // DEBUG: Draw border around the row area
-    // Top-left corner
-    if area.x > 0 && area.y > 0 {
-        buf[(area.x, area.y)].set_char('[');
-    }
-    // Top-right corner
-    if area.x + area.width > 0 {
-        let right_x = (area.x + area.width).saturating_sub(1);
-        if right_x < buf.area().width {
-            buf[(right_x, area.y)].set_char(']');
-        }
-    }
-
     // For threads that need action, skip time column to give more space to buttons
     // needs_action threads: 30+12+9+12+0+0 = 63%, leaving 37% for right-aligned actions
     // other threads: 28+14+9+14+15+10 = 90%, leaving 10% for right-aligned Verify button
