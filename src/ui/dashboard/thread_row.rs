@@ -225,8 +225,8 @@ fn render_actions(
         _ => (vec![], false, None),
     };
 
-    // Icon width: "(i) " = 3 chars + 1 space = 4
-    let icon_width = if show_info_icon { 4 } else { 0 };
+    // Icon width: "ⓘ" = 1 char + 1 space = 2
+    let icon_width = if show_info_icon { 2 } else { 0 };
 
     // Calculate total width of all buttons
     let total_button_width: u16 = buttons
@@ -258,11 +258,11 @@ fn render_actions(
 
     // Render info icon if needed (for permission buttons)
     if show_info_icon {
-        // Render "(i) "
-        render_text(buf, current_x, y, "(i)", info_icon_style, area);
+        // Render "ⓘ" (circled info icon)
+        render_text(buf, current_x, y, "ⓘ", info_icon_style, area);
 
         // Register hit area for info icon
-        let icon_rect = Rect::new(current_x, y, 3, 1); // "(i)" is 3 chars
+        let icon_rect = Rect::new(current_x, y, 1, 1); // "ⓘ" is 1 char
         let tooltip_content = if let Some(tool_name) = permission_tool {
             format!("Permission request for tool: {}", tool_name)
         } else {
@@ -279,7 +279,7 @@ fn render_actions(
             None,
         );
 
-        current_x += 4; // Move past "(i) " (3 chars + 1 space)
+        current_x += 2; // Move past "ⓘ " (1 char + 1 space)
     }
 
     for (key, label, action) in buttons {

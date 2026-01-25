@@ -283,13 +283,19 @@ fn render_labels(buf: &mut Buffer, area: Rect, ctx: &RenderContext, widths: &Seg
     let idle_label_len = idle_label.chars().count() as u16;
 
     // Position idle label - if segment is wide enough, right-align; otherwise left-align
+    // Only render if there's enough space to avoid truncation
     let idle_label_x = if widths.idle > idle_label_len + 4 {
         // Right align within idle segment, leave room for clear button
         (area.x + area.width).saturating_sub(idle_label_len + 4)
     } else {
         idle_x
     };
-    render_text_at(buf, idle_label_x, y, &idle_label, idle_style, area);
+
+    // Only render the idle label if there's enough space to show at least the full label
+    let remaining_space = (area.x + area.width).saturating_sub(idle_label_x);
+    if remaining_space >= idle_label_len {
+        render_text_at(buf, idle_label_x, y, &idle_label, idle_style, area);
+    }
 
     // Render clear button if filtered
     if filter.is_some() {
