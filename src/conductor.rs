@@ -1237,12 +1237,12 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
             session_id,
             permission_mode,
             model,
-            tools,
+            tool_count,
         } => SseEvent::SystemInit(crate::events::SystemInitEvent {
             session_id,
             permission_mode,
             model,
-            tools,
+            tool_count,
         }),
     }
 }

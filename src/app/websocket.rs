@@ -304,6 +304,15 @@ fn route_ws_message(
                 .send(AppMessage::SystemStatsUpdate(stats))
                 .map_err(|e| format!("Failed to send SystemStatsUpdate: {}", e))
         }
+        WsIncomingMessage::StreamStarted(started) => {
+            // Stream started - informational, notifies when a new stream begins for a thread
+            info!(
+                "Received stream_started: thread={}, session={}",
+                started.thread_id, started.session_id
+            );
+            // Currently informational only - no AppMessage needed
+            Ok(())
+        }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })
             .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),

@@ -274,8 +274,8 @@ pub struct SystemInitEvent {
     pub permission_mode: String,
     /// Model name: "opus" or "sonnet"
     pub model: String,
-    /// List of available tools
-    pub tools: Vec<String>,
+    /// Number of available tools (Conductor sends tool_count, not tools array)
+    pub tool_count: usize,
 }
 
 /// Wrapper enum for all possible SSE event types from Conductor.
@@ -1041,14 +1041,14 @@ mod tests {
             "session_id": "sess-abc-123",
             "permission_mode": "auto",
             "model": "opus",
-            "tools": ["read", "write", "bash"]
+            "tool_count": 15
         }"#;
 
         let event: SystemInitEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.session_id, "sess-abc-123");
         assert_eq!(event.permission_mode, "auto");
         assert_eq!(event.model, "opus");
-        assert_eq!(event.tools, vec!["read", "write", "bash"]);
+        assert_eq!(event.tool_count, 15);
     }
 
     #[test]
@@ -1058,7 +1058,7 @@ mod tests {
             "session_id": "sess-xyz-789",
             "permission_mode": "prompt",
             "model": "sonnet",
-            "tools": ["read", "write", "edit", "bash", "glob", "grep"]
+            "tool_count": 42
         }"#;
 
         let event: SseEvent = serde_json::from_str(json).unwrap();
@@ -1067,8 +1067,7 @@ mod tests {
                 assert_eq!(e.session_id, "sess-xyz-789");
                 assert_eq!(e.permission_mode, "prompt");
                 assert_eq!(e.model, "sonnet");
-                assert_eq!(e.tools.len(), 6);
-                assert_eq!(e.tools[0], "read");
+                assert_eq!(e.tool_count, 42);
             }
             _ => panic!("Expected SystemInit event"),
         }

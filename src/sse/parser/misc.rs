@@ -113,7 +113,7 @@ pub(super) fn parse_system_init_event(
         session_id: payload.session_id,
         permission_mode: payload.permission_mode,
         model: payload.model,
-        tools: payload.tools,
+        tool_count: payload.tool_count,
     })
 }
 
@@ -254,7 +254,7 @@ mod tests {
     fn test_parse_system_init() {
         let result = parse_sse_event(
             "system_init",
-            r#"{"session_id": "sess-123", "permission_mode": "auto", "model": "opus", "tools": ["read", "write", "bash"]}"#,
+            r#"{"session_id": "sess-123", "permission_mode": "auto", "model": "opus", "tool_count": 15}"#,
         );
         assert_eq!(
             result.unwrap(),
@@ -262,7 +262,7 @@ mod tests {
                 session_id: "sess-123".to_string(),
                 permission_mode: "auto".to_string(),
                 model: "opus".to_string(),
-                tools: vec!["read".to_string(), "write".to_string(), "bash".to_string()],
+                tool_count: 15,
             }
         );
     }

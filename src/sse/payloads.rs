@@ -115,12 +115,14 @@ pub(crate) struct UsagePayload {
 }
 
 /// SystemInit payload
+/// Note: Conductor sends tool_count (number) not tools (array)
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SystemInitPayload {
     pub session_id: String,
     pub permission_mode: String,
     pub model: String,
-    pub tools: Vec<String>,
+    /// Number of tools available (Conductor sends tool_count, not tools array)
+    pub tool_count: usize,
 }
 
 #[cfg(test)]
@@ -231,11 +233,11 @@ mod tests {
 
     #[test]
     fn test_system_init_payload() {
-        let json = r#"{"session_id": "sess-abc", "permission_mode": "auto", "model": "opus", "tools": ["read", "write", "bash"]}"#;
+        let json = r#"{"session_id": "sess-abc", "permission_mode": "auto", "model": "opus", "tool_count": 15}"#;
         let payload: SystemInitPayload = serde_json::from_str(json).unwrap();
         assert_eq!(payload.session_id, "sess-abc");
         assert_eq!(payload.permission_mode, "auto");
         assert_eq!(payload.model, "opus");
-        assert_eq!(payload.tools, vec!["read", "write", "bash"]);
+        assert_eq!(payload.tool_count, 15);
     }
 }

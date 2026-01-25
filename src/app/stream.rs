@@ -595,7 +595,7 @@ impl App {
                                         system_init_event.session_id,
                                         system_init_event.model,
                                         system_init_event.permission_mode,
-                                        system_init_event.tools.len()
+                                        system_init_event.tool_count
                                     ),
                                 )),
                                 Some(thread_id),

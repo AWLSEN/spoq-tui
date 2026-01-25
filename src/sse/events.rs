@@ -124,7 +124,8 @@ pub enum SseEvent {
         session_id: String,
         permission_mode: String,
         model: String,
-        tools: Vec<String>,
+        /// Number of tools available (Conductor sends tool_count, not tools array)
+        tool_count: usize,
     },
 }
 

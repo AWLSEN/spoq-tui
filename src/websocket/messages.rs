@@ -38,6 +38,9 @@ pub enum WsIncomingMessage {
     /// System metrics update (CPU, RAM usage)
     #[serde(rename = "system_metrics_update")]
     SystemMetricsUpdate(WsSystemMetricsUpdate),
+    /// Stream started - notifies frontend of thread_id immediately when stream begins
+    #[serde(rename = "stream_started")]
+    StreamStarted(WsStreamStarted),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -49,6 +52,15 @@ pub enum WsIncomingMessage {
 /// Connection confirmation from WebSocket server
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WsConnected {
+    pub session_id: String,
+    pub timestamp: u64,
+}
+
+/// Stream started - notifies frontend immediately when stream begins
+/// Sent when a new SSE stream starts for a thread
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsStreamStarted {
+    pub thread_id: String,
     pub session_id: String,
     pub timestamp: u64,
 }
@@ -135,6 +147,8 @@ pub struct WsThreadModeUpdate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PhaseStatus {
+    /// Phase is pending (not yet started)
+    Pending,
     /// Phase is starting
     Starting,
     /// Phase is currently running
@@ -1193,6 +1207,7 @@ mod tests {
     fn test_phase_status_all_variants() {
         // Test all PhaseStatus variants deserialize correctly
         let variants = [
+            ("pending", PhaseStatus::Pending),
             ("starting", PhaseStatus::Starting),
             ("running", PhaseStatus::Running),
             ("completed", PhaseStatus::Completed),
@@ -2231,5 +2246,69 @@ mod tests {
         assert_eq!(parsed_answers.len(), 2);
         assert_eq!(parsed_answers.get("Question 1"), Some(&"Answer 1".to_string()));
         assert_eq!(parsed_answers.get("Question 2"), Some(&"Answer 2".to_string()));
+    }
+
+    // -------------------- Stream Started Tests --------------------
+
+    #[test]
+    fn test_deserialize_stream_started() {
+        let json = r#"{
+            "type": "stream_started",
+            "thread_id": "thread-123",
+            "session_id": "session-456",
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::StreamStarted(started) => {
+                assert_eq!(started.thread_id, "thread-123");
+                assert_eq!(started.session_id, "session-456");
+                assert_eq!(started.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected StreamStarted"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_stream_started() {
+        let started = WsStreamStarted {
+            thread_id: "thread-serialize".to_string(),
+            session_id: "session-serialize".to_string(),
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&started).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["thread_id"], "thread-serialize");
+        assert_eq!(parsed["session_id"], "session-serialize");
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+    }
+
+    #[test]
+    fn test_phase_status_pending() {
+        // Test that pending status deserializes correctly
+        let json = r#"{
+            "type": "phase_progress_update",
+            "plan_id": "plan-pending",
+            "phase_index": 0,
+            "total_phases": 3,
+            "phase_name": "Waiting",
+            "status": "pending",
+            "tool_count": 0,
+            "started_at": 1705315700000,
+            "updated_at": 1705315700000,
+            "timestamp": 1705315700000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::PhaseProgressUpdate(progress) => {
+                assert_eq!(progress.plan_id, "plan-pending");
+                assert_eq!(progress.status, PhaseStatus::Pending);
+            }
+            _ => panic!("Expected PhaseProgressUpdate"),
+        }
     }
 }
