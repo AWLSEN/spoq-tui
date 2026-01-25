@@ -531,6 +531,122 @@ mod tests {
         assert_eq!(view.status_line(), "User input");
     }
 
+    // -------------------- Activity Text Tests --------------------
+
+    #[test]
+    fn test_thread_view_with_activity_text() {
+        // Test the with_activity_text builder method
+        let view = ThreadView::new(
+            "id-activity".to_string(),
+            "Activity Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Running)
+        .with_activity_text(Some("Read: main.rs".to_string()));
+
+        assert_eq!(view.activity_text, Some("Read: main.rs".to_string()));
+    }
+
+    #[test]
+    fn test_thread_view_activity_text_default_is_none() {
+        // Default ThreadView should have None activity_text
+        let view = ThreadView::new(
+            "id-default".to_string(),
+            "Default Test".to_string(),
+            "~/repo".to_string(),
+        );
+
+        assert_eq!(view.activity_text, None);
+    }
+
+    #[test]
+    fn test_thread_view_activity_text_edit_format() {
+        // Test Edit tool display format
+        let view = ThreadView::new(
+            "id-edit".to_string(),
+            "Edit Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Running)
+        .with_activity_text(Some("Edit: handlers.rs".to_string()));
+
+        assert_eq!(view.activity_text, Some("Edit: handlers.rs".to_string()));
+    }
+
+    #[test]
+    fn test_thread_view_activity_text_glob_format() {
+        // Test Glob tool display format
+        let view = ThreadView::new(
+            "id-glob".to_string(),
+            "Glob Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Running)
+        .with_activity_text(Some("Glob: **/*.rs".to_string()));
+
+        assert_eq!(view.activity_text, Some("Glob: **/*.rs".to_string()));
+    }
+
+    #[test]
+    fn test_thread_view_activity_text_thinking() {
+        // Test Thinking fallback (when no tool active)
+        let view = ThreadView::new(
+            "id-thinking".to_string(),
+            "Thinking Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Running)
+        .with_activity_text(Some("Thinking...".to_string()));
+
+        assert_eq!(view.activity_text, Some("Thinking...".to_string()));
+    }
+
+    #[test]
+    fn test_thread_view_activity_text_done() {
+        // Test done status activity_text
+        let view = ThreadView::new(
+            "id-done".to_string(),
+            "Done Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Done)
+        .with_activity_text(Some("done".to_string()));
+
+        assert_eq!(view.activity_text, Some("done".to_string()));
+    }
+
+    #[test]
+    fn test_thread_view_activity_text_idle() {
+        // Test idle status activity_text
+        let view = ThreadView::new(
+            "id-idle".to_string(),
+            "Idle Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Idle)
+        .with_activity_text(Some("idle".to_string()));
+
+        assert_eq!(view.activity_text, Some("idle".to_string()));
+    }
+
+    #[test]
+    fn test_thread_view_activity_text_waiting_is_none() {
+        // Waiting threads should have None activity_text (uses old layout)
+        let view = ThreadView::new(
+            "id-waiting".to_string(),
+            "Waiting Test".to_string(),
+            "~/repo".to_string(),
+        )
+        .with_status(ThreadStatus::Waiting)
+        .with_waiting_for(Some(WaitingFor::Permission {
+            request_id: "req-1".to_string(),
+            tool_name: "Bash".to_string(),
+        }));
+
+        // activity_text should be None for waiting threads (they use action layout)
+        assert_eq!(view.activity_text, None);
+    }
+
     // -------------------- OverlayState Tests --------------------
 
     #[test]
