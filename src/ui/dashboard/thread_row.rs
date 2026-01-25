@@ -262,7 +262,7 @@ fn render_actions(
         render_text(buf, current_x, y, "ⓘ", info_icon_style, area);
 
         // Register hit area for info icon
-        let icon_rect = Rect::new(current_x, y, 1, 1); // "ⓘ" is 1 char
+        let icon_rect = Rect::new(current_x, y, 2, 1); // "ⓘ " is 2 chars (icon + space)
         let tooltip_content = if let Some(tool_name) = permission_tool {
             format!("Permission request for tool: {}", tool_name)
         } else {
