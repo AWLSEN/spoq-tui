@@ -712,6 +712,32 @@ impl App {
             debug!("Sent question response for {}", request_id);
         }
     }
+
+    // ========================================================================
+    // Dialog Opening Helpers
+    // ========================================================================
+
+    /// Open the AskUserQuestion dialog for the first user input thread
+    ///
+    /// This method finds the first thread waiting for user input and expands it.
+    /// Only opens if no overlay is currently active.
+    ///
+    /// Returns true if a dialog was opened, false otherwise.
+    pub fn open_ask_user_question_dialog(&mut self) -> bool {
+        // Check if an overlay is NOT already open
+        if self.dashboard.overlay().is_none() {
+            // Find first thread waiting for user input
+            if let Some(thread_id) = self.dashboard.find_first_user_input_thread() {
+                // Use a reasonable anchor_y for keyboard-triggered overlay
+                // (middle of screen is typical for non-click interactions)
+                let computed_anchor_y = self.terminal_height / 2;
+                self.dashboard.expand_thread(&thread_id, computed_anchor_y);
+                debug!("Opened question dialog for thread {}", thread_id);
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[cfg(test)]
