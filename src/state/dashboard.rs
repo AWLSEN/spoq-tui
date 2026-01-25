@@ -3223,4 +3223,147 @@ mod tests {
         // Question state should be cleared
         assert!(state.question_state.is_none());
     }
+
+    // -------------------- get_top_needs_action_thread Tests --------------------
+
+    #[test]
+    fn test_get_top_needs_action_thread_returns_user_input() {
+        let mut state = DashboardState::new();
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        state.threads.insert("t1".to_string(), t1);
+        state.waiting_for.insert("t1".to_string(), WaitingFor::UserInput);
+
+        // Rebuild thread views to populate needs_action
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        let result = state.get_top_needs_action_thread();
+        assert!(result.is_some());
+        let (thread_id, waiting_for) = result.unwrap();
+        assert_eq!(thread_id, "t1");
+        assert!(matches!(waiting_for, WaitingFor::UserInput));
+    }
+
+    #[test]
+    fn test_get_top_needs_action_thread_returns_permission() {
+        let mut state = DashboardState::new();
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        state.threads.insert("t1".to_string(), t1);
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "req-123".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+
+        // Rebuild thread views to populate needs_action
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        let result = state.get_top_needs_action_thread();
+        assert!(result.is_some());
+        let (thread_id, waiting_for) = result.unwrap();
+        assert_eq!(thread_id, "t1");
+        if let WaitingFor::Permission { tool_name, .. } = waiting_for {
+            assert_eq!(tool_name, "Bash");
+        } else {
+            panic!("Expected Permission variant");
+        }
+    }
+
+    #[test]
+    fn test_get_top_needs_action_thread_returns_none_when_no_threads_need_action() {
+        let mut state = DashboardState::new();
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Idle);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Rebuild thread views
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        let result = state.get_top_needs_action_thread();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_top_needs_action_thread_returns_top_thread_when_multiple_need_action() {
+        let mut state = DashboardState::new();
+
+        // Create two waiting threads with different timestamps
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+
+        let mut t2 = make_thread("t2", "Thread 2");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now();
+
+        state.threads.insert("t1".to_string(), t1);
+        state.threads.insert("t2".to_string(), t2);
+
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "req-1".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+        state.waiting_for.insert("t2".to_string(), WaitingFor::UserInput);
+
+        // Rebuild thread views to populate needs_action
+        state.thread_views_dirty = true;
+        let views = state.compute_thread_views();
+        let first_needs_action_id = views[0].id.clone();
+
+        // The top thread should be returned (first in the sorted list)
+        let result = state.get_top_needs_action_thread();
+        assert!(result.is_some());
+        let (thread_id, _) = result.unwrap();
+
+        // Should match the first needs_action thread in the views
+        assert_eq!(thread_id, first_needs_action_id);
+    }
+
+    #[test]
+    fn test_get_top_needs_action_thread_prioritizes_user_input_over_permission() {
+        let mut state = DashboardState::new();
+
+        // Create two waiting threads
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now();
+
+        let mut t2 = make_thread("t2", "Thread 2");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now() - chrono::Duration::seconds(5);
+
+        state.threads.insert("t1".to_string(), t1);
+        state.threads.insert("t2".to_string(), t2);
+
+        // t1 has UserInput (higher priority), t2 has Permission
+        state.waiting_for.insert("t1".to_string(), WaitingFor::UserInput);
+        state.waiting_for.insert(
+            "t2".to_string(),
+            WaitingFor::Permission {
+                request_id: "req-2".to_string(),
+                tool_name: "Edit".to_string(),
+            },
+        );
+
+        // Rebuild thread views to populate needs_action
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        let result = state.get_top_needs_action_thread();
+        assert!(result.is_some());
+        let (thread_id, waiting_for) = result.unwrap();
+
+        // UserInput should be prioritized
+        assert_eq!(thread_id, "t1");
+        assert!(matches!(waiting_for, WaitingFor::UserInput));
+    }
 }
