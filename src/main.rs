@@ -458,6 +458,13 @@ where
                                             }
                                             continue;
                                         }
+                                        KeyCode::Char('a') | KeyCode::Char('A') => {
+                                            // 'A' opens the dialog overlay for this AskUserQuestion
+                                            if app.open_ask_user_question_dialog() {
+                                                tracing::debug!("Opened AskUserQuestion dialog via 'A' key");
+                                            }
+                                            continue;
+                                        }
                                         _ => continue,
                                     }
                                 }
