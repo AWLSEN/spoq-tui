@@ -44,15 +44,34 @@ pub fn render(
 
     let buf = frame.buffer_mut();
 
-    // Calculate column widths as percentages of area.width
-    // Total: 23+10+7+10+12+6 = 68%, leaving 32% for actions
-    // Actions need ~27 chars for permission buttons: [y] Yes  [n] No  [a] Always
+    // DEBUG: Draw border around the row area
+    // Top-left corner
+    if area.x > 0 && area.y > 0 {
+        buf[(area.x, area.y)].set_char('[');
+    }
+    // Top-right corner
+    if area.x + area.width > 0 {
+        let right_x = (area.x + area.width).saturating_sub(1);
+        if right_x < buf.area().width {
+            buf[(right_x, area.y)].set_char(']');
+        }
+    }
+
+    // For threads that need action, skip time column to give more space to buttons
+    // needs_action threads: 23+10+7+10+12 = 62%, leaving 38% for actions
+    // other threads: 23+10+7+10+12+6 = 68%, leaving 32% for actions
+    let show_time = !thread.needs_action;
+
     let title_width = ((area.width as f32) * 0.23) as u16;
     let repo_width = ((area.width as f32) * 0.10) as u16;
     let mode_width = ((area.width as f32) * 0.07) as u16;
     let status_width = ((area.width as f32) * 0.10) as u16;
     let progress_width = ((area.width as f32) * 0.12) as u16;
-    let time_width = ((area.width as f32) * 0.06) as u16;
+    let time_width = if show_time {
+        ((area.width as f32) * 0.06) as u16
+    } else {
+        0
+    };
 
     // Track current x position
     let mut x = area.x;
@@ -108,11 +127,13 @@ pub fn render(
     }
     x += progress_width;
 
-    // Time column
-    let time_text = truncate(&thread.duration, time_width.saturating_sub(1) as usize);
-    let time_style = Style::default().fg(ctx.theme.dim);
-    render_text(buf, x, y, &time_text, time_style, area);
-    x += time_width;
+    // Time column (only for threads that don't need action)
+    if show_time {
+        let time_text = truncate(&thread.duration, time_width.saturating_sub(1) as usize);
+        let time_style = Style::default().fg(ctx.theme.dim);
+        render_text(buf, x, y, &time_text, time_style, area);
+        x += time_width;
+    }
 
     // Action buttons (based on status and waiting_for)
     render_actions(frame, x, y, area, thread, ctx, registry);
