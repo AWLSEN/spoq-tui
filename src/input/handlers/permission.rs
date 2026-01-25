@@ -363,25 +363,6 @@ pub fn handle_misc_command(app: &mut App, cmd: &Command) -> bool {
             true
         }
 
-        Command::MouseClick { x, y } => {
-            if let Some(action) = app.hit_registry.hit_test(*x, *y) {
-                crate::ui::handle_click_action(app, action);
-                app.mark_dirty();
-                true
-            } else {
-                false
-            }
-        }
-
-        Command::MouseHover { x, y } => {
-            if app.hit_registry.update_hover(*x, *y) {
-                app.mark_dirty();
-                true
-            } else {
-                false
-            }
-        }
-
         Command::Noop => {
             // No operation, but still considered "handled"
             true

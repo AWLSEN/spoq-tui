@@ -54,9 +54,6 @@ pub use helpers::{
 // Re-export rendering functions for external use
 pub use messages::{estimate_wrapped_line_count, truncate_preview};
 
-// Re-export interaction system for external use
-pub use interaction::{handle_click_action, ClickAction, HitArea, HitAreaRegistry};
-
 // Re-export prepare phase for external use
 pub use context::{MessageHeightInfo, RenderOutputs};
 pub use prepare::{

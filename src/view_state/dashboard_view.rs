@@ -9,66 +9,6 @@ use crate::state::dashboard::DashboardQuestionState;
 use crate::state::session::AskUserQuestionData;
 
 // ============================================================================
-// FilterState
-// ============================================================================
-
-/// Filter options for thread display
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum FilterState {
-    /// Show all threads (no filter)
-    #[default]
-    All,
-    /// Show only working threads (Running + Waiting)
-    Working,
-    /// Show only threads ready for testing (Done)
-    ReadyToTest,
-    /// Show only idle threads (Idle + Error)
-    Idle,
-}
-
-impl FilterState {
-    /// Check if a thread status matches this filter
-    pub fn matches(&self, status: ThreadStatus) -> bool {
-        match self {
-            FilterState::All => true,
-            FilterState::Working => matches!(status, ThreadStatus::Running | ThreadStatus::Waiting),
-            FilterState::ReadyToTest => matches!(status, ThreadStatus::Done),
-            FilterState::Idle => matches!(status, ThreadStatus::Idle | ThreadStatus::Error),
-        }
-    }
-
-    /// Get the display name for this filter
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            FilterState::All => "All",
-            FilterState::Working => "Working",
-            FilterState::ReadyToTest => "Ready to Test",
-            FilterState::Idle => "Idle",
-        }
-    }
-
-    /// Cycle to the next filter state
-    pub fn next(&self) -> Self {
-        match self {
-            FilterState::All => FilterState::Working,
-            FilterState::Working => FilterState::ReadyToTest,
-            FilterState::ReadyToTest => FilterState::Idle,
-            FilterState::Idle => FilterState::All,
-        }
-    }
-
-    /// Cycle to the previous filter state
-    pub fn prev(&self) -> Self {
-        match self {
-            FilterState::All => FilterState::Idle,
-            FilterState::Working => FilterState::All,
-            FilterState::ReadyToTest => FilterState::Working,
-            FilterState::Idle => FilterState::ReadyToTest,
-        }
-    }
-}
-
-// ============================================================================
 // Progress
 // ============================================================================
 
@@ -351,8 +291,6 @@ pub struct RenderContext<'a> {
     pub threads: &'a [ThreadView],
     /// Aggregate statistics
     pub aggregate: &'a Aggregate,
-    /// Current filter state
-    pub filter: Option<FilterState>,
     /// Active overlay (if any)
     pub overlay: Option<&'a OverlayState>,
     /// System statistics
@@ -377,19 +315,12 @@ impl<'a> RenderContext<'a> {
         Self {
             threads,
             aggregate,
-            filter: None,
             overlay: None,
             system_stats,
             theme,
             question_state: None,
             repos,
         }
-    }
-
-    /// Set filter state
-    pub fn with_filter(mut self, filter: Option<FilterState>) -> Self {
-        self.filter = filter;
-        self
     }
 
     /// Set overlay state
@@ -402,18 +333,6 @@ impl<'a> RenderContext<'a> {
     pub fn with_question_state(mut self, state: Option<&'a DashboardQuestionState>) -> Self {
         self.question_state = state;
         self
-    }
-
-    /// Get filtered threads based on current filter
-    pub fn filtered_threads(&self) -> Vec<&ThreadView> {
-        match self.filter {
-            Some(filter) => self
-                .threads
-                .iter()
-                .filter(|t| filter.matches(t.status))
-                .collect(),
-            None => self.threads.iter().collect(),
-        }
     }
 
     /// Check if there's an active overlay
@@ -434,8 +353,6 @@ impl<'a> RenderContext<'a> {
 /// Dashboard-level view state for UI rendering
 #[derive(Debug, Clone, Default)]
 pub struct DashboardViewState {
-    /// Current filter state
-    pub filter: Option<FilterState>,
     /// Whether an overlay is open
     pub has_overlay: bool,
     /// Total thread count
@@ -451,14 +368,8 @@ impl DashboardViewState {
     }
 
     /// Create a dashboard view state with given values
-    pub fn with_values(
-        filter: Option<FilterState>,
-        has_overlay: bool,
-        thread_count: usize,
-        action_count: usize,
-    ) -> Self {
+    pub fn with_values(has_overlay: bool, thread_count: usize, action_count: usize) -> Self {
         Self {
-            filter,
             has_overlay,
             thread_count,
             action_count,
@@ -469,50 +380,6 @@ impl DashboardViewState {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // -------------------- FilterState Tests --------------------
-
-    #[test]
-    fn test_filter_state_default() {
-        assert_eq!(FilterState::default(), FilterState::All);
-    }
-
-    #[test]
-    fn test_filter_state_matches() {
-        assert!(FilterState::All.matches(ThreadStatus::Running));
-        assert!(FilterState::All.matches(ThreadStatus::Idle));
-
-        assert!(FilterState::Working.matches(ThreadStatus::Running));
-        assert!(FilterState::Working.matches(ThreadStatus::Waiting));
-        assert!(!FilterState::Working.matches(ThreadStatus::Idle));
-        assert!(!FilterState::Working.matches(ThreadStatus::Done));
-
-        assert!(FilterState::ReadyToTest.matches(ThreadStatus::Done));
-        assert!(!FilterState::ReadyToTest.matches(ThreadStatus::Running));
-
-        assert!(FilterState::Idle.matches(ThreadStatus::Idle));
-        assert!(FilterState::Idle.matches(ThreadStatus::Error));
-        assert!(!FilterState::Idle.matches(ThreadStatus::Running));
-    }
-
-    #[test]
-    fn test_filter_state_cycle() {
-        let state = FilterState::All;
-        assert_eq!(state.next(), FilterState::Working);
-        assert_eq!(state.next().next(), FilterState::ReadyToTest);
-        assert_eq!(state.next().next().next(), FilterState::Idle);
-        assert_eq!(state.next().next().next().next(), FilterState::All);
-
-        assert_eq!(state.prev(), FilterState::Idle);
-    }
-
-    #[test]
-    fn test_filter_state_display_name() {
-        assert_eq!(FilterState::All.display_name(), "All");
-        assert_eq!(FilterState::Working.display_name(), "Working");
-        assert_eq!(FilterState::ReadyToTest.display_name(), "Ready to Test");
-        assert_eq!(FilterState::Idle.display_name(), "Idle");
-    }
 
     // -------------------- Progress Tests --------------------
 
@@ -689,7 +556,6 @@ mod tests {
     #[test]
     fn test_dashboard_view_state_default() {
         let state = DashboardViewState::default();
-        assert!(state.filter.is_none());
         assert!(!state.has_overlay);
         assert_eq!(state.thread_count, 0);
         assert_eq!(state.action_count, 0);
@@ -697,8 +563,7 @@ mod tests {
 
     #[test]
     fn test_dashboard_view_state_with_values() {
-        let state = DashboardViewState::with_values(Some(FilterState::Working), true, 10, 3);
-        assert_eq!(state.filter, Some(FilterState::Working));
+        let state = DashboardViewState::with_values(true, 10, 3);
         assert!(state.has_overlay);
         assert_eq!(state.thread_count, 10);
         assert_eq!(state.action_count, 3);

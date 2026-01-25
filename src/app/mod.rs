@@ -36,7 +36,6 @@ use crate::state::{
     ToolTracker,
 };
 use crate::ui::dashboard::SystemStats;
-use crate::ui::interaction::HitAreaRegistry;
 use crate::websocket::WsConnectionState;
 use crate::widgets::textarea_input::TextAreaInput;
 use chrono::Utc;
@@ -282,9 +281,6 @@ pub struct App {
     pub vps_url: Option<String>,
     /// System statistics (CPU, RAM) for dashboard header
     pub system_stats: SystemStats,
-    /// Hit area registry for touch/click interactions
-    /// Cleared at the start of each render cycle, populated during rendering
-    pub hit_registry: HitAreaRegistry,
     /// Timestamp of last Ctrl+C press (for double-press exit detection)
     pub last_ctrl_c_time: Option<std::time::Instant>,
 }
@@ -465,7 +461,6 @@ impl App {
             credentials,
             vps_url,
             system_stats: SystemStats::default(),
-            hit_registry: HitAreaRegistry::new(),
             last_ctrl_c_time: None,
         })
     }

@@ -17,7 +17,7 @@ pub mod tooltip;
 // This allows existing code using `crate::ui::dashboard::*` to keep working
 pub use crate::models::ThreadMode;
 pub use crate::view_state::{
-    FilterState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
+    OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
 
 use ratatui::{
@@ -37,24 +37,20 @@ use crate::ui::interaction::HitAreaRegistry;
 ///
 /// This is the top-level function that composes all dashboard components:
 /// - Header: System stats (CPU, RAM), SPOQ logo, aggregate counts (threads, repos)
-/// - Status bar: Proportional bar showing working/ready/idle distribution
 /// - Thread list: Threads split by need-action vs autonomous
 /// - Overlay: Question/Plan dialogs when a thread is expanded
 ///
 /// # Layout
 /// ```text
 /// +------------------------------------------+
-/// | HEADER: cpu ▓▓░░  4/8g   SPOQ   n threads|
-/// +------------------------------------------+
-/// | STATUS BAR: ████████████░░░░░░░░░░░░░░░  |
-/// |             working 24  ready 8   idle 15|
+/// | HEADER: cpu **::  4/8g   SPOQ   n threads|
 /// +------------------------------------------+
 /// | THREAD LIST:                             |
-/// |   ⚠ Thread needing action 1             |
-/// |   ⚠ Thread needing action 2             |
-/// |   ────────                               |
-/// |   🔄 Running thread 1                    |
-/// |   ✓ Done thread 2                        |
+/// |   ! Thread needing action 1             |
+/// |   ! Thread needing action 2             |
+/// |   --------                               |
+/// |   Running thread 1                       |
+/// |   Done thread 2                          |
 /// +------------------------------------------+
 /// | [OVERLAY if expanded]                    |
 /// +------------------------------------------+
@@ -84,10 +80,10 @@ pub fn render_dashboard(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header (3 rows for better vertical alignment)
+            Constraint::Length(3),           // Header (3 rows for better vertical alignment)
             Constraint::Length(margin_rows), // Margin between header and thread list
-            Constraint::Min(5),    // Thread list
-            Constraint::Length(1), // Footer hint
+            Constraint::Min(5),              // Thread list
+            Constraint::Length(1),           // Footer hint
         ])
         .split(area);
 
@@ -96,7 +92,7 @@ pub fn render_dashboard(
 
     // chunks[1] is the margin - intentionally left empty
 
-    // Render thread list (split or filtered view)
+    // Render thread list (shows all threads)
     thread_list::render(frame, chunks[2], ctx, registry);
 
     // Render footer hint
@@ -297,7 +293,6 @@ mod tests {
         let ctx = RenderContext {
             threads: &threads,
             aggregate: &aggregate,
-            filter: None,
             overlay: None,
             system_stats: &system_stats,
             theme: &theme,
@@ -328,9 +323,6 @@ mod tests {
             .unwrap();
 
         // Verify tooltip info is available
-        assert_eq!(
-            registry.get_tooltip_info(),
-            Some(("Test tooltip", 10, 6))
-        );
+        assert_eq!(registry.get_tooltip_info(), Some(("Test tooltip", 10, 6)));
     }
 }

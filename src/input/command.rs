@@ -213,14 +213,6 @@ pub enum Command {
     OpenOAuthUrl,
 
     // =========================================================================
-    // Mouse Commands
-    // =========================================================================
-    /// Handle mouse click at position
-    MouseClick { x: u16, y: u16 },
-    /// Handle mouse hover at position
-    MouseHover { x: u16, y: u16 },
-
-    // =========================================================================
     // System Commands
     // =========================================================================
     /// Handle terminal resize
@@ -321,8 +313,6 @@ impl Command {
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",
-            Command::MouseClick { .. } => "Mouse click",
-            Command::MouseHover { .. } => "Mouse hover",
             Command::Resize { .. } => "Terminal resize",
             Command::Tick => "Animation tick",
             Command::Noop => "No operation",

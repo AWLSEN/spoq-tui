@@ -9,9 +9,7 @@ use spoq::ui;
 use spoq::websocket::WsClientConfig;
 
 use color_eyre::Result;
-use crossterm::event::{
-    Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
-};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
 use futures::StreamExt;
 use ratatui::Terminal;
 use std::thread;
@@ -1103,28 +1101,8 @@ where
                             }
                         }
                         Event::Mouse(mouse_event) => {
-                            // Handle mouse events for scroll, click, and hover
+                            // Handle mouse events for scroll only (click/hover system removed)
                             match mouse_event.kind {
-                                // Left click: check hit areas for interactive elements
-                                MouseEventKind::Down(MouseButton::Left) => {
-                                    if let Some(action) = app.hit_registry.hit_test(
-                                        mouse_event.column,
-                                        mouse_event.row,
-                                    ) {
-                                        ui::handle_click_action(app, action);
-                                        app.mark_dirty();
-                                    }
-                                    // If no hit area was clicked, let terminal handle text selection
-                                }
-                                // Mouse move: update hover state for visual feedback
-                                MouseEventKind::Moved => {
-                                    if app.hit_registry.update_hover(
-                                        mouse_event.column,
-                                        mouse_event.row,
-                                    ) {
-                                        app.mark_dirty();
-                                    }
-                                }
                                 // Simple line-based scrolling (like native terminal apps)
                                 // Each scroll event moves 3 lines (unified scroll)
                                 MouseEventKind::ScrollDown => {

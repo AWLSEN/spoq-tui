@@ -32,7 +32,6 @@
 //! ## Components
 //!
 //! - [`AppViewState`]: Main view state struct containing all data for UI rendering
-//! - [`HitAreaRegistry`]: Registry for click/touch hit areas
 //! - [`SystemStats`]: System statistics (CPU, RAM, connection status)
 //! - [`SessionViewState`]: Session-level view data (skills, context tokens)
 //! - [`DashboardViewState`]: Dashboard-specific view data
@@ -41,7 +40,6 @@
 
 mod app_view;
 pub mod dashboard_view;
-mod hit_registry;
 mod scroll_state;
 mod session_view;
 mod streaming_state;
@@ -50,9 +48,8 @@ mod system_stats;
 // Re-export all public types
 pub use app_view::AppViewState;
 pub use dashboard_view::{
-    DashboardViewState, FilterState, OverlayState, Progress, RenderContext, Theme, ThreadView,
+    DashboardViewState, OverlayState, Progress, RenderContext, Theme, ThreadView,
 };
-pub use hit_registry::{ClickAction, HitArea, HitAreaRegistry};
 pub use scroll_state::ScrollState;
 pub use session_view::SessionViewState;
 pub use streaming_state::StreamingState;

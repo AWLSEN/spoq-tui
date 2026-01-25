@@ -5,7 +5,6 @@
 //! ensuring the render phase is pure (no mutations).
 
 use crate::app::CachedHeights;
-use crate::ui::interaction::HitAreaRegistry;
 
 /// Height information for a single message.
 #[derive(Debug, Clone)]
@@ -49,17 +48,11 @@ pub struct RenderOutputs {
 
     /// Total content lines rendered
     pub total_content_lines: usize,
-
-    /// Updated hit registry with clickable areas
-    pub hit_registry: HitAreaRegistry,
 }
 
 impl RenderOutputs {
-    /// Create new empty render outputs with fresh hit registry
+    /// Create new empty render outputs
     pub fn new() -> Self {
-        Self {
-            hit_registry: HitAreaRegistry::new(),
-            ..Default::default()
-        }
+        Self::default()
     }
 }
