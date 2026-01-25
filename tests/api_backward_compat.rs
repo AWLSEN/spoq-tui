@@ -431,6 +431,31 @@ fn test_thread_effective_status_uses_agent_events() {
 }
 
 #[test]
+fn test_thread_effective_status_respects_waiting_status() {
+    use std::collections::HashMap;
+
+    let json = r#"{
+        "id": "thread-waiting",
+        "title": "Waiting Thread",
+        "updated_at": "2026-01-20T00:00:00Z",
+        "status": "waiting"
+    }"#;
+
+    let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize");
+
+    // Explicit Waiting status should take precedence over agent events
+    let mut agent_events = HashMap::new();
+    agent_events.insert("thread-waiting".to_string(), ("tool_use".to_string(), Some("Bash".to_string())));
+
+    // Should return Waiting despite agent event saying "tool_use"
+    assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Waiting);
+
+    // Should also return Waiting without agent events
+    let agent_events: HashMap<String, (String, Option<String>)> = HashMap::new();
+    assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Waiting);
+}
+
+#[test]
 fn test_thread_effective_status_without_stored_status() {
     use std::collections::HashMap;
 
