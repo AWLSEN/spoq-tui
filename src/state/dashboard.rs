@@ -352,6 +352,10 @@ impl DashboardState {
     }
 
     /// Update a single thread's status
+    ///
+    /// This method also handles cleanup of pending questions when:
+    /// - Thread status changes to Done, Error, or Idle (thread completed/dismissed)
+    /// - Thread is no longer waiting for UserInput
     pub fn update_thread_status(
         &mut self,
         thread_id: &str,
@@ -362,6 +366,35 @@ impl DashboardState {
             thread.status = Some(status);
         } else {
             tracing::warn!("Received status update for unknown thread: {}", thread_id);
+        }
+
+        // Check if we should clear pending question data:
+        // 1. Thread completed (Done, Error, Idle) - question is no longer relevant
+        // 2. Thread no longer waiting for UserInput - question was answered or cancelled
+        let should_clear_question = match status {
+            ThreadStatus::Done | ThreadStatus::Error | ThreadStatus::Idle => true,
+            _ => {
+                // Check if waiting_for changed from UserInput to something else
+                let was_waiting_for_user_input = self
+                    .waiting_for
+                    .get(thread_id)
+                    .map(|wf| matches!(wf, WaitingFor::UserInput))
+                    .unwrap_or(false);
+                let is_now_waiting_for_user_input = waiting_for
+                    .as_ref()
+                    .map(|wf| matches!(wf, WaitingFor::UserInput))
+                    .unwrap_or(false);
+                was_waiting_for_user_input && !is_now_waiting_for_user_input
+            }
+        };
+
+        if should_clear_question && self.pending_questions.contains_key(thread_id) {
+            tracing::debug!(
+                "Clearing pending question for thread {} due to status change to {:?}",
+                thread_id,
+                status
+            );
+            self.pending_questions.remove(thread_id);
         }
 
         if let Some(wf) = waiting_for {
