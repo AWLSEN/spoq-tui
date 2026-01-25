@@ -30,7 +30,7 @@ use crate::conductor::ConductorClient;
 use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
-use crate::models::{Folder, PermissionMode};
+use crate::models::{Folder, GitHubRepo, PermissionMode};
 use crate::state::{
     AskUserQuestionState, DashboardState, SessionState, SubagentTracker, Task, Thread, Todo,
     ToolTracker,
@@ -254,12 +254,24 @@ pub struct App {
     pub folders_error: Option<String>,
     /// Currently selected folder (displayed as chip in input)
     pub selected_folder: Option<Folder>,
+    /// Cached GitHub repos from API for empty state
+    pub repos: Vec<GitHubRepo>,
+    /// True while fetching repos from API
+    pub repos_loading: bool,
+    /// Error message if repos fetch failed
+    pub repos_error: Option<String>,
     /// Is the folder picker overlay showing
     pub folder_picker_visible: bool,
     /// Current filter text for folder picker (text after @)
     pub folder_picker_filter: String,
     /// Selected index in the filtered folder list
     pub folder_picker_cursor: usize,
+    /// Is the slash command autocomplete dropdown showing
+    pub slash_autocomplete_visible: bool,
+    /// Current query for slash command filtering (text after /)
+    pub slash_autocomplete_query: String,
+    /// Selected index in the filtered slash commands list
+    pub slash_autocomplete_cursor: usize,
     /// Central API client for authenticated requests
     pub central_api: Option<Arc<CentralApiClient>>,
     /// Credentials manager for secure storage
@@ -439,9 +451,15 @@ impl App {
             folders_loading: false,
             folders_error: None,
             selected_folder: None,
+            repos: Vec::new(),
+            repos_loading: false,
+            repos_error: None,
             folder_picker_visible: false,
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
+            slash_autocomplete_visible: false,
+            slash_autocomplete_query: String::new(),
+            slash_autocomplete_cursor: 0,
             central_api: Some(central_api),
             credentials_manager,
             credentials,

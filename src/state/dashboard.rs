@@ -1006,11 +1006,12 @@ impl DashboardState {
         &'a mut self,
         system_stats: &'a SystemStats,
         theme: &'a Theme,
+        repos: &'a [crate::models::GitHubRepo],
     ) -> RenderContext<'a> {
         // Ensure thread views are fresh before building context
         self.compute_thread_views();
 
-        RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme)
+        RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme, repos)
             .with_filter(self.filter)
             .with_overlay(self.overlay.as_ref())
             .with_question_state(self.question_state.as_ref())
@@ -2012,7 +2013,8 @@ mod tests {
         // build_render_context should refresh the views
         let stats = SystemStats::default();
         let theme = Theme::default();
-        let ctx = state.build_render_context(&stats, &theme);
+        let repos = vec![];
+        let ctx = state.build_render_context(&stats, &theme, &repos);
 
         // Context should have 2 threads (the updated view)
         assert_eq!(ctx.threads.len(), 2);
@@ -2037,7 +2039,8 @@ mod tests {
         // build_render_context should use cached views
         let stats = SystemStats::default();
         let theme = Theme::default();
-        let ctx = state.build_render_context(&stats, &theme);
+        let repos = vec![];
+        let ctx = state.build_render_context(&stats, &theme, &repos);
 
         // Still 1 thread
         assert_eq!(ctx.threads.len(), 1);
@@ -2059,7 +2062,8 @@ mod tests {
         // Build initial context
         let stats = SystemStats::default();
         let theme = Theme::default();
-        let ctx = state.build_render_context(&stats, &theme);
+        let repos = vec![];
+        let ctx = state.build_render_context(&stats, &theme, &repos);
         assert_eq!(ctx.threads.len(), 1);
 
         // Update thread status (marks dirty)
@@ -2069,7 +2073,7 @@ mod tests {
         assert!(state.thread_views_dirty);
 
         // build_render_context should reflect the update
-        let ctx = state.build_render_context(&stats, &theme);
+        let ctx = state.build_render_context(&stats, &theme, &repos);
         let view = &ctx.threads[0];
         assert!(view.needs_action); // Waiting threads need action
     }

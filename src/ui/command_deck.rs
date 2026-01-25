@@ -117,7 +117,7 @@ fn render_dashboard_content(frame: &mut Frame, area: Rect, app: &mut App) {
     let theme = Theme::default();
     let render_ctx = app
         .dashboard
-        .build_render_context(&app.system_stats, &theme);
+        .build_render_context(&app.system_stats, &theme, &app.repos);
 
     // Note: hit_registry is cleared in prepare_render()
     render_dashboard(frame, area, &render_ctx, &mut app.hit_registry);

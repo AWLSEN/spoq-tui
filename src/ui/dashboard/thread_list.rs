@@ -187,7 +187,7 @@ fn render_split_view(
             area.width,
             need_action_more_y.saturating_sub(area.y),
         );
-        states::render_all_clear(frame, need_action_area, autonomous.len());
+        states::render_all_clear(frame, need_action_area, ctx.repos);
     }
 }
 

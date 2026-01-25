@@ -7,7 +7,7 @@ use crate::adapters::ReqwestHttpClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;
 use crate::models::{
-    Folder, Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse,
+    Folder, GitHubRepo, Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse,
 };
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
@@ -853,6 +853,31 @@ impl ConductorClient {
         }
         let folders: Vec<Folder> = response.json().await?;
         Ok(folders)
+    }
+
+    /// Fetch GitHub repositories from conductor.
+    ///
+    /// Returns top 10 most recent repos (personal + organization).
+    ///
+    /// # Returns
+    /// A vector of GitHub repositories, or an error if the request fails
+    pub async fn fetch_repos(&self) -> Result<Vec<GitHubRepo>, ConductorError> {
+        let url = format!("{}/v1/repos?limit=10", self.base_url);
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let repos: Vec<GitHubRepo> = response.json().await?;
+        Ok(repos)
     }
 
     /// Fetch all tasks from the backend.

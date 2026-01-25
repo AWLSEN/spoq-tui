@@ -1,7 +1,7 @@
 //! AppMessage enum for async communication within the application.
 
 use crate::models::dashboard::{PlanSummary, ThreadStatus, WaitingFor};
-use crate::models::{Folder, Thread, ThreadMode};
+use crate::models::{Folder, GitHubRepo, Thread, ThreadMode};
 use crate::state::session::AskUserQuestionData;
 use crate::state::Todo;
 use crate::ui::dashboard::SystemStats;
@@ -121,6 +121,10 @@ pub enum AppMessage {
     FoldersLoaded(Vec<Folder>),
     /// Failed to load folders from API
     FoldersLoadFailed(String),
+    /// GitHub repos loaded from API
+    ReposLoaded(Vec<GitHubRepo>),
+    /// Failed to load repos from API
+    ReposLoadFailed(String),
     /// Open the folder picker overlay
     FolderPickerOpen,
     /// Close the folder picker overlay

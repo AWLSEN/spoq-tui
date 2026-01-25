@@ -185,6 +185,9 @@ fn main() -> Result<()> {
         // Load folders for the folder picker (async, non-blocking)
         app.load_folders();
 
+        // Load GitHub repos for empty state (async, non-blocking)
+        app.load_repos();
+
         // Connect WebSocket for real-time communication
         // Build config with token from credentials and VPS URL
         let mut ws_config = WsClientConfig::default();

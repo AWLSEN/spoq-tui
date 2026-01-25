@@ -720,6 +720,32 @@ impl App {
                     None,
                 );
             }
+            AppMessage::ReposLoaded(repos) => {
+                let count = repos.len();
+                self.repos = repos;
+                self.repos_loading = false;
+                self.repos_error = None;
+                // Emit StateChange for repos loaded
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Repos loaded",
+                        format!("count={}", count),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::ReposLoadFailed(error) => {
+                self.repos_loading = false;
+                self.repos_error = Some(error.clone());
+                // Emit Error debug event
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
+                    None,
+                );
+            }
             AppMessage::FolderPickerOpen => {
                 self.folder_picker_visible = true;
                 self.folder_picker_filter.clear();

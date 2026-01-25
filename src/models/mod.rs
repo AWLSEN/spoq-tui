@@ -1,5 +1,6 @@
 pub mod dashboard;
 mod folder;
+mod repository;
 mod message;
 mod request;
 mod thread;
@@ -10,6 +11,7 @@ pub use dashboard::{
     Aggregate, PlanSummary, ThreadStatus, WaitingFor,
 };
 pub use folder::Folder;
+pub use repository::{GitHubRepo, PrimaryLanguage};
 pub use message::*;
 pub use request::PermissionMode;
 pub use request::*;

@@ -270,6 +270,36 @@ impl App {
         });
     }
 
+    /// Load GitHub repositories from the conductor API.
+    ///
+    /// Spawns an async task to fetch repos without blocking the UI.
+    /// Results are sent back via AppMessage channel.
+    ///
+    /// On success, sends ReposLoaded message with the repos list.
+    /// On error, sends ReposLoadFailed message with the error description.
+    pub fn load_repos(&mut self) {
+        // Set loading state
+        self.repos_loading = true;
+        self.repos_error = None;
+        self.mark_dirty();
+
+        // Spawn async task to fetch repos
+        let tx = self.message_tx.clone();
+        let client = Arc::clone(&self.client);
+
+        tokio::spawn(async move {
+            match client.fetch_repos().await {
+                Ok(repos) => {
+                    let _ = tx.send(AppMessage::ReposLoaded(repos));
+                }
+                Err(e) => {
+                    let error_msg = format!("Failed to load repos: {}", e);
+                    let _ = tx.send(AppMessage::ReposLoadFailed(error_msg));
+                }
+            }
+        });
+    }
+
     // =========================================================================
     // Folder Picker Methods
     // =========================================================================
@@ -480,6 +510,18 @@ impl App {
         }
         let (row, col) = self.textarea.cursor();
         row == 0 && col == 0
+    }
+
+    // =========================================================================
+    // Slash Command Autocomplete Methods
+    // =========================================================================
+
+    /// Get filtered slash commands matching the current query.
+    ///
+    /// # Returns
+    /// Vector of SlashCommand instances that match the filter.
+    pub fn filtered_slash_commands(&self) -> Vec<crate::input::SlashCommand> {
+        crate::input::SlashCommand::filter(&self.slash_autocomplete_query)
     }
 }
 

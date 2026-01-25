@@ -40,7 +40,7 @@ mod tests {
         let stats = SystemStats::default();
         let theme = Theme::default();
 
-        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme);
+        let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme, &[]);
 
         assert_eq!(get_footer_hint(&ctx), "");
     }
@@ -61,7 +61,7 @@ mod tests {
         };
 
         let ctx =
-            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
+            RenderContext::new(&threads, &aggregate, &stats, &theme, &[]).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }
@@ -84,7 +84,7 @@ mod tests {
         };
 
         let ctx =
-            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
+            RenderContext::new(&threads, &aggregate, &stats, &theme, &[]).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }
@@ -114,7 +114,7 @@ mod tests {
         };
 
         let ctx =
-            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
+            RenderContext::new(&threads, &aggregate, &stats, &theme, &[]).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }

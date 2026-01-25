@@ -361,6 +361,8 @@ pub struct RenderContext<'a> {
     pub theme: &'a Theme,
     /// Question navigation state for multi-question flow
     pub question_state: Option<&'a DashboardQuestionState>,
+    /// GitHub repos for empty state
+    pub repos: &'a [crate::models::GitHubRepo],
 }
 
 impl<'a> RenderContext<'a> {
@@ -370,6 +372,7 @@ impl<'a> RenderContext<'a> {
         aggregate: &'a Aggregate,
         system_stats: &'a super::SystemStats,
         theme: &'a Theme,
+        repos: &'a [crate::models::GitHubRepo],
     ) -> Self {
         Self {
             threads,
@@ -379,6 +382,7 @@ impl<'a> RenderContext<'a> {
             system_stats,
             theme,
             question_state: None,
+            repos,
         }
     }
 
