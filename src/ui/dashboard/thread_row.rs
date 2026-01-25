@@ -1,7 +1,21 @@
 //! Thread row component for dashboard rendering
 //!
 //! Renders a single thread view as a compact row showing title, repository,
-//! mode, status, progress, time, and action buttons.
+//! mode, activity/status, and action buttons.
+//!
+//! ## Layout
+//!
+//! **Non-action threads** (working autonomously, below separator):
+//! ```text
+//! Title (30%) | Repo (14%) | Mode (9%) | Activity (27%) | Time (10%)
+//! "API Endpoints       ~/api        exec        Edit: handlers.rs           12m"
+//! ```
+//!
+//! **Action threads** (need user input, above separator):
+//! ```text
+//! Title (30%) | Repo (12%) | Mode (9%) | Status (12%) | Actions (37%)
+//! "Auth Refactor       ~/api        plan        waiting              [y] Yes  [n] No"
+//! ```
 
 use ratatui::{
     layout::Rect,
@@ -18,11 +32,9 @@ use crate::ui::dashboard::{RenderContext, ThreadMode, ThreadView};
 
 /// Render a single thread row
 ///
-/// # Layout (single row, height=1)
-/// ```text
-/// "Auth Refactor          ~/api       plan       waiting              [approve] [reject]"
-/// |-- Title (25%) --|-- Repo (12%) --|-- Mode (8%) --|-- Status (12%) --|-- Progress (15%) --|-- Time (8%) --|-- Actions --|
-/// ```
+/// Uses different layouts based on whether the thread needs user action:
+/// - **Action threads**: Title + Repo + Mode + Status + Actions (right-aligned)
+/// - **Non-action threads**: Title + Repo + Mode + Activity + Time
 ///
 /// # Arguments
 /// * `frame` - The ratatui frame to render into
@@ -39,34 +51,31 @@ pub fn render(
         return;
     }
 
+    if thread.needs_action {
+        render_action_thread(frame, area, thread, ctx);
+    } else {
+        render_autonomous_thread(frame, area, thread, ctx);
+    }
+}
+
+/// Render an action thread row (needs user input)
+///
+/// Layout: Title (30%) | Repo (12%) | Mode (9%) | Status (12%) | Actions (37%)
+fn render_action_thread(
+    frame: &mut Frame,
+    area: Rect,
+    thread: &ThreadView,
+    ctx: &RenderContext,
+) {
     let buf = frame.buffer_mut();
 
-    // For threads that need action, skip time column to give more space to buttons
-    // needs_action threads: 30+12+9+12+0+0 = 63%, leaving 37% for right-aligned actions
-    // other threads: 28+14+9+14+15+10 = 90%, leaving 10% for right-aligned Verify button
-    let show_time = !thread.needs_action;
+    // Column widths for action threads
+    let title_width = ((area.width as f32) * 0.30) as u16;
+    let repo_width = ((area.width as f32) * 0.12) as u16;
+    let mode_width = ((area.width as f32) * 0.09) as u16;
+    let status_width = ((area.width as f32) * 0.12) as u16;
+    // Remaining 37% for right-aligned action buttons
 
-    let (title_width, repo_width, mode_width, status_width, progress_width, time_width) = if thread.needs_action {
-        // needs_action threads: expanded data columns, no progress/time
-        let title_width = ((area.width as f32) * 0.30) as u16;
-        let repo_width = ((area.width as f32) * 0.12) as u16;
-        let mode_width = ((area.width as f32) * 0.09) as u16;
-        let status_width = ((area.width as f32) * 0.12) as u16;
-        let progress_width = 0; // no progress for needs_action
-        let time_width = 0; // no time column for needs_action
-        (title_width, repo_width, mode_width, status_width, progress_width, time_width)
-    } else {
-        // non-need-action threads: expand columns to use ~90% of width
-        let title_width = ((area.width as f32) * 0.28) as u16;
-        let repo_width = ((area.width as f32) * 0.14) as u16;
-        let mode_width = ((area.width as f32) * 0.09) as u16;
-        let status_width = ((area.width as f32) * 0.14) as u16;
-        let progress_width = ((area.width as f32) * 0.15) as u16;
-        let time_width = ((area.width as f32) * 0.10) as u16;
-        (title_width, repo_width, mode_width, status_width, progress_width, time_width)
-    };
-
-    // Track current x position
     let mut x = area.x;
     let y = area.y;
 
@@ -99,37 +108,101 @@ pub fn render(
     render_text(buf, x, y, &status_text, status_style, area);
     x += status_width;
 
-    // Progress column: show for Running threads, or Exec mode threads that are Running/Waiting
-    let show_progress = thread.status == ThreadStatus::Running
-        || (thread.mode == ThreadMode::Exec && thread.status == ThreadStatus::Waiting);
+    // Action buttons (right-aligned)
+    render_actions(frame, x, y, area, thread, ctx, true);
+}
 
-    if show_progress {
-        if let Some(ref progress) = thread.progress {
-            // For exec mode, show circles only; otherwise show circles + fraction
-            let progress_text = if thread.mode == ThreadMode::Exec {
-                render_phase_circles(progress.current, progress.total)
+/// Render an autonomous thread row (working without user input)
+///
+/// Layout: Title (30%) | Repo (14%) | Mode (9%) | Activity (27%) | Time (10%)
+fn render_autonomous_thread(
+    frame: &mut Frame,
+    area: Rect,
+    thread: &ThreadView,
+    ctx: &RenderContext,
+) {
+    let buf = frame.buffer_mut();
+
+    // Column widths for non-action threads (unified Activity column)
+    let title_width = ((area.width as f32) * 0.30) as u16;
+    let repo_width = ((area.width as f32) * 0.14) as u16;
+    let mode_width = ((area.width as f32) * 0.09) as u16;
+    let activity_width = ((area.width as f32) * 0.27) as u16;
+    let time_width = ((area.width as f32) * 0.10) as u16;
+
+    let mut x = area.x;
+    let y = area.y;
+
+    // Title column (bold)
+    let title_text = truncate(&thread.title, title_width.saturating_sub(1) as usize);
+    let title_style = Style::default().add_modifier(Modifier::BOLD);
+    render_text(buf, x, y, &title_text, title_style, area);
+    x += title_width;
+
+    // Repository column
+    let repo_text = truncate(&thread.repository, repo_width.saturating_sub(1) as usize);
+    let repo_style = Style::default().fg(ctx.theme.dim);
+    render_text(buf, x, y, &repo_text, repo_style, area);
+    x += repo_width;
+
+    // Mode column
+    let mode_text = match thread.mode {
+        ThreadMode::Normal => "normal",
+        ThreadMode::Plan => "plan",
+        ThreadMode::Exec => "exec",
+    };
+    let mode_style = Style::default().fg(ctx.theme.dim);
+    render_text(buf, x, y, mode_text, mode_style, area);
+    x += mode_width;
+
+    // Activity column - uses activity_text or falls back to computed value
+    let activity_text = thread.activity_text.as_ref().map_or_else(
+        || compute_activity_text(thread),
+        |s| s.clone(),
+    );
+    let activity_text = truncate(&activity_text, activity_width.saturating_sub(1) as usize);
+    let activity_style = Style::default().fg(activity_color(thread, ctx));
+    render_text(buf, x, y, &activity_text, activity_style, area);
+    x += activity_width;
+
+    // Time column
+    let time_text = truncate(&thread.duration, time_width.saturating_sub(1) as usize);
+    let time_style = Style::default().fg(ctx.theme.dim);
+    render_text(buf, x, y, &time_text, time_style, area);
+}
+
+/// Compute activity text based on thread state (fallback when activity_text is None)
+///
+/// - Running + current_operation: show operation (e.g., "Edit: main.rs")
+/// - Running + no operation: show "Thinking..."
+/// - Idle: show "idle"
+/// - Done: show "done"
+/// - Error: show "error"
+/// - Waiting: show "waiting"
+fn compute_activity_text(thread: &ThreadView) -> String {
+    match thread.status {
+        ThreadStatus::Running => {
+            if let Some(ref op) = thread.current_operation {
+                op.clone()
             } else {
-                render_progress(progress.current, progress.total)
-            };
-            let progress_text = truncate(&progress_text, progress_width.saturating_sub(1) as usize);
-            let progress_style = Style::default().fg(ctx.theme.accent);
-            render_text(buf, x, y, &progress_text, progress_style, area);
+                "Thinking...".to_string()
+            }
         }
+        ThreadStatus::Idle => "idle".to_string(),
+        ThreadStatus::Done => "done".to_string(),
+        ThreadStatus::Error => "error".to_string(),
+        ThreadStatus::Waiting => "waiting".to_string(),
     }
-    x += progress_width;
+}
 
-    // Time column (only for threads that don't need action)
-    if show_time {
-        let time_text = truncate(&thread.duration, time_width.saturating_sub(1) as usize);
-        let time_style = Style::default().fg(ctx.theme.dim);
-        render_text(buf, x, y, &time_text, time_style, area);
-        x += time_width;
+/// Get the color for activity text based on thread status
+fn activity_color(thread: &ThreadView, ctx: &RenderContext) -> ratatui::style::Color {
+    match thread.status {
+        ThreadStatus::Running => ctx.theme.accent,
+        ThreadStatus::Done => ctx.theme.success,
+        ThreadStatus::Error => ctx.theme.error,
+        ThreadStatus::Idle | ThreadStatus::Waiting => ctx.theme.dim,
     }
-
-    // Action buttons (based on status and waiting_for)
-    // Use right-align for need-action threads (permission/plan approval buttons)
-    let right_align = thread.needs_action;
-    render_actions(frame, x, y, area, thread, ctx, right_align);
 }
 
 // ============================================================================
@@ -499,6 +572,7 @@ mod tests {
             duration: "1m".to_string(),
             needs_action: true,
             current_operation: None,
+            activity_text: None,
         };
 
         // Verify the match would produce 3 buttons for permission
@@ -540,6 +614,7 @@ mod tests {
             duration: "2m".to_string(),
             needs_action: true,
             current_operation: None,
+            activity_text: None,
         };
 
         // Verify the match would produce 2 buttons for plan approval
@@ -576,6 +651,7 @@ mod tests {
             duration: "30s".to_string(),
             needs_action: true,
             current_operation: None,
+            activity_text: None,
         };
 
         // Verify the match would produce 1 button for user input
@@ -607,6 +683,7 @@ mod tests {
             duration: "5m".to_string(),
             needs_action: false,
             current_operation: None,
+            activity_text: Some("done".to_string()),
         };
 
         // Verify the match would produce 1 button for done status
@@ -641,6 +718,7 @@ mod tests {
             duration: "1m".to_string(),
             needs_action: false,
             current_operation: Some("Running tests".to_string()),
+            activity_text: Some("Running tests".to_string()),
         };
 
         // Verify running status produces no buttons
@@ -668,5 +746,268 @@ mod tests {
         };
 
         assert_eq!(buttons.len(), 0);
+    }
+
+    // -------------------- compute_activity_text Tests --------------------
+
+    #[test]
+    fn test_compute_activity_text_running_with_operation() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Exec,
+            status: ThreadStatus::Running,
+            waiting_for: None,
+            progress: None,
+            duration: "5m".to_string(),
+            needs_action: false,
+            current_operation: Some("Edit: handlers.rs".to_string()),
+            activity_text: None,
+        };
+
+        assert_eq!(compute_activity_text(&thread), "Edit: handlers.rs");
+    }
+
+    #[test]
+    fn test_compute_activity_text_running_no_operation() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Running,
+            waiting_for: None,
+            progress: None,
+            duration: "2m".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: None,
+        };
+
+        assert_eq!(compute_activity_text(&thread), "Thinking...");
+    }
+
+    #[test]
+    fn test_compute_activity_text_idle() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Idle,
+            waiting_for: None,
+            progress: None,
+            duration: "3h".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: None,
+        };
+
+        assert_eq!(compute_activity_text(&thread), "idle");
+    }
+
+    #[test]
+    fn test_compute_activity_text_done() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Done,
+            waiting_for: None,
+            progress: None,
+            duration: "4h".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: None,
+        };
+
+        assert_eq!(compute_activity_text(&thread), "done");
+    }
+
+    #[test]
+    fn test_compute_activity_text_error() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Error,
+            waiting_for: None,
+            progress: None,
+            duration: "1m".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: None,
+        };
+
+        assert_eq!(compute_activity_text(&thread), "error");
+    }
+
+    #[test]
+    fn test_compute_activity_text_waiting() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::ThreadView;
+
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Waiting,
+            waiting_for: None,
+            progress: None,
+            duration: "10s".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: None,
+        };
+
+        assert_eq!(compute_activity_text(&thread), "waiting");
+    }
+
+    // -------------------- activity_color Tests --------------------
+
+    #[test]
+    fn test_activity_color_running() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::{Theme, ThreadView};
+
+        let theme = Theme::default();
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Exec,
+            status: ThreadStatus::Running,
+            waiting_for: None,
+            progress: None,
+            duration: "5m".to_string(),
+            needs_action: false,
+            current_operation: Some("Edit: main.rs".to_string()),
+            activity_text: Some("Edit: main.rs".to_string()),
+        };
+
+        // Running threads use accent color
+        assert_eq!(activity_color(&thread, &make_ctx(&theme)), theme.accent);
+    }
+
+    #[test]
+    fn test_activity_color_done() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::{Theme, ThreadView};
+
+        let theme = Theme::default();
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Done,
+            waiting_for: None,
+            progress: None,
+            duration: "4h".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: Some("done".to_string()),
+        };
+
+        // Done threads use success color
+        assert_eq!(activity_color(&thread, &make_ctx(&theme)), theme.success);
+    }
+
+    #[test]
+    fn test_activity_color_error() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::{Theme, ThreadView};
+
+        let theme = Theme::default();
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Error,
+            waiting_for: None,
+            progress: None,
+            duration: "1m".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: Some("error".to_string()),
+        };
+
+        // Error threads use error color
+        assert_eq!(activity_color(&thread, &make_ctx(&theme)), theme.error);
+    }
+
+    #[test]
+    fn test_activity_color_idle() {
+        use crate::models::dashboard::ThreadStatus;
+        use crate::view_state::dashboard_view::{Theme, ThreadView};
+
+        let theme = Theme::default();
+        let thread = ThreadView {
+            id: "test".to_string(),
+            title: "Test".to_string(),
+            repository: "~/repo".to_string(),
+            mode: crate::models::ThreadMode::Normal,
+            status: ThreadStatus::Idle,
+            waiting_for: None,
+            progress: None,
+            duration: "3h".to_string(),
+            needs_action: false,
+            current_operation: None,
+            activity_text: Some("idle".to_string()),
+        };
+
+        // Idle threads use dim color
+        assert_eq!(activity_color(&thread, &make_ctx(&theme)), theme.dim);
+    }
+
+    /// Helper to create a minimal RenderContext for testing
+    fn make_ctx(theme: &crate::view_state::dashboard_view::Theme) -> RenderContext<'_> {
+        use crate::models::dashboard::Aggregate;
+        use crate::view_state::SystemStats;
+        use std::collections::HashMap;
+
+        // Use lazy_static to provide static references for testing
+        use std::sync::LazyLock;
+
+        static THREADS: &[ThreadView] = &[];
+        static AGGREGATE: LazyLock<Aggregate> = LazyLock::new(|| Aggregate {
+            by_status: HashMap::new(),
+            total_repos: 0,
+        });
+        static SYSTEM_STATS: LazyLock<SystemStats> = LazyLock::new(|| SystemStats {
+            cpu_percent: 0.0,
+            ram_used_gb: 0.0,
+            ram_total_gb: 8.0,
+            connected: true,
+        });
+
+        RenderContext {
+            threads: THREADS,
+            aggregate: &AGGREGATE,
+            overlay: None,
+            system_stats: &SYSTEM_STATS,
+            theme,
+            question_state: None,
+        }
     }
 }

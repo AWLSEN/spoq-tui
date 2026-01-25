@@ -1123,6 +1123,27 @@ impl DashboardState {
                         .current_operation(&self.agent_states)
                         .map(|s| s.to_string());
 
+                    // Compute activity_text based on thread state
+                    // - Running + tool active: tool's display_name (e.g., "Read: main.rs")
+                    // - Running + no tool: "Thinking..."
+                    // - Idle: "idle"
+                    // - Done: "done"
+                    // - Error: "error"
+                    // - Waiting: None (uses old layout with status column + actions)
+                    let activity_text = match status {
+                        ThreadStatus::Running => {
+                            if let Some(ref op) = current_operation {
+                                Some(op.clone())
+                            } else {
+                                Some("Thinking...".to_string())
+                            }
+                        }
+                        ThreadStatus::Idle => Some("idle".to_string()),
+                        ThreadStatus::Done => Some("done".to_string()),
+                        ThreadStatus::Error => Some("error".to_string()),
+                        ThreadStatus::Waiting => None, // Uses old layout with status + actions
+                    };
+
                     ThreadView::new(
                         thread.id.clone(),
                         thread.title.clone(),
@@ -1134,6 +1155,7 @@ impl DashboardState {
                     .with_progress(progress)
                     .with_duration(thread.display_duration())
                     .with_current_operation(current_operation)
+                    .with_activity_text(activity_text)
                 })
                 .collect();
 
@@ -1920,6 +1942,103 @@ mod tests {
 
         let v3 = views.iter().find(|v| v.id == "t3").unwrap();
         assert!(v3.progress.is_none());
+    }
+
+    // -------------------- activity_text Tests --------------------
+
+    #[test]
+    fn test_activity_text_running_with_current_operation() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Simulate agent state with current operation
+        state
+            .agent_states
+            .insert("t1".to_string(), ("processing".to_string(), Some("Read: main.rs".to_string())));
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.activity_text, Some("Read: main.rs".to_string()));
+    }
+
+    #[test]
+    fn test_activity_text_running_without_current_operation() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Simulate agent state without current operation
+        state
+            .agent_states
+            .insert("t1".to_string(), ("processing".to_string(), None));
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.activity_text, Some("Thinking...".to_string()));
+    }
+
+    #[test]
+    fn test_activity_text_idle() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Idle);
+        state.threads.insert("t1".to_string(), thread);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.activity_text, Some("idle".to_string()));
+    }
+
+    #[test]
+    fn test_activity_text_done() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Done);
+        state.threads.insert("t1".to_string(), thread);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.activity_text, Some("done".to_string()));
+    }
+
+    #[test]
+    fn test_activity_text_error() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Error);
+        state.threads.insert("t1".to_string(), thread);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        assert_eq!(view.activity_text, Some("error".to_string()));
+    }
+
+    #[test]
+    fn test_activity_text_waiting_is_none() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Waiting);
+        state.threads.insert("t1".to_string(), thread);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        let view = &views[0];
+        // Waiting threads should have None activity_text (uses old layout)
+        assert_eq!(view.activity_text, None);
     }
 
     // -------------------- build_render_context Cache Tests --------------------

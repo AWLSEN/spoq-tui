@@ -77,6 +77,16 @@ pub struct ThreadView {
     pub needs_action: bool,
     /// Current operation description (e.g., "Reading file", "Running tests")
     pub current_operation: Option<String>,
+    /// Pre-computed activity text for display in the Activity column
+    ///
+    /// This is computed based on thread state:
+    /// - Running + tool active: tool's display_name (e.g., "Read: main.rs")
+    /// - Running + no tool: "Thinking..."
+    /// - Idle: "idle"
+    /// - Done: "done"
+    /// - Error: "error"
+    /// - Waiting: None (uses old layout with status column + actions)
+    pub activity_text: Option<String>,
 }
 
 impl ThreadView {
@@ -93,6 +103,7 @@ impl ThreadView {
             duration: String::new(),
             needs_action: false,
             current_operation: None,
+            activity_text: None,
         }
     }
 
@@ -133,6 +144,12 @@ impl ThreadView {
     /// Builder-style setter for current_operation
     pub fn with_current_operation(mut self, current_operation: Option<String>) -> Self {
         self.current_operation = current_operation;
+        self
+    }
+
+    /// Builder-style setter for activity_text
+    pub fn with_activity_text(mut self, activity_text: Option<String>) -> Self {
+        self.activity_text = activity_text;
         self
     }
 
