@@ -181,6 +181,52 @@ impl KeybindingConfig {
         );
         self.modal
             .insert(ModalType::AskUserQuestionOther, question_other);
+
+        // Dashboard Question Overlay bindings
+        let mut dashboard_question = HashMap::new();
+        dashboard_question.insert(
+            KeyCombo::plain(KeyCode::Tab),
+            Command::DashboardQuestionNextTab,
+        );
+        dashboard_question.insert(
+            KeyCombo::plain(KeyCode::Up),
+            Command::DashboardQuestionPrevOption,
+        );
+        dashboard_question.insert(
+            KeyCombo::plain(KeyCode::Down),
+            Command::DashboardQuestionNextOption,
+        );
+        dashboard_question.insert(
+            KeyCombo::plain(KeyCode::Char(' ')),
+            Command::DashboardQuestionToggleOption,
+        );
+        dashboard_question.insert(
+            KeyCombo::plain(KeyCode::Enter),
+            Command::DashboardQuestionConfirm,
+        );
+        dashboard_question.insert(
+            KeyCombo::plain(KeyCode::Esc),
+            Command::DashboardQuestionClose,
+        );
+        self.modal
+            .insert(ModalType::DashboardQuestionOverlay, dashboard_question);
+
+        // Dashboard Question Overlay "Other" text input bindings
+        let mut dashboard_question_other = HashMap::new();
+        dashboard_question_other.insert(
+            KeyCombo::plain(KeyCode::Esc),
+            Command::DashboardQuestionCancelOther,
+        );
+        dashboard_question_other.insert(
+            KeyCombo::plain(KeyCode::Enter),
+            Command::DashboardQuestionConfirm,
+        );
+        dashboard_question_other.insert(
+            KeyCombo::plain(KeyCode::Backspace),
+            Command::DashboardQuestionBackspace,
+        );
+        self.modal
+            .insert(ModalType::DashboardQuestionOverlayOther, dashboard_question_other);
     }
 
     /// Sets up screen-specific keybindings.

@@ -397,6 +397,89 @@ where
                                 _ => {}
                             }
 
+                            // =========================================================
+                            // Dashboard Question Overlay Key Handling (CommandDeck)
+                            // MUST come BEFORE permission handling to take priority
+                            // =========================================================
+                            if app.screen == Screen::CommandDeck {
+                                if let Some(spoq::view_state::OverlayState::Question { .. }) = app.dashboard.overlay() {
+                                    // Check if "Other" text input mode is active
+                                    if app.dashboard.is_question_other_active() {
+                                        match key.code {
+                                            KeyCode::Esc => {
+                                                app.dashboard.question_cancel_other();
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Enter => {
+                                                if let Some((thread_id, request_id, answers)) = app.dashboard.question_confirm() {
+                                                    app.submit_dashboard_question(&thread_id, &request_id, answers);
+                                                }
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Backspace => {
+                                                app.dashboard.question_backspace();
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Char(c) => {
+                                                app.dashboard.question_type_char(c);
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            _ => continue,
+                                        }
+                                    }
+
+                                    // Normal question navigation (not in "Other" text mode)
+                                    match key.code {
+                                        KeyCode::Esc => {
+                                            app.dashboard.collapse_overlay();
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Up => {
+                                            app.dashboard.question_prev_option();
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Down => {
+                                            app.dashboard.question_next_option();
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Tab => {
+                                            app.dashboard.question_next_tab();
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Char(' ') => {
+                                            app.dashboard.question_toggle_option();
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Enter => {
+                                            if let Some((thread_id, request_id, answers)) = app.dashboard.question_confirm() {
+                                                app.submit_dashboard_question(&thread_id, &request_id, answers);
+                                            }
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Char('n') | KeyCode::Char('N') => {
+                                            // Close overlay (deny)
+                                            app.dashboard.collapse_overlay();
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        _ => {
+                                            // Ignore other keys while overlay is open
+                                            continue;
+                                        }
+                                    }
+                                }
+                            }
+
                             // Handle permission prompt keys when a permission is pending
                             // This takes priority over all other key handling
                             if app.session_state.has_pending_permission() {
@@ -593,91 +676,6 @@ where
                                         // Any other key closes and confirms
                                         app.confirm_switcher_selection();
                                         continue;
-                                    }
-                                }
-                            }
-
-                            // =========================================================
-                            // Dashboard Question Overlay Key Handling (CommandDeck)
-                            // Handle keyboard navigation for Question overlay in dashboard
-                            // =========================================================
-                            if app.screen == Screen::CommandDeck {
-                                if let Some(spoq::view_state::OverlayState::Question { .. }) = app.dashboard.overlay() {
-                                    // Check if "Other" text input mode is active
-                                    if app.dashboard.is_question_other_active() {
-                                        match key.code {
-                                            KeyCode::Esc => {
-                                                app.dashboard.question_cancel_other();
-                                                app.mark_dirty();
-                                                continue;
-                                            }
-                                            KeyCode::Enter => {
-                                                if let Some((thread_id, request_id, answers)) = app.dashboard.question_confirm() {
-                                                    // Submit answers via WebSocket
-                                                    app.submit_dashboard_question(&thread_id, &request_id, answers);
-                                                }
-                                                app.mark_dirty();
-                                                continue;
-                                            }
-                                            KeyCode::Backspace => {
-                                                app.dashboard.question_backspace();
-                                                app.mark_dirty();
-                                                continue;
-                                            }
-                                            KeyCode::Char(c) => {
-                                                app.dashboard.question_type_char(c);
-                                                app.mark_dirty();
-                                                continue;
-                                            }
-                                            _ => continue,
-                                        }
-                                    }
-
-                                    // Normal question navigation (not in "Other" text mode)
-                                    match key.code {
-                                        KeyCode::Esc => {
-                                            // Close the question overlay
-                                            app.dashboard.collapse_overlay();
-                                            app.mark_dirty();
-                                            continue;
-                                        }
-                                        KeyCode::Up => {
-                                            // Navigate to previous option
-                                            app.dashboard.question_prev_option();
-                                            app.mark_dirty();
-                                            continue;
-                                        }
-                                        KeyCode::Down => {
-                                            // Navigate to next option
-                                            app.dashboard.question_next_option();
-                                            app.mark_dirty();
-                                            continue;
-                                        }
-                                        KeyCode::Tab => {
-                                            // Switch between multiple questions
-                                            app.dashboard.question_next_tab();
-                                            app.mark_dirty();
-                                            continue;
-                                        }
-                                        KeyCode::Char(' ') => {
-                                            // Toggle multi-select option
-                                            app.dashboard.question_toggle_option();
-                                            app.mark_dirty();
-                                            continue;
-                                        }
-                                        KeyCode::Enter => {
-                                            // Confirm selection
-                                            if let Some((thread_id, request_id, answers)) = app.dashboard.question_confirm() {
-                                                // Submit answers via WebSocket
-                                                app.submit_dashboard_question(&thread_id, &request_id, answers);
-                                            }
-                                            app.mark_dirty();
-                                            continue;
-                                        }
-                                        _ => {
-                                            // Ignore other keys while overlay is open
-                                            continue;
-                                        }
                                     }
                                 }
                             }

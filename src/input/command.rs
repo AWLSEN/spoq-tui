@@ -143,7 +143,7 @@ pub enum Command {
     HandlePermissionKey(char),
 
     // =========================================================================
-    // Question/AskUser Commands
+    // Question/AskUser Commands (Session-level, inline)
     // =========================================================================
     /// Next tab in question UI
     QuestionNextTab,
@@ -161,6 +161,28 @@ pub enum Command {
     QuestionBackspace,
     /// Type char in "Other" text input
     QuestionTypeChar(char),
+
+    // =========================================================================
+    // Dashboard Question Overlay Commands
+    // =========================================================================
+    /// Next tab in dashboard question overlay
+    DashboardQuestionNextTab,
+    /// Previous option in dashboard question overlay
+    DashboardQuestionPrevOption,
+    /// Next option in dashboard question overlay
+    DashboardQuestionNextOption,
+    /// Toggle option in dashboard question overlay (Space)
+    DashboardQuestionToggleOption,
+    /// Confirm selection in dashboard question overlay (Enter)
+    DashboardQuestionConfirm,
+    /// Close dashboard question overlay (Escape)
+    DashboardQuestionClose,
+    /// Cancel "Other" text input in dashboard overlay (Escape)
+    DashboardQuestionCancelOther,
+    /// Backspace in dashboard overlay "Other" text input
+    DashboardQuestionBackspace,
+    /// Type char in dashboard overlay "Other" text input
+    DashboardQuestionTypeChar(char),
 
     // =========================================================================
     // Conversation Screen Commands
@@ -262,6 +284,15 @@ impl Command {
             Command::QuestionCancelOther => "Cancel other input",
             Command::QuestionBackspace => "Backspace in other input",
             Command::QuestionTypeChar(_) => "Type in other input",
+            Command::DashboardQuestionNextTab => "Next dashboard question tab",
+            Command::DashboardQuestionPrevOption => "Previous dashboard question option",
+            Command::DashboardQuestionNextOption => "Next dashboard question option",
+            Command::DashboardQuestionToggleOption => "Toggle dashboard question option",
+            Command::DashboardQuestionConfirm => "Confirm dashboard question response",
+            Command::DashboardQuestionClose => "Close dashboard question overlay",
+            Command::DashboardQuestionCancelOther => "Cancel dashboard other input",
+            Command::DashboardQuestionBackspace => "Backspace in dashboard other input",
+            Command::DashboardQuestionTypeChar(_) => "Type in dashboard other input",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

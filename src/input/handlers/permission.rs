@@ -45,7 +45,7 @@ pub fn handle_permission_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
-/// Handles question/AskUserQuestion-related commands.
+/// Handles question/AskUserQuestion-related commands (session-level, inline).
 ///
 /// Returns `true` if the command was handled successfully.
 pub fn handle_question_command(app: &mut App, cmd: &Command) -> bool {
@@ -87,6 +87,65 @@ pub fn handle_question_command(app: &mut App, cmd: &Command) -> bool {
 
         Command::QuestionTypeChar(c) => {
             app.question_type_char(*c);
+            true
+        }
+
+        _ => false,
+    }
+}
+
+/// Handles dashboard question overlay commands.
+///
+/// These are for the overlay-based question dialogs on the CommandDeck,
+/// which use `app.dashboard` state instead of session-level state.
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_dashboard_question_command(app: &mut App, cmd: &Command) -> bool {
+    match cmd {
+        Command::DashboardQuestionNextTab => {
+            app.dashboard.question_next_tab();
+            true
+        }
+
+        Command::DashboardQuestionPrevOption => {
+            app.dashboard.question_prev_option();
+            true
+        }
+
+        Command::DashboardQuestionNextOption => {
+            app.dashboard.question_next_option();
+            true
+        }
+
+        Command::DashboardQuestionToggleOption => {
+            app.dashboard.question_toggle_option();
+            true
+        }
+
+        Command::DashboardQuestionConfirm => {
+            if let Some((thread_id, request_id, answers)) = app.dashboard.question_confirm() {
+                app.submit_dashboard_question(&thread_id, &request_id, answers);
+            }
+            true
+        }
+
+        Command::DashboardQuestionClose => {
+            app.dashboard.collapse_overlay();
+            true
+        }
+
+        Command::DashboardQuestionCancelOther => {
+            app.dashboard.question_cancel_other();
+            true
+        }
+
+        Command::DashboardQuestionBackspace => {
+            app.dashboard.question_backspace();
+            true
+        }
+
+        Command::DashboardQuestionTypeChar(c) => {
+            app.dashboard.question_type_char(*c);
             true
         }
 

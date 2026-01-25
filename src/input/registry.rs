@@ -154,6 +154,42 @@ impl CommandRegistry {
                 Some(Command::Noop)
             }
 
+            ModalType::DashboardQuestionOverlay => {
+                // Check modal-specific bindings
+                if let Some(cmd) = self
+                    .config
+                    .get_modal(ModalType::DashboardQuestionOverlay, &combo)
+                {
+                    return Some(cmd.clone());
+                }
+
+                // Handle N/n to close (deny)
+                if let KeyCode::Char('n') | KeyCode::Char('N') = key.code {
+                    return Some(Command::DashboardQuestionClose);
+                }
+
+                // Ignore other keys
+                Some(Command::Noop)
+            }
+
+            ModalType::DashboardQuestionOverlayOther => {
+                // Check modal-specific bindings
+                if let Some(cmd) = self
+                    .config
+                    .get_modal(ModalType::DashboardQuestionOverlayOther, &combo)
+                {
+                    return Some(cmd.clone());
+                }
+
+                // Handle character input for "Other" text field
+                if let KeyCode::Char(c) = key.code {
+                    return Some(Command::DashboardQuestionTypeChar(c));
+                }
+
+                // Ignore other keys
+                Some(Command::Noop)
+            }
+
             ModalType::None => {
                 // Should not reach here, but handle gracefully
                 None

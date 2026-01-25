@@ -44,7 +44,8 @@ pub use context::{InputContext, ModalType};
 pub use keybindings::{KeyCombo, KeybindingConfig};
 pub use registry::CommandRegistry;
 
-use crate::app::App;
+use crate::app::{App, Screen};
+use crate::view_state::OverlayState;
 
 /// Translates a base character to its shifted equivalent for US keyboard layout.
 ///
@@ -103,7 +104,30 @@ impl App {
             ModalType::FolderPicker
         } else if self.thread_switcher.visible {
             ModalType::ThreadSwitcher
+        } else if self.screen == Screen::CommandDeck {
+            // On CommandDeck, check for dashboard overlay FIRST (takes priority)
+            if let Some(OverlayState::Question { .. }) = self.dashboard.overlay() {
+                if self.dashboard.is_question_other_active() {
+                    ModalType::DashboardQuestionOverlayOther
+                } else {
+                    ModalType::DashboardQuestionOverlay
+                }
+            } else if self.session_state.has_pending_permission() {
+                // Fall back to session-level permission if no overlay
+                if self.is_ask_user_question_pending() {
+                    if self.question_state.other_active {
+                        ModalType::AskUserQuestionOther
+                    } else {
+                        ModalType::AskUserQuestion
+                    }
+                } else {
+                    ModalType::Permission
+                }
+            } else {
+                ModalType::None
+            }
         } else if self.session_state.has_pending_permission() {
+            // For Conversation screen, keep existing behavior
             if self.is_ask_user_question_pending() {
                 if self.question_state.other_active {
                     ModalType::AskUserQuestionOther
@@ -161,6 +185,12 @@ impl App {
             }
             ModalType::ThreadSwitcher => {
                 if handlers::handle_thread_switcher_command(self, &cmd) {
+                    return true;
+                }
+            }
+            ModalType::DashboardQuestionOverlay
+            | ModalType::DashboardQuestionOverlayOther => {
+                if handlers::handle_dashboard_question_command(self, &cmd) {
                     return true;
                 }
             }

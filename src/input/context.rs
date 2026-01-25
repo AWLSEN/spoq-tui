@@ -18,10 +18,14 @@ pub enum ModalType {
     ThreadSwitcher,
     /// Permission prompt is pending
     Permission,
-    /// AskUserQuestion prompt is active
+    /// AskUserQuestion prompt is active (session-level, inline)
     AskUserQuestion,
-    /// AskUserQuestion "Other" text input mode
+    /// AskUserQuestion "Other" text input mode (session-level)
     AskUserQuestionOther,
+    /// Dashboard question overlay is open
+    DashboardQuestionOverlay,
+    /// Dashboard question overlay "Other" text input mode
+    DashboardQuestionOverlayOther,
 }
 
 /// Context information for input handling.
@@ -238,5 +242,16 @@ mod tests {
         let ctx = InputContext::new().with_line_context("Hello @".to_string(), 7);
         assert_eq!(ctx.current_line_content, "Hello @");
         assert_eq!(ctx.cursor_column, 7);
+    }
+
+    #[test]
+    fn test_dashboard_question_overlay_modal() {
+        let ctx = InputContext::new().with_modal(ModalType::DashboardQuestionOverlay);
+        assert!(ctx.is_modal_active());
+        assert_eq!(ctx.modal, ModalType::DashboardQuestionOverlay);
+
+        let ctx = InputContext::new().with_modal(ModalType::DashboardQuestionOverlayOther);
+        assert!(ctx.is_modal_active());
+        assert_eq!(ctx.modal, ModalType::DashboardQuestionOverlayOther);
     }
 }
