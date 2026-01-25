@@ -114,6 +114,15 @@ pub(crate) struct UsagePayload {
     pub context_window_limit: u32,
 }
 
+/// SystemInit payload
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SystemInitPayload {
+    pub session_id: String,
+    pub permission_mode: String,
+    pub model: String,
+    pub tools: Vec<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,5 +227,15 @@ mod tests {
         assert_eq!(payload.thread_id, "t-abc");
         assert_eq!(payload.title, Some("New Title".to_string()));
         assert_eq!(payload.description, Some("New Desc".to_string()));
+    }
+
+    #[test]
+    fn test_system_init_payload() {
+        let json = r#"{"session_id": "sess-abc", "permission_mode": "auto", "model": "opus", "tools": ["read", "write", "bash"]}"#;
+        let payload: SystemInitPayload = serde_json::from_str(json).unwrap();
+        assert_eq!(payload.session_id, "sess-abc");
+        assert_eq!(payload.permission_mode, "auto");
+        assert_eq!(payload.model, "opus");
+        assert_eq!(payload.tools, vec!["read", "write", "bash"]);
     }
 }

@@ -265,6 +265,19 @@ pub struct UsageEvent {
     pub context_window_limit: u32,
 }
 
+/// SystemInit event - sent when Claude CLI starts with session info
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SystemInitEvent {
+    /// Session ID for the Claude CLI session
+    pub session_id: String,
+    /// Permission mode: "auto" or "prompt"
+    pub permission_mode: String,
+    /// Model name: "opus" or "sonnet"
+    pub model: String,
+    /// List of available tools
+    pub tools: Vec<String>,
+}
+
 /// Wrapper enum for all possible SSE event types from Conductor.
 ///
 /// Use pattern matching to handle different event types during stream processing.
@@ -326,6 +339,8 @@ pub enum SseEvent {
     ThreadUpdated(ThreadUpdatedEvent),
     /// Usage information
     Usage(UsageEvent),
+    /// System initialization
+    SystemInit(SystemInitEvent),
 }
 
 /// Wraps an SSE event with its metadata.
@@ -1018,5 +1033,44 @@ mod tests {
 
         assert_eq!(event1, event2);
         assert_ne!(event1, event3);
+    }
+
+    #[test]
+    fn test_parse_system_init_event() {
+        let json = r#"{
+            "session_id": "sess-abc-123",
+            "permission_mode": "auto",
+            "model": "opus",
+            "tools": ["read", "write", "bash"]
+        }"#;
+
+        let event: SystemInitEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.session_id, "sess-abc-123");
+        assert_eq!(event.permission_mode, "auto");
+        assert_eq!(event.model, "opus");
+        assert_eq!(event.tools, vec!["read", "write", "bash"]);
+    }
+
+    #[test]
+    fn test_parse_sse_event_system_init() {
+        let json = r#"{
+            "type": "system_init",
+            "session_id": "sess-xyz-789",
+            "permission_mode": "prompt",
+            "model": "sonnet",
+            "tools": ["read", "write", "edit", "bash", "glob", "grep"]
+        }"#;
+
+        let event: SseEvent = serde_json::from_str(json).unwrap();
+        match event {
+            SseEvent::SystemInit(e) => {
+                assert_eq!(e.session_id, "sess-xyz-789");
+                assert_eq!(e.permission_mode, "prompt");
+                assert_eq!(e.model, "sonnet");
+                assert_eq!(e.tools.len(), 6);
+                assert_eq!(e.tools[0], "read");
+            }
+            _ => panic!("Expected SystemInit event"),
+        }
     }
 }

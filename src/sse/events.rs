@@ -119,6 +119,13 @@ pub enum SseEvent {
         context_window_used: u32,
         context_window_limit: u32,
     },
+    /// System initialization - sent when Claude CLI starts
+    SystemInit {
+        session_id: String,
+        permission_mode: String,
+        model: String,
+        tools: Vec<String>,
+    },
 }
 
 impl SseEvent {
@@ -146,6 +153,7 @@ impl SseEvent {
             SseEvent::SubagentCompleted { .. } => "subagent_completed",
             SseEvent::ThreadUpdated { .. } => "thread_updated",
             SseEvent::Usage { .. } => "usage",
+            SseEvent::SystemInit { .. } => "system_init",
         }
     }
 }

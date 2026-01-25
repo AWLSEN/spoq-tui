@@ -1233,6 +1233,17 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
             context_window_used,
             context_window_limit,
         }),
+        crate::sse::SseEvent::SystemInit {
+            session_id,
+            permission_mode,
+            model,
+            tools,
+        } => SseEvent::SystemInit(crate::events::SystemInitEvent {
+            session_id,
+            permission_mode,
+            model,
+            tools,
+        }),
     }
 }
 

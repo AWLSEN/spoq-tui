@@ -584,6 +584,24 @@ impl App {
                                 context_limit: usage_event.context_window_limit,
                             });
                         }
+                        SseEvent::SystemInit(system_init_event) => {
+                            // SystemInit event sent when Claude CLI starts
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "SystemInit",
+                                    format!(
+                                        "session: {}, model: {}, mode: {}, tools: {}",
+                                        system_init_event.session_id,
+                                        system_init_event.model,
+                                        system_init_event.permission_mode,
+                                        system_init_event.tools.len()
+                                    ),
+                                )),
+                                Some(thread_id),
+                            );
+                            // No AppMessage needed - just for debugging/logging
+                        }
                     }
                 }
                 Err(e) => {

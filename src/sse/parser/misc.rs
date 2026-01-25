@@ -3,7 +3,7 @@
 use crate::sse::events::{SseEvent, SseParseError};
 use crate::sse::payloads::{
     ContextCompactedPayload, ErrorPayload, OAuthConsentRequiredPayload, SkillsInjectedPayload,
-    UsagePayload,
+    SystemInitPayload, UsagePayload,
 };
 
 /// Parse skills_injected event
@@ -96,6 +96,24 @@ pub(super) fn parse_usage_event(event_type: &str, data: &str) -> Result<SseEvent
     Ok(SseEvent::Usage {
         context_window_used: payload.context_window_used,
         context_window_limit: payload.context_window_limit,
+    })
+}
+
+/// Parse system_init event
+pub(super) fn parse_system_init_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
+    let payload: SystemInitPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::SystemInit {
+        session_id: payload.session_id,
+        permission_mode: payload.permission_mode,
+        model: payload.model,
+        tools: payload.tools,
     })
 }
 
@@ -228,6 +246,23 @@ mod tests {
             SseEvent::Usage {
                 context_window_used: 100000,
                 context_window_limit: 200000,
+            }
+        );
+    }
+
+    #[test]
+    fn test_parse_system_init() {
+        let result = parse_sse_event(
+            "system_init",
+            r#"{"session_id": "sess-123", "permission_mode": "auto", "model": "opus", "tools": ["read", "write", "bash"]}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::SystemInit {
+                session_id: "sess-123".to_string(),
+                permission_mode: "auto".to_string(),
+                model: "opus".to_string(),
+                tools: vec!["read".to_string(), "write".to_string(), "bash".to_string()],
             }
         );
     }
