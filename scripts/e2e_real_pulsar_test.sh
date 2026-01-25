@@ -163,7 +163,7 @@ check_prerequisites() {
 }
 
 # ==============================================================================
-# Placeholder Functions (to be implemented in later phases)
+# Phase 4: Thread Creation Functions
 # ==============================================================================
 
 # Phase 4: Create thread via API
