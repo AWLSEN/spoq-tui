@@ -260,8 +260,32 @@ impl<'a> TextAreaInput<'a> {
     /// Used when the caller wants to handle border rendering separately,
     /// such as when rendering a chip alongside the input.
     pub fn render_without_border(&mut self, area: Rect, buf: &mut Buffer, focused: bool) {
-        // Configure cursor visibility based on focus
-        if focused {
+        // Delegate to the cursor-aware version with cursor always visible when focused
+        self.render_without_border_with_cursor(area, buf, focused, focused);
+    }
+
+    /// Render the textarea without any border, with explicit cursor visibility control.
+    ///
+    /// This method supports cursor blinking by allowing the caller to control
+    /// whether the cursor is visible independent of focus state.
+    ///
+    /// # Arguments
+    /// * `area` - The area to render into
+    /// * `buf` - The buffer to render into
+    /// * `focused` - Whether the input is focused (affects other styling)
+    /// * `cursor_visible` - Whether to show the cursor (for blink support)
+    pub fn render_without_border_with_cursor(
+        &mut self,
+        area: Rect,
+        buf: &mut Buffer,
+        focused: bool,
+        cursor_visible: bool,
+    ) {
+        // Configure cursor visibility
+        // - When focused AND cursor_visible: show white background cursor
+        // - When focused but NOT cursor_visible: hide cursor (blink "off" phase)
+        // - When not focused: always hide cursor
+        if focused && cursor_visible {
             self.textarea
                 .set_cursor_style(Style::default().fg(Color::Black).bg(Color::White));
         } else {

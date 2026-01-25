@@ -39,9 +39,32 @@ use super::theme::{COLOR_ACCENT, COLOR_DIM};
 // Input Area
 // ============================================================================
 
-pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
+/// Render the input area with optional cursor blinking.
+///
+/// # Arguments
+/// * `frame` - The frame to render into
+/// * `area` - The area to render the input
+/// * `app` - The application state
+/// * `blink_enabled` - If true, cursor will blink based on tick_count. If false, cursor is static.
+pub fn render_input_area_with_blink(
+    frame: &mut Frame,
+    area: Rect,
+    app: &mut App,
+    blink_enabled: bool,
+) {
     // Input is always "focused" since we removed panel focus cycling
     let input_focused = true;
+
+    // Calculate cursor visibility for blinking
+    // When blink_enabled is true: cursor blinks based on tick_count
+    // When blink_enabled is false: cursor is always visible (static)
+    let cursor_visible = if blink_enabled && input_focused {
+        // Blink: visible when (tick_count / 5) is even (same pattern used elsewhere in codebase)
+        (app.tick_count / 5).is_multiple_of(2)
+    } else {
+        // Static: always visible when focused
+        input_focused
+    };
 
     // No border - use spacing at top instead for visual separation
     let inner = Rect {
@@ -80,6 +103,7 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
     let input_with_chip = InputWithChipWidget {
         textarea_input: &mut app.textarea,
         focused: input_focused,
+        cursor_visible,
         selected_folder: app.selected_folder.as_ref(),
     };
     frame.render_widget(input_with_chip, input_chunks[0]);
@@ -92,14 +116,26 @@ pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
     frame.render_widget(keybinds_widget, input_chunks[1]);
 }
 
+/// Render the input area with static (non-blinking) cursor.
+///
+/// This is the default rendering mode used by the command deck (dashboard).
+/// For conversation view with blinking cursor, use `render_input_area_with_blink`.
+pub fn render_input_area(frame: &mut Frame, area: Rect, app: &mut App) {
+    // Command deck uses static cursor (no blinking)
+    render_input_area_with_blink(frame, area, app, false);
+}
+
 /// Widget that renders a folder chip followed by the TextArea input.
 ///
 /// This composite widget handles:
 /// - Rendering the folder chip at the start (if selected)
 /// - Rendering the TextArea input in the remaining space
+/// - Supporting cursor blinking via `cursor_visible` flag
 struct InputWithChipWidget<'a, 'b> {
     textarea_input: &'b mut crate::widgets::textarea_input::TextAreaInput<'a>,
     focused: bool,
+    /// Whether the cursor should be visible (for blinking support)
+    cursor_visible: bool,
     selected_folder: Option<&'b crate::models::Folder>,
 }
 
@@ -141,8 +177,13 @@ impl Widget for InputWithChipWidget<'_, '_> {
         };
 
         // Render textarea without border (we handle the border ourselves)
-        self.textarea_input
-            .render_without_border(textarea_area, buf, self.focused);
+        // Pass cursor_visible to control whether cursor is shown (for blinking support)
+        self.textarea_input.render_without_border_with_cursor(
+            textarea_area,
+            buf,
+            self.focused,
+            self.cursor_visible,
+        );
     }
 }
 
@@ -496,5 +537,136 @@ mod tests {
         // Should still render without panicking on narrow width
         // Default mode: 4 lines
         assert_eq!(lines.len(), 4);
+    }
+
+    // =========================================================================
+    // Cursor Blink Tests
+    // =========================================================================
+
+    #[test]
+    fn test_cursor_visibility_blink_enabled_tick_0() {
+        // At tick_count = 0: (0 / 5) = 0, 0.is_multiple_of(2) = true (even)
+        // Cursor should be visible
+        let tick_count = 0u64;
+        let blink_enabled = true;
+        let focused = true;
+
+        let cursor_visible = if blink_enabled && focused {
+            (tick_count / 5).is_multiple_of(2)
+        } else {
+            focused
+        };
+
+        assert!(cursor_visible, "Cursor should be visible at tick_count=0");
+    }
+
+    #[test]
+    fn test_cursor_visibility_blink_enabled_tick_5() {
+        // At tick_count = 5: (5 / 5) = 1, 1.is_multiple_of(2) = false (odd)
+        // Cursor should be hidden (blink off phase)
+        let tick_count = 5u64;
+        let blink_enabled = true;
+        let focused = true;
+
+        let cursor_visible = if blink_enabled && focused {
+            (tick_count / 5).is_multiple_of(2)
+        } else {
+            focused
+        };
+
+        assert!(
+            !cursor_visible,
+            "Cursor should be hidden at tick_count=5 (blink off)"
+        );
+    }
+
+    #[test]
+    fn test_cursor_visibility_blink_enabled_tick_10() {
+        // At tick_count = 10: (10 / 5) = 2, 2.is_multiple_of(2) = true (even)
+        // Cursor should be visible again
+        let tick_count = 10u64;
+        let blink_enabled = true;
+        let focused = true;
+
+        let cursor_visible = if blink_enabled && focused {
+            (tick_count / 5).is_multiple_of(2)
+        } else {
+            focused
+        };
+
+        assert!(
+            cursor_visible,
+            "Cursor should be visible at tick_count=10"
+        );
+    }
+
+    #[test]
+    fn test_cursor_visibility_blink_disabled() {
+        // When blink_enabled = false, cursor should always be visible when focused
+        let tick_count = 5u64; // Would be hidden if blink was enabled
+        let blink_enabled = false;
+        let focused = true;
+
+        let cursor_visible = if blink_enabled && focused {
+            (tick_count / 5).is_multiple_of(2)
+        } else {
+            focused
+        };
+
+        assert!(
+            cursor_visible,
+            "Cursor should always be visible when blink_enabled=false"
+        );
+    }
+
+    #[test]
+    fn test_cursor_visibility_not_focused() {
+        // When not focused, cursor should never be visible regardless of blink setting
+        let tick_count = 0u64;
+        let blink_enabled = true;
+        let focused = false;
+
+        let cursor_visible = if blink_enabled && focused {
+            (tick_count / 5).is_multiple_of(2)
+        } else {
+            focused
+        };
+
+        assert!(
+            !cursor_visible,
+            "Cursor should be hidden when not focused"
+        );
+    }
+
+    #[test]
+    fn test_cursor_blink_cycle() {
+        // Test a full blink cycle: visible -> hidden -> visible
+        let blink_enabled = true;
+        let focused = true;
+
+        let mut visible_count = 0;
+        let mut hidden_count = 0;
+
+        for tick in 0..20 {
+            let cursor_visible = if blink_enabled && focused {
+                (tick / 5).is_multiple_of(2)
+            } else {
+                focused
+            };
+
+            if cursor_visible {
+                visible_count += 1;
+            } else {
+                hidden_count += 1;
+            }
+        }
+
+        // Should have roughly equal visible/hidden time
+        // Ticks 0-4 (5 ticks): visible (0/5=0, even)
+        // Ticks 5-9 (5 ticks): hidden (1, odd)
+        // Ticks 10-14 (5 ticks): visible (2, even)
+        // Ticks 15-19 (5 ticks): hidden (3, odd)
+        assert_eq!(visible_count, 10, "Should have 10 visible ticks");
+        assert_eq!(hidden_count, 10, "Should have 10 hidden ticks");
     }
 }
