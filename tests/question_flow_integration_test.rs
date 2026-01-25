@@ -729,7 +729,7 @@ fn test_empty_options_list() {
     state.expand_thread("t1", 10);
 
     // With no options, selection might be None (Other)
-    let qs = state.question_state().unwrap();
+    let _qs = state.question_state().unwrap();
     // The initial selection with 0 options would try to set Some(0)
     // but get_current_option_count returns 0
     // Navigation should still work (moving to/from Other)
