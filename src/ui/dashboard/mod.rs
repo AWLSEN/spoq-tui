@@ -111,7 +111,7 @@ pub fn render_dashboard(
 
     // Render tooltip if hovering over an info icon
     if let Some((content, anchor_x, anchor_y)) = registry.get_tooltip_info() {
-        tooltip::render_tooltip(frame.buffer_mut(), content, anchor_x, anchor_y, &ctx.theme);
+        tooltip::render_tooltip(frame.buffer_mut(), content, anchor_x, anchor_y, ctx.theme);
     }
 
     // Render overlay if present
