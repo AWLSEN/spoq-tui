@@ -369,11 +369,14 @@ pub fn render_progress(current: u32, total: u32) -> String {
 /// * `total` - Total number of phases
 ///
 /// # Returns
-/// A string like "●●●○○○" (circles only, no fraction)
+/// A string like "● ● ● ○ ○ ○" (circles with spaces, no fraction)
 pub fn render_phase_circles(current: u32, total: u32) -> String {
-    let filled = "\u{25CF}".repeat(current as usize); // ●
-    let empty = "\u{25CB}".repeat(total.saturating_sub(current) as usize); // ○
-    format!("{}{}", filled, empty)
+    let filled = vec!["\u{25CF}"; current as usize]; // ●
+    let empty = vec!["\u{25CB}"; total.saturating_sub(current) as usize]; // ○
+    let mut all_circles = Vec::new();
+    all_circles.extend(filled);
+    all_circles.extend(empty);
+    all_circles.join(" ")
 }
 
 /// Truncate a string with ellipsis if it exceeds max_len
@@ -452,11 +455,11 @@ mod tests {
 
     #[test]
     fn test_render_phase_circles() {
-        assert_eq!(render_phase_circles(3, 6), "●●●○○○");
-        assert_eq!(render_phase_circles(0, 5), "○○○○○");
-        assert_eq!(render_phase_circles(4, 4), "●●●●");
+        assert_eq!(render_phase_circles(3, 6), "● ● ● ○ ○ ○");
+        assert_eq!(render_phase_circles(0, 5), "○ ○ ○ ○ ○");
+        assert_eq!(render_phase_circles(4, 4), "● ● ● ●");
         assert_eq!(render_phase_circles(0, 0), "");
-        assert_eq!(render_phase_circles(1, 3), "●○○");
+        assert_eq!(render_phase_circles(1, 3), "● ○ ○");
     }
 
     // -------------------- truncate Tests --------------------
