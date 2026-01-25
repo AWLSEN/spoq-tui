@@ -12,6 +12,7 @@ pub mod states;
 pub mod status_bar;
 pub mod thread_list;
 pub mod thread_row;
+pub mod tooltip;
 
 // Re-export types from view_state for backward compatibility
 // This allows existing code using `crate::ui::dashboard::*` to keep working
@@ -107,6 +108,11 @@ pub fn render_dashboard(
     let hint = footer::get_footer_hint(ctx);
     let hint_line = Line::styled(hint, Style::default().fg(Color::DarkGray));
     frame.render_widget(hint_line, chunks[4]);
+
+    // Render tooltip if hovering over an info icon
+    if let Some((content, anchor_x, anchor_y)) = registry.get_tooltip_info() {
+        tooltip::render_tooltip(frame.buffer_mut(), content, anchor_x, anchor_y, &ctx.theme);
+    }
 
     // Render overlay if present
     if let Some(overlay_state) = ctx.overlay {
@@ -231,5 +237,63 @@ mod tests {
         // Should be centered horizontally
         let expected_x = parent.x + (parent.width - area.width) / 2;
         assert_eq!(area.x, expected_x);
+    }
+
+    #[test]
+    fn test_tooltip_rendering_integration() {
+        use crate::models::dashboard::Aggregate;
+        use crate::ui::interaction::{ClickAction, HitAreaRegistry};
+        use crate::view_state::dashboard_view::RenderContext;
+        use ratatui::backend::TestBackend;
+        use ratatui::Terminal;
+
+        // Create a test terminal
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        // Create test data
+        let threads: Vec<ThreadView> = vec![];
+        let aggregate = Aggregate::default();
+        let system_stats = SystemStats::default();
+        let theme = Theme::default();
+
+        // Create a minimal render context
+        let ctx = RenderContext {
+            threads: &threads,
+            aggregate: &aggregate,
+            filter: None,
+            overlay: None,
+            system_stats: &system_stats,
+            theme: &theme,
+        };
+
+        // Create registry and register a tooltip hover area
+        let mut registry = HitAreaRegistry::new();
+        registry.register(
+            Rect::new(10, 5, 3, 1),
+            ClickAction::HoverInfoIcon {
+                content: "Test tooltip".to_string(),
+                anchor_x: 10,
+                anchor_y: 6,
+            },
+            None,
+        );
+
+        // Simulate hover
+        registry.update_hover(11, 5);
+
+        // Render the dashboard
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_dashboard(frame, area, &ctx, &mut registry);
+            })
+            .unwrap();
+
+        // Verify tooltip info is available
+        assert_eq!(
+            registry.get_tooltip_info(),
+            Some(("Test tooltip", 10, 6))
+        );
     }
 }
