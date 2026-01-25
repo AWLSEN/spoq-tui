@@ -1673,20 +1673,24 @@ generate_verification_report() {
     local report_timestamp
     report_timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Calculate pass/fail counts
+    # Calculate pass/fail counts from checkpoint files
     local pass_count=0
     local fail_count=0
     local skip_count=0
+    local total_checkpoints=0
 
-    for name in "${CHECKPOINT_ORDER[@]}"; do
-        case "${CHECKPOINT_RESULTS[$name]}" in
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        local result
+        result=$(get_checkpoint_result "$name")
+        case "$result" in
             PASS) pass_count=$((pass_count + 1)) ;;
             FAIL) fail_count=$((fail_count + 1)) ;;
             SKIP) skip_count=$((skip_count + 1)) ;;
         esac
-    done
+        total_checkpoints=$((total_checkpoints + 1))
+    done < <(get_checkpoint_order)
 
-    local total_checkpoints=${#CHECKPOINT_ORDER[@]}
     local overall_status="PASS"
     [ "$fail_count" -gt 0 ] && overall_status="FAIL"
 
@@ -1726,15 +1730,17 @@ generate_verification_report() {
 EOF
 
     # Add each checkpoint with its result
-    for name in "${CHECKPOINT_ORDER[@]}"; do
-        local result="${CHECKPOINT_RESULTS[$name]}"
-        local timestamp="${CHECKPOINT_TIMESTAMPS[$name]}"
-        local status_icon=""
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        local result timestamp status_icon
+        result=$(get_checkpoint_result "$name")
+        timestamp=$(get_checkpoint_timestamp "$name")
 
         case "$result" in
             PASS) status_icon="[PASS]" ;;
             FAIL) status_icon="[FAIL]" ;;
             SKIP) status_icon="[SKIP]" ;;
+            *) status_icon="[UNKNOWN]" ;;
         esac
 
         cat >> "$report_file" << EOF
@@ -1744,7 +1750,7 @@ EOF
 - **Timestamp**: $timestamp
 
 EOF
-    done
+    done < <(get_checkpoint_order)
 
     # Add timeline section
     cat >> "$report_file" << EOF
@@ -1757,11 +1763,13 @@ EOF
 | $EVIDENCE_START_TIME | Test started |
 EOF
 
-    for name in "${CHECKPOINT_ORDER[@]}"; do
-        local result="${CHECKPOINT_RESULTS[$name]}"
-        local timestamp="${CHECKPOINT_TIMESTAMPS[$name]}"
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        local result timestamp
+        result=$(get_checkpoint_result "$name")
+        timestamp=$(get_checkpoint_timestamp "$name")
         echo "| $timestamp | $name: $result |" >> "$report_file"
-    done
+    done < <(get_checkpoint_order)
 
     echo "| $report_timestamp | Report generated |" >> "$report_file"
 
@@ -1838,12 +1846,15 @@ EOF
     fi
 
     # Check for failed checkpoints
-    for name in "${CHECKPOINT_ORDER[@]}"; do
-        if [ "${CHECKPOINT_RESULTS[$name]}" = "FAIL" ]; then
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        local result
+        result=$(get_checkpoint_result "$name")
+        if [ "$result" = "FAIL" ]; then
             echo "- Checkpoint '$name' failed" >> "$report_file"
             discrepancies_found=true
         fi
-    done
+    done < <(get_checkpoint_order)
 
     if [ "$discrepancies_found" = false ]; then
         echo "*No discrepancies found*" >> "$report_file"
@@ -1911,12 +1922,14 @@ EOF
     local json_summary="$EVIDENCE_DIR/summary.json"
     local checkpoints_json="[]"
 
-    # Build checkpoints JSON array
-    for name in "${CHECKPOINT_ORDER[@]}"; do
-        local result="${CHECKPOINT_RESULTS[$name]}"
-        local timestamp="${CHECKPOINT_TIMESTAMPS[$name]}"
+    # Build checkpoints JSON array from checkpoint files
+    while IFS= read -r name; do
+        [ -z "$name" ] && continue
+        local result timestamp
+        result=$(get_checkpoint_result "$name")
+        timestamp=$(get_checkpoint_timestamp "$name")
         checkpoints_json=$(echo "$checkpoints_json" | jq --arg name "$name" --arg result "$result" --arg ts "$timestamp" '. + [{"name": $name, "result": $result, "timestamp": $ts}]')
-    done
+    done < <(get_checkpoint_order)
 
     jq -n \
         --arg overall_status "$overall_status" \
