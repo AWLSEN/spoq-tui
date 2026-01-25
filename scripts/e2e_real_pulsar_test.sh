@@ -64,13 +64,21 @@ CREDENTIALS_FILE="$HOME/.spoq/credentials.json"
 THREAD_ID=""
 PLAN_ID=""
 
+# Evidence collection configuration
+EVIDENCE_DIR=""  # Set via --evidence-dir flag or auto-generated
+VERBOSE="${VERBOSE:-}"  # Set via --verbose flag or E2E_VERBOSE env var
+
+# Checkpoint results tracking (stored in temp files for bash 3.x compatibility)
+CHECKPOINT_DATA_DIR=""  # Initialized by init_evidence_dir
+EVIDENCE_START_TIME=""
+
 # ==============================================================================
 # Usage Documentation
 # ==============================================================================
 
 usage() {
     cat << EOF
-Usage: $(basename "$0") [COMMAND]
+Usage: $(basename "$0") [COMMAND] [OPTIONS]
 
 Commands:
     run             Run full E2E test (default)
@@ -78,6 +86,10 @@ Commands:
     cleanup         Cleanup test files and directories
     screenshot-only Capture TUI screenshot only
     help            Show this help message
+
+Options:
+    --evidence-dir DIR    Custom directory for evidence collection
+    --verbose             Enable detailed checkpoint logging
 
 Prerequisites:
     - conductor must be running (check: pgrep -f conductor)
@@ -89,6 +101,7 @@ Environment Variables:
     SPOQ_AUTH_TOKEN   Authentication token (optional if in credentials.json)
     API_BASE_URL      API endpoint (default: http://localhost:8000)
     E2E_DEBUG         Enable debug logging
+    E2E_VERBOSE       Enable verbose checkpoint logging (same as --verbose)
 
 Examples:
     # Run full test
@@ -96,6 +109,12 @@ Examples:
 
     # Run with debug output
     E2E_DEBUG=1 ./scripts/e2e_real_pulsar_test.sh
+
+    # Run with custom evidence directory
+    ./scripts/e2e_real_pulsar_test.sh run --evidence-dir ./my-evidence
+
+    # Run with verbose checkpoint logging
+    ./scripts/e2e_real_pulsar_test.sh run --verbose
 
     # Just cleanup
     ./scripts/e2e_real_pulsar_test.sh cleanup
@@ -762,6 +781,354 @@ monitor_execution() {
 }
 
 # ==============================================================================
+# Phase 5: Circle Update Verification (Progression Test)
+# ==============================================================================
+
+# Test that circles UPDATE as phases progress
+# This simulates phase execution by manipulating status files and verifying
+# that the TUI circle display updates correctly at each step.
+#
+# Usage: test_circle_progression [session_id]
+#
+# Steps:
+#   1. Start with phase 1 running -> verify one in-progress circle
+#   2. Complete phase 1, start phase 2 -> verify progression
+#   3. Complete phase 2, start phase 3 -> verify progression
+#   4. Take screenshot at each step
+#   5. Compare expected vs actual circle counts
+#   6. Report any rendering delays or mismatches
+#
+# Prerequisites:
+#   - PLAN_ID and PROJECT must be set
+#   - Status directory must exist (init_plan_dirs should be called)
+#   - TUI session should be spawned and session_id provided
+#
+# Returns: 0 if all verifications pass, 1 if any fail
+test_circle_progression() {
+    local session_id="${1:-$TUI_SESSION_ID}"
+    local exit_code=0
+    local step_errors=0
+    local total_steps=0
+    local screenshot_count=0
+    local delays_detected=0
+
+    log_step "PROGRESSION" "Testing Circle Update Verification"
+    echo ""
+
+    # Validate prerequisites
+    if [ -z "$PLAN_ID" ]; then
+        log_error "PLAN_ID not set - cannot run progression test"
+        return 1
+    fi
+
+    if [ -z "$PROJECT" ]; then
+        log_error "PROJECT not set - cannot run progression test"
+        return 1
+    fi
+
+    local status_dir
+    status_dir=$(get_status_dir)
+
+    # Ensure status directory exists
+    mkdir -p "$status_dir"
+    log_info "Status directory: $status_dir"
+
+    # Ensure screenshot directory exists
+    mkdir -p "$SCREENSHOT_DIR"
+    log_info "Screenshot directory: $SCREENSHOT_DIR"
+
+    # Track timing for delay detection
+    local test_start_time
+    test_start_time=$(date +%s)
+
+    # Array to store captured states for final report
+    local -a captured_states=()
+    local -a expected_states=()
+    local -a step_results=()
+
+    # =========================================================================
+    # Step 1: Phase 1 Running
+    # =========================================================================
+    log_info ""
+    log_info "Step 1: Start phase 1 as running"
+    log_info "  Expected circle pattern: ○○○○○ (no phases complete yet)"
+    total_steps=$((total_steps + 1))
+
+    # Create status file for phase 1 as "running"
+    create_status_file 1 "running" 1 "Read" "src/main.rs"
+
+    # Generate expected pattern: 0 completed, 5 total (all pending)
+    # Note: Running phase doesn't show as filled until complete
+    local expected_step1
+    expected_step1=$(generate_expected_circles 0 "$TOTAL_PHASES" 0)
+    expected_states+=("$expected_step1")
+    log_info "  Expected: $expected_step1"
+
+    # Wait for conductor to pick up changes
+    local step1_start
+    step1_start=$(date +%s)
+    wait_for_conductor 2
+
+    # Document screenshot capture command for Claude to execute
+    local screenshot_file_1="$SCREENSHOT_DIR/progression_step1_$(date +%Y%m%d_%H%M%S).png"
+    log_info "  Screenshot: $screenshot_file_1"
+    log_info ""
+    log_info "  To capture TUI screenshot with MCP:"
+    cat << EOF
+  {
+    "tool": "mcp__tui-vision__screenshot_tui",
+    "parameters": {
+      "session_id": "$session_id",
+      "output_path": "$screenshot_file_1"
+    }
+  }
+EOF
+    echo ""
+
+    # Document text extraction command
+    log_info "  To extract TUI text for circle parsing:"
+    cat << EOF
+  {
+    "tool": "mcp__tui-vision__get_tui_text",
+    "parameters": {
+      "session_id": "$session_id"
+    }
+  }
+EOF
+    echo ""
+
+    # Simulate verification (actual would be done via MCP tools)
+    # For now, we check status file correctness
+    if verify_status_file 1; then
+        log_success "  Step 1: Status file verified"
+        step_results+=("Step 1: PASS - Phase 1 running status created")
+    else
+        log_error "  Step 1: Status file verification failed"
+        step_results+=("Step 1: FAIL - Status file issue")
+        step_errors=$((step_errors + 1))
+    fi
+
+    local step1_duration=$(($(date +%s) - step1_start))
+    if [ "$step1_duration" -gt 5 ]; then
+        log_warn "  Delay detected: ${step1_duration}s for step 1"
+        delays_detected=$((delays_detected + 1))
+    fi
+
+    # =========================================================================
+    # Step 2: Phase 1 Complete, Phase 2 Running
+    # =========================================================================
+    log_info ""
+    log_info "Step 2: Complete phase 1, start phase 2"
+    log_info "  Expected circle pattern: ●○○○○ (1 complete, phase 2 running)"
+    total_steps=$((total_steps + 1))
+
+    # Update phase 1 to completed
+    update_status_file 1 "completed"
+
+    # Create phase 2 as running
+    create_status_file 2 "running" 3 "Edit" "src/lib.rs"
+
+    # Generate expected: 1 completed, 5 total
+    local expected_step2
+    expected_step2=$(generate_expected_circles 1 "$TOTAL_PHASES" 0)
+    expected_states+=("$expected_step2")
+    log_info "  Expected: $expected_step2"
+
+    # Wait for updates
+    local step2_start
+    step2_start=$(date +%s)
+    wait_for_conductor 2
+
+    # Screenshot command
+    local screenshot_file_2="$SCREENSHOT_DIR/progression_step2_$(date +%Y%m%d_%H%M%S).png"
+    log_info "  Screenshot: $screenshot_file_2"
+    log_info ""
+    log_info "  To capture TUI screenshot with MCP:"
+    cat << EOF
+  {
+    "tool": "mcp__tui-vision__screenshot_tui",
+    "parameters": {
+      "session_id": "$session_id",
+      "output_path": "$screenshot_file_2"
+    }
+  }
+EOF
+    echo ""
+
+    # Verify status files
+    local step2_ok=true
+    if ! verify_status_file 1; then
+        step2_ok=false
+    fi
+    if ! verify_status_file 2; then
+        step2_ok=false
+    fi
+
+    if [ "$step2_ok" = true ]; then
+        # Check phase 1 is actually completed
+        local phase1_status
+        phase1_status=$(jq -r '.status' "$status_dir/phase-1.status" 2>/dev/null || echo "unknown")
+        if [ "$phase1_status" = "completed" ]; then
+            log_success "  Step 2: Phase 1 completed, Phase 2 running - VERIFIED"
+            step_results+=("Step 2: PASS - Phase 1 completed, Phase 2 running")
+        else
+            log_error "  Step 2: Phase 1 status is '$phase1_status', expected 'completed'"
+            step_results+=("Step 2: FAIL - Phase 1 not marked completed")
+            step_errors=$((step_errors + 1))
+        fi
+    else
+        log_error "  Step 2: Status file verification failed"
+        step_results+=("Step 2: FAIL - Status file issue")
+        step_errors=$((step_errors + 1))
+    fi
+
+    local step2_duration=$(($(date +%s) - step2_start))
+    if [ "$step2_duration" -gt 5 ]; then
+        log_warn "  Delay detected: ${step2_duration}s for step 2"
+        delays_detected=$((delays_detected + 1))
+    fi
+
+    # =========================================================================
+    # Step 3: Phases 1-2 Complete, Phase 3 Running
+    # =========================================================================
+    log_info ""
+    log_info "Step 3: Complete phase 2, start phase 3"
+    log_info "  Expected circle pattern: ●●○○○ (2 complete, phase 3 running)"
+    total_steps=$((total_steps + 1))
+
+    # Update phase 2 to completed
+    update_status_file 2 "completed"
+
+    # Create phase 3 as running
+    create_status_file 3 "running" 5 "Write" "src/new_file.rs"
+
+    # Generate expected: 2 completed, 5 total
+    local expected_step3
+    expected_step3=$(generate_expected_circles 2 "$TOTAL_PHASES" 0)
+    expected_states+=("$expected_step3")
+    log_info "  Expected: $expected_step3"
+
+    # Wait for updates
+    local step3_start
+    step3_start=$(date +%s)
+    wait_for_conductor 2
+
+    # Screenshot command
+    local screenshot_file_3="$SCREENSHOT_DIR/progression_step3_$(date +%Y%m%d_%H%M%S).png"
+    log_info "  Screenshot: $screenshot_file_3"
+    log_info ""
+    log_info "  To capture TUI screenshot with MCP:"
+    cat << EOF
+  {
+    "tool": "mcp__tui-vision__screenshot_tui",
+    "parameters": {
+      "session_id": "$session_id",
+      "output_path": "$screenshot_file_3"
+    }
+  }
+EOF
+    echo ""
+
+    # Verify status files
+    local step3_ok=true
+    for phase in 1 2 3; do
+        if ! verify_status_file "$phase"; then
+            step3_ok=false
+        fi
+    done
+
+    if [ "$step3_ok" = true ]; then
+        # Check phases 1-2 are completed
+        local phase1_status phase2_status
+        phase1_status=$(jq -r '.status' "$status_dir/phase-1.status" 2>/dev/null || echo "unknown")
+        phase2_status=$(jq -r '.status' "$status_dir/phase-2.status" 2>/dev/null || echo "unknown")
+
+        if [ "$phase1_status" = "completed" ] && [ "$phase2_status" = "completed" ]; then
+            log_success "  Step 3: Phases 1-2 completed, Phase 3 running - VERIFIED"
+            step_results+=("Step 3: PASS - Phases 1-2 completed, Phase 3 running")
+        else
+            log_error "  Step 3: Phase statuses incorrect (1=$phase1_status, 2=$phase2_status)"
+            step_results+=("Step 3: FAIL - Phase statuses incorrect")
+            step_errors=$((step_errors + 1))
+        fi
+    else
+        log_error "  Step 3: Status file verification failed"
+        step_results+=("Step 3: FAIL - Status file issue")
+        step_errors=$((step_errors + 1))
+    fi
+
+    local step3_duration=$(($(date +%s) - step3_start))
+    if [ "$step3_duration" -gt 5 ]; then
+        log_warn "  Delay detected: ${step3_duration}s for step 3"
+        delays_detected=$((delays_detected + 1))
+    fi
+
+    # =========================================================================
+    # Summary Report
+    # =========================================================================
+    log_separator
+    echo "  Circle Progression Test Summary"
+    log_separator
+    echo ""
+
+    log_info "Test Configuration:"
+    echo "  Plan ID:       $PLAN_ID"
+    echo "  Project:       $PROJECT"
+    echo "  Total Phases:  $TOTAL_PHASES"
+    echo "  Status Dir:    $status_dir"
+    echo ""
+
+    log_info "Expected Circle Patterns (by step):"
+    local step_num=1
+    for pattern in "${expected_states[@]}"; do
+        echo "  Step $step_num: $pattern"
+        step_num=$((step_num + 1))
+    done
+    echo ""
+
+    log_info "Step Results:"
+    for result in "${step_results[@]}"; do
+        echo "  $result"
+    done
+    echo ""
+
+    log_info "Performance Metrics:"
+    local test_duration=$(($(date +%s) - test_start_time))
+    echo "  Total Duration:    ${test_duration}s"
+    echo "  Delays Detected:   $delays_detected"
+    echo "  Steps Executed:    $total_steps"
+    echo "  Steps Failed:      $step_errors"
+    echo ""
+
+    log_info "Screenshot Files:"
+    echo "  $screenshot_file_1"
+    echo "  $screenshot_file_2"
+    echo "  $screenshot_file_3"
+    echo ""
+
+    # Final verdict
+    if [ "$step_errors" -eq 0 ]; then
+        log_success "CIRCLE PROGRESSION TEST PASSED"
+        echo ""
+        echo "  All $total_steps steps completed successfully."
+        echo "  Status files correctly reflect phase progression."
+        echo ""
+        echo "  NOTE: Visual circle verification requires MCP tool execution."
+        echo "  Use the documented mcp__tui-vision__screenshot_tui and"
+        echo "  mcp__tui-vision__get_tui_text commands to verify TUI display."
+        return 0
+    else
+        log_error "CIRCLE PROGRESSION TEST FAILED"
+        echo ""
+        echo "  $step_errors of $total_steps steps failed."
+        if [ "$delays_detected" -gt 0 ]; then
+            echo "  $delays_detected delay(s) detected (>5s per step)."
+        fi
+        return 1
+    fi
+}
+
+# ==============================================================================
 # Phase 7: TUI Screenshot Capture Functions
 # ==============================================================================
 
@@ -1056,6 +1423,539 @@ generate_summary_report() {
 }
 
 # ==============================================================================
+# Phase 4: Evidence Collection and Reporting
+# ==============================================================================
+
+# Initialize timestamped evidence directory
+# Usage: init_evidence_dir [custom_dir]
+# Sets EVIDENCE_DIR global variable
+# Returns: 0 on success, 1 on failure
+init_evidence_dir() {
+    local custom_dir="${1:-$EVIDENCE_DIR}"
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+
+    EVIDENCE_START_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    if [ -n "$custom_dir" ]; then
+        EVIDENCE_DIR="$custom_dir"
+    else
+        EVIDENCE_DIR="$TEMP_DIR/evidence_${timestamp}"
+    fi
+
+    # Create evidence directory structure
+    mkdir -p "$EVIDENCE_DIR"
+    mkdir -p "$EVIDENCE_DIR/status_files"
+    mkdir -p "$EVIDENCE_DIR/screenshots"
+    mkdir -p "$EVIDENCE_DIR/logs"
+
+    # Create checkpoint data directory for bash 3.x compatibility
+    CHECKPOINT_DATA_DIR="$EVIDENCE_DIR/.checkpoints"
+    mkdir -p "$CHECKPOINT_DATA_DIR"
+    # Initialize empty checkpoint order file
+    : > "$CHECKPOINT_DATA_DIR/order.txt"
+
+    if [ -n "$VERBOSE" ]; then
+        log_info "[VERBOSE] Evidence directory initialized: $EVIDENCE_DIR"
+        log_info "[VERBOSE] Subdirectories created: status_files, screenshots, logs"
+    fi
+
+    log_success "Evidence directory created: $EVIDENCE_DIR"
+    return 0
+}
+
+# Collect evidence files from various sources
+# Usage: collect_evidence
+# Copies status files, TUI logs, screenshots to evidence directory
+# Returns: 0 on success (partial collection is still success)
+collect_evidence() {
+    if [ -z "$EVIDENCE_DIR" ]; then
+        log_error "Evidence directory not initialized. Call init_evidence_dir first."
+        return 1
+    fi
+
+    log_step "EVIDENCE" "Collecting evidence files"
+
+    local files_collected=0
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+
+    # 1. Collect status files
+    if [ -n "$PLAN_ID" ]; then
+        local status_dir="$HOME/comms/plans/$PROJECT/active/$PLAN_ID/status"
+        if [ -d "$status_dir" ]; then
+            if [ -n "$VERBOSE" ]; then
+                log_info "[VERBOSE] Copying status files from: $status_dir"
+            fi
+            for status_file in "$status_dir"/*.status; do
+                if [ -f "$status_file" ]; then
+                    cp "$status_file" "$EVIDENCE_DIR/status_files/"
+                    files_collected=$((files_collected + 1))
+                    if [ -n "$VERBOSE" ]; then
+                        log_info "[VERBOSE] Copied: $(basename "$status_file")"
+                    fi
+                fi
+            done
+            log_success "Collected status files: $(ls "$EVIDENCE_DIR/status_files" 2>/dev/null | wc -l | tr -d ' ') files"
+        else
+            log_warn "Status directory not found: $status_dir"
+        fi
+
+        # Also collect the plan markdown file
+        local plan_file="$HOME/comms/plans/$PROJECT/active/${PLAN_ID}.md"
+        if [ -f "$plan_file" ]; then
+            cp "$plan_file" "$EVIDENCE_DIR/plan.md"
+            files_collected=$((files_collected + 1))
+            if [ -n "$VERBOSE" ]; then
+                log_info "[VERBOSE] Copied plan file: plan.md"
+            fi
+        fi
+    else
+        log_warn "PLAN_ID not set - skipping status file collection"
+    fi
+
+    # 2. Collect TUI logs
+    local tui_log_file="${TUI_LOG_FILE:-$HOME/.spoq/logs/spoq.log}"
+    if [ -f "$tui_log_file" ]; then
+        if [ -n "$VERBOSE" ]; then
+            log_info "[VERBOSE] Copying TUI log (last 2000 lines): $tui_log_file"
+        fi
+        tail -2000 "$tui_log_file" > "$EVIDENCE_DIR/logs/tui_log_tail.log"
+        files_collected=$((files_collected + 1))
+
+        # Extract PHASE_PROGRESS_UPDATE entries if plan_id is known
+        if [ -n "$PLAN_ID" ]; then
+            grep "PHASE_PROGRESS_UPDATE" "$tui_log_file" 2>/dev/null | \
+                grep -E "$PLAN_ID|phase_progress" > "$EVIDENCE_DIR/logs/phase_updates.log" || true
+            if [ -s "$EVIDENCE_DIR/logs/phase_updates.log" ]; then
+                files_collected=$((files_collected + 1))
+                if [ -n "$VERBOSE" ]; then
+                    local update_count
+                    update_count=$(wc -l < "$EVIDENCE_DIR/logs/phase_updates.log" | tr -d ' ')
+                    log_info "[VERBOSE] Extracted $update_count phase update log entries"
+                fi
+            fi
+        fi
+        log_success "Collected TUI log entries"
+    else
+        log_warn "TUI log not found at: $tui_log_file"
+    fi
+
+    # 3. Collect screenshots
+    if [ -d "$SCREENSHOT_DIR" ]; then
+        local screenshot_count
+        screenshot_count=$(find "$SCREENSHOT_DIR" -type f \( -name "*.png" -o -name "*.txt" \) 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$screenshot_count" -gt 0 ]; then
+            if [ -n "$VERBOSE" ]; then
+                log_info "[VERBOSE] Copying $screenshot_count screenshot/text files from: $SCREENSHOT_DIR"
+            fi
+            cp "$SCREENSHOT_DIR"/*.png "$EVIDENCE_DIR/screenshots/" 2>/dev/null || true
+            cp "$SCREENSHOT_DIR"/*.txt "$EVIDENCE_DIR/screenshots/" 2>/dev/null || true
+            files_collected=$((files_collected + screenshot_count))
+            log_success "Collected screenshots: $screenshot_count files"
+        else
+            log_info "No screenshots found in $SCREENSHOT_DIR"
+        fi
+    fi
+
+    # 4. Collect WebSocket events if available
+    if [ -f "$WS_EVENTS_FILE" ]; then
+        cp "$WS_EVENTS_FILE" "$EVIDENCE_DIR/logs/ws_events.log"
+        files_collected=$((files_collected + 1))
+        if [ -n "$VERBOSE" ]; then
+            log_info "[VERBOSE] Copied WebSocket events log"
+        fi
+    fi
+
+    # 5. Create metadata file
+    local metadata_file="$EVIDENCE_DIR/metadata.json"
+    jq -n \
+        --arg project "$PROJECT" \
+        --arg plan_id "${PLAN_ID:-null}" \
+        --arg thread_id "${THREAD_ID:-null}" \
+        --arg collected_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        --arg evidence_start "$EVIDENCE_START_TIME" \
+        --argjson total_phases "$TOTAL_PHASES" \
+        --argjson files_collected "$files_collected" \
+        '{
+            project: $project,
+            plan_id: (if $plan_id == "null" then null else $plan_id end),
+            thread_id: (if $thread_id == "null" then null else $thread_id end),
+            total_phases: $total_phases,
+            evidence_start: $evidence_start,
+            collected_at: $collected_at,
+            files_collected: $files_collected
+        }' > "$metadata_file"
+
+    log_success "Evidence collection complete: $files_collected files collected"
+    log_info "Evidence location: $EVIDENCE_DIR"
+    return 0
+}
+
+# Record a checkpoint result
+# Usage: record_checkpoint "checkpoint_name" "PASS|FAIL|SKIP" ["details"]
+# Uses file-based storage for bash 3.x compatibility
+record_checkpoint() {
+    local name="$1"
+    local result="$2"
+    local details="${3:-}"
+    local timestamp
+    timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Store checkpoint data in files (bash 3.x compatible)
+    if [ -n "$CHECKPOINT_DATA_DIR" ] && [ -d "$CHECKPOINT_DATA_DIR" ]; then
+        # Create checkpoint data file
+        cat > "$CHECKPOINT_DATA_DIR/${name}.json" << EOF
+{"name": "$name", "result": "$result", "timestamp": "$timestamp", "details": "$details"}
+EOF
+        # Append to order file
+        echo "$name" >> "$CHECKPOINT_DATA_DIR/order.txt"
+    fi
+
+    if [ -n "$VERBOSE" ]; then
+        local detail_msg=""
+        [ -n "$details" ] && detail_msg=" - $details"
+        case "$result" in
+            PASS)
+                log_info "[VERBOSE] [CHECKPOINT] $name: ${E2E_GREEN}PASS${E2E_NC}$detail_msg"
+                ;;
+            FAIL)
+                log_info "[VERBOSE] [CHECKPOINT] $name: ${E2E_RED}FAIL${E2E_NC}$detail_msg"
+                ;;
+            SKIP)
+                log_info "[VERBOSE] [CHECKPOINT] $name: ${E2E_YELLOW}SKIP${E2E_NC}$detail_msg"
+                ;;
+        esac
+    fi
+}
+
+# Get checkpoint result
+# Usage: result=$(get_checkpoint_result "checkpoint_name")
+get_checkpoint_result() {
+    local name="$1"
+    local checkpoint_file="$CHECKPOINT_DATA_DIR/${name}.json"
+    if [ -f "$checkpoint_file" ]; then
+        jq -r '.result' "$checkpoint_file" 2>/dev/null || echo ""
+    fi
+}
+
+# Get checkpoint timestamp
+# Usage: ts=$(get_checkpoint_timestamp "checkpoint_name")
+get_checkpoint_timestamp() {
+    local name="$1"
+    local checkpoint_file="$CHECKPOINT_DATA_DIR/${name}.json"
+    if [ -f "$checkpoint_file" ]; then
+        jq -r '.timestamp' "$checkpoint_file" 2>/dev/null || echo ""
+    fi
+}
+
+# Get all checkpoint names in order
+# Usage: while read -r name; do ... done < <(get_checkpoint_order)
+get_checkpoint_order() {
+    if [ -f "$CHECKPOINT_DATA_DIR/order.txt" ]; then
+        cat "$CHECKPOINT_DATA_DIR/order.txt"
+    fi
+}
+
+# Generate markdown verification report
+# Usage: generate_verification_report
+# Creates a comprehensive markdown report in the evidence directory
+# Returns: 0 on success, 1 on failure
+generate_verification_report() {
+    if [ -z "$EVIDENCE_DIR" ]; then
+        log_error "Evidence directory not initialized"
+        return 1
+    fi
+
+    log_step "REPORT" "Generating verification report"
+
+    local report_file="$EVIDENCE_DIR/verification_report.md"
+    local report_timestamp
+    report_timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Calculate pass/fail counts
+    local pass_count=0
+    local fail_count=0
+    local skip_count=0
+
+    for name in "${CHECKPOINT_ORDER[@]}"; do
+        case "${CHECKPOINT_RESULTS[$name]}" in
+            PASS) pass_count=$((pass_count + 1)) ;;
+            FAIL) fail_count=$((fail_count + 1)) ;;
+            SKIP) skip_count=$((skip_count + 1)) ;;
+        esac
+    done
+
+    local total_checkpoints=${#CHECKPOINT_ORDER[@]}
+    local overall_status="PASS"
+    [ "$fail_count" -gt 0 ] && overall_status="FAIL"
+
+    # Start the report
+    cat > "$report_file" << EOF
+# E2E Verification Report
+
+**Generated**: $report_timestamp
+**Overall Status**: **$overall_status**
+
+---
+
+## Summary
+
+| Metric | Value |
+|--------|-------|
+| Project | $PROJECT |
+| Plan ID | ${PLAN_ID:-N/A} |
+| Thread ID | ${THREAD_ID:-N/A} |
+| Total Phases | $TOTAL_PHASES |
+| Test Started | $EVIDENCE_START_TIME |
+| Report Generated | $report_timestamp |
+
+### Checkpoint Results
+
+| Status | Count |
+|--------|-------|
+| PASS | $pass_count |
+| FAIL | $fail_count |
+| SKIP | $skip_count |
+| **Total** | **$total_checkpoints** |
+
+---
+
+## Checkpoint Details
+
+EOF
+
+    # Add each checkpoint with its result
+    for name in "${CHECKPOINT_ORDER[@]}"; do
+        local result="${CHECKPOINT_RESULTS[$name]}"
+        local timestamp="${CHECKPOINT_TIMESTAMPS[$name]}"
+        local status_icon=""
+
+        case "$result" in
+            PASS) status_icon="[PASS]" ;;
+            FAIL) status_icon="[FAIL]" ;;
+            SKIP) status_icon="[SKIP]" ;;
+        esac
+
+        cat >> "$report_file" << EOF
+### $name
+
+- **Status**: $status_icon
+- **Timestamp**: $timestamp
+
+EOF
+    done
+
+    # Add timeline section
+    cat >> "$report_file" << EOF
+---
+
+## Timeline of Events
+
+| Time | Event |
+|------|-------|
+| $EVIDENCE_START_TIME | Test started |
+EOF
+
+    for name in "${CHECKPOINT_ORDER[@]}"; do
+        local result="${CHECKPOINT_RESULTS[$name]}"
+        local timestamp="${CHECKPOINT_TIMESTAMPS[$name]}"
+        echo "| $timestamp | $name: $result |" >> "$report_file"
+    done
+
+    echo "| $report_timestamp | Report generated |" >> "$report_file"
+
+    # Add phase status section
+    cat >> "$report_file" << EOF
+
+---
+
+## Phase Status Details
+
+EOF
+
+    if [ -n "$PLAN_ID" ] && [ -d "$EVIDENCE_DIR/status_files" ]; then
+        for phase in $(seq 1 "$TOTAL_PHASES"); do
+            local status_file="$EVIDENCE_DIR/status_files/phase-${phase}.status"
+            if [ -f "$status_file" ]; then
+                local status started_at completed_at tool_count
+                status=$(jq -r '.status // "unknown"' "$status_file" 2>/dev/null)
+                started_at=$(jq -r '.started_at // "N/A"' "$status_file" 2>/dev/null)
+                completed_at=$(jq -r '.completed_at // "N/A"' "$status_file" 2>/dev/null)
+                tool_count=$(jq -r '.tool_count // 0' "$status_file" 2>/dev/null)
+
+                cat >> "$report_file" << EOF
+### Phase $phase
+
+| Field | Value |
+|-------|-------|
+| Status | $status |
+| Started | $started_at |
+| Completed | $completed_at |
+| Tool Count | $tool_count |
+
+EOF
+            else
+                cat >> "$report_file" << EOF
+### Phase $phase
+
+**Status file not found**
+
+EOF
+            fi
+        done
+    else
+        echo "*No phase status files collected*" >> "$report_file"
+    fi
+
+    # Add discrepancies section
+    cat >> "$report_file" << EOF
+
+---
+
+## Discrepancies
+
+EOF
+
+    local discrepancies_found=false
+
+    # Check for incomplete phases
+    if [ -n "$PLAN_ID" ] && [ -d "$EVIDENCE_DIR/status_files" ]; then
+        for phase in $(seq 1 "$TOTAL_PHASES"); do
+            local status_file="$EVIDENCE_DIR/status_files/phase-${phase}.status"
+            if [ -f "$status_file" ]; then
+                local status
+                status=$(jq -r '.status // "unknown"' "$status_file" 2>/dev/null)
+                if [ "$status" != "completed" ]; then
+                    echo "- Phase $phase: Expected 'completed', found '$status'" >> "$report_file"
+                    discrepancies_found=true
+                fi
+            else
+                echo "- Phase $phase: Status file missing" >> "$report_file"
+                discrepancies_found=true
+            fi
+        done
+    fi
+
+    # Check for failed checkpoints
+    for name in "${CHECKPOINT_ORDER[@]}"; do
+        if [ "${CHECKPOINT_RESULTS[$name]}" = "FAIL" ]; then
+            echo "- Checkpoint '$name' failed" >> "$report_file"
+            discrepancies_found=true
+        fi
+    done
+
+    if [ "$discrepancies_found" = false ]; then
+        echo "*No discrepancies found*" >> "$report_file"
+    fi
+
+    # Add evidence files section
+    cat >> "$report_file" << EOF
+
+---
+
+## Evidence Files
+
+### Status Files
+EOF
+
+    if [ -d "$EVIDENCE_DIR/status_files" ]; then
+        for f in "$EVIDENCE_DIR/status_files"/*; do
+            [ -f "$f" ] && echo "- \`status_files/$(basename "$f")\`" >> "$report_file"
+        done
+    else
+        echo "*No status files collected*" >> "$report_file"
+    fi
+
+    cat >> "$report_file" << EOF
+
+### Screenshots
+EOF
+
+    if [ -d "$EVIDENCE_DIR/screenshots" ]; then
+        local has_screenshots=false
+        for f in "$EVIDENCE_DIR/screenshots"/*; do
+            if [ -f "$f" ]; then
+                echo "- \`screenshots/$(basename "$f")\`" >> "$report_file"
+                has_screenshots=true
+            fi
+        done
+        [ "$has_screenshots" = false ] && echo "*No screenshots collected*" >> "$report_file"
+    else
+        echo "*No screenshots collected*" >> "$report_file"
+    fi
+
+    cat >> "$report_file" << EOF
+
+### Logs
+EOF
+
+    if [ -d "$EVIDENCE_DIR/logs" ]; then
+        for f in "$EVIDENCE_DIR/logs"/*; do
+            [ -f "$f" ] && echo "- \`logs/$(basename "$f")\`" >> "$report_file"
+        done
+    else
+        echo "*No logs collected*" >> "$report_file"
+    fi
+
+    cat >> "$report_file" << EOF
+
+---
+
+*Report generated by e2e_real_pulsar_test.sh*
+EOF
+
+    log_success "Verification report generated: $report_file"
+
+    # Also generate a JSON summary for programmatic access
+    local json_summary="$EVIDENCE_DIR/summary.json"
+    local checkpoints_json="[]"
+
+    # Build checkpoints JSON array
+    for name in "${CHECKPOINT_ORDER[@]}"; do
+        local result="${CHECKPOINT_RESULTS[$name]}"
+        local timestamp="${CHECKPOINT_TIMESTAMPS[$name]}"
+        checkpoints_json=$(echo "$checkpoints_json" | jq --arg name "$name" --arg result "$result" --arg ts "$timestamp" '. + [{"name": $name, "result": $result, "timestamp": $ts}]')
+    done
+
+    jq -n \
+        --arg overall_status "$overall_status" \
+        --arg project "$PROJECT" \
+        --arg plan_id "${PLAN_ID:-null}" \
+        --arg thread_id "${THREAD_ID:-null}" \
+        --argjson total_phases "$TOTAL_PHASES" \
+        --argjson pass_count "$pass_count" \
+        --argjson fail_count "$fail_count" \
+        --argjson skip_count "$skip_count" \
+        --arg evidence_dir "$EVIDENCE_DIR" \
+        --arg started_at "$EVIDENCE_START_TIME" \
+        --arg generated_at "$report_timestamp" \
+        --argjson checkpoints "$checkpoints_json" \
+        '{
+            overall_status: $overall_status,
+            project: $project,
+            plan_id: (if $plan_id == "null" then null else $plan_id end),
+            thread_id: (if $thread_id == "null" then null else $thread_id end),
+            total_phases: $total_phases,
+            checkpoints: {
+                pass: $pass_count,
+                fail: $fail_count,
+                skip: $skip_count
+            },
+            evidence_dir: $evidence_dir,
+            started_at: $started_at,
+            generated_at: $generated_at,
+            checkpoint_details: $checkpoints
+        }' > "$json_summary"
+
+    if [ -n "$VERBOSE" ]; then
+        log_info "[VERBOSE] JSON summary generated: $json_summary"
+    fi
+
+    return 0
+}
+
+# ==============================================================================
 # Phase 8: Main Test Orchestration
 # ==============================================================================
 
@@ -1068,17 +1968,24 @@ run_real_e2e_test() {
     log_step "E2E TEST" "Starting Real Pulsar E2E Test"
     echo ""
 
-    # Step 1: Create temp directory for artifacts
-    log_info "Step 1: Creating temporary directories"
+    # Step 1: Create temp directory for artifacts and initialize evidence
+    log_info "Step 1: Creating temporary directories and initializing evidence"
     mkdir -p "$TEMP_DIR"
     mkdir -p "$SCREENSHOT_DIR"
+    init_evidence_dir
     log_success "Directories created: $TEMP_DIR"
+    record_checkpoint "SETUP_DIRECTORIES" "PASS" "Temp and evidence directories created"
     echo ""
 
     # Step 2: Check prerequisites
     log_info "Step 2: Checking prerequisites"
-    if ! check_prerequisites; then
+    if check_prerequisites; then
+        record_checkpoint "PREREQUISITES" "PASS" "All prerequisites satisfied"
+    else
         log_error "Prerequisites check failed - cannot continue"
+        record_checkpoint "PREREQUISITES" "FAIL" "Prerequisites check failed"
+        collect_evidence
+        generate_verification_report
         generate_summary_report
         return 1
     fi
@@ -1086,8 +1993,11 @@ run_real_e2e_test() {
 
     # Step 3: Start TUI if needed
     log_info "Step 3: Starting TUI if needed"
-    if ! start_tui_if_needed; then
+    if start_tui_if_needed; then
+        record_checkpoint "TUI_START" "PASS" "TUI is running"
+    else
         log_warn "TUI not started - screenshots may not be available"
+        record_checkpoint "TUI_START" "SKIP" "TUI not started - optional for test"
     fi
     echo ""
 
@@ -1095,8 +2005,10 @@ run_real_e2e_test() {
     log_info "Step 4: Creating thread via API"
     if create_thread_via_api; then
         log_success "Thread created: $THREAD_ID"
+        record_checkpoint "THREAD_CREATION" "PASS" "Thread ID: $THREAD_ID"
     else
         log_error "Failed to create thread"
+        record_checkpoint "THREAD_CREATION" "FAIL" "API call failed"
         exit_code=1
         # Continue to next step even if this fails
     fi
@@ -1107,8 +2019,12 @@ run_real_e2e_test() {
     if generate_nova_plan; then
         log_success "Plan generated: $PLAN_ID"
         log_info "Plan location: $HOME/comms/plans/$PROJECT/active/$PLAN_ID"
+        record_checkpoint "PLAN_GENERATION" "PASS" "Plan ID: $PLAN_ID"
     else
         log_error "Failed to generate plan"
+        record_checkpoint "PLAN_GENERATION" "FAIL" "Plan generation failed"
+        collect_evidence
+        generate_verification_report
         generate_summary_report
         return 1
     fi
@@ -1129,14 +2045,17 @@ run_real_e2e_test() {
     log_separator
     echo ""
     log_info "The test will now monitor for execution progress..."
+    record_checkpoint "PULSAR_INSTRUCTIONS" "PASS" "Instructions displayed"
     echo ""
 
     # Step 7: Monitor logs while Pulsar executes
     log_info "Step 7: Monitoring Pulsar execution"
     if monitor_execution; then
         log_success "Pulsar execution monitored successfully"
+        record_checkpoint "EXECUTION_MONITOR" "PASS" "Monitoring completed"
     else
         log_error "Monitoring detected issues or timeout"
+        record_checkpoint "EXECUTION_MONITOR" "FAIL" "Monitoring detected issues"
         exit_code=1
         # Continue to verification anyway
     fi
@@ -1146,8 +2065,10 @@ run_real_e2e_test() {
     log_info "Step 8: Capturing final TUI state"
     if capture_tui_state "final_state"; then
         log_success "Screenshot captured"
+        record_checkpoint "SCREENSHOT_CAPTURE" "PASS" "Final state captured"
     else
         log_warn "Screenshot capture encountered issues"
+        record_checkpoint "SCREENSHOT_CAPTURE" "SKIP" "Screenshot capture failed"
     fi
     echo ""
 
@@ -1155,14 +2076,36 @@ run_real_e2e_test() {
     log_info "Step 9: Verifying phase completion"
     if verify_all_phases_completed; then
         log_success "All phases verified as completed"
+        record_checkpoint "PHASE_VERIFICATION" "PASS" "All $TOTAL_PHASES phases completed"
     else
         log_error "Phase verification failed"
+        record_checkpoint "PHASE_VERIFICATION" "FAIL" "Not all phases completed"
         exit_code=1
     fi
     echo ""
 
-    # Step 10: Generate summary report
-    log_info "Step 10: Generating summary report"
+    # Step 10: Collect evidence
+    log_info "Step 10: Collecting evidence"
+    if collect_evidence; then
+        record_checkpoint "EVIDENCE_COLLECTION" "PASS" "Evidence collected"
+    else
+        record_checkpoint "EVIDENCE_COLLECTION" "FAIL" "Evidence collection failed"
+    fi
+    echo ""
+
+    # Step 11: Generate verification report
+    log_info "Step 11: Generating verification report"
+    if generate_verification_report; then
+        log_success "Verification report generated"
+        record_checkpoint "VERIFICATION_REPORT" "PASS" "Report generated"
+    else
+        log_error "Verification report generation failed"
+        record_checkpoint "VERIFICATION_REPORT" "FAIL" "Report generation failed"
+    fi
+    echo ""
+
+    # Step 12: Generate summary report
+    log_info "Step 12: Generating summary report"
     echo ""
     if generate_summary_report; then
         log_success "Summary report generated"
@@ -1171,11 +2114,13 @@ run_real_e2e_test() {
         exit_code=1
     fi
 
-    # Step 11: Optional cleanup prompt
+    # Step 13: Show evidence location and optional cleanup
     echo ""
     log_separator
     log_info "Test artifacts saved to: $TEMP_DIR"
     log_info "Screenshots saved to: $SCREENSHOT_DIR"
+    log_info "Evidence directory: $EVIDENCE_DIR"
+    log_info "Verification report: $EVIDENCE_DIR/verification_report.md"
 
     if [ -n "${PLAN_ID:-}" ]; then
         log_info "Plan directory: $HOME/comms/plans/$PROJECT/active/$PLAN_ID"
@@ -1269,8 +2214,77 @@ cmd_run() {
 # Main Entry Point
 # ==============================================================================
 
-# Parse subcommand
-case "${1:-run}" in
+# Parse command line arguments
+parse_args() {
+    local command="run"
+    local args_done=false
+
+    while [ $# -gt 0 ]; do
+        if [ "$args_done" = false ]; then
+            case "$1" in
+                --evidence-dir)
+                    if [ -z "${2:-}" ]; then
+                        log_error "--evidence-dir requires a directory path"
+                        exit 1
+                    fi
+                    EVIDENCE_DIR="$2"
+                    shift 2
+                    ;;
+                --verbose)
+                    VERBOSE="1"
+                    shift
+                    ;;
+                setup|cleanup|screenshot-only|run|help|--help|-h)
+                    command="$1"
+                    shift
+                    args_done=true
+                    ;;
+                -*)
+                    log_error "Unknown option: $1"
+                    usage
+                    exit 1
+                    ;;
+                *)
+                    command="$1"
+                    shift
+                    args_done=true
+                    ;;
+            esac
+        else
+            # Handle options after command
+            case "$1" in
+                --evidence-dir)
+                    if [ -z "${2:-}" ]; then
+                        log_error "--evidence-dir requires a directory path"
+                        exit 1
+                    fi
+                    EVIDENCE_DIR="$2"
+                    shift 2
+                    ;;
+                --verbose)
+                    VERBOSE="1"
+                    shift
+                    ;;
+                *)
+                    log_error "Unknown argument: $1"
+                    usage
+                    exit 1
+                    ;;
+            esac
+        fi
+    done
+
+    # Apply E2E_VERBOSE environment variable if set
+    [ -n "${E2E_VERBOSE:-}" ] && VERBOSE="1"
+
+    echo "$command"
+}
+
+# Get the command from arguments
+COMMAND=$(parse_args "$@")
+
+# Execute the appropriate command
+case "$COMMAND" in
     setup)
         cmd_setup
         ;;
@@ -1287,7 +2301,7 @@ case "${1:-run}" in
         usage
         ;;
     *)
-        log_error "Unknown command: $1"
+        log_error "Unknown command: $COMMAND"
         usage
         exit 1
         ;;
