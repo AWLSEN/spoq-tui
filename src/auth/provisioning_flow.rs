@@ -12,7 +12,7 @@ use std::time::Duration;
 use std::path::PathBuf;
 
 use super::central_api::{
-    ByovpsProvisionResponse, CentralApiClient, CentralApiError, ConfirmVpsRequest, DataCenter,
+    ByovpsPendingResponse, CentralApiClient, CentralApiError, ConfirmVpsRequest, DataCenter,
     VpsPlan, VpsStatusResponse,
 };
 use super::credentials::{Credentials, CredentialsManager};
@@ -40,12 +40,6 @@ const POLL_INTERVAL_SECS: u64 = 3;
 
 /// Maximum number of poll attempts before timing out.
 const MAX_POLL_ATTEMPTS: u32 = 200; // 10 minutes at 3 second intervals
-
-/// Poll interval for BYOVPS status checks (in seconds).
-const BYOVPS_POLL_INTERVAL_SECS: u64 = 5;
-
-/// Maximum number of BYOVPS poll attempts before timing out.
-const BYOVPS_MAX_POLL_ATTEMPTS: u32 = 120; // 10 minutes at 5 second intervals
 
 /// Maximum number of retry attempts for BYOVPS provisioning.
 const BYOVPS_MAX_RETRY_ATTEMPTS: u32 = 3;
@@ -682,6 +676,7 @@ fn run_managed_vps_flow(
         ip_address: pending_response.ip_address.clone().unwrap_or_default(),
         provider_instance_id: pending_response.provider_instance_id,
         provider_order_id: pending_response.provider_order_id.clone(),
+        provider: "hostinger".to_string(),
         plan_id: pending_response.plan_id,
         template_id: pending_response.template_id,
         data_center_id: pending_response.data_center_id,
@@ -1205,12 +1200,13 @@ fn run_byovps_flow(
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 2: VPS PROVISIONING
+    // STEP 2: VPS PROVISIONING (Health-First Pattern)
     // ═══════════════════════════════════════════════════════════════════
     cli_output::print_step_start(2, "VPS PROVISIONING");
     check_interrupt(interrupted);
 
-    let provision_response = provision_byovps_with_spinner_ui(
+    // Call provision_byovps_pending to get pending response (no DB record yet)
+    let pending_response = provision_byovps_pending_with_spinner_ui(
         runtime,
         &mut client,
         &byovps_creds.vps_ip,
@@ -1231,44 +1227,18 @@ fn run_byovps_flow(
         }
     }
 
-    // Check provision status
-    match provision_response.status.to_lowercase().as_str() {
-        "failed" | "error" => {
-            cli_output::print_step_line(icons::FAILURE, "Provisioning failed");
-            cli_output::print_step_end();
-            let msg = provision_response
-                .message
-                .unwrap_or_else(|| "Unknown error".to_string());
-            return Err(CentralApiError::ServerError {
-                status: 500,
-                message: msg,
-            });
-        }
-        "ready" | "running" | "active" => {
-            cli_output::print_step_line(icons::SUCCESS, "VPS provisioned successfully");
-        }
-        _ => {
-            // Need to poll for status
-            check_interrupt(interrupted);
-            let _final_status =
-                poll_byovps_status_with_interrupt(runtime, &mut client, interrupted)?;
-            cli_output::print_step_line(icons::SUCCESS, "VPS provisioned successfully");
-        }
-    }
+    cli_output::print_step_line(icons::SUCCESS, &format!("Hostname: {}", pending_response.hostname));
+    cli_output::print_step_line(icons::SUCCESS, &pending_response.message);
     cli_output::print_step_end();
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 3: HEALTH CHECK
+    // STEP 3: HEALTH CHECK (Poll conductor directly)
     // ═══════════════════════════════════════════════════════════════════
     cli_output::print_step_start(3, "HEALTH CHECK");
     check_interrupt(interrupted);
 
-    // Use hostname (HTTPS via Cloudflare) if available, otherwise fall back to IP
-    let health_url = if let Some(ref hostname) = provision_response.hostname {
-        format!("https://{}", hostname)
-    } else {
-        format!("http://{}:8080", byovps_creds.vps_ip)
-    };
+    // Use hostname (HTTPS via Cloudflare) for health check
+    let health_url = format!("https://{}", pending_response.hostname);
     match wait_for_health_with_ui(runtime, &health_url, HEALTH_CHECK_TIMEOUT_SECS, interrupted) {
         Ok(()) => {
             cli_output::print_step_spinner_done(
@@ -1299,9 +1269,53 @@ fn run_byovps_flow(
     cli_output::print_step_end();
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 4: CREDENTIAL SYNC
+    // STEP 4: CONFIRM VPS (Create DB record after health passes)
     // ═══════════════════════════════════════════════════════════════════
-    cli_output::print_step_start(4, "CREDENTIAL SYNC");
+    cli_output::print_step_start(4, "CONFIRMING VPS");
+    check_interrupt(interrupted);
+
+    // Build ConfirmVpsRequest with BYOVPS-specific values
+    let confirm_request = ConfirmVpsRequest {
+        hostname: pending_response.hostname.clone(),
+        ip_address: pending_response.ip_address.clone(),
+        provider_instance_id: 0, // Not applicable for BYOVPS
+        provider_order_id: None,
+        provider: "byovps".to_string(),
+        plan_id: 0, // Not applicable for BYOVPS
+        template_id: 0, // Not applicable for BYOVPS
+        data_center_id: 0, // Not applicable for BYOVPS
+        jwt_secret: pending_response.jwt_secret.clone(),
+        ssh_password: pending_response.ssh_password.clone(),
+    };
+
+    match runtime.block_on(client.confirm_vps(confirm_request)) {
+        Ok(_confirm_response) => {
+            cli_output::print_step_line(icons::SUCCESS, "VPS confirmed in backend");
+        }
+        Err(e) => {
+            cli_output::print_step_line(icons::FAILURE, &format!("Failed to confirm VPS: {}", e));
+            cli_output::print_step_end();
+            return Err(e);
+        }
+    }
+
+    // Update credentials if tokens were refreshed during confirmation
+    let (new_access_token, new_refresh_token) = client.get_tokens();
+    if let Some(access_token) = new_access_token {
+        if credentials.access_token.as_ref() != Some(&access_token) {
+            credentials.access_token = Some(access_token);
+            if let Some(refresh_token) = new_refresh_token {
+                credentials.refresh_token = Some(refresh_token);
+            }
+            save_credentials(credentials);
+        }
+    }
+    cli_output::print_step_end();
+
+    // ═══════════════════════════════════════════════════════════════════
+    // STEP 5: CREDENTIAL SYNC
+    // ═══════════════════════════════════════════════════════════════════
+    cli_output::print_step_start(5, "CREDENTIAL SYNC");
     check_interrupt(interrupted);
 
     // Sync credentials to VPS via SFTP
@@ -1334,9 +1348,9 @@ fn run_byovps_flow(
     cli_output::print_step_end();
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 5: VERIFICATION
+    // STEP 6: VERIFICATION
     // ═══════════════════════════════════════════════════════════════════
-    cli_output::print_step_start(5, "VERIFICATION");
+    cli_output::print_step_start(6, "VERIFICATION");
     check_interrupt(interrupted);
 
     match super::token_verification::verify_vps_tokens(
@@ -1380,11 +1394,7 @@ fn run_byovps_flow(
     // ═══════════════════════════════════════════════════════════════════
     // FINAL SUMMARY
     // ═══════════════════════════════════════════════════════════════════
-    let conductor_url = if let Some(ref hostname) = provision_response.hostname {
-        format!("https://{}", hostname)
-    } else {
-        format!("http://{}:8080", byovps_creds.vps_ip)
-    };
+    let conductor_url = format!("https://{}", pending_response.hostname);
     if has_warnings {
         cli_output::print_footer_warning(
             &byovps_creds.vps_ip,
@@ -1458,15 +1468,15 @@ fn wait_for_health_with_ui(
     }
 }
 
-/// Provision BYOVPS with spinner in step box.
-fn provision_byovps_with_spinner_ui(
+/// Provision BYOVPS with pending response (health-first pattern) with spinner in step box.
+fn provision_byovps_pending_with_spinner_ui(
     runtime: &tokio::runtime::Runtime,
     client: &mut CentralApiClient,
     vps_ip: &str,
     ssh_username: &str,
     ssh_password: &str,
     interrupted: &Arc<AtomicBool>,
-) -> Result<ByovpsProvisionResponse, CentralApiError> {
+) -> Result<ByovpsPendingResponse, CentralApiError> {
     use std::sync::mpsc;
     use std::time::Instant;
 
@@ -1484,77 +1494,23 @@ fn provision_byovps_with_spinner_ui(
 
             let spinner = SPINNER_CHARS[frame % SPINNER_CHARS.len()];
             let elapsed = start.elapsed().as_secs();
-            cli_output::print_step_spinner(spinner, &format!("Provisioning VPS... ({}s)", elapsed));
+            cli_output::print_step_spinner(
+                spinner,
+                &format!("Initiating BYOVPS setup... ({}s)", elapsed),
+            );
             frame += 1;
             thread::sleep(Duration::from_millis(100));
         }
     });
 
-    let result = runtime.block_on(client.provision_byovps(vps_ip, ssh_username, ssh_password));
+    let result =
+        runtime.block_on(client.provision_byovps_pending(vps_ip, ssh_username, ssh_password));
 
     let _ = tx.send(());
     let _ = spinner_handle.join();
 
     check_interrupt(interrupted);
     result
-}
-
-/// Poll BYOVPS status with spinner and interrupt support.
-fn poll_byovps_status_with_interrupt(
-    runtime: &tokio::runtime::Runtime,
-    client: &mut CentralApiClient,
-    interrupted: &Arc<AtomicBool>,
-) -> Result<VpsStatusResponse, CentralApiError> {
-    let mut attempts = 0;
-
-    println!("\nPolling VPS status...");
-
-    loop {
-        check_interrupt(interrupted);
-
-        let status = runtime.block_on(client.fetch_vps_status())?;
-
-        // Check VPS status
-        match status.status.to_lowercase().as_str() {
-            "ready" | "running" | "active" => {
-                // Clear spinner line and return
-                print!("\r                                                              \r");
-                io::stdout().flush().ok();
-                return Ok(status);
-            }
-            "failed" | "error" | "terminated" => {
-                return Err(CentralApiError::ServerError {
-                    status: 500,
-                    message: format!("BYOVPS provisioning failed with status: {}", status.status),
-                });
-            }
-            _ => {
-                // Still provisioning, show progress with spinner
-                let spinner = SPINNER_CHARS[attempts as usize % SPINNER_CHARS.len()];
-                let status_display = &status.status;
-                print!(
-                    "\r{} Polling VPS status... ({}) - attempt {}/{}",
-                    spinner,
-                    status_display,
-                    attempts + 1,
-                    BYOVPS_MAX_POLL_ATTEMPTS
-                );
-                io::stdout().flush().ok();
-            }
-        }
-
-        attempts += 1;
-        if attempts >= BYOVPS_MAX_POLL_ATTEMPTS {
-            return Err(CentralApiError::ServerError {
-                status: 408,
-                message: "BYOVPS provisioning timed out after 10 minutes".to_string(),
-            });
-        }
-
-        // Check interrupt before sleeping
-        check_interrupt(interrupted);
-        thread::sleep(Duration::from_secs(BYOVPS_POLL_INTERVAL_SECS));
-    }
 }
 
 /// Save credentials to file.
@@ -2304,15 +2260,9 @@ mod tests {
     }
 
     #[test]
-    fn test_byovps_poll_constants() {
-        // Verify BYOVPS polling constants are reasonable
-        assert_eq!(BYOVPS_POLL_INTERVAL_SECS, 5);
-        assert_eq!(BYOVPS_MAX_POLL_ATTEMPTS, 120);
-        // Total wait time should be 10 minutes (600 seconds)
-        assert_eq!(
-            BYOVPS_POLL_INTERVAL_SECS * BYOVPS_MAX_POLL_ATTEMPTS as u64,
-            600
-        );
+    fn test_byovps_health_timeout_constant() {
+        // Verify BYOVPS health check timeout is 2 minutes (120 seconds)
+        assert_eq!(HEALTH_CHECK_TIMEOUT_SECS, 120);
     }
 
     #[test]
@@ -2399,12 +2349,9 @@ mod tests {
     }
 
     #[test]
-    fn test_byovps_timeout_calculation() {
-        // Verify the timeout calculation is correct
-        // 120 attempts * 5 seconds = 600 seconds = 10 minutes
-        let total_timeout_secs = BYOVPS_MAX_POLL_ATTEMPTS as u64 * BYOVPS_POLL_INTERVAL_SECS;
-        assert_eq!(total_timeout_secs, 600);
-        assert_eq!(total_timeout_secs / 60, 10); // 10 minutes
+    fn test_health_timeout_minutes() {
+        // Verify health check timeout is 2 minutes
+        assert_eq!(HEALTH_CHECK_TIMEOUT_SECS / 60, 2);
     }
 
     #[test]
