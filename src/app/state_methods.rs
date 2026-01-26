@@ -551,6 +551,176 @@ impl App {
         }
         self.mark_dirty();
     }
+
+    // =========================================================================
+    // Unified Picker Methods
+    // =========================================================================
+
+    /// Open the unified @ picker overlay.
+    ///
+    /// Initializes the picker state and triggers initial data loading.
+    pub fn open_unified_picker(&mut self) {
+        self.unified_picker.open();
+        self.mark_dirty();
+    }
+
+    /// Close the unified @ picker overlay.
+    ///
+    /// Resets all picker state and removes @ from input.
+    pub fn close_unified_picker(&mut self) {
+        self.unified_picker.close();
+        // Remove @ + query from textarea
+        let chars_to_remove = 1 + self.unified_picker.query.len();
+        for _ in 0..chars_to_remove {
+            self.textarea.backspace();
+        }
+        self.mark_dirty();
+    }
+
+    /// Navigate up in the unified picker (across sections).
+    pub fn unified_picker_move_up(&mut self) {
+        self.unified_picker.move_up();
+        self.mark_dirty();
+    }
+
+    /// Navigate down in the unified picker (across sections).
+    pub fn unified_picker_move_down(&mut self) {
+        self.unified_picker.move_down();
+        self.mark_dirty();
+    }
+
+    /// Update the unified picker query and trigger debounced search.
+    pub fn unified_picker_set_query(&mut self, query: String) {
+        self.unified_picker.set_query(query);
+        self.mark_dirty();
+    }
+
+    /// Type a character in the unified picker filter.
+    pub fn unified_picker_type_char(&mut self, c: char) {
+        let mut query = self.unified_picker.query.clone();
+        query.push(c);
+        self.unified_picker.set_query(query);
+        self.mark_dirty();
+    }
+
+    /// Backspace in the unified picker filter.
+    ///
+    /// # Returns
+    /// `true` if the picker should be closed (query was empty), `false` otherwise
+    pub fn unified_picker_backspace(&mut self) -> bool {
+        if self.unified_picker.query.is_empty() {
+            true
+        } else {
+            let mut query = self.unified_picker.query.clone();
+            query.pop();
+            self.unified_picker.set_query(query);
+            self.mark_dirty();
+            false
+        }
+    }
+
+    /// Get the currently selected item in the unified picker.
+    pub fn unified_picker_selected_item(&self) -> Option<&crate::models::picker::PickerItem> {
+        self.unified_picker.selected_item()
+    }
+
+    /// Handle selection of a picker item.
+    ///
+    /// This is the main submit flow handler:
+    /// - For local repos/folders: sets as working directory
+    /// - For remote repos: triggers clone operation first
+    /// - For threads: switches to that thread
+    ///
+    /// # Returns
+    /// A `UnifiedPickerAction` describing what should happen next.
+    pub fn unified_picker_submit(&mut self) -> UnifiedPickerAction {
+        use crate::models::picker::PickerItem;
+
+        let selected = match self.unified_picker.selected_item() {
+            Some(item) => item.clone(),
+            None => return UnifiedPickerAction::None,
+        };
+
+        match selected {
+            PickerItem::Folder { path, name } => {
+                // Local folder - set as working directory
+                let folder = crate::models::Folder { name, path };
+                self.selected_folder = Some(folder);
+                self.unified_picker.close();
+                self.remove_unified_picker_query_from_input();
+                self.mark_dirty();
+                UnifiedPickerAction::FolderSelected
+            }
+            PickerItem::Repo { local_path: Some(path), name, .. } => {
+                // Local repo - set as working directory
+                let folder = crate::models::Folder { name, path };
+                self.selected_folder = Some(folder);
+                self.unified_picker.close();
+                self.remove_unified_picker_query_from_input();
+                self.mark_dirty();
+                UnifiedPickerAction::FolderSelected
+            }
+            PickerItem::Repo { local_path: None, name, url } => {
+                // Remote repo - need to clone first
+                self.unified_picker.start_clone(&format!("Cloning {}...", name));
+                self.mark_dirty();
+                UnifiedPickerAction::CloneRepo { name, url }
+            }
+            PickerItem::Thread { id, title, .. } => {
+                // Thread - switch to it
+                self.unified_picker.close();
+                self.remove_unified_picker_query_from_input();
+                self.mark_dirty();
+                UnifiedPickerAction::SwitchThread { id, title }
+            }
+        }
+    }
+
+    /// Complete a clone operation and select the cloned repo.
+    ///
+    /// Called when the async clone operation completes successfully.
+    pub fn unified_picker_clone_complete(&mut self, local_path: String, name: String) {
+        let folder = crate::models::Folder {
+            name,
+            path: local_path,
+        };
+        self.selected_folder = Some(folder);
+        self.unified_picker.finish_clone();
+        self.unified_picker.close();
+        self.remove_unified_picker_query_from_input();
+        self.mark_dirty();
+    }
+
+    /// Handle clone failure.
+    ///
+    /// Called when the async clone operation fails.
+    pub fn unified_picker_clone_failed(&mut self, error: String) {
+        // Set error on repos section so it's visible in the picker
+        self.unified_picker.repos.set_error(error);
+        self.unified_picker.finish_clone();
+        self.mark_dirty();
+    }
+
+    /// Remove @ + query from textarea for unified picker.
+    fn remove_unified_picker_query_from_input(&mut self) {
+        let chars_to_remove = 1 + self.unified_picker.query.len();
+        for _ in 0..chars_to_remove {
+            self.textarea.backspace();
+        }
+    }
+}
+
+/// Action to take after unified picker selection.
+#[derive(Debug, Clone)]
+pub enum UnifiedPickerAction {
+    /// No action (nothing selected)
+    None,
+    /// Local folder/repo selected - working directory updated
+    FolderSelected,
+    /// Remote repo needs to be cloned
+    CloneRepo { name: String, url: String },
+    /// Switch to a thread
+    SwitchThread { id: String, title: String },
 }
 
 #[cfg(test)]

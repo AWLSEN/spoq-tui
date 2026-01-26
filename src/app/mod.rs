@@ -34,7 +34,7 @@ use crate::markdown::MarkdownCache;
 use crate::models::{Folder, GitHubRepo, PermissionMode};
 use crate::state::{
     AskUserQuestionState, DashboardState, SessionState, SubagentTracker, Task, Thread, Todo,
-    ToolTracker,
+    ToolTracker, UnifiedPickerState,
 };
 use crate::ui::dashboard::SystemStats;
 use crate::websocket::WsConnectionState;
@@ -268,6 +268,8 @@ pub struct App {
     pub folder_picker_filter: String,
     /// Selected index in the filtered folder list
     pub folder_picker_cursor: usize,
+    /// Unified @ picker state (combines repos, threads, folders)
+    pub unified_picker: UnifiedPickerState,
     /// Is the slash command autocomplete dropdown showing
     pub slash_autocomplete_visible: bool,
     /// Current query for slash command filtering (text after /)
@@ -458,6 +460,7 @@ impl App {
             folder_picker_visible: false,
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
+            unified_picker: UnifiedPickerState::new(),
             slash_autocomplete_visible: false,
             slash_autocomplete_query: String::new(),
             slash_autocomplete_cursor: 0,
