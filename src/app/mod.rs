@@ -20,6 +20,7 @@ mod view;
 mod websocket;
 
 pub use messages::AppMessage;
+pub use state_methods::UnifiedPickerAction;
 pub use types::{Focus, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 

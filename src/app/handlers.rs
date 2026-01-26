@@ -1151,10 +1151,28 @@ impl App {
                 }
                 self.mark_dirty();
             }
-            AppMessage::UnifiedPickerCloneComplete { local_path, name } => {
-                self.unified_picker_clone_complete(local_path, name);
+            AppMessage::UnifiedPickerCloneComplete { local_path, name, message } => {
+                // Set the cloned repo as working directory
+                let folder = crate::models::Folder {
+                    name,
+                    path: local_path,
+                };
+                self.selected_folder = Some(folder);
+
+                // Close the picker
+                self.unified_picker.finish_clone();
+                self.unified_picker.close();
+
+                // Clear textarea and set the message
+                self.textarea.clear();
+                self.textarea.set_content(&message);
+
+                // Submit to create new thread with the message
+                self.submit_input(crate::models::ThreadType::Programming);
+
+                self.mark_dirty();
             }
-            AppMessage::UnifiedPickerCloneFailed(error) => {
+            AppMessage::UnifiedPickerCloneFailed { error } => {
                 self.unified_picker_clone_failed(error);
             }
         }

@@ -211,9 +211,10 @@ pub enum AppMessage {
     UnifiedPickerCloneComplete {
         local_path: String,
         name: String,
+        message: String,
     },
     /// Clone operation failed
-    UnifiedPickerCloneFailed(String),
+    UnifiedPickerCloneFailed { error: String },
 }
 
 #[cfg(test)]

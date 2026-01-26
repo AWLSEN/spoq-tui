@@ -1,4 +1,4 @@
-use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary};
+use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary, UnifiedPickerAction};
 use spoq::cli::{parse_args, run_cli_command};
 use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
 use spoq::input::translate_shifted_char;
@@ -711,8 +711,63 @@ where
                                     KeyCode::Enter => {
                                         let action = app.unified_picker_submit();
                                         app.mark_dirty();
-                                        // TODO: Handle CloneRepo and SwitchThread actions
-                                        eprintln!("Unified picker action: {:?}", action);
+
+                                        match action {
+                                            UnifiedPickerAction::None => {
+                                                // Nothing selected, do nothing
+                                            }
+                                            UnifiedPickerAction::MessageRequired => {
+                                                // Show error - message is required for folder/repo selection
+                                                // For now, just don't close the picker
+                                                // TODO: Show visual feedback that message is required
+                                            }
+                                            UnifiedPickerAction::StartNewThread { path, name, message } => {
+                                                // Set working directory
+                                                let folder = models::Folder { name, path };
+                                                app.selected_folder = Some(folder);
+
+                                                // Clear textarea and set the message
+                                                app.textarea.clear();
+                                                app.textarea.set_content(&message);
+
+                                                // Submit to create new thread
+                                                app.submit_input(models::ThreadType::Programming);
+                                            }
+                                            UnifiedPickerAction::CloneRepo { name, url: _, message } => {
+                                                // Clone repo asynchronously using repo name (owner/repo format)
+                                                let client = app.client.clone();
+                                                let message_tx = app.message_tx.clone();
+                                                let clone_name = name.clone();
+
+                                                tokio::spawn(async move {
+                                                    match client.clone_repo(&clone_name).await {
+                                                        Ok(response) => {
+                                                            let _ = message_tx.send(AppMessage::UnifiedPickerCloneComplete {
+                                                                local_path: response.path,
+                                                                name: clone_name,
+                                                                message,
+                                                            });
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = message_tx.send(AppMessage::UnifiedPickerCloneFailed {
+                                                                error: e.to_string(),
+                                                            });
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                            UnifiedPickerAction::ResumeThread { id, title: _, message } => {
+                                                // Open the thread
+                                                app.open_thread(id);
+
+                                                // If there's a message, set it and submit
+                                                if let Some(msg) = message {
+                                                    app.textarea.clear();
+                                                    app.textarea.set_content(&msg);
+                                                    app.submit_input(models::ThreadType::Programming);
+                                                }
+                                            }
+                                        }
                                         continue;
                                     }
                                     KeyCode::Backspace => {

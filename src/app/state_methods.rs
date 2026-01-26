@@ -824,9 +824,9 @@ impl App {
     /// Handle selection of a picker item.
     ///
     /// This is the main submit flow handler:
-    /// - For local repos/folders: sets as working directory
-    /// - For remote repos: triggers clone operation first
-    /// - For threads: switches to that thread
+    /// - For local repos/folders: creates new thread with the typed message (required)
+    /// - For remote repos: triggers clone, then creates new thread with message (required)
+    /// - For threads: resumes that thread (message optional)
     ///
     /// # Returns
     /// A `UnifiedPickerAction` describing what should happen next.
@@ -838,37 +838,81 @@ impl App {
             None => return UnifiedPickerAction::None,
         };
 
+        // Extract message from textarea content (everything except @query)
+        // The textarea contains: "some message @query" or just "@query"
+        // We need to extract "some message" (trimmed)
+        let full_content = self.textarea.content_expanded();
+        let query_with_at = format!("@{}", self.unified_picker.query);
+
+        // Remove @query from the content to get the message
+        let message = full_content
+            .replace(&query_with_at, "")
+            .trim()
+            .to_string();
+
         match selected {
             PickerItem::Folder { path, name } => {
-                // Local folder - set as working directory
-                let folder = crate::models::Folder { name, path };
-                self.selected_folder = Some(folder);
+                // Local folder - message is REQUIRED
+                if message.is_empty() {
+                    return UnifiedPickerAction::MessageRequired;
+                }
+
                 self.unified_picker.close();
-                self.remove_unified_picker_query_from_input();
                 self.mark_dirty();
-                UnifiedPickerAction::FolderSelected
+                UnifiedPickerAction::StartNewThread {
+                    path,
+                    name,
+                    message,
+                }
             }
-            PickerItem::Repo { local_path: Some(path), name, .. } => {
-                // Local repo - set as working directory
-                let folder = crate::models::Folder { name, path };
-                self.selected_folder = Some(folder);
+            PickerItem::Repo {
+                local_path: Some(path),
+                name,
+                ..
+            } => {
+                // Local repo - message is REQUIRED
+                if message.is_empty() {
+                    return UnifiedPickerAction::MessageRequired;
+                }
+
                 self.unified_picker.close();
-                self.remove_unified_picker_query_from_input();
                 self.mark_dirty();
-                UnifiedPickerAction::FolderSelected
+                UnifiedPickerAction::StartNewThread {
+                    path,
+                    name,
+                    message,
+                }
             }
-            PickerItem::Repo { local_path: None, name, url } => {
-                // Remote repo - need to clone first
+            PickerItem::Repo {
+                local_path: None,
+                name,
+                url,
+            } => {
+                // Remote repo - message is REQUIRED (validated before clone)
+                if message.is_empty() {
+                    return UnifiedPickerAction::MessageRequired;
+                }
+
+                // Start clone animation
                 self.unified_picker.start_clone(&format!("Cloning {}...", name));
                 self.mark_dirty();
-                UnifiedPickerAction::CloneRepo { name, url }
+                UnifiedPickerAction::CloneRepo { name, url, message }
             }
             PickerItem::Thread { id, title, .. } => {
-                // Thread - switch to it
+                // Thread - message is OPTIONAL
+                let message_opt = if message.is_empty() {
+                    None
+                } else {
+                    Some(message)
+                };
+
                 self.unified_picker.close();
-                self.remove_unified_picker_query_from_input();
                 self.mark_dirty();
-                UnifiedPickerAction::SwitchThread { id, title }
+                UnifiedPickerAction::ResumeThread {
+                    id,
+                    title,
+                    message: message_opt,
+                }
             }
         }
     }
@@ -910,14 +954,28 @@ impl App {
 /// Action to take after unified picker selection.
 #[derive(Debug, Clone)]
 pub enum UnifiedPickerAction {
-    /// No action (nothing selected)
+    /// No action (nothing selected or validation failed)
     None,
-    /// Local folder/repo selected - working directory updated
-    FolderSelected,
-    /// Remote repo needs to be cloned
-    CloneRepo { name: String, url: String },
-    /// Switch to a thread
-    SwitchThread { id: String, title: String },
+    /// Message is required but was empty
+    MessageRequired,
+    /// Local folder/repo selected - create new thread with message
+    StartNewThread {
+        path: String,
+        name: String,
+        message: String,
+    },
+    /// Remote repo needs to be cloned first, then create new thread
+    CloneRepo {
+        name: String,
+        url: String,
+        message: String,
+    },
+    /// Resume an existing thread (message is optional)
+    ResumeThread {
+        id: String,
+        title: String,
+        message: Option<String>,
+    },
 }
 
 #[cfg(test)]
