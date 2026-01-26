@@ -740,6 +740,67 @@ where
                                 }
                             }
 
+                            // Unified @ Picker Key Handling (when visible)
+                            // =========================================================
+                            if app.unified_picker.visible {
+                                eprintln!("DEBUG: Unified picker key handling - key={:?}", key.code);
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        eprintln!("DEBUG: ESC pressed in unified picker");
+                                        app.close_unified_picker();
+                                        app.remove_unified_picker_query_from_input();
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        eprintln!("DEBUG: ENTER pressed in unified picker");
+                                        let action = app.unified_picker_submit();
+                                        eprintln!("DEBUG: Unified picker action: {:?}", action);
+                                        app.mark_dirty();
+                                        // TODO: Handle CloneRepo and SwitchThread actions
+                                        continue;
+                                    }
+                                    KeyCode::Backspace => {
+                                        eprintln!("DEBUG: BACKSPACE in unified picker, query='{}'", app.unified_picker.query);
+                                        if app.unified_picker.query.is_empty() {
+                                            // Query is empty, close picker and remove @
+                                            app.textarea.backspace(); // Remove the @
+                                            app.close_unified_picker();
+                                            app.mark_dirty();
+                                        } else {
+                                            // Remove last char from query
+                                            app.unified_picker_backspace();
+                                            app.textarea.backspace();
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Up => {
+                                        eprintln!("DEBUG: UP in unified picker");
+                                        app.unified_picker_move_up();
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Down => {
+                                        eprintln!("DEBUG: DOWN in unified picker");
+                                        app.unified_picker_move_down();
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
+                                        eprintln!("DEBUG: CHAR '{}' in unified picker", c);
+                                        app.unified_picker_type_char(c);
+                                        app.textarea.insert_char(c);
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    _ => {
+                                        eprintln!("DEBUG: Other key in unified picker - ignoring");
+                                        continue;
+                                    }
+                                }
+                            }
+
                             // Thread switcher handling (takes priority when visible)
                             if app.thread_switcher.visible {
                                 match key.code {
@@ -907,6 +968,16 @@ where
                                             app.slash_autocomplete_cursor = 0;
                                             app.mark_dirty();
                                             eprintln!("DEBUG: slash_autocomplete_visible set to {}", app.slash_autocomplete_visible);
+                                            continue;
+                                        }
+
+                                        // Check for @ trigger for unified picker (repos, threads, folders)
+                                        if char_to_insert == '@' {
+                                            eprintln!("DEBUG: @ trigger hit!");
+                                            app.textarea.insert_char('@');
+                                            app.open_unified_picker();
+                                            app.mark_dirty();
+                                            eprintln!("DEBUG: unified_picker.visible set to {}", app.unified_picker.visible);
                                             continue;
                                         }
 

@@ -1,6 +1,7 @@
 //! AppMessage enum for async communication within the application.
 
 use crate::models::dashboard::{PlanSummary, ThreadStatus, WaitingFor};
+use crate::models::picker::PickerItem;
 use crate::models::{Folder, GitHubRepo, Thread, ThreadMode};
 use crate::state::session::AskUserQuestionData;
 use crate::state::Todo;
@@ -191,6 +192,28 @@ pub enum AppMessage {
         request_id: String,
         question_data: AskUserQuestionData,
     },
+    // =========================================================================
+    // Unified Picker Messages
+    // =========================================================================
+    /// Folders search results received for unified picker
+    UnifiedPickerFoldersLoaded(Vec<PickerItem>),
+    /// Folders search failed for unified picker
+    UnifiedPickerFoldersFailed(String),
+    /// Repos search results received for unified picker
+    UnifiedPickerReposLoaded(Vec<PickerItem>),
+    /// Repos search failed for unified picker
+    UnifiedPickerReposFailed(String),
+    /// Threads search results received for unified picker
+    UnifiedPickerThreadsLoaded(Vec<PickerItem>),
+    /// Threads search failed for unified picker
+    UnifiedPickerThreadsFailed(String),
+    /// Clone operation completed successfully
+    UnifiedPickerCloneComplete {
+        local_path: String,
+        name: String,
+    },
+    /// Clone operation failed
+    UnifiedPickerCloneFailed(String),
 }
 
 #[cfg(test)]

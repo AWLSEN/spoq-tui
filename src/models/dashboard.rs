@@ -21,6 +21,7 @@ pub enum ThreadStatus {
     Waiting,
     /// Task completed successfully (default state)
     #[default]
+    #[serde(alias = "idle")]
     Done,
     /// Error occurred during processing
     Error,

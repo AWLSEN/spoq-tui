@@ -18,6 +18,7 @@ use super::folder_picker::render_folder_picker;
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
 use super::slash_autocomplete::render_slash_autocomplete;
+use super::unified_picker::render_unified_picker;
 
 // ============================================================================
 // Helper Functions
@@ -83,6 +84,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         if app.slash_autocomplete_visible {
             render_slash_autocomplete(frame, app, main_chunks[2]);
         }
+
+        // Render unified @ picker overlay (if visible)
+        if app.unified_picker.visible {
+            render_unified_picker(frame, &app.unified_picker, main_chunks[2]);
+        }
     } else {
         // Layout without mode indicator (2 sections)
         let main_chunks = Layout::default()
@@ -104,6 +110,11 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         // Render slash autocomplete overlay (if visible) - must be last for proper layering
         if app.slash_autocomplete_visible {
             render_slash_autocomplete(frame, app, main_chunks[1]);
+        }
+
+        // Render unified @ picker overlay (if visible)
+        if app.unified_picker.visible {
+            render_unified_picker(frame, &app.unified_picker, main_chunks[1]);
         }
     }
 }

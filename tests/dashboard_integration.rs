@@ -64,7 +64,8 @@ fn test_dashboard_renders_with_zero_threads() {
     assert!(views.is_empty());
 
     // RenderContext should handle empty thread list
-    let ctx = state.build_render_context(&stats, &theme);
+    let repos = vec![];
+    let ctx = state.build_render_context(&stats, &theme, &repos);
     assert_eq!(ctx.threads.len(), 0);
     assert_eq!(ctx.action_count(), 0);
     assert!(!ctx.has_overlay());
@@ -76,7 +77,7 @@ fn test_dashboard_aggregate_with_zero_threads() {
 
     assert_eq!(aggregate.working(), 0);
     assert_eq!(aggregate.ready_to_test(), 0);
-    assert_eq!(aggregate.idle(), 0);
+    assert_eq!(aggregate.inactive(), 0);
     assert_eq!(aggregate.total_repos, 0);
 }
 
@@ -119,9 +120,8 @@ fn test_dashboard_renders_with_many_threads() {
     assert_eq!(aggregate.total_repos, 100);
     assert_eq!(aggregate.count(ThreadStatus::Running), 20);
     assert_eq!(aggregate.count(ThreadStatus::Waiting), 20);
-    assert_eq!(aggregate.count(ThreadStatus::Done), 20);
+    assert_eq!(aggregate.count(ThreadStatus::Done), 40); // 20 from case 2 + 20 from default case 4
     assert_eq!(aggregate.count(ThreadStatus::Error), 20);
-    assert_eq!(aggregate.count(ThreadStatus::Done), 20);
 }
 
 #[test]
@@ -141,12 +141,12 @@ fn test_dashboard_thread_sorting() {
 
     let views = state.compute_thread_views();
 
-    // Threads needing action (Waiting, Error) should come first
-    assert!(views[0].needs_action || views[1].needs_action);
+    // Threads needing action (only Waiting) should come first
+    assert!(views[0].needs_action);
 
     // Count threads needing action
     let action_count = views.iter().filter(|v| v.needs_action).count();
-    assert_eq!(action_count, 2); // Waiting + Error
+    assert_eq!(action_count, 1); // Only Waiting needs action
 }
 
 // ============================================================================
@@ -441,8 +441,8 @@ fn test_aggregate_idle_calculation() {
     aggregate.increment(ThreadStatus::Error);
     aggregate.increment(ThreadStatus::Running);
 
-    // Idle = Idle + Error
-    assert_eq!(aggregate.idle(), 3);
+    // Inactive = Done + Error
+    assert_eq!(aggregate.inactive(), 3);
 }
 
 #[test]
@@ -593,10 +593,10 @@ fn test_thread_view_needs_action() {
     .with_status(ThreadStatus::Waiting);
     assert!(waiting_view.needs_action);
 
-    // Error needs action
+    // Error doesn't need action (errors are passive)
     let error_view = ThreadView::new("t2".to_string(), "Error".to_string(), "~/repo".to_string())
         .with_status(ThreadStatus::Error);
-    assert!(error_view.needs_action);
+    assert!(!error_view.needs_action);
 
     // Running doesn't need action
     let running_view = ThreadView::new(
@@ -652,11 +652,12 @@ fn test_render_context_action_count() {
     let aggregate = Aggregate::new();
     let stats = SystemStats::default();
     let theme = Theme::default();
+    let repos = vec![];
 
-    let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme);
+    let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme, &repos);
 
-    // Waiting + Error = 2 threads need action
-    assert_eq!(ctx.action_count(), 2);
+    // Only Waiting needs action
+    assert_eq!(ctx.action_count(), 1);
 }
 
 #[test]
@@ -665,8 +666,9 @@ fn test_render_context_with_overlay() {
     let aggregate = Aggregate::new();
     let stats = SystemStats::default();
     let theme = Theme::default();
+    let repos = vec![];
 
-    let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme);
+    let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme, &repos);
     assert!(!ctx.has_overlay());
 
     let overlay = OverlayState::Question {

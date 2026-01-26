@@ -558,10 +558,108 @@ impl App {
 
     /// Open the unified @ picker overlay.
     ///
-    /// Initializes the picker state and triggers initial data loading.
+    /// Initializes the picker state and triggers initial data loading from API.
     pub fn open_unified_picker(&mut self) {
+        eprintln!("DEBUG: open_unified_picker() called");
         self.unified_picker.open();
         self.mark_dirty();
+
+        // Spawn async tasks to fetch data from conductor API
+        self.unified_picker_search("");
+    }
+
+    /// Trigger a search for all unified picker sections.
+    ///
+    /// Spawns async tasks to search folders, repos, and threads.
+    pub fn unified_picker_search(&mut self, query: &str) {
+        eprintln!("DEBUG: unified_picker_search(query='{}') called", query);
+        let query = query.to_string();
+
+        // Search folders
+        {
+            let tx = self.message_tx.clone();
+            let client = Arc::clone(&self.client);
+            let q = query.clone();
+            tokio::spawn(async move {
+                eprintln!("DEBUG: Calling search_folders API...");
+                match client.search_folders(&q, 10).await {
+                    Ok(response) => {
+                        eprintln!("DEBUG: search_folders returned {} items", response.folders.len());
+                        let items: Vec<crate::models::picker::PickerItem> = response
+                            .folders
+                            .into_iter()
+                            .map(|f| crate::models::picker::PickerItem::Folder {
+                                name: f.name,
+                                path: f.path,
+                            })
+                            .collect();
+                        let _ = tx.send(AppMessage::UnifiedPickerFoldersLoaded(items));
+                    }
+                    Err(e) => {
+                        eprintln!("DEBUG: search_folders failed: {}", e);
+                        let _ = tx.send(AppMessage::UnifiedPickerFoldersFailed(e.to_string()));
+                    }
+                }
+            });
+        }
+
+        // Search repos
+        {
+            let tx = self.message_tx.clone();
+            let client = Arc::clone(&self.client);
+            let q = query.clone();
+            tokio::spawn(async move {
+                eprintln!("DEBUG: Calling search_repos API...");
+                match client.search_repos(&q, 10).await {
+                    Ok(response) => {
+                        eprintln!("DEBUG: search_repos returned {} items", response.repos.len());
+                        let items: Vec<crate::models::picker::PickerItem> = response
+                            .repos
+                            .into_iter()
+                            .map(|r| crate::models::picker::PickerItem::Repo {
+                                name: r.name_with_owner,
+                                local_path: r.local_path,
+                                url: r.url,
+                            })
+                            .collect();
+                        let _ = tx.send(AppMessage::UnifiedPickerReposLoaded(items));
+                    }
+                    Err(e) => {
+                        eprintln!("DEBUG: search_repos failed: {}", e);
+                        let _ = tx.send(AppMessage::UnifiedPickerReposFailed(e.to_string()));
+                    }
+                }
+            });
+        }
+
+        // Search threads
+        {
+            let tx = self.message_tx.clone();
+            let client = Arc::clone(&self.client);
+            let q = query;
+            tokio::spawn(async move {
+                eprintln!("DEBUG: Calling search_threads API...");
+                match client.search_threads(&q, 10).await {
+                    Ok(response) => {
+                        eprintln!("DEBUG: search_threads returned {} items", response.threads.len());
+                        let items: Vec<crate::models::picker::PickerItem> = response
+                            .threads
+                            .into_iter()
+                            .map(|t| crate::models::picker::PickerItem::Thread {
+                                id: t.id.clone(),
+                                title: t.title.unwrap_or_else(|| format!("Thread {}", t.id)),
+                                working_directory: t.working_directory,
+                            })
+                            .collect();
+                        let _ = tx.send(AppMessage::UnifiedPickerThreadsLoaded(items));
+                    }
+                    Err(e) => {
+                        eprintln!("DEBUG: search_threads failed: {}", e);
+                        let _ = tx.send(AppMessage::UnifiedPickerThreadsFailed(e.to_string()));
+                    }
+                }
+            });
+        }
     }
 
     /// Close the unified @ picker overlay.
@@ -702,7 +800,7 @@ impl App {
     }
 
     /// Remove @ + query from textarea for unified picker.
-    fn remove_unified_picker_query_from_input(&mut self) {
+    pub fn remove_unified_picker_query_from_input(&mut self) {
         let chars_to_remove = 1 + self.unified_picker.query.len();
         for _ in 0..chars_to_remove {
             self.textarea.backspace();

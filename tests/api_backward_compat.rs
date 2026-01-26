@@ -505,9 +505,9 @@ fn test_thread_needs_action() {
     agent_events.insert("thread-action".to_string(), ("waiting".to_string(), None));
     assert!(thread.needs_action(&agent_events));
 
-    // Error thread needs action
+    // Error thread doesn't need action (errors are passive)
     agent_events.insert("thread-action".to_string(), ("error".to_string(), None));
-    assert!(thread.needs_action(&agent_events));
+    assert!(!thread.needs_action(&agent_events));
 
     // Running thread doesn't need action
     agent_events.insert("thread-action".to_string(), ("running".to_string(), None));
@@ -612,7 +612,7 @@ fn test_thread_status_snake_case_format() {
     // Verify snake_case format is used for serialization
     assert_eq!(
         serde_json::to_string(&ThreadStatus::Done).unwrap(),
-        "\"idle\""
+        "\"done\""
     );
     assert_eq!(
         serde_json::to_string(&ThreadStatus::Running).unwrap(),
