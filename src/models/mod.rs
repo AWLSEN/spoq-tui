@@ -2,6 +2,7 @@ pub mod dashboard;
 mod folder;
 mod repository;
 mod message;
+pub mod picker;
 mod request;
 mod thread;
 mod tools;
@@ -13,6 +14,7 @@ pub use dashboard::{
 pub use folder::Folder;
 pub use repository::{GitHubRepo, PrimaryLanguage};
 pub use message::*;
+pub use picker::*;
 pub use request::PermissionMode;
 pub use request::*;
 pub use thread::*;
