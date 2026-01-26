@@ -20,10 +20,15 @@ pub const SEARCH_DEBOUNCE_MS: u64 = 150;
 /// Default search result limit per section
 pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 
+/// Maximum visible rows in picker viewport (must match unified_picker.rs)
+const MAX_VISIBLE_ROWS: usize = 10;
+
 /// State for a single picker section (repos, threads, or folders)
 #[derive(Debug, Clone, Default)]
 pub struct SectionState {
-    /// Items in this section
+    /// All items in this section (full cache, loaded once on open)
+    pub all_items: Vec<PickerItem>,
+    /// Items filtered by current query (displayed to user)
     pub items: Vec<PickerItem>,
     /// Whether this section is currently loading
     pub loading: bool,
@@ -54,6 +59,7 @@ impl SectionState {
 
     /// Clear items and reset state
     pub fn clear(&mut self) {
+        self.all_items.clear();
         self.items.clear();
         self.loading = false;
         self.error = None;
@@ -67,11 +73,27 @@ impl SectionState {
         }
     }
 
-    /// Set items from search response
+    /// Set items from API response (caches all items and applies current filter)
     pub fn set_items(&mut self, items: Vec<PickerItem>) {
+        self.all_items = items.clone();
         self.items = items;
         self.loading = false;
         self.error = None;
+    }
+
+    /// Filter cached items by query (instant, no API call)
+    pub fn filter_by_query(&mut self, query: &str) {
+        if query.is_empty() {
+            // Show all items when no query
+            self.items = self.all_items.clone();
+        } else {
+            let query_lower = query.to_lowercase();
+            self.items = self.all_items
+                .iter()
+                .filter(|item| item.display_name().to_lowercase().contains(&query_lower))
+                .cloned()
+                .collect();
+        }
     }
 
     /// Set error state
@@ -98,6 +120,8 @@ pub struct UnifiedPickerState {
     pub selected_section: PickerSection,
     /// Selected item index within the current section
     pub selected_index: usize,
+    /// Scroll offset for viewport (line index of first visible line)
+    pub scroll_offset: usize,
     /// Whether a clone operation is in progress
     pub cloning: bool,
     /// Clone progress message (shown during clone)
@@ -122,6 +146,7 @@ impl UnifiedPickerState {
             folders: SectionState::new(),
             selected_section: PickerSection::Repos,
             selected_index: 0,
+            scroll_offset: 0,
             cloning: false,
             clone_message: None,
         }
@@ -133,6 +158,7 @@ impl UnifiedPickerState {
         self.query.clear();
         self.selected_section = PickerSection::Repos;
         self.selected_index = 0;
+        self.scroll_offset = 0;
         self.cloning = false;
         self.clone_message = None;
         // Mark sections as loading to trigger initial fetch
@@ -151,18 +177,25 @@ impl UnifiedPickerState {
         self.folders.clear();
         self.selected_section = PickerSection::Repos;
         self.selected_index = 0;
+        self.scroll_offset = 0;
         self.cloning = false;
         self.clone_message = None;
     }
 
-    /// Update the search query
+    /// Update the search query and filter items locally (instant)
     pub fn set_query(&mut self, query: String) {
-        self.query = query;
-        self.last_query_change = Some(Instant::now());
-        // Don't clear items - keep showing while loading new results
+        self.query = query.clone();
+        // Filter all sections locally - no API call needed
+        self.repos.filter_by_query(&query);
+        self.threads.filter_by_query(&query);
+        self.folders.filter_by_query(&query);
+        // Reset selection if current item is no longer visible
+        self.validate_selection();
     }
 
     /// Check if debounce period has elapsed since last query change
+    /// NOTE: With local filtering, this is no longer needed for search
+    /// but kept for potential future use (e.g., async refresh)
     pub fn should_search(&self) -> bool {
         if let Some(last_change) = self.last_query_change {
             last_change.elapsed().as_millis() >= SEARCH_DEBOUNCE_MS as u128
@@ -174,6 +207,13 @@ impl UnifiedPickerState {
     /// Mark that search has been triggered (clear the debounce timer)
     pub fn search_triggered(&mut self) {
         self.last_query_change = None;
+    }
+
+    /// Check if initial data has been loaded
+    pub fn has_cached_data(&self) -> bool {
+        !self.repos.all_items.is_empty()
+            || !self.threads.all_items.is_empty()
+            || !self.folders.all_items.is_empty()
     }
 
     /// Check if any section is loading
@@ -231,6 +271,9 @@ impl UnifiedPickerState {
             // Try to move to previous section
             self.move_to_previous_section();
         }
+
+        // Auto-scroll to keep selection visible
+        self.ensure_visible(MAX_VISIBLE_ROWS);
     }
 
     /// Move selection down
@@ -246,6 +289,9 @@ impl UnifiedPickerState {
             // Try to move to next section
             self.move_to_next_section();
         }
+
+        // Auto-scroll to keep selection visible
+        self.ensure_visible(MAX_VISIBLE_ROWS);
     }
 
     /// Move to the previous non-empty section
@@ -329,6 +375,75 @@ impl UnifiedPickerState {
         // All sections empty - reset to first section
         self.selected_section = PickerSection::Repos;
         self.selected_index = 0;
+    }
+
+    /// Calculate the line index of the currently selected item
+    /// This accounts for section headers (each non-empty section adds 1 header line)
+    pub fn selected_line_index(&self) -> usize {
+        let sections = [
+            (PickerSection::Repos, &self.repos),
+            (PickerSection::Threads, &self.threads),
+            (PickerSection::Folders, &self.folders),
+        ];
+
+        let mut line_idx = 0;
+
+        for (section, section_state) in sections {
+            // Skip empty sections (they don't render headers)
+            if section_state.items.is_empty() && !section_state.loading {
+                continue;
+            }
+
+            // Account for section header
+            line_idx += 1;
+
+            if section == self.selected_section {
+                // Add the selected index within this section
+                line_idx += self.selected_index;
+                break;
+            } else {
+                // Add all items in this section
+                line_idx += section_state.items.len();
+            }
+        }
+
+        line_idx
+    }
+
+    /// Calculate total number of lines (headers + items)
+    pub fn total_lines(&self) -> usize {
+        let sections = [&self.repos, &self.threads, &self.folders];
+        let mut total = 0;
+
+        for section in sections {
+            if !section.items.is_empty() || section.loading {
+                total += 1; // header
+                total += section.items.len();
+            }
+        }
+
+        total
+    }
+
+    /// Ensure the selected item is visible within the viewport
+    /// Call this after changing selection
+    pub fn ensure_visible(&mut self, visible_rows: usize) {
+        if visible_rows == 0 {
+            return;
+        }
+
+        let selected_line = self.selected_line_index();
+
+        // If selected line is above viewport, scroll up
+        if selected_line < self.scroll_offset {
+            self.scroll_offset = selected_line;
+        }
+
+        // If selected line is below viewport, scroll down
+        // (subtract 1 because we want to see the line, not just its edge)
+        if selected_line >= self.scroll_offset + visible_rows {
+            self.scroll_offset = selected_line.saturating_sub(visible_rows - 1);
+        }
     }
 
     /// Start a clone operation
@@ -492,38 +607,60 @@ mod tests {
     #[test]
     fn test_picker_state_set_query() {
         let mut state = UnifiedPickerState::new();
+        // Pre-populate with items to filter
+        state.repos.set_items(vec![
+            PickerItem::Repo {
+                name: "test-repo".to_string(),
+                local_path: None,
+                url: "https://github.com/test/test-repo".to_string(),
+            },
+            PickerItem::Repo {
+                name: "other-repo".to_string(),
+                local_path: None,
+                url: "https://github.com/test/other-repo".to_string(),
+            },
+        ]);
 
         state.set_query("test".to_string());
 
         assert_eq!(state.query, "test");
-        assert!(state.last_query_change.is_some());
+        // Local filtering should show only matching items
+        assert_eq!(state.repos.items.len(), 1);
+        assert_eq!(state.repos.items[0].display_name(), "test-repo");
     }
 
     #[test]
-    fn test_picker_state_should_search_debounce() {
+    fn test_picker_state_filter_clears_on_empty_query() {
         let mut state = UnifiedPickerState::new();
+        state.repos.set_items(vec![
+            PickerItem::Repo {
+                name: "test-repo".to_string(),
+                local_path: None,
+                url: "https://github.com/test/test-repo".to_string(),
+            },
+            PickerItem::Repo {
+                name: "other-repo".to_string(),
+                local_path: None,
+                url: "https://github.com/test/other-repo".to_string(),
+            },
+        ]);
 
-        // No query change yet
-        assert!(!state.should_search());
-
-        // Set query
+        // Filter
         state.set_query("test".to_string());
+        assert_eq!(state.repos.items.len(), 1);
 
-        // Immediately after - should not search (within debounce)
-        assert!(!state.should_search());
-
-        // Wait a bit...
-        // Note: In a real test we'd use mock time, but for now just verify the logic
+        // Clear filter
+        state.set_query("".to_string());
+        assert_eq!(state.repos.items.len(), 2);
     }
 
     #[test]
     fn test_picker_state_search_triggered() {
         let mut state = UnifiedPickerState::new();
         state.set_query("test".to_string());
-        assert!(state.last_query_change.is_some());
-
+        // search_triggered clears last_query_change (legacy behavior for compatibility)
+        state.last_query_change = Some(std::time::Instant::now());
         state.search_triggered();
-
         assert!(state.last_query_change.is_none());
     }
 
@@ -762,5 +899,156 @@ mod tests {
     fn test_picker_constants() {
         assert_eq!(SEARCH_DEBOUNCE_MS, 150);
         assert_eq!(DEFAULT_SEARCH_LIMIT, 10);
+    }
+
+    // ========================================================================
+    // Scrolling Tests
+    // ========================================================================
+
+    #[test]
+    fn test_selected_line_index_single_section() {
+        let mut state = UnifiedPickerState::new();
+        // Add 3 repos
+        for i in 0..3 {
+            state.repos.items.push(PickerItem::Repo {
+                name: format!("repo{}", i),
+                local_path: None,
+                url: format!("url{}", i),
+            });
+        }
+        state.selected_section = PickerSection::Repos;
+
+        // First item: header (line 0) + item 0 (line 1)
+        state.selected_index = 0;
+        assert_eq!(state.selected_line_index(), 1);
+
+        // Second item
+        state.selected_index = 1;
+        assert_eq!(state.selected_line_index(), 2);
+
+        // Third item
+        state.selected_index = 2;
+        assert_eq!(state.selected_line_index(), 3);
+    }
+
+    #[test]
+    fn test_selected_line_index_multiple_sections() {
+        let mut state = UnifiedPickerState::new();
+        // Add 2 repos
+        for i in 0..2 {
+            state.repos.items.push(PickerItem::Repo {
+                name: format!("repo{}", i),
+                local_path: None,
+                url: format!("url{}", i),
+            });
+        }
+        // Add 2 threads
+        for i in 0..2 {
+            state.threads.items.push(PickerItem::Thread {
+                id: format!("thread{}", i),
+                title: format!("Thread {}", i),
+                working_directory: None,
+            });
+        }
+
+        // Repos section: header (0) + 2 items (1, 2)
+        // Threads section: header (3) + items (4, 5)
+        state.selected_section = PickerSection::Threads;
+        state.selected_index = 0;
+        assert_eq!(state.selected_line_index(), 4); // header + 2 repo items + threads header + first thread
+
+        state.selected_index = 1;
+        assert_eq!(state.selected_line_index(), 5);
+    }
+
+    #[test]
+    fn test_ensure_visible_scroll_down() {
+        let mut state = UnifiedPickerState::new();
+        // Add many repos to exceed viewport
+        for i in 0..15 {
+            state.repos.items.push(PickerItem::Repo {
+                name: format!("repo{}", i),
+                local_path: None,
+                url: format!("url{}", i),
+            });
+        }
+
+        state.selected_section = PickerSection::Repos;
+        state.selected_index = 12; // Line 13 (header + 12)
+        state.scroll_offset = 0;
+
+        state.ensure_visible(10);
+
+        // Selected line 13 should be visible in 10-row viewport
+        // So scroll_offset should be at least 4 (13 - 10 + 1 = 4)
+        assert!(state.scroll_offset >= 4);
+    }
+
+    #[test]
+    fn test_ensure_visible_scroll_up() {
+        let mut state = UnifiedPickerState::new();
+        for i in 0..15 {
+            state.repos.items.push(PickerItem::Repo {
+                name: format!("repo{}", i),
+                local_path: None,
+                url: format!("url{}", i),
+            });
+        }
+
+        state.selected_section = PickerSection::Repos;
+        state.selected_index = 2; // Line 3
+        state.scroll_offset = 10; // Scrolled way down
+
+        state.ensure_visible(10);
+
+        // Selected line 3 should be visible, so scroll should be <= 3
+        assert!(state.scroll_offset <= 3);
+    }
+
+    #[test]
+    fn test_move_down_updates_scroll() {
+        let mut state = UnifiedPickerState::new();
+        for i in 0..15 {
+            state.repos.items.push(PickerItem::Repo {
+                name: format!("repo{}", i),
+                local_path: None,
+                url: format!("url{}", i),
+            });
+        }
+
+        state.selected_section = PickerSection::Repos;
+        state.scroll_offset = 0;
+
+        // Move down repeatedly past viewport
+        for _ in 0..12 {
+            state.move_down();
+        }
+
+        // Scroll should have adjusted
+        assert!(state.scroll_offset > 0);
+    }
+
+    #[test]
+    fn test_total_lines() {
+        let mut state = UnifiedPickerState::new();
+
+        // Empty state
+        assert_eq!(state.total_lines(), 0);
+
+        // Add repos
+        state.repos.items.push(PickerItem::Repo {
+            name: "repo".to_string(),
+            local_path: None,
+            url: "url".to_string(),
+        });
+        assert_eq!(state.total_lines(), 2); // 1 header + 1 item
+
+        // Add threads
+        state.threads.items.push(PickerItem::Thread {
+            id: "1".to_string(),
+            title: "Thread".to_string(),
+            working_directory: None,
+        });
+        assert_eq!(state.total_lines(), 4); // 2 + 1 header + 1 item
     }
 }

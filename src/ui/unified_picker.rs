@@ -69,17 +69,25 @@ pub fn render_unified_picker(frame: &mut Frame, state: &UnifiedPickerState, inpu
     let area = frame.area();
 
     // Build all display lines
-    let (lines, _total_items) = build_picker_lines(state, input_area.width as usize);
+    let (all_lines, _total_items) = build_picker_lines(state, input_area.width as usize);
 
-    if lines.is_empty() && !state.is_loading() {
+    if all_lines.is_empty() && !state.is_loading() {
         // Don't show empty picker if not loading
         return;
     }
 
-    // Calculate dimensions
+    // Apply scroll offset - show only visible portion
+    let scroll_offset = state.scroll_offset.min(all_lines.len().saturating_sub(1));
+    let visible_lines: Vec<Line> = all_lines
+        .into_iter()
+        .skip(scroll_offset)
+        .take(MAX_VISIBLE_ROWS)
+        .collect();
+
+    // Calculate dimensions based on visible lines
     let dialog_width = input_area.width;
-    let visible_lines = lines.len().min(MAX_VISIBLE_ROWS);
-    let dialog_height = calculate_dialog_height(visible_lines.max(1), area.height);
+    let line_count = visible_lines.len().min(MAX_VISIBLE_ROWS);
+    let dialog_height = calculate_dialog_height(line_count.max(1), area.height);
 
     // Position: horizontally aligned with input area, bottom-anchored (above input area)
     let x = input_area.x;
@@ -124,8 +132,8 @@ pub fn render_unified_picker(frame: &mut Frame, state: &UnifiedPickerState, inpu
         height: dialog_area.height.saturating_sub(2),
     };
 
-    // Render content
-    let content = Paragraph::new(lines).style(Style::default().bg(COLOR_DIALOG_BG));
+    // Render visible lines
+    let content = Paragraph::new(visible_lines).style(Style::default().bg(COLOR_DIALOG_BG));
     frame.render_widget(content, inner);
 }
 
@@ -308,7 +316,6 @@ fn truncate_path(path: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::SectionState;
 
     #[test]
     fn test_item_icon_local_repo() {

@@ -558,33 +558,141 @@ impl App {
 
     /// Open the unified @ picker overlay.
     ///
-    /// Initializes the picker state and triggers initial data loading from API.
+    /// Initializes the picker state and uses cached data for instant display.
+    /// Only fetches fresh data for threads if cache is stale (>5 min).
     pub fn open_unified_picker(&mut self) {
-        eprintln!("DEBUG: open_unified_picker() called");
         self.unified_picker.open();
         self.mark_dirty();
 
-        // Spawn async tasks to fetch data from conductor API
-        self.unified_picker_search("");
+        // Use cached repos (loaded at startup)
+        if let Some(items) = self.picker_cache.get_repos() {
+            self.unified_picker.repos.set_items(items.clone());
+        } else {
+            // Fallback: load if not cached yet
+            self.load_picker_repos();
+        }
+
+        // Use cached folders (session-level)
+        if let Some(items) = self.picker_cache.get_folders() {
+            self.unified_picker.folders.set_items(items.clone());
+        } else {
+            self.load_picker_folders();
+        }
+
+        // Threads: use cache if fresh, otherwise refresh
+        if let Some(items) = self.picker_cache.get_fresh_threads() {
+            self.unified_picker.threads.set_items(items.clone());
+        } else {
+            self.load_picker_threads();
+        }
     }
 
-    /// Trigger a search for all unified picker sections.
-    ///
-    /// Spawns async tasks to search folders, repos, and threads.
-    pub fn unified_picker_search(&mut self, query: &str) {
-        eprintln!("DEBUG: unified_picker_search(query='{}') called", query);
-        let query = query.to_string();
+    /// Preload picker data at app startup (background, non-blocking).
+    /// Called once during initialization to cache repos for instant picker.
+    pub fn preload_picker_data(&mut self) {
+        if self.picker_cache.preload_started {
+            return; // Already started
+        }
+        self.picker_cache.mark_preload_started();
 
-        // Search folders
+        // Preload repos (slow, cache for session)
+        self.load_picker_repos();
+        // Preload folders (fast, but cache anyway)
+        self.load_picker_folders();
+        // Preload threads (medium, will refresh on picker open if stale)
+        self.load_picker_threads();
+    }
+
+    /// Load repos from API and cache them.
+    fn load_picker_repos(&mut self) {
+        const CACHE_LIMIT: usize = 50;
+        let tx = self.message_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client.search_repos("", CACHE_LIMIT).await {
+                Ok(response) => {
+                    let items: Vec<crate::models::picker::PickerItem> = response
+                        .repos
+                        .into_iter()
+                        .map(|r| crate::models::picker::PickerItem::Repo {
+                            name: r.name_with_owner,
+                            local_path: None,
+                            url: r.url,
+                        })
+                        .collect();
+                    let _ = tx.send(AppMessage::UnifiedPickerReposLoaded(items));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppMessage::UnifiedPickerReposFailed(e.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Load folders from API and cache them.
+    fn load_picker_folders(&mut self) {
+        const CACHE_LIMIT: usize = 50;
+        let tx = self.message_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client.search_folders("", CACHE_LIMIT).await {
+                Ok(response) => {
+                    let items: Vec<crate::models::picker::PickerItem> = response
+                        .folders
+                        .into_iter()
+                        .map(|f| crate::models::picker::PickerItem::Folder {
+                            name: f.name,
+                            path: f.path,
+                        })
+                        .collect();
+                    let _ = tx.send(AppMessage::UnifiedPickerFoldersLoaded(items));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppMessage::UnifiedPickerFoldersFailed(e.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Load threads from API and cache them.
+    fn load_picker_threads(&mut self) {
+        const CACHE_LIMIT: usize = 50;
+        let tx = self.message_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            match client.search_threads("", CACHE_LIMIT).await {
+                Ok(response) => {
+                    let items: Vec<crate::models::picker::PickerItem> = response
+                        .threads
+                        .into_iter()
+                        .map(|t| crate::models::picker::PickerItem::Thread {
+                            id: t.id.clone(),
+                            title: t.title.unwrap_or_else(|| format!("Thread {}", t.id)),
+                            working_directory: t.working_directory,
+                        })
+                        .collect();
+                    let _ = tx.send(AppMessage::UnifiedPickerThreadsLoaded(items));
+                }
+                Err(e) => {
+                    let _ = tx.send(AppMessage::UnifiedPickerThreadsFailed(e.to_string()));
+                }
+            }
+        });
+    }
+
+    /// Legacy method - now just calls the specific loaders.
+    #[allow(dead_code)]
+    pub fn unified_picker_search(&mut self, _query: &str) {
+        // Load all data once for local filtering (fetch 50 items to cache)
+        const CACHE_LIMIT: usize = 50;
+
+        // Load folders
         {
             let tx = self.message_tx.clone();
             let client = Arc::clone(&self.client);
-            let q = query.clone();
             tokio::spawn(async move {
-                eprintln!("DEBUG: Calling search_folders API...");
-                match client.search_folders(&q, 10).await {
+                match client.search_folders("", CACHE_LIMIT).await {
                     Ok(response) => {
-                        eprintln!("DEBUG: search_folders returned {} items", response.folders.len());
                         let items: Vec<crate::models::picker::PickerItem> = response
                             .folders
                             .into_iter()
@@ -596,52 +704,44 @@ impl App {
                         let _ = tx.send(AppMessage::UnifiedPickerFoldersLoaded(items));
                     }
                     Err(e) => {
-                        eprintln!("DEBUG: search_folders failed: {}", e);
                         let _ = tx.send(AppMessage::UnifiedPickerFoldersFailed(e.to_string()));
                     }
                 }
             });
         }
 
-        // Search repos
+        // Load repos
         {
             let tx = self.message_tx.clone();
             let client = Arc::clone(&self.client);
-            let q = query.clone();
             tokio::spawn(async move {
-                eprintln!("DEBUG: Calling search_repos API...");
-                match client.search_repos(&q, 10).await {
+                match client.search_repos("", CACHE_LIMIT).await {
                     Ok(response) => {
-                        eprintln!("DEBUG: search_repos returned {} items", response.repos.len());
                         let items: Vec<crate::models::picker::PickerItem> = response
                             .repos
                             .into_iter()
                             .map(|r| crate::models::picker::PickerItem::Repo {
                                 name: r.name_with_owner,
-                                local_path: r.local_path,
+                                local_path: None,
                                 url: r.url,
                             })
                             .collect();
                         let _ = tx.send(AppMessage::UnifiedPickerReposLoaded(items));
                     }
                     Err(e) => {
-                        eprintln!("DEBUG: search_repos failed: {}", e);
                         let _ = tx.send(AppMessage::UnifiedPickerReposFailed(e.to_string()));
                     }
                 }
             });
         }
 
-        // Search threads
+        // Load threads
         {
             let tx = self.message_tx.clone();
             let client = Arc::clone(&self.client);
-            let q = query;
             tokio::spawn(async move {
-                eprintln!("DEBUG: Calling search_threads API...");
-                match client.search_threads(&q, 10).await {
+                match client.search_threads("", CACHE_LIMIT).await {
                     Ok(response) => {
-                        eprintln!("DEBUG: search_threads returned {} items", response.threads.len());
                         let items: Vec<crate::models::picker::PickerItem> = response
                             .threads
                             .into_iter()
@@ -654,7 +754,6 @@ impl App {
                         let _ = tx.send(AppMessage::UnifiedPickerThreadsLoaded(items));
                     }
                     Err(e) => {
-                        eprintln!("DEBUG: search_threads failed: {}", e);
                         let _ = tx.send(AppMessage::UnifiedPickerThreadsFailed(e.to_string()));
                     }
                 }

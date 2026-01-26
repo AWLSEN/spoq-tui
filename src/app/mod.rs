@@ -270,6 +270,8 @@ pub struct App {
     pub folder_picker_cursor: usize,
     /// Unified @ picker state (combines repos, threads, folders)
     pub unified_picker: UnifiedPickerState,
+    /// App-level cache for picker data (repos loaded at startup, threads with TTL)
+    pub picker_cache: crate::state::AppCache,
     /// Is the slash command autocomplete dropdown showing
     pub slash_autocomplete_visible: bool,
     /// Current query for slash command filtering (text after /)
@@ -461,6 +463,7 @@ impl App {
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
             unified_picker: UnifiedPickerState::new(),
+            picker_cache: crate::state::AppCache::new(),
             slash_autocomplete_visible: false,
             slash_autocomplete_query: String::new(),
             slash_autocomplete_cursor: 0,

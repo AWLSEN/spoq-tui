@@ -14,7 +14,6 @@ use crate::app::App;
 use crate::ui::dashboard::{render_dashboard, Theme};
 
 use super::conversation::{create_mode_indicator_line, render_mode_indicator};
-use super::folder_picker::render_folder_picker;
 use super::input::{calculate_input_area_height, render_input_area};
 use super::layout::LayoutContext;
 use super::slash_autocomplete::render_slash_autocomplete;
@@ -75,11 +74,6 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
         render_mode_indicator(frame, main_chunks[1], indicator);
         render_input_area(frame, main_chunks[2], app);
 
-        // Render folder picker overlay (if visible) - must be last for proper layering
-        if app.folder_picker_visible {
-            render_folder_picker(frame, app, main_chunks[2]);
-        }
-
         // Render slash autocomplete overlay (if visible) - must be last for proper layering
         if app.slash_autocomplete_visible {
             render_slash_autocomplete(frame, app, main_chunks[2]);
@@ -101,11 +95,6 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
 
         render_main_content(frame, main_chunks[0], app, &ctx);
         render_input_area(frame, main_chunks[1], app);
-
-        // Render folder picker overlay (if visible) - must be last for proper layering
-        if app.folder_picker_visible {
-            render_folder_picker(frame, app, main_chunks[1]);
-        }
 
         // Render slash autocomplete overlay (if visible) - must be last for proper layering
         if app.slash_autocomplete_visible {

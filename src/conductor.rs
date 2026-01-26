@@ -1106,8 +1106,9 @@ impl ConductorClient {
             return Err(ConductorError::ServerError { status, message });
         }
 
-        let data: SearchFoldersResponse = response.json().await?;
-        Ok(data)
+        // Conductor returns array directly, wrap in response struct
+        let folders: Vec<crate::models::picker::FolderEntry> = response.json().await?;
+        Ok(SearchFoldersResponse { folders })
     }
 
     /// Search threads by title.
@@ -1142,8 +1143,9 @@ impl ConductorClient {
             return Err(ConductorError::ServerError { status, message });
         }
 
-        let data: SearchThreadsResponse = response.json().await?;
-        Ok(data)
+        // Conductor returns array directly, wrap in response struct
+        let threads: Vec<crate::models::picker::ThreadEntry> = response.json().await?;
+        Ok(SearchThreadsResponse { threads })
     }
 
     /// Search GitHub repositories by name.
@@ -1178,8 +1180,9 @@ impl ConductorClient {
             return Err(ConductorError::ServerError { status, message });
         }
 
-        let data: SearchReposResponse = response.json().await?;
-        Ok(data)
+        // Conductor returns array directly, wrap in response struct
+        let repos: Vec<crate::models::picker::RepoEntry> = response.json().await?;
+        Ok(SearchReposResponse { repos })
     }
 
     /// Clone a GitHub repository to the workspace.

@@ -1104,44 +1104,57 @@ impl App {
             // Unified Picker Messages
             // =========================================================================
             AppMessage::UnifiedPickerFoldersLoaded(items) => {
-                eprintln!("DEBUG: UnifiedPickerFoldersLoaded - {} items", items.len());
-                self.unified_picker.folders.set_items(items);
-                self.unified_picker.validate_selection();
+                // Cache for session
+                self.picker_cache.set_folders(items.clone());
+                // Update picker if visible
+                if self.unified_picker.visible {
+                    self.unified_picker.folders.set_items(items);
+                    self.unified_picker.validate_selection();
+                }
                 self.mark_dirty();
             }
             AppMessage::UnifiedPickerFoldersFailed(error) => {
-                eprintln!("DEBUG: UnifiedPickerFoldersFailed - {}", error);
-                self.unified_picker.folders.set_error(error);
+                if self.unified_picker.visible {
+                    self.unified_picker.folders.set_error(error);
+                }
                 self.mark_dirty();
             }
             AppMessage::UnifiedPickerReposLoaded(items) => {
-                eprintln!("DEBUG: UnifiedPickerReposLoaded - {} items", items.len());
-                self.unified_picker.repos.set_items(items);
-                self.unified_picker.validate_selection();
+                // Cache for entire session (repos rarely change)
+                self.picker_cache.set_repos(items.clone());
+                // Update picker if visible
+                if self.unified_picker.visible {
+                    self.unified_picker.repos.set_items(items);
+                    self.unified_picker.validate_selection();
+                }
                 self.mark_dirty();
             }
             AppMessage::UnifiedPickerReposFailed(error) => {
-                eprintln!("DEBUG: UnifiedPickerReposFailed - {}", error);
-                self.unified_picker.repos.set_error(error);
+                if self.unified_picker.visible {
+                    self.unified_picker.repos.set_error(error);
+                }
                 self.mark_dirty();
             }
             AppMessage::UnifiedPickerThreadsLoaded(items) => {
-                eprintln!("DEBUG: UnifiedPickerThreadsLoaded - {} items", items.len());
-                self.unified_picker.threads.set_items(items);
-                self.unified_picker.validate_selection();
+                // Cache with TTL (threads change more often)
+                self.picker_cache.set_threads(items.clone());
+                // Update picker if visible
+                if self.unified_picker.visible {
+                    self.unified_picker.threads.set_items(items);
+                    self.unified_picker.validate_selection();
+                }
                 self.mark_dirty();
             }
             AppMessage::UnifiedPickerThreadsFailed(error) => {
-                eprintln!("DEBUG: UnifiedPickerThreadsFailed - {}", error);
-                self.unified_picker.threads.set_error(error);
+                if self.unified_picker.visible {
+                    self.unified_picker.threads.set_error(error);
+                }
                 self.mark_dirty();
             }
             AppMessage::UnifiedPickerCloneComplete { local_path, name } => {
-                eprintln!("DEBUG: UnifiedPickerCloneComplete - {} at {}", name, local_path);
                 self.unified_picker_clone_complete(local_path, name);
             }
             AppMessage::UnifiedPickerCloneFailed(error) => {
-                eprintln!("DEBUG: UnifiedPickerCloneFailed - {}", error);
                 self.unified_picker_clone_failed(error);
             }
         }

@@ -30,7 +30,7 @@ pub fn handle_editing_command(app: &mut App, cmd: &Command) -> bool {
             // Reset cursor blink on any character input
             app.reset_cursor_blink();
 
-            // Check for @ trigger for folder picker (only on CommandDeck)
+            // Check for @ trigger for unified picker (repos, threads, folders)
             if *c == '@' && app.screen == Screen::CommandDeck {
                 let (row, col) = app.textarea.cursor();
                 let lines = app.textarea.lines();
@@ -38,7 +38,7 @@ pub fn handle_editing_command(app: &mut App, cmd: &Command) -> bool {
 
                 if app.is_folder_picker_trigger(line_content, col) {
                     app.textarea.insert_char('@');
-                    app.open_folder_picker();
+                    app.open_unified_picker();
                     return true;
                 }
             }

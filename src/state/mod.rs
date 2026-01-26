@@ -7,6 +7,7 @@
 //! - SubagentTracker: Per-thread ephemeral subagent execution states
 //! - DashboardState: Multi-thread dashboard view state
 
+pub mod cache;
 pub mod dashboard;
 pub mod picker;
 pub mod session;
@@ -16,6 +17,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 // Re-export new state types at module level
+pub use cache::AppCache;
 pub use dashboard::DashboardState;
 pub use picker::{
     SectionState, UnifiedPickerState, DEFAULT_SEARCH_LIMIT, SEARCH_DEBOUNCE_MS,

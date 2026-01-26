@@ -37,6 +37,8 @@ pub struct SearchFoldersResponse {
 pub struct FolderEntry {
     pub name: String,
     pub path: String,
+    #[serde(default)]
+    pub is_dir: bool,
 }
 
 /// Response from /v1/search/repos
@@ -50,8 +52,16 @@ pub struct SearchReposResponse {
 #[serde(rename_all = "camelCase")]
 pub struct RepoEntry {
     pub name_with_owner: String,
-    pub local_path: Option<String>,
     pub url: String,
+    // These fields are returned by conductor but not needed for picker
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub is_private: Option<bool>,
+    #[serde(default)]
+    pub pushed_at: Option<String>,
+    #[serde(default)]
+    pub is_fork: Option<bool>,
 }
 
 /// Response from /v1/search/threads
@@ -65,6 +75,19 @@ pub struct ThreadEntry {
     pub id: String,
     pub title: Option<String>,
     pub working_directory: Option<String>,
+    // Extra fields returned by conductor
+    #[serde(default, rename = "type")]
+    pub thread_type: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub last_activity: Option<String>,
+    #[serde(default)]
+    pub message_count: Option<i64>,
 }
 
 /// Response from /v1/clone
@@ -300,16 +323,19 @@ mod tests {
 
     #[test]
     fn test_search_repos_response_deserialize() {
+        // Test JSON format matching actual conductor response
         let json = r#"{
             "repos": [
                 {
                     "nameWithOwner": "owner/repo1",
-                    "localPath": "/home/user/repos/repo1",
-                    "url": "https://github.com/owner/repo1"
+                    "url": "https://github.com/owner/repo1",
+                    "description": "A great repo",
+                    "isPrivate": false,
+                    "pushedAt": "2025-01-15T10:30:00Z",
+                    "isFork": false
                 },
                 {
                     "nameWithOwner": "owner/repo2",
-                    "localPath": null,
                     "url": "https://github.com/owner/repo2"
                 }
             ]
@@ -319,11 +345,13 @@ mod tests {
 
         assert_eq!(response.repos.len(), 2);
         assert_eq!(response.repos[0].name_with_owner, "owner/repo1");
-        assert_eq!(response.repos[0].local_path, Some("/home/user/repos/repo1".to_string()));
         assert_eq!(response.repos[0].url, "https://github.com/owner/repo1");
+        assert_eq!(response.repos[0].description, Some("A great repo".to_string()));
+        assert_eq!(response.repos[0].is_private, Some(false));
         assert_eq!(response.repos[1].name_with_owner, "owner/repo2");
-        assert_eq!(response.repos[1].local_path, None);
         assert_eq!(response.repos[1].url, "https://github.com/owner/repo2");
+        // Optional fields should be None when not present
+        assert_eq!(response.repos[1].description, None);
     }
 
     #[test]

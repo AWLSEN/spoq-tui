@@ -2406,7 +2406,7 @@ mod tests {
 
     #[test]
     fn test_set_pending_question_marks_dirty() {
-        use crate::state::session::{AskUserQuestionData, Question};
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
 
         let mut state = DashboardState::new();
         state.thread_views_dirty = false;
@@ -2433,7 +2433,7 @@ mod tests {
 
     #[test]
     fn test_clear_pending_question() {
-        use crate::state::session::{AskUserQuestionData, Question};
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
 
         let mut state = DashboardState::new();
 
@@ -2456,7 +2456,7 @@ mod tests {
 
     #[test]
     fn test_clear_pending_question_marks_dirty() {
-        use crate::state::session::{AskUserQuestionData, Question};
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
 
         let mut state = DashboardState::new();
 
@@ -2529,7 +2529,7 @@ mod tests {
 
     #[test]
     fn test_set_pending_question_replaces_existing() {
-        use crate::state::session::{AskUserQuestionData, Question};
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
 
         let mut state = DashboardState::new();
 
