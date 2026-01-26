@@ -31,6 +31,10 @@ pub mod prepare;
 mod slash_autocomplete;
 mod theme;
 mod thread_switcher;
+mod unified_picker;
+
+// Re-export unified picker render function for external use
+pub use unified_picker::render_unified_picker;
 
 // Re-export theme colors for external use
 pub use theme::{
