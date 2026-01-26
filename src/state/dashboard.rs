@@ -2020,7 +2020,7 @@ mod tests {
 
         assert_eq!(views.len(), 1);
         let view = &views[0];
-        assert_eq!(view.activity_text, Some("idle".to_string()));
+        assert_eq!(view.activity_text, Some("ready".to_string()));
     }
 
     #[test]
@@ -2034,7 +2034,7 @@ mod tests {
 
         assert_eq!(views.len(), 1);
         let view = &views[0];
-        assert_eq!(view.activity_text, Some("done".to_string()));
+        assert_eq!(view.activity_text, Some("ready".to_string()));
     }
 
     #[test]

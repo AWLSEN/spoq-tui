@@ -113,8 +113,9 @@ mod tests {
             anchor_y: 15,
         };
 
+        let repos = vec![];
         let ctx =
-            RenderContext::new(&threads, &aggregate, &stats, &theme).with_overlay(Some(&overlay));
+            RenderContext::new(&threads, &aggregate, &stats, &theme, &repos).with_overlay(Some(&overlay));
 
         assert_eq!(get_footer_hint(&ctx), "esc close");
     }

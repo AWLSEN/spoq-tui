@@ -1452,7 +1452,7 @@ mod tests {
                 "message_count": 1,
                 "created_at": "2026-01-25T14:45:00.123456Z",
                 "working_directory": "/Users/sam/project",
-                "status": "idle",
+                "status": "done",
                 "verified": null,
                 "verified_at": null
             },

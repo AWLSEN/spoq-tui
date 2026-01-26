@@ -769,6 +769,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
+        let repos = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
@@ -776,6 +777,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            repos: &repos,
         };
 
         terminal
@@ -806,6 +808,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
+        let repos = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
@@ -813,6 +816,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            repos: &repos,
         };
 
         terminal
@@ -844,6 +848,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
+        let repos = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
@@ -851,6 +856,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            repos: &repos,
         };
 
         terminal
@@ -882,6 +888,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
+        let repos = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
@@ -889,6 +896,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            repos: &repos,
         };
 
         terminal

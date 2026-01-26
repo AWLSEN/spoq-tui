@@ -809,7 +809,7 @@ mod tests {
             activity_text: None,
         };
 
-        assert_eq!(compute_activity_text(&thread), "idle");
+        assert_eq!(compute_activity_text(&thread), "ready");
     }
 
     #[test]
@@ -831,7 +831,7 @@ mod tests {
             activity_text: None,
         };
 
-        assert_eq!(compute_activity_text(&thread), "done");
+        assert_eq!(compute_activity_text(&thread), "ready");
     }
 
     #[test]
@@ -924,8 +924,8 @@ mod tests {
             activity_text: Some("done".to_string()),
         };
 
-        // Done threads use success color
-        assert_eq!(activity_color(&thread, &make_ctx(&theme)), theme.success);
+        // Done threads use dim color
+        assert_eq!(activity_color(&thread, &make_ctx(&theme)), theme.dim);
     }
 
     #[test]
@@ -997,6 +997,7 @@ mod tests {
             connected: true,
         });
 
+        let repos: &[crate::models::GitHubRepo] = &[];
         RenderContext {
             threads: THREADS,
             aggregate: &AGGREGATE,
@@ -1004,6 +1005,7 @@ mod tests {
             system_stats: &SYSTEM_STATS,
             theme,
             question_state: None,
+            repos,
         }
     }
 }

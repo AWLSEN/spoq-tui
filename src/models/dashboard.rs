@@ -645,18 +645,18 @@ mod tests {
 
     #[test]
     fn test_infer_status_idle() {
-        assert_eq!(infer_status_from_agent_state("idle"), ThreadStatus::Idle);
-        assert_eq!(infer_status_from_agent_state("ready"), ThreadStatus::Idle);
-        assert_eq!(infer_status_from_agent_state(""), ThreadStatus::Idle);
+        assert_eq!(infer_status_from_agent_state("idle"), ThreadStatus::Done);
+        assert_eq!(infer_status_from_agent_state("ready"), ThreadStatus::Done);
+        assert_eq!(infer_status_from_agent_state(""), ThreadStatus::Done);
     }
 
     #[test]
     fn test_infer_status_unknown() {
         assert_eq!(
             infer_status_from_agent_state("unknown_state"),
-            ThreadStatus::Idle
+            ThreadStatus::Done
         );
-        assert_eq!(infer_status_from_agent_state("xyz"), ThreadStatus::Idle);
+        assert_eq!(infer_status_from_agent_state("xyz"), ThreadStatus::Done);
     }
 
     // -------------------- derive_repository Tests --------------------
