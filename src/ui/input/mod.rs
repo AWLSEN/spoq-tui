@@ -239,16 +239,26 @@ pub fn build_input_section_with_cursor(
     for (line_idx, text_line) in app.textarea.lines().iter().enumerate() {
         if cursor_visible && line_idx == cursor_row {
             // Insert cursor at the cursor position
+            // cursor_col is a character index, but string slicing requires byte indices
             let text = text_line.as_str();
-            let col = cursor_col.min(text.len());
-            let before_cursor = text[..col].to_string();
-            let cursor_char = if col < text.len() {
-                text.chars().nth(col).map(|c| c.to_string()).unwrap_or_else(|| " ".to_string())
+            let char_count = text.chars().count();
+            let col = cursor_col.min(char_count);
+
+            // Find byte index for the character position
+            let byte_idx = text.char_indices()
+                .nth(col)
+                .map(|(i, _)| i)
+                .unwrap_or(text.len());
+
+            let before_cursor = text[..byte_idx].to_string();
+            let (cursor_char, cursor_char_len) = if col < char_count {
+                let c = text.chars().nth(col).unwrap();
+                (c.to_string(), c.len_utf8())
             } else {
-                " ".to_string()
+                (" ".to_string(), 1)
             };
-            let after_cursor = if col + 1 < text.len() {
-                text[col + cursor_char.len()..].to_string()
+            let after_cursor = if byte_idx + cursor_char_len <= text.len() && col < char_count {
+                text[byte_idx + cursor_char_len..].to_string()
             } else {
                 String::new()
             };
