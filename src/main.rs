@@ -320,6 +320,13 @@ where
 
                 // Check for thread switcher auto-confirm (Tab release simulation)
                 app.check_switcher_timeout();
+
+                // Check for unified picker debounced search
+                if app.unified_picker.visible && app.unified_picker.should_search() {
+                    let query = app.unified_picker.query.clone();
+                    app.unified_picker.search_triggered();
+                    app.unified_picker_search(&query);
+                }
             }
 
             // Handle keyboard events
