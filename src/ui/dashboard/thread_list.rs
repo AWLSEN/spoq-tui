@@ -198,7 +198,7 @@ mod tests {
             make_thread("3", "Another Waiting", true, ThreadStatus::Waiting),
             // Autonomous threads
             make_thread("4", "Running Thread", false, ThreadStatus::Running),
-            make_thread("5", "Idle Thread", false, ThreadStatus::Idle),
+            make_thread("5", "Idle Thread", false, ThreadStatus::Done),
             make_thread("6", "Done Thread", false, ThreadStatus::Done),
         ]
     }
@@ -246,7 +246,7 @@ mod tests {
     fn test_partition_threads_none_need_action() {
         let threads = vec![
             make_thread("1", "T1", false, ThreadStatus::Running),
-            make_thread("2", "T2", false, ThreadStatus::Idle),
+            make_thread("2", "T2", false, ThreadStatus::Done),
         ];
         let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
             threads.iter().partition(|t| t.needs_action);
@@ -273,7 +273,7 @@ mod tests {
             make_thread("a", "First", true, ThreadStatus::Waiting),
             make_thread("b", "Second", false, ThreadStatus::Running),
             make_thread("c", "Third", true, ThreadStatus::Error),
-            make_thread("d", "Fourth", false, ThreadStatus::Idle),
+            make_thread("d", "Fourth", false, ThreadStatus::Done),
         ];
         let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
             threads.iter().partition(|t| t.needs_action);
@@ -423,7 +423,7 @@ mod tests {
         // Test that "all clear" is NOT shown when only need_action is empty
         let threads = vec![
             make_thread("1", "Running", false, ThreadStatus::Running),
-            make_thread("2", "Idle", false, ThreadStatus::Idle),
+            make_thread("2", "Idle", false, ThreadStatus::Done),
         ];
         let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
             threads.iter().partition(|t| t.needs_action);

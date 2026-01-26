@@ -612,7 +612,7 @@ fn test_cleanup_on_thread_idle() {
     assert!(state.get_pending_question("t1").is_some());
 
     // Thread goes idle (dismissed)
-    state.update_thread_status("t1", ThreadStatus::Idle, None);
+    state.update_thread_status("t1", ThreadStatus::Done, None);
 
     // Pending question should be cleared
     assert!(state.get_pending_question("t1").is_none());

@@ -110,7 +110,7 @@ fn test_deserialize_thread_with_idle_status() {
 
     let thread: Thread = serde_json::from_str(json).expect("Failed to deserialize thread");
 
-    assert_eq!(thread.status, Some(ThreadStatus::Idle));
+    assert_eq!(thread.status, Some(ThreadStatus::Done));
 }
 
 #[test]
@@ -419,7 +419,7 @@ fn test_thread_effective_status_uses_agent_events() {
 
     // Without agent events, should use stored status
     let agent_events: HashMap<String, (String, Option<String>)> = HashMap::new();
-    assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Idle);
+    assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Done);
 
     // With agent events, should use agent event state
     let mut agent_events = HashMap::new();
@@ -470,7 +470,7 @@ fn test_thread_effective_status_without_stored_status() {
 
     // Without agent events, should default to Idle
     let agent_events: HashMap<String, (String, Option<String>)> = HashMap::new();
-    assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Idle);
+    assert_eq!(thread.effective_status(&agent_events), ThreadStatus::Done);
 
     // With waiting agent event
     let mut agent_events = HashMap::new();
@@ -592,7 +592,7 @@ fn test_conductor_error_not_implemented() {
 #[test]
 fn test_thread_status_serialization_roundtrip() {
     let statuses = vec![
-        ThreadStatus::Idle,
+        ThreadStatus::Done,
         ThreadStatus::Running,
         ThreadStatus::Waiting,
         ThreadStatus::Done,
@@ -611,7 +611,7 @@ fn test_thread_status_serialization_roundtrip() {
 fn test_thread_status_snake_case_format() {
     // Verify snake_case format is used for serialization
     assert_eq!(
-        serde_json::to_string(&ThreadStatus::Idle).unwrap(),
+        serde_json::to_string(&ThreadStatus::Done).unwrap(),
         "\"idle\""
     );
     assert_eq!(

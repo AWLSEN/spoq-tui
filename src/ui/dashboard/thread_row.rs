@@ -175,8 +175,7 @@ fn render_autonomous_thread(
 ///
 /// - Running + current_operation: show operation (e.g., "Edit: main.rs")
 /// - Running + no operation: show "Thinking..."
-/// - Idle: show "idle"
-/// - Done: show "done"
+/// - Done: show "ready"
 /// - Error: show "error"
 /// - Waiting: show "waiting"
 fn compute_activity_text(thread: &ThreadView) -> String {
@@ -188,8 +187,7 @@ fn compute_activity_text(thread: &ThreadView) -> String {
                 "Thinking...".to_string()
             }
         }
-        ThreadStatus::Idle => "idle".to_string(),
-        ThreadStatus::Done => "done".to_string(),
+        ThreadStatus::Done => "ready".to_string(),
         ThreadStatus::Error => "error".to_string(),
         ThreadStatus::Waiting => "waiting".to_string(),
     }
@@ -199,9 +197,8 @@ fn compute_activity_text(thread: &ThreadView) -> String {
 fn activity_color(thread: &ThreadView, ctx: &RenderContext) -> ratatui::style::Color {
     match thread.status {
         ThreadStatus::Running => ctx.theme.accent,
-        ThreadStatus::Done => ctx.theme.success,
         ThreadStatus::Error => ctx.theme.error,
-        ThreadStatus::Idle | ThreadStatus::Waiting => ctx.theme.dim,
+        ThreadStatus::Done | ThreadStatus::Waiting => ctx.theme.dim,
     }
 }
 
@@ -358,10 +355,9 @@ enum ButtonAction {
 /// Get the color for a thread status
 fn status_color(status: ThreadStatus, ctx: &RenderContext) -> ratatui::style::Color {
     match status {
-        ThreadStatus::Idle => ctx.theme.dim,
         ThreadStatus::Running => ctx.theme.accent,
         ThreadStatus::Waiting => ctx.theme.waiting,
-        ThreadStatus::Done => ctx.theme.success,
+        ThreadStatus::Done => ctx.theme.dim,
         ThreadStatus::Error => ctx.theme.error,
     }
 }
@@ -804,7 +800,7 @@ mod tests {
             title: "Test".to_string(),
             repository: "~/repo".to_string(),
             mode: crate::models::ThreadMode::Normal,
-            status: ThreadStatus::Idle,
+            status: ThreadStatus::Done,
             waiting_for: None,
             progress: None,
             duration: "3h".to_string(),
@@ -967,7 +963,7 @@ mod tests {
             title: "Test".to_string(),
             repository: "~/repo".to_string(),
             mode: crate::models::ThreadMode::Normal,
-            status: ThreadStatus::Idle,
+            status: ThreadStatus::Done,
             waiting_for: None,
             progress: None,
             duration: "3h".to_string(),

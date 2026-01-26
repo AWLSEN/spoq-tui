@@ -96,7 +96,7 @@ fn test_dashboard_renders_with_many_threads() {
             1 => Some(ThreadStatus::Waiting),
             2 => Some(ThreadStatus::Done),
             3 => Some(ThreadStatus::Error),
-            _ => Some(ThreadStatus::Idle),
+            _ => Some(ThreadStatus::Done),
         };
         threads.push(make_test_thread(
             &format!("t{}", i),
@@ -121,7 +121,7 @@ fn test_dashboard_renders_with_many_threads() {
     assert_eq!(aggregate.count(ThreadStatus::Waiting), 20);
     assert_eq!(aggregate.count(ThreadStatus::Done), 20);
     assert_eq!(aggregate.count(ThreadStatus::Error), 20);
-    assert_eq!(aggregate.count(ThreadStatus::Idle), 20);
+    assert_eq!(aggregate.count(ThreadStatus::Done), 20);
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn test_dashboard_thread_sorting() {
 
     // Create threads with different statuses
     let threads = vec![
-        make_test_thread("t1", "Idle Thread", Some(ThreadStatus::Idle)),
+        make_test_thread("t1", "Idle Thread", Some(ThreadStatus::Done)),
         make_test_thread("t2", "Waiting Thread", Some(ThreadStatus::Waiting)),
         make_test_thread("t3", "Running Thread", Some(ThreadStatus::Running)),
         make_test_thread("t4", "Error Thread", Some(ThreadStatus::Error)),
@@ -171,7 +171,7 @@ fn test_dashboard_with_mixed_thread_data() {
 
     // Thread without status should default to Idle
     let view_without_status = views.iter().find(|v| v.id == "t2").unwrap();
-    assert_eq!(view_without_status.status, ThreadStatus::Idle);
+    assert_eq!(view_without_status.status, ThreadStatus::Done);
 
     // Thread with status should use it
     let view_with_status = views.iter().find(|v| v.id == "t1").unwrap();
@@ -186,7 +186,7 @@ fn test_dashboard_agent_state_overrides_stored_status() {
     let threads = vec![make_test_thread(
         "t1",
         "Agent Override Test",
-        Some(ThreadStatus::Idle),
+        Some(ThreadStatus::Done),
     )];
 
     // But agent events say it's thinking (Running)
@@ -213,7 +213,7 @@ fn test_overlay_opens_on_thread_expand() {
     let threads = vec![make_test_thread(
         "t1",
         "Test Thread",
-        Some(ThreadStatus::Idle),
+        Some(ThreadStatus::Done),
     )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
@@ -333,7 +333,7 @@ fn test_overlay_closes_on_escape() {
     let threads = vec![make_test_thread(
         "t1",
         "Test Thread",
-        Some(ThreadStatus::Idle),
+        Some(ThreadStatus::Done),
     )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
@@ -354,7 +354,7 @@ fn test_overlay_free_form_transition() {
     let threads = vec![make_test_thread(
         "t1",
         "Test Thread",
-        Some(ThreadStatus::Idle),
+        Some(ThreadStatus::Done),
     )];
     let agent_states = HashMap::new();
     state.set_threads(threads, &agent_states);
@@ -412,7 +412,7 @@ fn test_aggregate_working_calculation() {
     aggregate.increment(ThreadStatus::Running);
     aggregate.increment(ThreadStatus::Running);
     aggregate.increment(ThreadStatus::Waiting);
-    aggregate.increment(ThreadStatus::Idle);
+    aggregate.increment(ThreadStatus::Done);
     aggregate.increment(ThreadStatus::Done);
 
     // Working = Running + Waiting
@@ -436,8 +436,8 @@ fn test_aggregate_ready_to_test_calculation() {
 fn test_aggregate_idle_calculation() {
     let mut aggregate = Aggregate::new();
 
-    aggregate.increment(ThreadStatus::Idle);
-    aggregate.increment(ThreadStatus::Idle);
+    aggregate.increment(ThreadStatus::Done);
+    aggregate.increment(ThreadStatus::Done);
     aggregate.increment(ThreadStatus::Error);
     aggregate.increment(ThreadStatus::Running);
 
@@ -451,7 +451,7 @@ fn test_compute_local_aggregate() {
         make_test_thread("t1", "Running", Some(ThreadStatus::Running)),
         make_test_thread("t2", "Waiting", Some(ThreadStatus::Waiting)),
         make_test_thread("t3", "Done", Some(ThreadStatus::Done)),
-        make_test_thread("t4", "Idle", Some(ThreadStatus::Idle)),
+        make_test_thread("t4", "Idle", Some(ThreadStatus::Done)),
         make_test_thread("t5", "Error", Some(ThreadStatus::Error)),
     ];
 
@@ -534,14 +534,14 @@ fn test_infer_status_from_various_agent_states() {
     );
 
     // Idle states
-    assert_eq!(infer_status_from_agent_state("idle"), ThreadStatus::Idle);
-    assert_eq!(infer_status_from_agent_state("ready"), ThreadStatus::Idle);
-    assert_eq!(infer_status_from_agent_state(""), ThreadStatus::Idle);
+    assert_eq!(infer_status_from_agent_state("idle"), ThreadStatus::Done);
+    assert_eq!(infer_status_from_agent_state("ready"), ThreadStatus::Done);
+    assert_eq!(infer_status_from_agent_state(""), ThreadStatus::Done);
 
     // Unknown defaults to Idle
     assert_eq!(
         infer_status_from_agent_state("something_unknown"),
-        ThreadStatus::Idle
+        ThreadStatus::Done
     );
 }
 
@@ -557,7 +557,7 @@ fn test_infer_status_case_insensitive() {
     );
     assert_eq!(infer_status_from_agent_state("DONE"), ThreadStatus::Done);
     assert_eq!(infer_status_from_agent_state("Error"), ThreadStatus::Error);
-    assert_eq!(infer_status_from_agent_state("IDLE"), ThreadStatus::Idle);
+    assert_eq!(infer_status_from_agent_state("IDLE"), ThreadStatus::Done);
 }
 
 // ============================================================================
@@ -610,7 +610,7 @@ fn test_thread_view_needs_action() {
     // WaitingFor also triggers needs_action
     let view_with_waiting_for =
         ThreadView::new("t4".to_string(), "Idle".to_string(), "~/repo".to_string())
-            .with_status(ThreadStatus::Idle)
+            .with_status(ThreadStatus::Done)
             .with_waiting_for(Some(WaitingFor::UserInput));
     assert!(view_with_waiting_for.needs_action);
 }

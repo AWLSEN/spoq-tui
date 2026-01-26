@@ -366,10 +366,10 @@ impl DashboardState {
         }
 
         // Check if we should clear pending question data:
-        // 1. Thread completed (Done, Error, Idle) - question is no longer relevant
+        // 1. Thread completed (Done, Error) - question is no longer relevant
         // 2. Thread no longer waiting for UserInput - question was answered or cancelled
         let should_clear_question = match status {
-            ThreadStatus::Done | ThreadStatus::Error | ThreadStatus::Idle => true,
+            ThreadStatus::Done | ThreadStatus::Error => true,
             _ => {
                 // Check if waiting_for changed from UserInput to something else
                 let was_waiting_for_user_input = self
@@ -1015,7 +1015,7 @@ impl DashboardState {
         // Ensure thread views are fresh before building context
         self.compute_thread_views();
 
-        RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme)
+        RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme, repos)
             .with_overlay(self.overlay.as_ref())
             .with_question_state(self.question_state.as_ref())
     }
@@ -1164,8 +1164,7 @@ impl DashboardState {
                                 Some("Thinking...".to_string())
                             }
                         }
-                        ThreadStatus::Idle => Some("idle".to_string()),
-                        ThreadStatus::Done => Some("done".to_string()),
+                        ThreadStatus::Done => Some("ready".to_string()),
                         ThreadStatus::Error => Some("error".to_string()),
                         ThreadStatus::Waiting => None, // Uses old layout with status + actions
                     };
@@ -1504,7 +1503,7 @@ mod tests {
         let mut state = DashboardState::new();
 
         let mut t1 = make_thread("t1", "Thread 1");
-        t1.status = Some(ThreadStatus::Idle);
+        t1.status = Some(ThreadStatus::Done);
         t1.updated_at = Utc::now();
 
         let mut t2 = make_thread("t2", "Thread 2");
@@ -1950,7 +1949,7 @@ mod tests {
         // Thread 3: Normal mode, no progress
         let mut t3 = make_thread("t3", "Thread 3");
         t3.mode = ThreadMode::default();
-        t3.status = Some(ThreadStatus::Idle);
+        t3.status = Some(ThreadStatus::Done);
         state.threads.insert("t3".to_string(), t3);
 
         let views = state.compute_thread_views();
@@ -2014,7 +2013,7 @@ mod tests {
     fn test_activity_text_idle() {
         let mut state = DashboardState::new();
         let mut thread = make_thread("t1", "Test Thread");
-        thread.status = Some(ThreadStatus::Idle);
+        thread.status = Some(ThreadStatus::Done);
         state.threads.insert("t1".to_string(), thread);
 
         let views = state.compute_thread_views();
@@ -2228,7 +2227,7 @@ mod tests {
 
         // Add thread with idle status
         let mut t1 = make_thread("t1", "Thread 1");
-        t1.status = Some(ThreadStatus::Idle);
+        t1.status = Some(ThreadStatus::Done);
         state.threads.insert("t1".to_string(), t1);
 
         // Build initial context
@@ -2258,7 +2257,7 @@ mod tests {
 
         // Add three threads
         let mut t1 = make_thread("t1", "Thread 1");
-        t1.status = Some(ThreadStatus::Idle);
+        t1.status = Some(ThreadStatus::Done);
         t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
         state.threads.insert("t1".to_string(), t1);
 
@@ -3454,7 +3453,7 @@ mod tests {
     fn test_get_top_needs_action_thread_returns_none_when_no_threads_need_action() {
         let mut state = DashboardState::new();
         let mut t1 = make_thread("t1", "Thread 1");
-        t1.status = Some(ThreadStatus::Idle);
+        t1.status = Some(ThreadStatus::Done);
         state.threads.insert("t1".to_string(), t1);
 
         // Rebuild thread views

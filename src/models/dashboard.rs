@@ -15,14 +15,12 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ThreadStatus {
-    /// Thread is not actively processing
-    #[default]
-    Idle,
     /// Agent is actively working
     Running,
     /// Waiting for user input or permission
     Waiting,
-    /// Task completed successfully
+    /// Task completed successfully (default state)
+    #[default]
     Done,
     /// Error occurred during processing
     Error,
@@ -34,9 +32,9 @@ impl ThreadStatus {
         matches!(self, ThreadStatus::Running | ThreadStatus::Waiting)
     }
 
-    /// Check if status indicates the thread needs attention
+    /// Check if status indicates the thread needs attention (only Waiting)
     pub fn needs_attention(&self) -> bool {
-        matches!(self, ThreadStatus::Waiting | ThreadStatus::Error)
+        matches!(self, ThreadStatus::Waiting)
     }
 }
 
@@ -148,10 +146,10 @@ impl Aggregate {
             .unwrap_or(0)
     }
 
-    /// Count of idle threads (Idle + Error)
-    pub fn idle(&self) -> u32 {
+    /// Count of inactive threads (Done + Error)
+    pub fn inactive(&self) -> u32 {
         self.by_status
-            .get(&ThreadStatus::Idle)
+            .get(&ThreadStatus::Done)
             .copied()
             .unwrap_or(0)
             + self
@@ -187,14 +185,13 @@ pub fn infer_status_from_agent_state(state: &str) -> ThreadStatus {
     match state.to_lowercase().as_str() {
         // Primary backend values
         "thinking" | "streaming" | "tool_use" => ThreadStatus::Running,
-        "idle" => ThreadStatus::Idle,
         // Legacy/extended values for backward compatibility
         "running" | "executing" => ThreadStatus::Running,
         "waiting" | "awaiting_permission" | "awaiting_input" | "paused" => ThreadStatus::Waiting,
-        "done" | "complete" | "completed" | "finished" | "success" => ThreadStatus::Done,
         "error" | "failed" | "failure" => ThreadStatus::Error,
-        "ready" | "" => ThreadStatus::Idle,
-        _ => ThreadStatus::Idle, // Default to Idle for unknown states
+        // All other states map to Done (including "idle", "done", "ready", etc.)
+        "done" | "complete" | "completed" | "finished" | "success" | "idle" | "ready" | "" => ThreadStatus::Done,
+        _ => ThreadStatus::Done, // Default to Done for unknown states
     }
 }
 
@@ -285,7 +282,7 @@ pub fn compute_local_aggregate(
         let status = if let Some(state) = agent_events.get(&thread.id) {
             infer_status_from_agent_state(state)
         } else {
-            ThreadStatus::Idle
+            ThreadStatus::Done
         };
         aggregate.increment(status);
     }
@@ -305,12 +302,11 @@ mod tests {
 
     #[test]
     fn test_thread_status_default() {
-        assert_eq!(ThreadStatus::default(), ThreadStatus::Idle);
+        assert_eq!(ThreadStatus::default(), ThreadStatus::Done);
     }
 
     #[test]
     fn test_thread_status_is_active() {
-        assert!(!ThreadStatus::Idle.is_active());
         assert!(ThreadStatus::Running.is_active());
         assert!(ThreadStatus::Waiting.is_active());
         assert!(!ThreadStatus::Done.is_active());
@@ -319,11 +315,10 @@ mod tests {
 
     #[test]
     fn test_thread_status_needs_attention() {
-        assert!(!ThreadStatus::Idle.needs_attention());
         assert!(!ThreadStatus::Running.needs_attention());
         assert!(ThreadStatus::Waiting.needs_attention());
         assert!(!ThreadStatus::Done.needs_attention());
-        assert!(ThreadStatus::Error.needs_attention());
+        assert!(!ThreadStatus::Error.needs_attention()); // Error no longer needs attention
     }
 
     #[test]
@@ -362,7 +357,7 @@ mod tests {
 
         assert_eq!(map.get(&ThreadStatus::Running), Some(&5));
         assert_eq!(map.get(&ThreadStatus::Waiting), Some(&3));
-        assert_eq!(map.get(&ThreadStatus::Idle), None);
+        assert_eq!(map.get(&ThreadStatus::Error), None);
     }
 
     // -------------------- WaitingFor Tests --------------------
@@ -532,7 +527,7 @@ mod tests {
         agg.increment(ThreadStatus::Running);
         agg.increment(ThreadStatus::Running);
         agg.increment(ThreadStatus::Waiting);
-        agg.increment(ThreadStatus::Idle);
+        agg.increment(ThreadStatus::Done);
 
         assert_eq!(agg.working(), 3); // 2 Running + 1 Waiting
     }
@@ -548,14 +543,14 @@ mod tests {
     }
 
     #[test]
-    fn test_aggregate_idle() {
+    fn test_aggregate_inactive() {
         let mut agg = Aggregate::new();
-        agg.increment(ThreadStatus::Idle);
+        agg.increment(ThreadStatus::Done);
         agg.increment(ThreadStatus::Error);
         agg.increment(ThreadStatus::Error);
         agg.increment(ThreadStatus::Running);
 
-        assert_eq!(agg.idle(), 3); // 1 Idle + 2 Error
+        assert_eq!(agg.inactive(), 3); // 1 Done + 2 Error
     }
 
     #[test]

@@ -157,7 +157,7 @@ impl Thread {
         }
 
         // Fall back to stored status
-        self.status.unwrap_or(ThreadStatus::Idle)
+        self.status.unwrap_or(ThreadStatus::Done)
     }
 
     /// Get current operation from agent events (if available)

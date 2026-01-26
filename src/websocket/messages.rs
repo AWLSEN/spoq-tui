@@ -1473,7 +1473,7 @@ mod tests {
                 assert_eq!(created.thread.permission_mode, Some("ask".to_string()));
                 assert_eq!(created.thread.message_count, 1);
                 assert_eq!(created.thread.working_directory, Some("/Users/sam/project".to_string()));
-                assert_eq!(created.thread.status, Some(crate::models::ThreadStatus::Idle));
+                assert_eq!(created.thread.status, Some(crate::models::ThreadStatus::Done));
                 assert!(created.thread.verified.is_none());
                 assert!(created.thread.verified_at.is_none());
                 assert_eq!(created.timestamp, 1737817500123);

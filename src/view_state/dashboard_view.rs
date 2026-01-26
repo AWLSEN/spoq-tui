@@ -97,7 +97,7 @@ impl ThreadView {
             title,
             repository,
             mode: ThreadMode::Normal,
-            status: ThreadStatus::Idle,
+            status: ThreadStatus::Done,
             waiting_for: None,
             progress: None,
             duration: String::new(),
@@ -169,10 +169,9 @@ impl ThreadView {
             "Running".to_string()
         } else {
             match self.status {
-                ThreadStatus::Idle => "Idle".to_string(),
                 ThreadStatus::Running => "Running".to_string(), // unreachable but complete
                 ThreadStatus::Waiting => "Waiting".to_string(),
-                ThreadStatus::Done => "Done".to_string(),
+                ThreadStatus::Done => "Ready".to_string(),
                 ThreadStatus::Error => "Error".to_string(),
             }
         }
@@ -443,7 +442,7 @@ mod tests {
         assert_eq!(view.title, "Test");
         assert_eq!(view.repository, "~/project");
         assert_eq!(view.mode, ThreadMode::Normal);
-        assert_eq!(view.status, ThreadStatus::Idle);
+        assert_eq!(view.status, ThreadStatus::Done);
         assert!(!view.needs_action);
     }
 
@@ -623,7 +622,7 @@ mod tests {
             "Idle Test".to_string(),
             "~/repo".to_string(),
         )
-        .with_status(ThreadStatus::Idle)
+        .with_status(ThreadStatus::Done)
         .with_activity_text(Some("idle".to_string()));
 
         assert_eq!(view.activity_text, Some("idle".to_string()));
