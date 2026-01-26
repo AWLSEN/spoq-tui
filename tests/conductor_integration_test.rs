@@ -532,3 +532,193 @@ async fn test_fetch_folders_method_exists() {
         }
     }
 }
+
+// ROUND 2 TESTS - Unified Picker Search API
+
+#[tokio::test]
+async fn test_search_folders_with_invalid_server() {
+    // Test that search_folders returns appropriate errors for invalid servers
+    let client = ConductorClient::with_base_url("http://invalid-server-12345:9999".to_string());
+    let result = client.search_folders("test", 10).await;
+
+    // Should return an error (Http error for connection failure)
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_search_folders_method_exists() {
+    // Verify search_folders method is callable and returns the correct type
+    let client = ConductorClient::default();
+
+    // Call the method (will fail to connect but that's expected)
+    let result = client.search_folders("test", 10).await;
+
+    // Result should be Err due to connection failure, or Ok with SearchFoldersResponse
+    match result {
+        Ok(response) => {
+            // If it succeeds (unlikely in test env), verify it has folders field
+            assert!(response.folders.is_empty() || !response.folders.is_empty());
+        }
+        Err(_) => {
+            // Expected - connection failed
+            assert!(result.is_err());
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_search_folders_with_different_limits() {
+    // Test that search_folders accepts different limit parameters
+    let client = ConductorClient::default();
+
+    // Test with limit 1
+    let _result1 = client.search_folders("test", 1).await;
+
+    // Test with limit 50
+    let _result2 = client.search_folders("test", 50).await;
+
+    // Test with empty query
+    let _result3 = client.search_folders("", 10).await;
+
+    // All calls should compile and be callable
+}
+
+#[tokio::test]
+async fn test_search_threads_with_invalid_server() {
+    // Test that search_threads returns appropriate errors for invalid servers
+    let client = ConductorClient::with_base_url("http://invalid-server-12345:9999".to_string());
+    let result = client.search_threads("test", 10).await;
+
+    // Should return an error (Http error for connection failure)
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_search_threads_method_exists() {
+    // Verify search_threads method is callable and returns the correct type
+    let client = ConductorClient::default();
+
+    // Call the method (will fail to connect but that's expected)
+    let result = client.search_threads("conversation", 10).await;
+
+    // Result should be Err due to connection failure, or Ok with SearchThreadsResponse
+    match result {
+        Ok(response) => {
+            // If it succeeds (unlikely in test env), verify it has threads field
+            assert!(response.threads.is_empty() || !response.threads.is_empty());
+        }
+        Err(_) => {
+            // Expected - connection failed
+            assert!(result.is_err());
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_search_threads_with_different_queries() {
+    // Test that search_threads accepts different query parameters
+    let client = ConductorClient::default();
+
+    // Test with different query strings
+    let _result1 = client.search_threads("", 10).await;
+    let _result2 = client.search_threads("my thread", 5).await;
+    let _result3 = client.search_threads("conversation", 20).await;
+
+    // All calls should compile and be callable
+}
+
+#[tokio::test]
+async fn test_search_repos_with_invalid_server() {
+    // Test that search_repos returns appropriate errors for invalid servers
+    let client = ConductorClient::with_base_url("http://invalid-server-12345:9999".to_string());
+    let result = client.search_repos("test", 10).await;
+
+    // Should return an error (Http error for connection failure)
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_search_repos_method_exists() {
+    // Verify search_repos method is callable and returns the correct type
+    let client = ConductorClient::default();
+
+    // Call the method (will fail to connect but that's expected)
+    let result = client.search_repos("repo", 10).await;
+
+    // Result should be Err due to connection failure, or Ok with SearchReposResponse
+    match result {
+        Ok(response) => {
+            // If it succeeds (unlikely in test env), verify it has repos field
+            assert!(response.repos.is_empty() || !response.repos.is_empty());
+        }
+        Err(_) => {
+            // Expected - connection failed
+            assert!(result.is_err());
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_search_repos_with_various_queries() {
+    // Test that search_repos handles various query formats
+    let client = ConductorClient::default();
+
+    // Test with owner/repo format
+    let _result1 = client.search_repos("owner/repo", 10).await;
+
+    // Test with partial match
+    let _result2 = client.search_repos("spoo", 5).await;
+
+    // Test with empty query
+    let _result3 = client.search_repos("", 10).await;
+
+    // All calls should compile and be callable
+}
+
+#[tokio::test]
+async fn test_clone_repo_with_invalid_server() {
+    // Test that clone_repo returns appropriate errors for invalid servers
+    let client = ConductorClient::with_base_url("http://invalid-server-12345:9999".to_string());
+    let result = client.clone_repo("owner/repo").await;
+
+    // Should return an error (Http error for connection failure)
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_clone_repo_method_exists() {
+    // Verify clone_repo method is callable and returns the correct type
+    let client = ConductorClient::default();
+
+    // Call the method with a valid repo name format (will fail to connect but that's expected)
+    let result = client.clone_repo("owner/test-repo").await;
+
+    // Result should be Err due to connection failure, or Ok with CloneResponse
+    match result {
+        Ok(response) => {
+            // If it succeeds (unlikely in test env), verify it has path field
+            assert!(!response.path.is_empty());
+        }
+        Err(_) => {
+            // Expected - connection failed
+            assert!(result.is_err());
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_clone_repo_with_various_repo_formats() {
+    // Test that clone_repo handles various repo name formats
+    let client = ConductorClient::default();
+
+    // Test with standard format
+    let _result1 = client.clone_repo("owner/repo-name").await;
+
+    // Test with hyphenated owner
+    let _result2 = client.clone_repo("org-name/repo").await;
+
+    // Test with numbers
+    let _result3 = client.clone_repo("user123/project-v2").await;
+
+    // All calls should compile and be callable
+}

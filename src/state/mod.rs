@@ -8,6 +8,7 @@
 //! - DashboardState: Multi-thread dashboard view state
 
 pub mod dashboard;
+pub mod picker;
 pub mod session;
 pub mod tools;
 
@@ -16,6 +17,9 @@ use serde::{Deserialize, Serialize};
 
 // Re-export new state types at module level
 pub use dashboard::DashboardState;
+pub use picker::{
+    SectionState, UnifiedPickerState, DEFAULT_SEARCH_LIMIT, SEARCH_DEBOUNCE_MS,
+};
 pub use session::{
     AskUserQuestionData, AskUserQuestionState, PermissionRequest, Question, QuestionOption,
     SessionState,
