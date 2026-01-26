@@ -9,6 +9,9 @@ use crate::events::SseEvent;
 use crate::models::{
     Folder, GitHubRepo, Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse,
 };
+use crate::models::picker::{
+    CloneResponse, SearchFoldersResponse, SearchReposResponse, SearchThreadsResponse,
+};
 use crate::sse::{SseParseError, SseParser};
 use crate::state::Task;
 use crate::traits::HttpClient;
@@ -1067,6 +1070,151 @@ impl ConductorClient {
         }
 
         Ok(())
+    }
+
+    // ==================== Unified Picker Search API ====================
+
+    /// Search folders by name.
+    ///
+    /// GET /v1/search/folders?q={query}&limit={limit}
+    ///
+    /// # Arguments
+    /// * `query` - Search query to filter folders by name
+    /// * `limit` - Maximum number of results to return
+    ///
+    /// # Returns
+    /// Search response containing matching folders
+    pub async fn search_folders(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchFoldersResponse, ConductorError> {
+        let url = format!("{}/v1/search/folders", self.base_url);
+
+        let builder = self
+            .client
+            .get(&url)
+            .query(&[("q", query), ("limit", &limit.to_string())]);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let data: SearchFoldersResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Search threads by title.
+    ///
+    /// GET /v1/search/threads?q={query}&limit={limit}
+    ///
+    /// # Arguments
+    /// * `query` - Search query to filter threads by title
+    /// * `limit` - Maximum number of results to return
+    ///
+    /// # Returns
+    /// Search response containing matching threads
+    pub async fn search_threads(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchThreadsResponse, ConductorError> {
+        let url = format!("{}/v1/search/threads", self.base_url);
+
+        let builder = self
+            .client
+            .get(&url)
+            .query(&[("q", query), ("limit", &limit.to_string())]);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let data: SearchThreadsResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Search GitHub repositories by name.
+    ///
+    /// GET /v1/search/repos?q={query}&limit={limit}
+    ///
+    /// # Arguments
+    /// * `query` - Search query to filter repos by name
+    /// * `limit` - Maximum number of results to return
+    ///
+    /// # Returns
+    /// Search response containing matching repos with local_path if cloned
+    pub async fn search_repos(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<SearchReposResponse, ConductorError> {
+        let url = format!("{}/v1/search/repos", self.base_url);
+
+        let builder = self
+            .client
+            .get(&url)
+            .query(&[("q", query), ("limit", &limit.to_string())]);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let data: SearchReposResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Clone a GitHub repository to the workspace.
+    ///
+    /// POST /v1/clone with body {"repo_name": repo_name}
+    ///
+    /// This triggers the conductor to clone the repo using `gh repo clone`
+    /// to the configured workspace root (default: ~/workspaces/programming).
+    ///
+    /// # Arguments
+    /// * `repo_name` - Repository name in "owner/repo" format (e.g., "anthropics/claude-code")
+    ///
+    /// # Returns
+    /// Clone response containing the local path where the repo was cloned
+    pub async fn clone_repo(&self, repo_name: &str) -> Result<CloneResponse, ConductorError> {
+        let url = format!("{}/v1/clone", self.base_url);
+
+        let body = serde_json::json!({
+            "repo_name": repo_name
+        });
+
+        let builder = self.client.post(&url).json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let data: CloneResponse = response.json().await?;
+        Ok(data)
     }
 }
 
