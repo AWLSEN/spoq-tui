@@ -65,7 +65,7 @@ impl App {
             skills_count: self.session_state.skills.len(),
             context_tokens_used: self.session_state.context_tokens_used,
             context_token_limit: self.session_state.context_token_limit,
-            has_pending_permission: self.session_state.has_pending_permission(),
+            has_pending_permission: self.dashboard.has_pending_permission(),
             needs_oauth: self.session_state.needs_oauth(),
         };
 

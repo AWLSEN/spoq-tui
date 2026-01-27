@@ -684,6 +684,11 @@ impl DashboardState {
         self.pending_permissions.iter()
     }
 
+    /// Check if there are any pending permissions
+    pub fn has_pending_permission(&self) -> bool {
+        !self.pending_permissions.is_empty()
+    }
+
     // ========================================================================
     // UI State (from click handlers)
     // ========================================================================

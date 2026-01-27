@@ -34,14 +34,13 @@ pub enum PermissionResponseResult {
 }
 
 impl App {
-    /// Check if the current pending permission has expired
+    /// Check if a pending permission has expired
     ///
-    /// Returns true if the permission was received more than PERMISSION_TIMEOUT_SECS ago
+    /// Returns true if the permission was received more than PERMISSION_TIMEOUT_SECS ago.
+    /// Searches across all threads in the dashboard to find the permission by ID.
     fn is_permission_expired(&self, permission_id: &str) -> bool {
-        if let Some(ref perm) = self.session_state.pending_permission {
-            if perm.permission_id == permission_id {
-                return perm.received_at.elapsed().as_secs() >= PERMISSION_TIMEOUT_SECS;
-            }
+        if let Some((_, perm)) = self.dashboard.find_permission_by_id(permission_id) {
+            return perm.received_at.elapsed().as_secs() >= PERMISSION_TIMEOUT_SECS;
         }
         false
     }
@@ -170,7 +169,7 @@ impl App {
         }
     }
 
-    /// Approve the current pending permission (user pressed 'y')
+    /// Approve a pending permission (user pressed 'y')
     pub fn approve_permission(&mut self, permission_id: &str) {
         let result = self.send_permission_response(permission_id, true);
 
@@ -193,12 +192,16 @@ impl App {
             }
         }
 
-        // Clear the pending permission
-        self.session_state.clear_pending_permission();
+        // Clear the pending permission by searching across all threads
+        if let Some(thread_id) = self.dashboard.clear_permission_by_id(permission_id) {
+            debug!("Cleared permission {} from thread {}", permission_id, thread_id);
+        } else {
+            warn!("Permission {} not found when clearing", permission_id);
+        }
         self.mark_dirty();
     }
 
-    /// Deny the current pending permission (user pressed 'n')
+    /// Deny a pending permission (user pressed 'n')
     pub fn deny_permission(&mut self, permission_id: &str) {
         let result = self.send_permission_response(permission_id, false);
 
@@ -217,13 +220,17 @@ impl App {
             }
         }
 
-        // Clear the pending permission and reset question state
-        self.session_state.clear_pending_permission();
+        // Clear the pending permission by searching across all threads and reset question state
+        if let Some(thread_id) = self.dashboard.clear_permission_by_id(permission_id) {
+            debug!("Cleared permission {} from thread {}", permission_id, thread_id);
+        } else {
+            warn!("Permission {} not found when clearing", permission_id);
+        }
         self.question_state.reset();
         self.mark_dirty();
     }
 
-    /// Cancel the current pending permission (user pressed Shift+Escape)
+    /// Cancel a pending permission (user pressed Shift+Escape)
     pub fn cancel_permission(&mut self, permission_id: &str) {
         // Send cancel message via WebSocket
         if let Some(ref sender) = self.ws_sender {
@@ -234,8 +241,12 @@ impl App {
             warn!("No WebSocket sender available for cancel");
         }
 
-        // Clear the pending permission and reset question state
-        self.session_state.clear_pending_permission();
+        // Clear the pending permission by searching across all threads and reset question state
+        if let Some(thread_id) = self.dashboard.clear_permission_by_id(permission_id) {
+            debug!("Cancelled and cleared permission {} from thread {}", permission_id, thread_id);
+        } else {
+            warn!("Permission {} not found when cancelling", permission_id);
+        }
         self.question_state.reset();
     }
 
@@ -264,25 +275,48 @@ impl App {
             }
         }
 
-        if let Some(ref perm) = self.session_state.pending_permission.clone() {
+        // Find a pending permission from the top thread needing action,
+        // or fall back to searching all threads
+        let perm_info = if let Some((thread_id, _)) = self.dashboard.get_top_needs_action_thread() {
+            // Try to get permission for the top thread
+            self.dashboard
+                .get_pending_permission(&thread_id)
+                .map(|p| (p.permission_id.clone(), p.tool_name.clone()))
+        } else {
+            // No top thread, search all pending permissions
+            self.dashboard
+                .find_permission_by_id("")
+                .map(|(_, p)| (p.permission_id.clone(), p.tool_name.clone()))
+        };
+
+        // Also check all pending permissions if no specific thread permission found
+        let perm_info = perm_info.or_else(|| {
+            // Search all pending permissions
+            for (_, perm) in self.dashboard.pending_permissions_iter() {
+                return Some((perm.permission_id.clone(), perm.tool_name.clone()));
+            }
+            None
+        });
+
+        if let Some((permission_id, tool_name)) = perm_info {
             info!(
                 "Pending permission found: {} for tool {}",
-                perm.permission_id, perm.tool_name
+                permission_id, tool_name
             );
             match key {
                 'y' | 'Y' => {
                     info!("User pressed 'y' - approving permission");
-                    self.approve_permission(&perm.permission_id);
+                    self.approve_permission(&permission_id);
                     true
                 }
                 'a' | 'A' => {
                     info!("User pressed 'a' - allowing tool always");
-                    self.allow_tool_always(&perm.tool_name, &perm.permission_id);
+                    self.allow_tool_always(&tool_name, &permission_id);
                     true
                 }
                 'n' | 'N' => {
                     info!("User pressed 'n' - denying permission");
-                    self.deny_permission(&perm.permission_id);
+                    self.deny_permission(&permission_id);
                     true
                 }
                 _ => {
@@ -300,13 +334,23 @@ impl App {
     // AskUserQuestion Navigation Methods
     // ========================================================================
 
-    /// Check if the current pending permission is an AskUserQuestion
-    pub fn is_ask_user_question_pending(&self) -> bool {
-        if let Some(ref perm) = self.session_state.pending_permission {
+    /// Find an AskUserQuestion permission from any thread
+    ///
+    /// Returns the permission if found, None otherwise.
+    fn find_ask_user_question_permission(&self) -> Option<&crate::state::PermissionRequest> {
+        for (_, perm) in self.dashboard.pending_permissions_iter() {
             if perm.tool_name == "AskUserQuestion" {
-                if let Some(ref tool_input) = perm.tool_input {
-                    return parse_ask_user_question(tool_input).is_some();
-                }
+                return Some(perm);
+            }
+        }
+        None
+    }
+
+    /// Check if there is a pending AskUserQuestion permission
+    pub fn is_ask_user_question_pending(&self) -> bool {
+        if let Some(perm) = self.find_ask_user_question_permission() {
+            if let Some(ref tool_input) = perm.tool_input {
+                return parse_ask_user_question(tool_input).is_some();
             }
         }
         false
@@ -314,30 +358,30 @@ impl App {
 
     /// Initialize question state from the pending AskUserQuestion permission
     pub fn init_question_state(&mut self) {
-        if let Some(ref perm) = self.session_state.pending_permission {
-            if perm.tool_name == "AskUserQuestion" {
-                if let Some(ref tool_input) = perm.tool_input {
-                    if let Some(data) = parse_ask_user_question(tool_input) {
-                        self.question_state = AskUserQuestionState::from_data(&data);
-                        self.mark_dirty();
-                        debug!(
-                            "Initialized question state with {} questions",
-                            data.questions.len()
-                        );
-                    }
-                }
-            }
+        // We need to find the AskUserQuestion permission and clone the data we need
+        // because we can't hold a reference while mutating self.question_state
+        let question_data = self.find_ask_user_question_permission().and_then(|perm| {
+            perm.tool_input
+                .as_ref()
+                .and_then(|ti| parse_ask_user_question(ti))
+        });
+
+        if let Some(data) = question_data {
+            self.question_state = AskUserQuestionState::from_data(&data);
+            self.mark_dirty();
+            debug!(
+                "Initialized question state with {} questions",
+                data.questions.len()
+            );
         }
     }
 
     /// Get the number of questions in the pending AskUserQuestion
     fn get_question_count(&self) -> usize {
-        if let Some(ref perm) = self.session_state.pending_permission {
-            if perm.tool_name == "AskUserQuestion" {
-                if let Some(ref tool_input) = perm.tool_input {
-                    if let Some(data) = parse_ask_user_question(tool_input) {
-                        return data.questions.len();
-                    }
+        if let Some(perm) = self.find_ask_user_question_permission() {
+            if let Some(ref tool_input) = perm.tool_input {
+                if let Some(data) = parse_ask_user_question(tool_input) {
+                    return data.questions.len();
                 }
             }
         }
@@ -346,13 +390,11 @@ impl App {
 
     /// Get the number of options for the current question
     fn get_current_option_count(&self) -> usize {
-        if let Some(ref perm) = self.session_state.pending_permission {
-            if perm.tool_name == "AskUserQuestion" {
-                if let Some(ref tool_input) = perm.tool_input {
-                    if let Some(data) = parse_ask_user_question(tool_input) {
-                        if let Some(question) = data.questions.get(self.question_state.tab_index) {
-                            return question.options.len();
-                        }
+        if let Some(perm) = self.find_ask_user_question_permission() {
+            if let Some(ref tool_input) = perm.tool_input {
+                if let Some(data) = parse_ask_user_question(tool_input) {
+                    if let Some(question) = data.questions.get(self.question_state.tab_index) {
+                        return question.options.len();
                     }
                 }
             }
@@ -362,13 +404,11 @@ impl App {
 
     /// Check if the current question is multi-select
     fn is_current_question_multi_select(&self) -> bool {
-        if let Some(ref perm) = self.session_state.pending_permission {
-            if perm.tool_name == "AskUserQuestion" {
-                if let Some(ref tool_input) = perm.tool_input {
-                    if let Some(data) = parse_ask_user_question(tool_input) {
-                        if let Some(question) = data.questions.get(self.question_state.tab_index) {
-                            return question.multi_select;
-                        }
+        if let Some(perm) = self.find_ask_user_question_permission() {
+            if let Some(ref tool_input) = perm.tool_input {
+                if let Some(data) = parse_ask_user_question(tool_input) {
+                    if let Some(question) = data.questions.get(self.question_state.tab_index) {
+                        return question.multi_select;
                     }
                 }
             }
@@ -538,21 +578,21 @@ impl App {
 
     /// Submit the question answer via WebSocket
     fn submit_question_answer(&mut self) -> bool {
-        let perm = match self.session_state.pending_permission.clone() {
-            Some(p) => p,
-            None => return false,
+        // Find the AskUserQuestion permission and extract data we need
+        // We need to clone the data because we can't hold a reference while mutating self
+        let perm_data = self.find_ask_user_question_permission().map(|perm| {
+            (
+                perm.permission_id.clone(),
+                perm.tool_input.clone(),
+            )
+        });
+
+        let (permission_id, tool_input) = match perm_data {
+            Some((pid, Some(ti))) => (pid, ti),
+            _ => return false,
         };
 
-        if perm.tool_name != "AskUserQuestion" {
-            return false;
-        }
-
-        let tool_input = match &perm.tool_input {
-            Some(input) => input,
-            None => return false,
-        };
-
-        let data = match parse_ask_user_question(tool_input) {
+        let data = match parse_ask_user_question(&tool_input) {
             Some(d) => d,
             None => return false,
         };
@@ -622,8 +662,9 @@ impl App {
         }
 
         // Send the response with answers
-        self.send_question_response(&perm.permission_id, answers);
-        self.session_state.clear_pending_permission();
+        self.send_question_response(&permission_id, answers);
+        // Clear the permission by searching across all threads
+        self.dashboard.clear_permission_by_id(&permission_id);
         self.question_state.reset();
 
         true
@@ -761,6 +802,7 @@ mod tests {
     fn create_test_permission(permission_id: &str) -> PermissionRequest {
         PermissionRequest {
             permission_id: permission_id.to_string(),
+            thread_id: Some("test-thread".to_string()),
             tool_name: "Bash".to_string(),
             description: "Run a command".to_string(),
             context: Some("ls -la".to_string()),
@@ -768,6 +810,9 @@ mod tests {
             received_at: Instant::now(),
         }
     }
+
+    /// Default test thread ID for consistency
+    const TEST_THREAD_ID: &str = "test-thread";
 
     /// Helper to extract WsCommandResponse from WsOutgoingMessage
     fn extract_command_response(msg: WsOutgoingMessage) -> WsCommandResponse {
@@ -803,7 +848,8 @@ mod tests {
     #[test]
     fn test_is_permission_expired_wrong_id() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_test_permission("perm-123"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-123"));
         // Different ID should return false
         assert!(!app.is_permission_expired("perm-456"));
     }
@@ -811,7 +857,8 @@ mod tests {
     #[test]
     fn test_is_permission_expired_not_expired() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_test_permission("perm-123"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-123"));
         // Just created, should not be expired
         assert!(!app.is_permission_expired("perm-123"));
     }
@@ -880,27 +927,30 @@ mod tests {
     #[tokio::test]
     async fn test_approve_permission_clears_pending() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-123"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-123"));
 
         app.approve_permission("perm-123");
 
-        assert!(app.session_state.pending_permission.is_none());
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_none());
     }
 
     #[tokio::test]
     async fn test_deny_permission_clears_pending() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-123"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-123"));
 
         app.deny_permission("perm-123");
 
-        assert!(app.session_state.pending_permission.is_none());
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_none());
     }
 
     #[tokio::test]
     async fn test_approve_permission_sends_ws_message() {
         let (mut app, mut rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-789"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-789"));
 
         app.approve_permission("perm-789");
 
@@ -912,7 +962,8 @@ mod tests {
     #[tokio::test]
     async fn test_deny_permission_sends_ws_message() {
         let (mut app, mut rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-abc"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-abc"));
 
         app.deny_permission("perm-abc");
 
@@ -924,7 +975,8 @@ mod tests {
     #[tokio::test]
     async fn test_allow_tool_always_adds_to_allowed_and_approves() {
         let (mut app, mut rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-xyz"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-xyz"));
 
         app.allow_tool_always("Bash", "perm-xyz");
 
@@ -932,7 +984,7 @@ mod tests {
         assert!(app.session_state.allowed_tools.contains("Bash"));
 
         // Permission should be approved and cleared
-        assert!(app.session_state.pending_permission.is_none());
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_none());
 
         // WebSocket message should be sent
         let msg = extract_command_response(rx.recv().await.unwrap());
@@ -943,7 +995,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_permission_key_y() {
         let (mut app, mut rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-y"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-y"));
 
         let handled = app.handle_permission_key('y');
         assert!(handled);
@@ -955,7 +1008,8 @@ mod tests {
     #[tokio::test]
     async fn test_handle_permission_key_n() {
         let (mut app, mut rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-n"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-n"));
 
         let handled = app.handle_permission_key('n');
         assert!(handled);
@@ -969,7 +1023,7 @@ mod tests {
         let (mut app, mut rx) = create_test_app_with_ws();
         let mut perm = create_test_permission("perm-a");
         perm.tool_name = "Read".to_string();
-        app.session_state.pending_permission = Some(perm);
+        app.dashboard.set_pending_permission(TEST_THREAD_ID, perm);
 
         let handled = app.handle_permission_key('a');
         assert!(handled);
@@ -989,19 +1043,21 @@ mod tests {
     #[test]
     fn test_handle_permission_key_invalid_key() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_test_permission("perm-x"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-x"));
 
         let handled = app.handle_permission_key('x');
         assert!(!handled);
 
         // Permission should still be pending
-        assert!(app.session_state.pending_permission.is_some());
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_some());
     }
 
     #[test]
     fn test_handle_permission_key_uppercase_y() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-Y"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-Y"));
 
         let handled = app.handle_permission_key('Y');
         assert!(handled);
@@ -1010,7 +1066,8 @@ mod tests {
     #[test]
     fn test_handle_permission_key_uppercase_n() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-N"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-N"));
 
         let handled = app.handle_permission_key('N');
         assert!(handled);
@@ -1019,7 +1076,8 @@ mod tests {
     #[test]
     fn test_handle_permission_key_uppercase_a() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-A"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-A"));
 
         let handled = app.handle_permission_key('A');
         assert!(handled);
@@ -1029,7 +1087,8 @@ mod tests {
     fn test_send_permission_response_no_ws_no_runtime() {
         // Without tokio runtime, should return Failed
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_test_permission("perm-test"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-test"));
 
         let result = app.send_permission_response("perm-test", true);
         match result {
@@ -1062,12 +1121,13 @@ mod tests {
     #[tokio::test]
     async fn test_cancel_permission_sends_cancel_message() {
         let (mut app, mut rx) = create_test_app_with_ws();
-        app.session_state.pending_permission = Some(create_test_permission("perm-cancel"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-cancel"));
 
         app.cancel_permission("perm-cancel");
 
         // Permission should be cleared
-        assert!(app.session_state.pending_permission.is_none());
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_none());
 
         // Verify cancel message was sent
         let msg = rx.recv().await.unwrap();
@@ -1088,6 +1148,7 @@ mod tests {
     fn create_ask_user_question_permission(permission_id: &str) -> PermissionRequest {
         PermissionRequest {
             permission_id: permission_id.to_string(),
+            thread_id: Some(TEST_THREAD_ID.to_string()),
             tool_name: "AskUserQuestion".to_string(),
             description: "Answer questions".to_string(),
             context: None,
@@ -1114,6 +1175,7 @@ mod tests {
     fn create_multi_question_permission(permission_id: &str) -> PermissionRequest {
         PermissionRequest {
             permission_id: permission_id.to_string(),
+            thread_id: Some(TEST_THREAD_ID.to_string()),
             tool_name: "AskUserQuestion".to_string(),
             description: "Answer questions".to_string(),
             context: None,
@@ -1148,7 +1210,8 @@ mod tests {
     #[test]
     fn test_is_ask_user_question_pending_true() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-q"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_ask_user_question_permission("perm-q"));
 
         assert!(app.is_ask_user_question_pending());
     }
@@ -1156,7 +1219,8 @@ mod tests {
     #[test]
     fn test_is_ask_user_question_pending_false_wrong_tool() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_test_permission("perm-x"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-x"));
 
         assert!(!app.is_ask_user_question_pending());
     }
@@ -1170,8 +1234,10 @@ mod tests {
     #[test]
     fn test_init_question_state() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-init"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-init"),
+        );
 
         app.init_question_state();
 
@@ -1185,8 +1251,10 @@ mod tests {
     #[test]
     fn test_question_next_option() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-next"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-next"),
+        );
         app.init_question_state();
 
         // Start at option 0
@@ -1212,8 +1280,10 @@ mod tests {
     #[test]
     fn test_question_prev_option() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-prev"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-prev"),
+        );
         app.init_question_state();
 
         // Start at option 0
@@ -1239,7 +1309,8 @@ mod tests {
     #[test]
     fn test_question_next_tab() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_multi_question_permission("perm-tab"));
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_multi_question_permission("perm-tab"));
         app.init_question_state();
 
         // Start at tab 0
@@ -1257,8 +1328,10 @@ mod tests {
     #[test]
     fn test_question_next_tab_single_question_no_change() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-single"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-single"),
+        );
         app.init_question_state();
 
         // Start at tab 0
@@ -1273,7 +1346,7 @@ mod tests {
     fn test_question_toggle_option_multi_select() {
         let mut app = App::default();
         let perm = create_multi_question_permission("perm-toggle");
-        app.session_state.pending_permission = Some(perm);
+        app.dashboard.set_pending_permission(TEST_THREAD_ID, perm);
         app.init_question_state();
 
         // Switch to second question (multi-select)
@@ -1295,8 +1368,10 @@ mod tests {
     #[test]
     fn test_question_toggle_option_single_select_no_effect() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-no-toggle"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-no-toggle"),
+        );
         app.init_question_state();
 
         // First question is single-select
@@ -1310,8 +1385,10 @@ mod tests {
     #[test]
     fn test_question_type_char_and_backspace() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-type"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-type"),
+        );
         app.init_question_state();
 
         // Move to "Other"
@@ -1346,8 +1423,10 @@ mod tests {
     #[test]
     fn test_question_cancel_other() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-cancel"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-cancel"),
+        );
         app.init_question_state();
 
         // Activate "Other" mode and type
@@ -1364,8 +1443,10 @@ mod tests {
     #[test]
     fn test_question_confirm_activates_other() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-confirm"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-confirm"),
+        );
         app.init_question_state();
 
         // Move to "Other"
@@ -1384,8 +1465,10 @@ mod tests {
     #[test]
     fn test_question_confirm_on_option() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-submit"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-submit"),
+        );
         app.init_question_state();
 
         // Select option 1
@@ -1397,13 +1480,16 @@ mod tests {
         assert!(result);
 
         // Permission should be cleared
-        assert!(app.session_state.pending_permission.is_none());
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_none());
     }
 
     #[test]
     fn test_question_backspace_not_in_other_mode() {
         let mut app = App::default();
-        app.session_state.pending_permission = Some(create_ask_user_question_permission("perm-bs"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-bs"),
+        );
         app.init_question_state();
 
         // Not in "Other" mode
@@ -1417,8 +1503,10 @@ mod tests {
     #[test]
     fn test_question_type_char_not_in_other_mode() {
         let mut app = App::default();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-type-no"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-type-no"),
+        );
         app.init_question_state();
 
         // Not in "Other" mode
@@ -1434,8 +1522,10 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_advances_tab() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission =
-            Some(create_multi_question_permission("perm-multi-advance"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_multi_question_permission("perm-multi-advance"),
+        );
         app.init_question_state();
 
         // Start at tab 0, select option 0
@@ -1447,14 +1537,16 @@ mod tests {
         assert!(!result); // Should NOT submit yet
         assert!(app.question_state.answered[0]); // Tab 0 marked answered
         assert_eq!(app.question_state.tab_index, 1); // Moved to tab 1
-        assert!(app.session_state.pending_permission.is_some()); // Permission still pending
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_some()); // Permission still pending
     }
 
     #[test]
     fn test_question_confirm_multi_question_submits_on_last() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission =
-            Some(create_multi_question_permission("perm-multi-submit"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_multi_question_permission("perm-multi-submit"),
+        );
         app.init_question_state();
 
         // Answer first question
@@ -1468,14 +1560,16 @@ mod tests {
         // Answer second (last) question - should submit
         let result2 = app.question_confirm();
         assert!(result2); // Should submit now
-        assert!(app.session_state.pending_permission.is_none()); // Permission cleared
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_none()); // Permission cleared
     }
 
     #[test]
     fn test_question_confirm_multi_question_answered_tracking() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission =
-            Some(create_multi_question_permission("perm-multi-track"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_multi_question_permission("perm-multi-track"),
+        );
         app.init_question_state();
 
         // Both questions start unanswered
@@ -1496,21 +1590,25 @@ mod tests {
     #[test]
     fn test_question_confirm_single_question_submits_immediately() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission =
-            Some(create_ask_user_question_permission("perm-single-submit"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_ask_user_question_permission("perm-single-submit"),
+        );
         app.init_question_state();
 
         // Single question - confirm should submit immediately
         let result = app.question_confirm();
         assert!(result); // Should submit
-        assert!(app.session_state.pending_permission.is_none()); // Permission cleared
+        assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_none()); // Permission cleared
     }
 
     #[test]
     fn test_question_confirm_multi_question_update_answered() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.session_state.pending_permission =
-            Some(create_multi_question_permission("perm-multi-update"));
+        app.dashboard.set_pending_permission(
+            TEST_THREAD_ID,
+            create_multi_question_permission("perm-multi-update"),
+        );
         app.init_question_state();
 
         // Answer first question and advance

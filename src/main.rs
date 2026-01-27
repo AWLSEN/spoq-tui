@@ -509,7 +509,7 @@ where
 
                             // Handle permission prompt keys when a permission is pending
                             // This takes priority over all other key handling
-                            if app.session_state.has_pending_permission() {
+                            if app.dashboard.has_pending_permission() {
                                 // Check if this is an AskUserQuestion prompt
                                 // State is already initialized when permission is received
                                 if app.is_ask_user_question_pending() {
@@ -562,9 +562,12 @@ where
                                             continue;
                                         }
                                         KeyCode::Char('n') | KeyCode::Char('N') => {
-                                            // Allow 'n' to deny/cancel
-                                            if let Some(ref perm) = app.session_state.pending_permission.clone() {
-                                                app.deny_permission(&perm.permission_id);
+                                            // Allow 'n' to deny/cancel - find the AskUserQuestion permission
+                                            let permission_id = app.dashboard.pending_permissions_iter()
+                                                .find(|(_, p)| p.tool_name == "AskUserQuestion")
+                                                .map(|(_, p)| p.permission_id.clone());
+                                            if let Some(pid) = permission_id {
+                                                app.deny_permission(&pid);
                                             }
                                             continue;
                                         }
