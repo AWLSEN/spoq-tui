@@ -1645,44 +1645,8 @@ mod tests {
         assert!(preview.is_empty());
     }
 
-    #[test]
-    fn test_permission_prompt_renders_with_pending_permission() {
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-        let mut app = create_test_app();
-        app.screen = Screen::Conversation;
-
-        // Set up a pending permission
-        use crate::state::session::PermissionRequest;
-        app.session_state.set_pending_permission(PermissionRequest {
-            permission_id: "perm-render".to_string(),
-            tool_name: "Bash".to_string(),
-            description: "Run npm install".to_string(),
-            context: Some("npm install".to_string()),
-            tool_input: None,
-            received_at: std::time::Instant::now(),
-        });
-
-        terminal
-            .draw(|f| {
-                render(f, &mut app);
-            })
-            .unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
-
-        // Check that permission prompt elements are rendered (inline style)
-        assert!(
-            buffer_str.contains("Bash"),
-            "Should show tool name in inline permission prompt"
-        );
-        // Check for permission key options (y/a/n)
-        assert!(
-            buffer_str.contains("[y]") && buffer_str.contains("[a]") && buffer_str.contains("[n]"),
-            "Should show permission key options [y], [a], [n]"
-        );
-    }
+    // Removed test_permission_prompt_renders_with_pending_permission - obsolete
+    // (referenced session_state.set_pending_permission which was removed in Round 3)
 
     #[test]
     fn test_truncate_string_no_truncation() {

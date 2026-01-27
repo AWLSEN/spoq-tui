@@ -1,5 +1,8 @@
 //! Tests for Round 1 of plan-20260125-1845
 //!
+//! OBSOLETE: These tests reference session_state.pending_permission which was removed
+//! in plan-20260127-1645 Round 3 (migration to per-thread permissions).
+//!
 //! Tests the following changes:
 //! 1. 'A' key routing based on top thread type (UserInput vs Permission)
 //! 2. The new `open_ask_user_question_dialog()` method in app/permissions.rs

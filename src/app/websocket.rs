@@ -350,11 +350,13 @@ mod tests {
         match received.unwrap() {
             AppMessage::PermissionRequested {
                 permission_id,
+                thread_id,
                 tool_name,
                 description,
                 tool_input,
             } => {
                 assert_eq!(permission_id, "req-123");
+                assert_eq!(thread_id, Some("thread-456".to_string()));
                 assert_eq!(tool_name, "Bash");
                 assert_eq!(description, "List directory contents");
                 assert!(tool_input.is_some());
@@ -422,11 +424,13 @@ mod tests {
         match second_msg.unwrap() {
             AppMessage::PermissionRequested {
                 permission_id,
+                thread_id,
                 tool_name,
                 description,
                 tool_input,
             } => {
                 assert_eq!(permission_id, "perm-uuid-123");
+                assert_eq!(thread_id, Some("thread-123".to_string()));
                 assert_eq!(tool_name, "AskUserQuestion");
                 assert_eq!(description, "Ask user about authentication");
                 assert!(tool_input.is_some());

@@ -1,4 +1,7 @@
 //! Integration tests for Round 4 features
+//! OBSOLETE: These tests reference session_state.pending_permission which was removed
+//! in plan-20260127-1645 Round 3 (migration to per-thread permissions).
+//!
 //! Tests auto-initialization of question state when AskUserQuestion permission is received
 
 use spoq::app::{App, AppMessage};

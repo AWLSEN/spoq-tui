@@ -3090,7 +3090,7 @@ mod tests {
 
     #[test]
     fn test_dashboard_question_state_next_tab() {
-        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+        use crate::state::session::{AskUserQuestionData, Question};
 
         let question_data = AskUserQuestionData {
             questions: vec![
@@ -3216,7 +3216,7 @@ mod tests {
 
     #[test]
     fn test_dashboard_question_state_mark_answered() {
-        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+        use crate::state::session::{AskUserQuestionData, Question};
 
         let question_data = AskUserQuestionData {
             questions: vec![
@@ -3257,7 +3257,7 @@ mod tests {
 
     #[test]
     fn test_dashboard_question_state_advance_to_next_unanswered() {
-        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+        use crate::state::session::{AskUserQuestionData, Question};
 
         let question_data = AskUserQuestionData {
             questions: vec![
@@ -3487,7 +3487,7 @@ mod tests {
 
     #[test]
     fn test_question_state_reset_on_collapse() {
-        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+        use crate::state::session::{AskUserQuestionData, Question};
 
         let mut state = DashboardState::new();
         let thread = make_thread("t1", "Test Thread");

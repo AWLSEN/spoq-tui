@@ -198,47 +198,8 @@ fn test_dirty_flag_can_be_cleared() {
     assert!(!app.needs_redraw, "Dirty flag should be clearable");
 }
 
-#[test]
-fn test_permission_approval_marks_dirty() {
-    let mut app = App::new().unwrap();
-
-    // Create a mock permission
-    use spoq::state::PermissionRequest;
-    app.session_state.pending_permission = Some(PermissionRequest {
-        permission_id: "test-perm-123".to_string(),
-        tool_name: "some_tool".to_string(),
-        description: "Test permission".to_string(),
-        context: None,
-        tool_input: Some(serde_json::json!({})),
-        received_at: std::time::Instant::now(),
-    });
-
-    app.needs_redraw = false;
-    app.approve_permission("test-perm-123");
-
-    assert!(app.needs_redraw, "Permission approval should mark dirty");
-}
-
-#[test]
-fn test_permission_denial_marks_dirty() {
-    let mut app = App::new().unwrap();
-
-    // Create a mock permission
-    use spoq::state::PermissionRequest;
-    app.session_state.pending_permission = Some(PermissionRequest {
-        permission_id: "test-perm-123".to_string(),
-        tool_name: "some_tool".to_string(),
-        description: "Test permission".to_string(),
-        context: None,
-        tool_input: Some(serde_json::json!({})),
-        received_at: std::time::Instant::now(),
-    });
-
-    app.needs_redraw = false;
-    app.deny_permission("test-perm-123");
-
-    assert!(app.needs_redraw, "Permission denial should mark dirty");
-}
+// Removed tests for old session-wide permission system
+// Permission tests now in src/app/permissions.rs (per-thread permissions)
 
 #[test]
 fn test_navigate_to_command_deck_marks_dirty() {
