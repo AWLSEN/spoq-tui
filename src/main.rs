@@ -584,52 +584,56 @@ where
                                                     continue;
                                                 }
                                                 KeyCode::Char('n') | KeyCode::Char('N') => {
-                                                    // Allow 'n' to deny/cancel - use the permission_id from this permission
-                                                    let permission_id = app.dashboard.pending_permissions_iter()
-                                                        .find(|(_, p)| p.tool_name == "AskUserQuestion")
-                                                        .map(|(_, p)| p.permission_id.clone());
-                                                    if let Some(pid) = permission_id {
-                                                        app.deny_permission(&pid);
+                                                    // Only capture 'N' when textarea is empty
+                                                    if app.textarea.is_empty() {
+                                                        let permission_id = app.dashboard.pending_permissions_iter()
+                                                            .find(|(_, p)| p.tool_name == "AskUserQuestion")
+                                                            .map(|(_, p)| p.permission_id.clone());
+                                                        if let Some(pid) = permission_id {
+                                                            app.deny_permission(&pid);
+                                                            continue;
+                                                        }
                                                     }
-                                                    continue;
+                                                    // Fall through to type 'n' in textarea
                                                 }
                                                 KeyCode::Char('a') | KeyCode::Char('A') => {
-                                                    // 'A' opens the dialog overlay for this AskUserQuestion
-                                                    if app.open_ask_user_question_dialog() {
-                                                        tracing::debug!("Opened AskUserQuestion dialog via 'A' key");
+                                                    // Only open dialog when textarea is empty
+                                                    if app.textarea.is_empty() {
+                                                        if app.open_ask_user_question_dialog() {
+                                                            tracing::debug!("Opened AskUserQuestion dialog via 'A' key");
+                                                            continue;
+                                                        }
                                                     }
-                                                    continue;
+                                                    // Fall through to type 'a' in textarea
                                                 }
-                                                _ => continue,
+                                                _ => {
+                                                    // Fall through to normal input handling
+                                                }
                                             }
                                         } else {
                                             // Standard permission prompt (y/a/n)
+                                            // Only capture Y/N/A keys when textarea is empty
                                             if let KeyCode::Char(c) = key.code {
-                                                // Debug: emit key press to debug system
-                                                app.emit_debug_state_change(
-                                                    "permission_key",
-                                                    "Key pressed during permission",
-                                                    &format!("key: '{}', tool: {}, request_id: {}", c, tool_name, request_id),
-                                                );
-                                                if app.handle_permission_key(c) {
+                                                if app.textarea.is_empty() {
+                                                    // Debug: emit key press to debug system
                                                     app.emit_debug_state_change(
                                                         "permission_key",
-                                                        "Permission handled",
-                                                        &format!("key: '{}' -> handled", c),
+                                                        "Key pressed during permission",
+                                                        &format!("key: '{}', tool: {}, request_id: {}", c, tool_name, request_id),
                                                     );
-                                                    continue;
+                                                    if app.handle_permission_key(c) {
+                                                        app.emit_debug_state_change(
+                                                            "permission_key",
+                                                            "Permission handled",
+                                                            &format!("key: '{}' -> handled", c),
+                                                        );
+                                                        continue;
+                                                    }
+                                                    // Key wasn't Y/N/A - fall through to type in textarea
                                                 }
-                                                app.emit_debug_state_change(
-                                                    "permission_key",
-                                                    "Key not handled",
-                                                    &format!("key: '{}' -> not Y/N/A", c),
-                                                );
-                                                // When permission is pending, ignore all other keys except Ctrl+C
-                                                continue;
-                                            } else {
-                                                // Non-char keys (arrows, etc.) - ignore when permission pending
-                                                continue;
+                                                // Textarea has content OR key wasn't Y/N/A: fall through
                                             }
+                                            // Non-char keys or unhandled char keys fall through to normal input
                                         }
                                     }
 
@@ -666,27 +670,27 @@ where
                                     }
 
                                     WaitingFor::PlanApproval { ref request_id } => {
-                                        // Plan approval handles Y/N/A keys
+                                        // Plan approval handles Y/N/A keys only when textarea is empty
                                         if let KeyCode::Char(c) = key.code {
-                                            app.emit_debug_state_change(
-                                                "plan_approval_key",
-                                                "Key pressed during plan approval",
-                                                &format!("key: '{}', request_id: {}, thread_id: {}", c, request_id, thread_id),
-                                            );
-                                            if app.handle_permission_key(c) {
+                                            if app.textarea.is_empty() {
                                                 app.emit_debug_state_change(
                                                     "plan_approval_key",
-                                                    "Plan approval handled",
-                                                    &format!("key: '{}' -> handled", c),
+                                                    "Key pressed during plan approval",
+                                                    &format!("key: '{}', request_id: {}, thread_id: {}", c, request_id, thread_id),
                                                 );
-                                                continue;
+                                                if app.handle_permission_key(c) {
+                                                    app.emit_debug_state_change(
+                                                        "plan_approval_key",
+                                                        "Plan approval handled",
+                                                        &format!("key: '{}' -> handled", c),
+                                                    );
+                                                    continue;
+                                                }
+                                                // Key wasn't Y/N/A - fall through to type in textarea
                                             }
-                                            // When plan approval is pending, ignore non-Y/N/A keys
-                                            continue;
-                                        } else {
-                                            // Non-char keys - ignore when plan approval pending
-                                            continue;
+                                            // Textarea has content OR key wasn't Y/N/A: fall through
                                         }
+                                        // Non-char keys or unhandled char keys fall through to normal input
                                     }
                                 }
                             }

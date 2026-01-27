@@ -18,6 +18,9 @@ const MIN_HEIGHT: u16 = 5;
 /// Maximum number of need-action threads to display before showing "+ N more"
 const MAX_NEED_ACTION_DISPLAY: usize = 5;
 
+/// Height of each thread row (title + directory + spacing)
+const ROW_HEIGHT: u16 = 3;
+
 /// Separator width as percentage of area width
 const SEPARATOR_WIDTH_PERCENT: f32 = 0.10;
 
@@ -83,24 +86,25 @@ fn render_split_view(
     let (need_action, autonomous): (Vec<&ThreadView>, Vec<&ThreadView>) =
         ctx.threads.iter().partition(|t| t.needs_action);
 
-    // Calculate layout heights
-    let need_action_height = need_action.len().min(MAX_NEED_ACTION_DISPLAY) as u16;
+    // Calculate layout heights (multiply by ROW_HEIGHT for multi-line rows)
+    let need_action_height = (need_action.len().min(MAX_NEED_ACTION_DISPLAY) as u16) * ROW_HEIGHT;
     let separator_height: u16 = 1;
     // Note: autonomous_height is computed dynamically based on actual separator position
     let _autonomous_height = area
         .height
         .saturating_sub(need_action_height + separator_height);
 
-    // Render need_action threads
+    // Render need_action threads (each thread takes ROW_HEIGHT lines)
     for (i, thread) in need_action.iter().take(MAX_NEED_ACTION_DISPLAY).enumerate() {
-        let row_rect = Rect::new(area.x, area.y + i as u16, area.width, 1);
+        let y_offset = (i as u16) * ROW_HEIGHT;
+        let row_rect = Rect::new(area.x, area.y + y_offset, area.width, ROW_HEIGHT);
         thread_row::render(frame, row_rect, thread, ctx);
     }
 
     // Show "+ N more" if there are more need_action threads than displayed
     let need_action_more_y = if need_action.len() > MAX_NEED_ACTION_DISPLAY {
         let more_text = format!("+ {} more", need_action.len() - MAX_NEED_ACTION_DISPLAY);
-        let row_y = area.y + MAX_NEED_ACTION_DISPLAY as u16;
+        let row_y = area.y + (MAX_NEED_ACTION_DISPLAY as u16) * ROW_HEIGHT;
         if row_y < area.bottom() {
             frame.render_widget(
                 Span::styled(more_text, Style::default()),
@@ -129,14 +133,15 @@ fn render_split_view(
         // No divider when no need_action threads - start autonomous from top
         area.y
     };
-    let available_autonomous_rows = area.bottom().saturating_sub(autonomous_start_y);
+    let available_autonomous_rows = area.bottom().saturating_sub(autonomous_start_y) / ROW_HEIGHT;
 
     for (i, thread) in autonomous
         .iter()
         .take(available_autonomous_rows as usize)
         .enumerate()
     {
-        let row_rect = Rect::new(area.x, autonomous_start_y + i as u16, area.width, 1);
+        let y_offset = (i as u16) * ROW_HEIGHT;
+        let row_rect = Rect::new(area.x, autonomous_start_y + y_offset, area.width, ROW_HEIGHT);
         thread_row::render(frame, row_rect, thread, ctx);
     }
 

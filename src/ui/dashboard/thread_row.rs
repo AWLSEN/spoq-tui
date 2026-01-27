@@ -1,20 +1,22 @@
 //! Thread row component for dashboard rendering
 //!
-//! Renders a single thread view as a compact row showing title, repository,
-//! mode, activity/status, and action buttons.
+//! Renders a single thread view as a multi-line row showing title, mode,
+//! activity/status, and action buttons on line 1, with directory path on line 2.
 //!
 //! ## Layout
 //!
 //! **Non-action threads** (working autonomously, below separator):
 //! ```text
-//! Title (30%) | Repo (14%) | Mode (9%) | Activity (27%) | Time (10%)
-//! "API Endpoints       ~/api        exec        Edit: handlers.rs           12m"
+//! Line 1: Title (42%) | Mode (8%) | Activity (25%) | Time (25%)
+//! Line 2: ~/directory (dimmed, indented)
+//! Line 3: (spacing)
 //! ```
 //!
 //! **Action threads** (need user input, above separator):
 //! ```text
-//! Title (30%) | Repo (12%) | Mode (9%) | Status (12%) | Actions (37%)
-//! "Auth Refactor       ~/api        plan        waiting              [y] Yes  [n] No"
+//! Line 1: Title (42%) | Mode (8%) | Status (25%) | Actions (25%)
+//! Line 2: ~/directory (dimmed, indented)
+//! Line 3: (spacing)
 //! ```
 
 use ratatui::{
@@ -33,12 +35,12 @@ use crate::ui::dashboard::{RenderContext, ThreadMode, ThreadView};
 /// Render a single thread row
 ///
 /// Uses different layouts based on whether the thread needs user action:
-/// - **Action threads**: Title + Repo + Mode + Status + Actions (right-aligned)
-/// - **Non-action threads**: Title + Repo + Mode + Activity + Time
+/// - **Action threads**: Title + Mode + Status + Actions (line 1) + Directory (line 2)
+/// - **Non-action threads**: Title + Mode + Activity + Time (line 1) + Directory (line 2)
 ///
 /// # Arguments
 /// * `frame` - The ratatui frame to render into
-/// * `area` - The rectangle area allocated for this row (height=1)
+/// * `area` - The rectangle area allocated for this row (height=3: title + dir + spacing)
 /// * `thread` - The thread view data to render
 /// * `ctx` - The render context containing theme colors
 pub fn render(
@@ -47,7 +49,7 @@ pub fn render(
     thread: &ThreadView,
     ctx: &RenderContext,
 ) {
-    if area.height < 1 || area.width < 20 {
+    if area.height < 2 || area.width < 20 {
         return;
     }
 
@@ -60,7 +62,8 @@ pub fn render(
 
 /// Render an action thread row (needs user input)
 ///
-/// Layout: Title (30%) | Repo (12%) | Mode (9%) | Status (12%) | Actions (37%)
+/// Layout (line 1): Title (42%) | Mode (8%) | Status (25%) | Actions (25%)
+/// Layout (line 2): Directory path (dimmed, indented)
 fn render_action_thread(
     frame: &mut Frame,
     area: Rect,
@@ -69,12 +72,11 @@ fn render_action_thread(
 ) {
     let buf = frame.buffer_mut();
 
-    // Column widths for action threads
-    let title_width = ((area.width as f32) * 0.30) as u16;
-    let repo_width = ((area.width as f32) * 0.12) as u16;
-    let mode_width = ((area.width as f32) * 0.09) as u16;
-    let status_width = ((area.width as f32) * 0.12) as u16;
-    // Remaining 37% for right-aligned action buttons
+    // Column widths for action threads (repo column removed, space redistributed)
+    let title_width = ((area.width as f32) * 0.42) as u16;
+    let mode_width = ((area.width as f32) * 0.08) as u16;
+    let status_width = ((area.width as f32) * 0.25) as u16;
+    // Remaining 25% for right-aligned action buttons
 
     let mut x = area.x;
     let y = area.y;
@@ -84,12 +86,6 @@ fn render_action_thread(
     let title_style = Style::default().add_modifier(Modifier::BOLD);
     render_text(buf, x, y, &title_text, title_style, area);
     x += title_width;
-
-    // Repository column (with 1 space left padding for visual centering)
-    let repo_text = truncate(&thread.repository, repo_width.saturating_sub(2) as usize);
-    let repo_style = Style::default().fg(ctx.theme.dim);
-    render_text(buf, x + 1, y, &repo_text, repo_style, area);
-    x += repo_width;
 
     // Mode column (with 1 space left padding)
     let mode_text = match thread.mode {
@@ -108,13 +104,21 @@ fn render_action_thread(
     render_text(buf, x, y, &status_text, status_style, area);
     x += status_width;
 
-    // Action buttons (right-aligned)
+    // Render directory on second line, indented 2 spaces (before render_actions to avoid borrow conflict)
+    if area.height >= 2 {
+        let dir_text = truncate(&thread.repository, area.width.saturating_sub(4) as usize);
+        let dir_style = Style::default().fg(ctx.theme.dim);
+        render_text(buf, area.x + 2, area.y + 1, &dir_text, dir_style, area);
+    }
+
+    // Action buttons (right-aligned) - must be last as it takes frame
     render_actions(frame, x, y, area, thread, ctx, true);
 }
 
 /// Render an autonomous thread row (working without user input)
 ///
-/// Layout: Title (30%) | Repo (14%) | Mode (9%) | Activity (27%) | Time (10%)
+/// Layout (line 1): Title (42%) | Mode (8%) | Activity (25%) | Time (25%)
+/// Layout (line 2): Directory path (dimmed, indented)
 fn render_autonomous_thread(
     frame: &mut Frame,
     area: Rect,
@@ -123,12 +127,11 @@ fn render_autonomous_thread(
 ) {
     let buf = frame.buffer_mut();
 
-    // Column widths for non-action threads (unified Activity column)
-    let title_width = ((area.width as f32) * 0.30) as u16;
-    let repo_width = ((area.width as f32) * 0.14) as u16;
-    let mode_width = ((area.width as f32) * 0.09) as u16;
-    let activity_width = ((area.width as f32) * 0.27) as u16;
-    let time_width = ((area.width as f32) * 0.10) as u16;
+    // Column widths for non-action threads (repo column removed, space redistributed)
+    let title_width = ((area.width as f32) * 0.42) as u16;
+    let mode_width = ((area.width as f32) * 0.08) as u16;
+    let activity_width = ((area.width as f32) * 0.25) as u16;
+    let time_width = ((area.width as f32) * 0.25) as u16;
 
     let mut x = area.x;
     let y = area.y;
@@ -138,12 +141,6 @@ fn render_autonomous_thread(
     let title_style = Style::default().add_modifier(Modifier::BOLD);
     render_text(buf, x, y, &title_text, title_style, area);
     x += title_width;
-
-    // Repository column (with 1 space left padding for visual centering)
-    let repo_text = truncate(&thread.repository, repo_width.saturating_sub(2) as usize);
-    let repo_style = Style::default().fg(ctx.theme.dim);
-    render_text(buf, x + 1, y, &repo_text, repo_style, area);
-    x += repo_width;
 
     // Mode column (with 1 space left padding)
     let mode_text = match thread.mode {
@@ -169,6 +166,13 @@ fn render_autonomous_thread(
     let time_text = truncate(&thread.duration, time_width.saturating_sub(1) as usize);
     let time_style = Style::default().fg(ctx.theme.dim);
     render_text(buf, x, y, &time_text, time_style, area);
+
+    // Render directory on second line, indented 2 spaces
+    if area.height >= 2 {
+        let dir_text = truncate(&thread.repository, area.width.saturating_sub(4) as usize);
+        let dir_style = Style::default().fg(ctx.theme.dim);
+        render_text(buf, area.x + 2, area.y + 1, &dir_text, dir_style, area);
+    }
 }
 
 /// Compute activity text based on thread state (fallback when activity_text is None)
