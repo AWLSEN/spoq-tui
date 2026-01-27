@@ -250,17 +250,24 @@ impl App {
                 } else {
                     use crate::state::PermissionRequest;
 
-                    // Store permission request for user approval
-                    self.session_state
-                        .set_pending_permission(PermissionRequest {
+                    // Determine the thread_id to use - fallback to "unknown" if None
+                    let effective_thread_id = thread_id
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    // Store permission request for user approval in dashboard (per-thread)
+                    self.dashboard.set_pending_permission(
+                        &effective_thread_id,
+                        PermissionRequest {
                             permission_id: permission_id.clone(),
-                            thread_id,
+                            thread_id: thread_id.clone(),
                             tool_name: tool_name.clone(),
                             description,
                             context: None, // Context will be extracted from tool_input in UI
                             tool_input,
                             received_at: std::time::Instant::now(),
-                        });
+                        },
+                    );
 
                     // AskUserQuestion requires auto-initialization of question state
                     if tool_name == "AskUserQuestion" {
@@ -271,11 +278,14 @@ impl App {
                     emit_debug(
                         &self.debug_tx,
                         DebugEventKind::StateChange(StateChangeData::new(
-                            StateType::SessionState,
+                            StateType::DashboardState,
                             "Permission pending",
-                            format!("tool: {}, id: {}", tool_name, permission_id),
+                            format!(
+                                "tool: {}, id: {}, thread: {}",
+                                tool_name, permission_id, effective_thread_id
+                            ),
                         )),
-                        None,
+                        Some(&effective_thread_id),
                     );
                 }
             }

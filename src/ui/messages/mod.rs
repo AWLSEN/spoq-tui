@@ -368,10 +368,13 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         ]));
         lines.push(Line::from(""));
 
-        // Add permission lines if pending
-        if let Some(perm) = app.session_state.pending_permission.as_ref() {
-            let perm_lines = build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
-            lines.extend(perm_lines);
+        // Add permission lines if pending for this thread
+        if let Some(thread_id) = current_thread_id.as_ref() {
+            if let Some(perm) = app.dashboard.get_pending_permission(thread_id) {
+                let perm_lines =
+                    build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
+                lines.extend(perm_lines);
+            }
         }
 
         // === UNIFIED SCROLL: Record where input section starts ===
@@ -513,8 +516,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         }
     }
 
-    // Add permission lines if pending
-    if let Some(perm) = app.session_state.pending_permission.as_ref() {
+    // Add permission lines if pending for this thread
+    if let Some(perm) = app.dashboard.get_pending_permission(&thread_id) {
         let perm_lines = build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
         lines.extend(perm_lines);
     }
