@@ -313,6 +313,8 @@ pub struct App {
     pub last_ctrl_c_time: Option<std::time::Instant>,
     /// Cursor blink state (manages visibility with blinkwait behavior)
     pub cursor_blink: CursorBlinkState,
+    /// Help dialog visible (shown via /help command)
+    pub help_dialog_visible: bool,
 }
 
 impl App {
@@ -497,6 +499,7 @@ impl App {
             system_stats: SystemStats::default(),
             last_ctrl_c_time: None,
             cursor_blink: CursorBlinkState::default(),
+            help_dialog_visible: false,
         })
     }
 

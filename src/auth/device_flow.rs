@@ -161,16 +161,8 @@ fn poll_for_authorization(
     let deadline = Instant::now() + Duration::from_secs(device_code.expires_in as u64);
 
     while Instant::now() < deadline {
-        // Check for interrupt before sleeping
-        if interrupted.load(Ordering::SeqCst) {
-            println!("\nAuthentication cancelled.");
-            return Err(DeviceFlowError::Cancelled);
-        }
-
-        std::thread::sleep(interval);
-
-        // Check for interrupt after sleeping
-        if interrupted.load(Ordering::SeqCst) {
+        // Interruptible sleep: check every 100ms for Ctrl+C
+        if interruptible_sleep(interval, interrupted) {
             println!("\nAuthentication cancelled.");
             return Err(DeviceFlowError::Cancelled);
         }
@@ -195,6 +187,32 @@ fn poll_for_authorization(
 
     println!("Timed out");
     Err(DeviceFlowError::Api(CentralApiError::AuthorizationExpired))
+}
+
+/// Sleep for the given duration, but check for interrupts every 100ms.
+/// Returns `true` if interrupted, `false` if sleep completed normally.
+fn interruptible_sleep(duration: Duration, interrupted: &Arc<AtomicBool>) -> bool {
+    const CHECK_INTERVAL: Duration = Duration::from_millis(100);
+    let start = Instant::now();
+
+    while start.elapsed() < duration {
+        if interrupted.load(Ordering::SeqCst) {
+            return true;
+        }
+
+        // Sleep for at most CHECK_INTERVAL or the remaining time
+        let remaining = duration.saturating_sub(start.elapsed());
+        let sleep_time = remaining.min(CHECK_INTERVAL);
+
+        if sleep_time.is_zero() {
+            break;
+        }
+
+        std::thread::sleep(sleep_time);
+    }
+
+    // Final check after sleep completes
+    interrupted.load(Ordering::SeqCst)
 }
 
 /// Build Credentials from a TokenResponse.
@@ -299,5 +317,47 @@ mod tests {
             DeviceFlowError::Api(CentralApiError::AccessDenied) => {}
             _ => panic!("Expected DeviceFlowError::Api(AccessDenied)"),
         }
+    }
+
+    #[test]
+    fn test_interruptible_sleep_completes_normally() {
+        let interrupted = Arc::new(AtomicBool::new(false));
+        let start = Instant::now();
+
+        let was_interrupted = interruptible_sleep(Duration::from_millis(150), &interrupted);
+
+        assert!(!was_interrupted);
+        assert!(start.elapsed() >= Duration::from_millis(150));
+    }
+
+    #[test]
+    fn test_interruptible_sleep_detects_interrupt() {
+        let interrupted = Arc::new(AtomicBool::new(false));
+        let interrupted_clone = Arc::clone(&interrupted);
+
+        // Set interrupt after 50ms in another thread
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            interrupted_clone.store(true, Ordering::SeqCst);
+        });
+
+        let start = Instant::now();
+        let was_interrupted = interruptible_sleep(Duration::from_secs(5), &interrupted);
+
+        assert!(was_interrupted);
+        // Should return much faster than 5 seconds (within ~200ms accounting for check interval)
+        assert!(start.elapsed() < Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_interruptible_sleep_pre_interrupted() {
+        let interrupted = Arc::new(AtomicBool::new(true)); // Already interrupted
+        let start = Instant::now();
+
+        let was_interrupted = interruptible_sleep(Duration::from_secs(5), &interrupted);
+
+        assert!(was_interrupted);
+        // Should return almost immediately
+        assert!(start.elapsed() < Duration::from_millis(50));
     }
 }

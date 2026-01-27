@@ -582,10 +582,8 @@ impl App {
                 self.selected_folder = None;
             }
             SlashCommand::Help => {
-                // Show help (could open a help overlay or browser)
-                if let Err(e) = webbrowser::open("https://spoq.dev/docs") {
-                    self.stream_error = Some(format!("Failed to open browser: {}", e));
-                }
+                // Show help dialog with contact information
+                self.help_dialog_visible = true;
             }
             SlashCommand::Settings => {
                 // TODO: Open settings panel when implemented

@@ -117,6 +117,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Render sync dialog overlay (if sync in progress or recently completed)
     render_sync_dialog(frame, app);
+
+    // Render help dialog overlay (if visible)
+    render_help_dialog(frame, app);
 }
 
 /// Render a message when the terminal is too small
@@ -256,6 +259,85 @@ fn render_sync_dialog(frame: &mut Frame, app: &App) {
             ]
         }
     };
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
+}
+
+/// Render help dialog overlay when /help is triggered
+fn render_help_dialog(frame: &mut Frame, app: &App) {
+    use ratatui::widgets::{Block, BorderType, Borders, Clear};
+    use theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
+
+    // Only show if help dialog is visible
+    if !app.help_dialog_visible {
+        return;
+    }
+
+    let area = frame.area();
+
+    // Dialog dimensions
+    let dialog_width: u16 = 50;
+    let dialog_height: u16 = 11;
+
+    // Center the dialog
+    let x = (area.width.saturating_sub(dialog_width)) / 2;
+    let y = (area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect {
+        x,
+        y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear the background
+    frame.render_widget(Clear, dialog_area);
+
+    // Create border with title
+    let block = Block::default()
+        .title(Span::styled(
+            " Help & Support ",
+            Style::default()
+                .fg(COLOR_HEADER)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(COLOR_BORDER));
+
+    frame.render_widget(block, dialog_area);
+
+    // Inner area for content
+    let inner = Rect {
+        x: dialog_area.x + 2,
+        y: dialog_area.y + 2,
+        width: dialog_area.width.saturating_sub(4),
+        height: dialog_area.height.saturating_sub(4),
+    };
+
+    // Build help content with contact information
+    let lines: Vec<Line> = vec![
+        Line::from(vec![
+            Span::styled("Contact Us", Style::default().fg(COLOR_ACCENT).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Email:  ", Style::default().fg(COLOR_DIM)),
+            Span::styled("support@spoq.dev", Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Docs:   ", Style::default().fg(COLOR_DIM)),
+            Span::styled("https://spoq.dev/docs", Style::default().fg(COLOR_ACCENT)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Press ", Style::default().fg(COLOR_DIM)),
+            Span::styled("Esc", Style::default().fg(COLOR_ACCENT)),
+            Span::styled(" to close", Style::default().fg(COLOR_DIM)),
+        ]),
+    ];
 
     let content = Paragraph::new(lines);
     frame.render_widget(content, inner);

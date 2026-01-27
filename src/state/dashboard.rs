@@ -399,10 +399,10 @@ impl DashboardState {
         }
 
         // Check if we should clear pending permission data:
-        // 1. Thread completed (Done, Error, Idle) - permission is no longer relevant
+        // 1. Thread completed (Done, Error) - permission is no longer relevant
         // 2. Thread no longer waiting for Permission - permission was answered or cancelled
         let should_clear_permission = match status {
-            ThreadStatus::Done | ThreadStatus::Error | ThreadStatus::Idle => true,
+            ThreadStatus::Done | ThreadStatus::Error => true,
             _ => {
                 // Check if waiting_for changed from Permission to something else
                 let was_waiting_for_permission = self
@@ -4326,8 +4326,8 @@ mod tests {
 
         assert!(state.get_pending_permission("t1").is_some());
 
-        // Update status to Idle
-        state.update_thread_status("t1", ThreadStatus::Idle, None);
+        // Update status to Done (no longer waiting)
+        state.update_thread_status("t1", ThreadStatus::Done, None);
 
         // Pending permission should be cleared
         assert!(state.get_pending_permission("t1").is_none());

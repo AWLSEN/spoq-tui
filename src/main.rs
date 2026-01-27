@@ -426,6 +426,16 @@ where
                             }
 
                             // =========================================================
+                            // Help Dialog Dismissal
+                            // Any key press dismisses the help dialog
+                            // =========================================================
+                            if app.help_dialog_visible {
+                                app.help_dialog_visible = false;
+                                app.mark_dirty();
+                                continue;
+                            }
+
+                            // =========================================================
                             // Dashboard Question Overlay Key Handling (CommandDeck)
                             // MUST come BEFORE permission handling to take priority
                             // =========================================================
