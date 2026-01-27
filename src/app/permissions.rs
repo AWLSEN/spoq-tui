@@ -325,8 +325,58 @@ impl App {
                 }
             }
         } else {
-            info!("No pending permission found");
-            false
+            // No permission found - check for plan approval on active thread
+            info!("No pending permission found, checking for plan approval");
+            self.handle_plan_approval_key(key)
+        }
+    }
+
+    /// Handle a plan approval key press ('y' or 'n')
+    ///
+    /// Returns true if a plan approval was handled, false if no pending plan approval.
+    /// This is called when no permission is pending but y/n was pressed.
+    fn handle_plan_approval_key(&mut self, key: char) -> bool {
+        // Get active thread ID (conversation view)
+        let thread_id = match &self.active_thread_id {
+            Some(id) => id.clone(),
+            None => {
+                info!("No active thread for plan approval");
+                return false;
+            }
+        };
+
+        // Check if there's a plan approval pending for this thread
+        let request_id = match self.dashboard.get_plan_request_id(&thread_id) {
+            Some(id) => id.to_string(),
+            None => {
+                info!("No plan approval pending for thread {}", thread_id);
+                return false;
+            }
+        };
+
+        match key {
+            'y' | 'Y' => {
+                info!("User pressed 'y' - approving plan {}", request_id);
+                let sent = self.send_plan_approval_response(&request_id, true);
+                if sent {
+                    self.dashboard.remove_plan_request(&thread_id);
+                    self.dashboard.set_thread_planning(&thread_id, false);
+                }
+                sent
+            }
+            'n' | 'N' => {
+                info!("User pressed 'n' - rejecting plan {}", request_id);
+                let sent = self.send_plan_approval_response(&request_id, false);
+                if sent {
+                    self.dashboard.remove_plan_request(&thread_id);
+                    self.dashboard.set_thread_planning(&thread_id, false);
+                }
+                sent
+            }
+            _ => {
+                info!("Key '{}' not recognized for plan approval", key);
+                false
+            }
         }
     }
 
