@@ -247,6 +247,128 @@ fn read_claude_keychain_credentials() -> Option<String> {
     None
 }
 
+/// Read GitHub CLI OAuth token using `gh auth token` command.
+///
+/// This is the official and most reliable way to get the GitHub token.
+/// It works regardless of where gh stores the token (Keychain, file, env var).
+fn read_github_cli_token() -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("gh")
+        .args(["auth", "token"])
+        .output()
+        .ok()?;
+
+    if output.status.success() {
+        let token = String::from_utf8(output.stdout).ok()?;
+        let token = token.trim();
+        if !token.is_empty() {
+            return Some(token.to_string());
+        }
+    }
+
+    None
+}
+
+/// Fallback: Read GitHub CLI OAuth token from macOS Keychain directly.
+///
+/// Used only if `gh auth token` is not available.
+#[cfg(target_os = "macos")]
+fn read_github_keychain_token() -> Option<String> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    // GitHub CLI stores token with service name "gh:github.com"
+    // Account name varies by gh version - try multiple options
+    let username = std::env::var("USER").unwrap_or_default();
+    let accounts_to_try = ["", &username, ":"];
+
+    for account in accounts_to_try {
+        if let Ok(password_bytes) = get_generic_password("gh:github.com", account) {
+            let raw = match String::from_utf8(password_bytes.to_vec()) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            // GitHub CLI wraps the token with "go-keyring-base64:" prefix
+            let token = if let Some(b64) = raw.strip_prefix("go-keyring-base64:") {
+                // Decode the base64 to get the actual token
+                STANDARD.decode(b64).ok()
+                    .and_then(|bytes| String::from_utf8(bytes).ok())
+            } else {
+                // Token stored directly without encoding
+                Some(raw)
+            };
+
+            if token.is_some() {
+                return token;
+            }
+        }
+    }
+
+    None
+}
+
+/// Stub for non-macOS platforms
+#[cfg(not(target_os = "macos"))]
+fn read_github_keychain_token() -> Option<String> {
+    None
+}
+
+/// Inject oauth_token into hosts.yml YAML content
+///
+/// Finds the github.com section and adds oauth_token after the user line.
+fn inject_oauth_token_into_hosts_yml(content: &str, token: &str) -> String {
+    let mut result = String::new();
+    let mut in_github_section = false;
+    let mut token_injected = false;
+
+    for line in content.lines() {
+        result.push_str(line);
+        result.push('\n');
+
+        // Check if we're entering the github.com section
+        if line.trim_start().starts_with("github.com:") {
+            in_github_section = true;
+            continue;
+        }
+
+        // If we're in github.com section and see user: line, inject token after it
+        if in_github_section && !token_injected {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("user:") && line.starts_with(char::is_whitespace) {
+                // Use same indentation as the user line
+                let indent: String = line.chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect();
+                result.push_str(&indent);
+                result.push_str("oauth_token: ");
+                result.push_str(token);
+                result.push('\n');
+                token_injected = true;
+            } else if !line.starts_with(char::is_whitespace) && !trimmed.is_empty() {
+                // Exited github.com section
+                in_github_section = false;
+            }
+        }
+    }
+
+    // If no user: line found, inject after github.com:
+    if !token_injected && content.contains("github.com:") {
+        result.clear();
+        for line in content.lines() {
+            result.push_str(line);
+            result.push('\n');
+            if line.trim_start().starts_with("github.com:") {
+                result.push_str("    oauth_token: ");
+                result.push_str(token);
+                result.push('\n');
+            }
+        }
+    }
+
+    result
+}
+
 /// Read local token files for syncing to VPS
 ///
 /// # Arguments
@@ -300,11 +422,32 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
         let hosts_yml_path = gh_dir.join("hosts.yml");
 
         if hosts_yml_path.exists() {
-            let contents =
+            let mut contents =
                 fs::read_to_string(&hosts_yml_path).map_err(|e| ConductorError::ServerError {
                     status: 500,
                     message: format!("Failed to read ~/.config/gh/hosts.yml: {}", e),
                 })?;
+
+            // If hosts.yml doesn't contain oauth_token, get token from gh CLI or Keychain
+            if !contents.contains("oauth_token:") {
+                // Primary: Use `gh auth token` (official, always works if gh is authenticated)
+                // Fallback: Read directly from Keychain (for edge cases)
+                let token = read_github_cli_token().or_else(|| {
+                    #[cfg(target_os = "macos")]
+                    {
+                        read_github_keychain_token()
+                    }
+                    #[cfg(not(target_os = "macos"))]
+                    {
+                        None
+                    }
+                });
+
+                if let Some(token) = token {
+                    // Inject token into hosts.yml content before sending
+                    contents = inject_oauth_token_into_hosts_yml(&contents, &token);
+                }
+            }
 
             let mut gh_data = serde_json::Map::new();
             gh_data.insert("hosts_yml".to_string(), serde_json::Value::String(contents));

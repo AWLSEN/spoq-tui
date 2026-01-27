@@ -149,35 +149,6 @@ pub fn attempt_token_refresh(
     Ok(new_credentials)
 }
 
-/// Verify local tokens (Claude Code, GitHub CLI).
-///
-/// This is a non-blocking verification that warns the user if tokens are missing
-/// but does not prevent startup.
-pub fn verify_local_tokens() {
-    println!("Verifying local tokens...");
-    match crate::auth::verify_local_tokens() {
-        Ok(verification) => {
-            if verification.all_required_present {
-                println!("  Required tokens verified (Claude Code, GitHub CLI)");
-            } else {
-                eprintln!("\n  Warning: Required tokens missing on local machine:");
-                if !verification.claude_code_present {
-                    eprintln!("    - Claude Code - not found. Run: claude, then type /login");
-                }
-                if !verification.github_cli_present {
-                    eprintln!("    - GitHub CLI - not found. Run: gh auth login");
-                }
-                eprintln!("\nThese tokens are required for VPS provisioning.");
-                eprintln!("You can continue, but provisioning will fail without them.\n");
-            }
-        }
-        Err(e) => {
-            eprintln!("  Warning: Could not verify local tokens: {}", e);
-            eprintln!("Continuing anyway, but VPS provisioning may fail.\n");
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

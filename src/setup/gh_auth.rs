@@ -277,14 +277,10 @@ pub fn run_gh_auth_pty() -> Result<GhAuthResult, GhAuthError> {
                     if let (Some(ref code), Some(ref url)) = (&device_code, &verification_url) {
                         // Display to user
                         println!();
-                        println!("  ┌─────────────────────────────────────────┐");
-                        println!("  │  GitHub Authentication                  │");
-                        println!("  │                                         │");
-                        println!("  │  Code: {:<33}│", code);
-                        println!("  │  URL:  {:<33}│", url);
-                        println!("  │                                         │");
-                        println!("  │  Opening browser...                     │");
-                        println!("  └─────────────────────────────────────────┘");
+                        println!("  GitHub Authentication");
+                        println!("  Code: {}", code);
+                        println!("  URL:  {}", url);
+                        println!("  Opening browser...");
                         println!();
 
                         code_displayed = true;
@@ -306,14 +302,10 @@ pub fn run_gh_auth_pty() -> Result<GhAuthResult, GhAuthError> {
 
                         // Display to user
                         println!();
-                        println!("  ┌─────────────────────────────────────────┐");
-                        println!("  │  GitHub Authentication                  │");
-                        println!("  │                                         │");
-                        println!("  │  Code: {:<33}│", code);
-                        println!("  │  URL:  {:<33}│", url);
-                        println!("  │                                         │");
-                        println!("  │  Opening browser...                     │");
-                        println!("  └─────────────────────────────────────────┘");
+                        println!("  GitHub Authentication");
+                        println!("  Code: {}", code);
+                        println!("  URL:  {}", url);
+                        println!("  Opening browser...");
                         println!();
 
                         code_displayed = true;
@@ -375,30 +367,26 @@ pub fn run_gh_auth_pty() -> Result<GhAuthResult, GhAuthError> {
 /// Display manual authentication instructions
 pub fn display_manual_instructions() {
     println!();
-    println!("  ┌─────────────────────────────────────────────────────────────┐");
-    println!("  │  Manual GitHub CLI Setup Required                           │");
-    println!("  ├─────────────────────────────────────────────────────────────┤");
-    println!("  │                                                             │");
-    println!("  │  1. Install GitHub CLI (if not installed):                  │");
-    println!("  │     {:<55}│", GH_INSTALL_URL);
-    println!("  │                                                             │");
-    println!("  │     macOS:   brew install gh                                │");
-    println!("  │     Linux:   See website for package manager                │");
-    println!("  │     Windows: winget install GitHub.cli                      │");
-    println!("  │                                                             │");
-    println!("  │  2. Authenticate (in a new terminal tab/window):            │");
-    println!("  │     gh auth login                                           │");
-    println!("  │                                                             │");
-    println!("  │  3. Follow the prompts:                                     │");
-    println!("  │     - Select GitHub.com                                     │");
-    println!("  │     - Select HTTPS                                          │");
-    println!("  │     - Select 'Login with a web browser'                     │");
-    println!("  │     - Copy the code and complete in browser                 │");
-    println!("  │                                                             │");
-    println!("  │  4. Once done, press (r) here to retry                      │");
-    println!("  │     or (q) to quit                                          │");
-    println!("  │                                                             │");
-    println!("  └─────────────────────────────────────────────────────────────┘");
+    println!("  Manual GitHub CLI Setup Required");
+    println!();
+    println!("  1. Install GitHub CLI (if not installed):");
+    println!("     {}", GH_INSTALL_URL);
+    println!();
+    println!("     macOS:   brew install gh");
+    println!("     Linux:   See website for package manager");
+    println!("     Windows: winget install GitHub.cli");
+    println!();
+    println!("  2. Authenticate (in a new terminal tab/window):");
+    println!("     gh auth login");
+    println!();
+    println!("  3. Follow the prompts:");
+    println!("     - Select GitHub.com");
+    println!("     - Select HTTPS");
+    println!("     - Select 'Login with a web browser'");
+    println!("     - Copy the code and complete in browser");
+    println!();
+    println!("  4. Once done, press (r) here to retry");
+    println!("     or (q) to quit");
     println!();
 }
 

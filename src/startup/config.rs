@@ -19,7 +19,7 @@ use tokio::task::JoinHandle;
 /// use spoq::startup::StartupConfig;
 ///
 /// let config = StartupConfig::default()
-///     .with_skip_health_check(true)
+///     .with_skip_vps_check(true)
 ///     .with_skip_update_check(false);
 /// ```
 #[derive(Debug, Clone)]
@@ -28,7 +28,7 @@ pub struct StartupConfig {
     pub skip_update_check: bool,
     /// Skip VPS verification (useful for offline development)
     pub skip_vps_check: bool,
-    /// Skip health check loop (useful for testing)
+    /// Skip health check loop (useful for local development)
     pub skip_health_check: bool,
     /// Enable debug server
     pub enable_debug: bool,
@@ -72,7 +72,7 @@ impl StartupConfig {
         self
     }
 
-    /// Set whether to skip health check.
+    /// Set whether to skip health check (useful for local development).
     pub fn with_skip_health_check(mut self, skip: bool) -> Self {
         self.skip_health_check = skip;
         self

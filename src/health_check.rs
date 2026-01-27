@@ -123,7 +123,7 @@ pub fn display_health_check_results(result: &HealthCheckResult, vps_ip: Option<&
     } else if result.should_block {
         // Show error and block user
         println!("\n✗ VPS Setup Required\n");
-        println!("Your VPS needs to be configured with credentials before you can proceed.");
+        println!("Credentials need to be set up locally, then SPOQ will sync them to your VPS.");
         println!("\nMissing credentials:");
 
         if !result.claude_code_works {
@@ -133,25 +133,29 @@ pub fn display_health_check_results(result: &HealthCheckResult, vps_ip: Option<&
             println!("  • GitHub CLI");
         }
 
-        println!("\nTo set up credentials:");
-        if let Some(ip) = vps_ip {
-            println!("  1. SSH to your VPS:");
-            println!("     ssh spoq@{}", ip);
-        } else {
-            println!("  1. SSH to your VPS");
-        }
+        println!("\nTo set up credentials (run these locally, not on VPS):");
+
+        let mut step = 1;
 
         if !result.claude_code_works {
-            println!("  2. Authenticate Claude Code:");
-            println!("     Run: claude, then type /login");
+            println!("\n  {}. Authenticate Claude Code:", step);
+            println!("     Run: claude");
+            println!("     Then type: /login");
+            step += 1;
         }
 
         if !result.github_cli_works {
-            println!("  3. Authenticate GitHub CLI:");
+            println!("\n  {}. Authenticate GitHub CLI:", step);
             println!("     gh auth login");
+            println!();
+            println!("     Follow the prompts:");
+            println!("     - Select GitHub.com");
+            println!("     - Select HTTPS");
+            println!("     - Select 'Login with a web browser'");
+            println!("     - Copy the code and complete in browser");
         }
 
-        println!("\nAfter setting up credentials, restart this application.\n");
+        println!();
     }
 }
 

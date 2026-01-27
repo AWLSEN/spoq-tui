@@ -6,6 +6,7 @@
 use crate::auth::credentials::{Credentials, CredentialsManager};
 use crate::conductor::ConductorClient;
 use crate::health_check::{display_health_check_results, run_health_checks};
+use crate::setup::gh_auth::{ensure_gh_authenticated, is_gh_authenticated, GhAuthError};
 use std::io::{BufRead, Write};
 
 /// Run health check loop for VPS verification.
@@ -43,14 +44,36 @@ pub fn run_health_check_loop(
         if first_attempt && health_result.should_block {
             first_attempt = false;
 
-            print!("\r  Syncing credentials to VPS...    ");
-            std::io::stdout().flush().ok();
+            // Check if GitHub CLI is authenticated (runs `gh auth status`)
+            let github_cli_authenticated = is_gh_authenticated();
 
-            // Attempt sync via conductor
+            // If GitHub CLI is not authenticated locally, try auto-login first
+            if !github_cli_authenticated {
+                println!("\r  GitHub CLI not authenticated locally. Starting auto-login...\n");
+
+                match ensure_gh_authenticated() {
+                    Ok(()) => {
+                        println!("  GitHub CLI authenticated successfully\n");
+                    }
+                    Err(GhAuthError::NotInstalled) => {
+                        println!("  GitHub CLI not installed.");
+                        println!("  Install from: https://cli.github.com/\n");
+                    }
+                    Err(GhAuthError::Cancelled) => {
+                        println!("  GitHub CLI authentication cancelled.\n");
+                    }
+                    Err(e) => {
+                        println!("  GitHub CLI authentication failed: {}\n", e);
+                    }
+                }
+            }
+
+            println!("  Syncing credentials to VPS...");
+
+            // Attempt sync via conductor (this reads keychain ONCE)
             if let Some(sync_result) = attempt_credential_sync(runtime, vps_url, credentials) {
                 if sync_result {
-                    print!("\r  Verifying credentials...          ");
-                    std::io::stdout().flush().ok();
+                    println!("  Credentials synced, verifying...");
 
                     // Reload credentials in case conductor auto-refreshed during sync
                     *credentials = manager.load();
@@ -58,7 +81,7 @@ pub fn run_health_check_loop(
                     std::thread::sleep(std::time::Duration::from_secs(1));
                     continue; // Recheck immediately
                 } else {
-                    println!("\r  Credential sync failed              ");
+                    println!("  Credential sync failed");
                 }
             }
         }

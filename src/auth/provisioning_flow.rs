@@ -16,6 +16,7 @@ use super::central_api::{
 use super::credentials::{Credentials, CredentialsManager};
 use crate::cli_output::{self, icons, SPINNER_CHARS};
 use crate::conductor::ConductorClient;
+use crate::setup::gh_auth::{ensure_gh_authenticated, is_gh_authenticated, GhAuthError};
 
 /// VPS type selection.
 #[derive(Debug, Clone, PartialEq)]
@@ -294,27 +295,40 @@ pub fn run_provisioning_flow(
 ) -> Result<(), CentralApiError> {
     println!("\nPress Ctrl+C to cancel.\n");
 
-    // Verify required tokens exist locally before proceeding
-    println!("Verifying local tokens...");
-    let local_verification = match super::token_verification::verify_local_tokens() {
-        Ok(v) => v,
-        Err(e) => {
-            return Err(CentralApiError::ServerError {
-                status: 0,
-                message: format!("Token verification failed: {}", e),
-            });
-        }
-    };
+    // Check if GitHub CLI is authenticated (runs `gh auth status`)
+    if !is_gh_authenticated() {
+        println!("GitHub CLI not authenticated. Starting auto-login...\n");
 
-    if !local_verification.all_required_present {
-        super::token_verification::display_missing_tokens_error(&local_verification);
-        return Err(CentralApiError::ServerError {
-            status: 0,
-            message: "Required tokens missing. Please login first.".to_string(),
-        });
+        match ensure_gh_authenticated() {
+            Ok(()) => {
+                println!("GitHub CLI authenticated successfully\n");
+            }
+            Err(GhAuthError::NotInstalled) => {
+                println!("GitHub CLI not installed.");
+                println!("Install from: https://cli.github.com/\n");
+                return Err(CentralApiError::ServerError {
+                    status: 0,
+                    message: "GitHub CLI not installed. Please install it first.".to_string(),
+                });
+            }
+            Err(GhAuthError::Cancelled) => {
+                println!("GitHub CLI authentication cancelled.\n");
+                return Err(CentralApiError::ServerError {
+                    status: 0,
+                    message: "GitHub CLI authentication cancelled by user.".to_string(),
+                });
+            }
+            Err(e) => {
+                println!("GitHub CLI authentication failed: {}\n", e);
+                return Err(CentralApiError::ServerError {
+                    status: 0,
+                    message: format!("GitHub CLI authentication failed: {}", e),
+                });
+            }
+        }
     }
 
-    println!("✓ Required tokens verified\n");
+    println!("Checking credentials...");
 
     // Set up interrupt handler
     let interrupted = setup_interrupt_handler();

@@ -3,7 +3,7 @@
 //! This module coordinates all startup checks and returns a StartupResult
 //! ready for TUI initialization.
 
-use super::auth::{validate_credentials, verify_local_tokens};
+use super::auth::validate_credentials;
 use super::config::{StartupConfig, StartupResult};
 use super::debug::start_debug_system;
 use super::health::run_health_check_loop;
@@ -62,11 +62,10 @@ impl From<VpsError> for PreflightError {
 /// Run all preflight checks before starting the TUI.
 ///
 /// This function orchestrates:
-/// 1. Credential validation (auth flow if needed)
-/// 2. Local token verification (warning only)
-/// 3. VPS verification (provisioning if needed)
-/// 4. Health check loop (with retry)
-/// 5. Debug system startup
+/// 1. Credential validation (SPOQ auth flow if needed)
+/// 2. VPS verification (provisioning + GH auto-login if needed)
+/// 3. Health check loop (with credential sync and GH auto-login retry)
+/// 4. Debug system startup
 ///
 /// # Arguments
 /// * `runtime` - Tokio runtime for async operations
@@ -121,23 +120,24 @@ pub fn run_preflight_checks(
         PreflightError::CredentialsManager("Failed to initialize credentials manager".to_string())
     })?;
 
-    // Step 1: Validate credentials (auth flow if needed)
+    // Step 1: Validate credentials (SPOQ auth flow if needed)
     println!("Checking authentication...");
     let mut credentials = validate_credentials(runtime, &manager)?;
 
-    // Step 2: Verify local tokens (non-blocking warning)
-    verify_local_tokens();
-
-    // Step 3: VPS verification (unless skipped)
+    // Step 2: VPS verification (unless skipped)
     let (vps_state, vps_url) = if config.skip_vps_check {
         (None, None)
     } else {
         let vps = verify_vps(runtime, &mut credentials, &manager)?;
-        let url = build_vps_url(&vps);
-        (Some(vps), url)
+        let url = build_vps_url(&vps).ok_or_else(|| {
+            PreflightError::Vps(VpsError::StatusCheckFailed(
+                "VPS has no hostname, url, or IP address".to_string(),
+            ))
+        })?;
+        (Some(vps), Some(url))
     };
 
-    // Step 4: Health check loop (unless skipped)
+    // Step 3: Health check loop (unless skipped - for local dev)
     if !config.skip_health_check {
         if let (Some(ref vps), Some(ref url)) = (&vps_state, &vps_url) {
             run_health_check_loop(runtime, url, &mut credentials, &manager, vps.ip.as_deref())
@@ -145,7 +145,7 @@ pub fn run_preflight_checks(
         }
     }
 
-    // Step 5: Start debug system (unless disabled)
+    // Step 4: Start debug system (unless disabled)
     let (debug_tx, debug_handle, debug_snapshot) = if config.enable_debug {
         let debug_result = runtime.block_on(start_debug_system(config.debug_port));
         (
