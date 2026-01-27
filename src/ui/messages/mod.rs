@@ -374,6 +374,15 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
                 lines.extend(perm_lines);
             }
+
+            // Add plan mode indicators (planning spinner or plan approval UI)
+            if let Some((_, summary)) = app.dashboard.get_plan_request(thread_id) {
+                lines.extend(plan_events::render_plan_approval(summary, ctx));
+            } else if app.dashboard.is_thread_planning(thread_id)
+                && app.dashboard.get_pending_permission(thread_id).is_none()
+            {
+                lines.extend(plan_events::render_planning_indicator(app.tick_count));
+            }
         }
 
         // === UNIFIED SCROLL: Record where input section starts ===
@@ -437,6 +446,18 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     if let Some(perm) = app.dashboard.get_pending_permission(&thread_id) {
         let perm_lines = build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
         lines.extend(perm_lines);
+    }
+
+    // Add plan mode indicators (planning spinner or plan approval UI)
+    // Priority: plan approval > planning indicator (only if no permission pending)
+    if let Some((_, summary)) = app.dashboard.get_plan_request(&thread_id) {
+        // Plan approval is pending - show plan summary with approve/reject options
+        lines.extend(plan_events::render_plan_approval(summary, ctx));
+    } else if app.dashboard.is_thread_planning(&thread_id)
+        && app.dashboard.get_pending_permission(&thread_id).is_none()
+    {
+        // Thread is actively planning and no permission prompt pending
+        lines.extend(plan_events::render_planning_indicator(app.tick_count));
     }
 
     // Record where input section starts

@@ -1175,6 +1175,13 @@ impl DashboardState {
         self.plan_requests.get(thread_id).map(|(id, _)| id.as_str())
     }
 
+    /// Get the full plan request for a thread (request_id, summary)
+    ///
+    /// Returns None if no plan approval is pending for this thread.
+    pub fn get_plan_request(&self, thread_id: &str) -> Option<&(String, PlanSummary)> {
+        self.plan_requests.get(thread_id)
+    }
+
     /// Get a thread by ID
     pub fn get_thread(&self, thread_id: &str) -> Option<&Thread> {
         self.threads.get(thread_id)
