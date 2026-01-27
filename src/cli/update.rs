@@ -26,6 +26,7 @@ pub fn handle_update_command() -> Result<()> {
     runtime.block_on(async {
         // Step 1: Check for updates
         println!("Checking for updates...");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
         let check_result = match check_for_update().await {
             Ok(result) => result,
             Err(e) => {
