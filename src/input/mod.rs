@@ -116,9 +116,31 @@ impl App {
                 } else {
                     ModalType::DashboardQuestionOverlay
                 }
-            } else if self.session_state.has_pending_permission() {
-                // Fall back to session-level permission if no overlay
-                if self.is_ask_user_question_pending() {
+            } else if let Some(overlay) = self.dashboard.overlay() {
+                // Check for thread-scoped permission using overlay's thread_id
+                let thread_id = overlay.thread_id();
+                if let Some(perm) = self.dashboard.get_pending_permission(thread_id) {
+                    // Check if this is an AskUserQuestion by tool_name
+                    if perm.tool_name == "AskUserQuestion" && perm.tool_input.is_some() {
+                        if self.question_state.other_active {
+                            ModalType::AskUserQuestionOther
+                        } else {
+                            ModalType::AskUserQuestion
+                        }
+                    } else {
+                        ModalType::Permission
+                    }
+                } else {
+                    ModalType::None
+                }
+            } else {
+                ModalType::None
+            }
+        } else if let Some(ref thread_id) = self.active_thread_id {
+            // For Conversation screen, check thread-scoped permission
+            if let Some(perm) = self.dashboard.get_pending_permission(thread_id) {
+                // Check if this is an AskUserQuestion by tool_name
+                if perm.tool_name == "AskUserQuestion" && perm.tool_input.is_some() {
                     if self.question_state.other_active {
                         ModalType::AskUserQuestionOther
                     } else {
@@ -129,17 +151,6 @@ impl App {
                 }
             } else {
                 ModalType::None
-            }
-        } else if self.session_state.has_pending_permission() {
-            // For Conversation screen, keep existing behavior
-            if self.is_ask_user_question_pending() {
-                if self.question_state.other_active {
-                    ModalType::AskUserQuestionOther
-                } else {
-                    ModalType::AskUserQuestion
-                }
-            } else {
-                ModalType::Permission
             }
         } else {
             ModalType::None

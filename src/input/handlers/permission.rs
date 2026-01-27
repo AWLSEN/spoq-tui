@@ -3,43 +3,95 @@
 //! Handles commands related to permission prompts, question dialogs,
 //! folder picker, and thread switcher modals.
 
-use crate::app::App;
+use crate::app::{App, Screen};
 use crate::input::Command;
 
+/// Gets the current thread ID for permission handling.
+///
+/// The thread ID is determined based on the current screen and context:
+/// - On CommandDeck with an overlay: uses the overlay's thread_id
+/// - On Conversation screen: uses the active_thread_id
+/// - Otherwise: returns None (no permission context)
+fn get_current_thread_id(app: &App) -> Option<String> {
+    if app.screen == Screen::CommandDeck {
+        // On CommandDeck, check for overlay first (takes priority)
+        if let Some(overlay) = app.dashboard.overlay() {
+            return Some(overlay.thread_id().to_string());
+        }
+        // No overlay - no permission context on CommandDeck
+        None
+    } else {
+        // On Conversation screen, use active_thread_id
+        app.active_thread_id.clone()
+    }
+}
+
 /// Handles permission-related commands.
+///
+/// Uses thread context to look up pending permissions from DashboardState.
+/// The permission is looked up by thread_id, but the response is sent using
+/// the permission_id which uniquely identifies the request.
 ///
 /// Returns `true` if the command was handled successfully.
 pub fn handle_permission_command(app: &mut App, cmd: &Command) -> bool {
     match cmd {
         Command::ApprovePermission => {
-            if let Some(ref perm) = app.session_state.pending_permission.clone() {
-                app.approve_permission(&perm.permission_id);
-                true
-            } else {
-                false
+            if let Some(thread_id) = get_current_thread_id(app) {
+                if let Some(perm) = app.dashboard.get_pending_permission(&thread_id).cloned() {
+                    app.approve_permission(&perm.permission_id);
+                    return true;
+                }
             }
+            false
         }
 
         Command::DenyPermission => {
-            if let Some(ref perm) = app.session_state.pending_permission.clone() {
-                app.deny_permission(&perm.permission_id);
-                true
-            } else {
-                false
+            if let Some(thread_id) = get_current_thread_id(app) {
+                if let Some(perm) = app.dashboard.get_pending_permission(&thread_id).cloned() {
+                    app.deny_permission(&perm.permission_id);
+                    return true;
+                }
             }
+            false
         }
 
         Command::AlwaysAllowPermission => {
-            if let Some(ref perm) = app.session_state.pending_permission.clone() {
-                // Use allow_tool_always which adds to allowed list and approves
-                app.allow_tool_always(&perm.tool_name, &perm.permission_id);
-                true
+            if let Some(thread_id) = get_current_thread_id(app) {
+                if let Some(perm) = app.dashboard.get_pending_permission(&thread_id).cloned() {
+                    // Use allow_tool_always which adds to allowed list and approves
+                    app.allow_tool_always(&perm.tool_name, &perm.permission_id);
+                    return true;
+                }
+            }
+            false
+        }
+
+        Command::HandlePermissionKey(c) => {
+            // Handle permission key press for the current thread context
+            if let Some(thread_id) = get_current_thread_id(app) {
+                if let Some(perm) = app.dashboard.get_pending_permission(&thread_id).cloned() {
+                    match c {
+                        'y' | 'Y' => {
+                            app.approve_permission(&perm.permission_id);
+                            true
+                        }
+                        'a' | 'A' => {
+                            app.allow_tool_always(&perm.tool_name, &perm.permission_id);
+                            true
+                        }
+                        'n' | 'N' => {
+                            app.deny_permission(&perm.permission_id);
+                            true
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
             } else {
                 false
             }
         }
-
-        Command::HandlePermissionKey(c) => app.handle_permission_key(*c),
 
         _ => false,
     }
@@ -495,5 +547,98 @@ mod tests {
 
         let handled = handle_thread_switcher_command(&mut app, &Command::CycleSwitcherForward);
         assert!(handled);
+    }
+
+    // ============= Thread-Aware Permission Tests =============
+
+    #[test]
+    fn test_get_current_thread_id_conversation_screen() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("test-thread-123".to_string());
+
+        let thread_id = get_current_thread_id(&app);
+        assert_eq!(thread_id, Some("test-thread-123".to_string()));
+    }
+
+    #[test]
+    fn test_get_current_thread_id_conversation_no_active() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = None;
+
+        let thread_id = get_current_thread_id(&app);
+        assert_eq!(thread_id, None);
+    }
+
+    #[test]
+    fn test_get_current_thread_id_commanddeck_no_overlay() {
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+
+        let thread_id = get_current_thread_id(&app);
+        assert_eq!(thread_id, None);
+    }
+
+    #[test]
+    fn test_handle_permission_no_thread_context() {
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+        // No overlay, no active_thread_id
+
+        let handled = handle_permission_command(&mut app, &Command::ApprovePermission);
+        assert!(!handled);
+    }
+
+    #[test]
+    fn test_handle_permission_no_pending_permission() {
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("test-thread".to_string());
+        // No pending permission for this thread
+
+        let handled = handle_permission_command(&mut app, &Command::ApprovePermission);
+        assert!(!handled);
+    }
+
+    #[test]
+    fn test_handle_permission_key_no_thread_context() {
+        let mut app = create_test_app();
+        app.screen = Screen::CommandDeck;
+        // No overlay
+
+        let handled = handle_permission_command(&mut app, &Command::HandlePermissionKey('y'));
+        assert!(!handled);
+    }
+
+    #[test]
+    fn test_handle_permission_key_invalid_key() {
+        use crate::state::PermissionRequest;
+        use std::time::Instant;
+
+        let mut app = create_test_app();
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("test-thread".to_string());
+
+        // Set up a pending permission for this thread
+        app.dashboard.set_pending_permission(
+            "test-thread",
+            PermissionRequest {
+                permission_id: "perm-123".to_string(),
+                thread_id: Some("test-thread".to_string()),
+                tool_name: "Bash".to_string(),
+                description: "Run command".to_string(),
+                context: None,
+                tool_input: None,
+                received_at: Instant::now(),
+            },
+        );
+
+        // Invalid key should not handle
+        let handled = handle_permission_command(&mut app, &Command::HandlePermissionKey('x'));
+        assert!(!handled);
+
+        // Permission should still be pending
+        assert!(app.dashboard.get_pending_permission("test-thread").is_some());
     }
 }
