@@ -831,6 +831,48 @@ mod tests {
         }
     }
 
+    /// Helper to setup a thread with permission state for testing
+    /// This ensures the thread is properly registered and appears as "needs action"
+    fn setup_thread_with_permission(app: &mut App, thread_id: &str, permission: PermissionRequest) {
+        use crate::models::{Thread, ThreadMode, ThreadStatus, ThreadType};
+        use crate::models::dashboard::WaitingFor;
+        use chrono::Utc;
+
+        // Create and add thread
+        let thread = Thread {
+            id: thread_id.to_string(),
+            title: "Test Thread".to_string(),
+            description: None,
+            preview: String::new(),
+            updated_at: Utc::now(),
+            thread_type: ThreadType::Conversation,
+            mode: ThreadMode::Normal,
+            model: None,
+            permission_mode: None,
+            message_count: 0,
+            created_at: Utc::now(),
+            working_directory: None,
+            status: Some(ThreadStatus::Waiting),
+            verified: None,
+            verified_at: None,
+        };
+        app.dashboard.add_thread(thread);
+
+        // Set pending permission
+        app.dashboard.set_pending_permission(thread_id, permission);
+
+        // Set waiting state
+        app.dashboard.waiting_for.insert(
+            thread_id.to_string(),
+            WaitingFor::Permission {
+                request_id: "test-request".to_string(),
+            },
+        );
+
+        // Rebuild thread views to ensure needs_action is set
+        app.dashboard.rebuild_thread_views();
+    }
+
     #[test]
     fn test_permission_response_result_debug() {
         // Test that all variants can be debug-printed
@@ -1218,8 +1260,7 @@ mod tests {
     #[test]
     fn test_is_ask_user_question_pending_true() {
         let mut app = App::default();
-        app.dashboard
-            .set_pending_permission(TEST_THREAD_ID, create_ask_user_question_permission("perm-q"));
+        setup_thread_with_permission(&mut app, TEST_THREAD_ID, create_ask_user_question_permission("perm-q"));
 
         assert!(app.is_ask_user_question_pending());
     }
@@ -1242,7 +1283,8 @@ mod tests {
     #[test]
     fn test_init_question_state() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-init"),
         );
@@ -1259,7 +1301,8 @@ mod tests {
     #[test]
     fn test_question_next_option() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-next"),
         );
@@ -1288,7 +1331,8 @@ mod tests {
     #[test]
     fn test_question_prev_option() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-prev"),
         );
@@ -1317,8 +1361,7 @@ mod tests {
     #[test]
     fn test_question_next_tab() {
         let mut app = App::default();
-        app.dashboard
-            .set_pending_permission(TEST_THREAD_ID, create_multi_question_permission("perm-tab"));
+        setup_thread_with_permission(&mut app, TEST_THREAD_ID, create_multi_question_permission("perm-tab"));
         app.init_question_state();
 
         // Start at tab 0
@@ -1336,7 +1379,8 @@ mod tests {
     #[test]
     fn test_question_next_tab_single_question_no_change() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-single"),
         );
