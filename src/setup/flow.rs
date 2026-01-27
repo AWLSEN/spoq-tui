@@ -6,11 +6,11 @@
 //! ## Setup Steps
 //!
 //! - **Step 0 (AUTH)**: Ensure user is authenticated via `ensure_authenticated()`
-//! - **Step 1 (PRE-CHECK)**: Check if VPS exists via `precheck()`
-//! - **Step 2 (PROVISION)**: Create VPS if needed via `provision()`
-//! - **Step 3 (HEALTH-WAIT)**: Wait for VPS to become healthy via `wait_for_health()`
-//! - **Step 4 (CREDS-SYNC)**: Sync credentials to VPS via `sync_credentials()`
-//! - **Step 5 (CREDS-VERIFY)**: Verify credentials work via `verify_credentials()`
+//! - **Step 1 (GH-AUTH)**: Ensure GitHub CLI is installed and authenticated
+//! - **Step 2 (PRE-CHECK)**: Check if VPS exists via `precheck()`
+//! - **Step 3 (PROVISION)**: Create VPS if needed via `provision()`
+//! - **Step 4 (HEALTH-WAIT)**: Wait for VPS to become healthy via `wait_for_health()`
+//! - **Step 5 (CREDS-SYNC)**: Sync credentials to VPS via HTTP API (includes verification)
 //!
 //! ## Usage
 //!
@@ -24,13 +24,13 @@
 //! }
 //! ```
 
-use super::creds_sync::sync_credentials;
-use super::creds_verify::verify_credentials;
+use super::gh_auth::{ensure_gh_authenticated, GhAuthError};
 use super::health_wait::{wait_for_health, HealthWaitError, DEFAULT_HEALTH_TIMEOUT_SECS};
 use super::precheck::{precheck, VpsStatus};
 use super::provision::{provision, ProvisionError};
 use crate::auth::central_api::CentralApiClient;
 use crate::auth::{ensure_authenticated, Credentials};
+use crate::conductor::ConductorClient;
 
 use std::fmt;
 use std::io::{self, Write};
@@ -40,16 +40,16 @@ use std::io::{self, Write};
 pub enum SetupStep {
     /// Step 0: Authentication
     Auth,
-    /// Step 1: Pre-check for existing VPS
+    /// Step 1: GitHub CLI setup
+    GhAuth,
+    /// Step 2: Pre-check for existing VPS
     PreCheck,
-    /// Step 2: VPS provisioning
+    /// Step 3: VPS provisioning
     Provision,
-    /// Step 3: Waiting for VPS health
+    /// Step 4: Waiting for VPS health
     HealthWait,
-    /// Step 4: Credentials sync
+    /// Step 5: Credentials sync (includes verification)
     CredsSync,
-    /// Step 5: Credentials verification
-    CredsVerify,
 }
 
 impl SetupStep {
@@ -57,11 +57,11 @@ impl SetupStep {
     pub fn number(&self) -> u8 {
         match self {
             SetupStep::Auth => 0,
-            SetupStep::PreCheck => 1,
-            SetupStep::Provision => 2,
-            SetupStep::HealthWait => 3,
-            SetupStep::CredsSync => 4,
-            SetupStep::CredsVerify => 5,
+            SetupStep::GhAuth => 1,
+            SetupStep::PreCheck => 2,
+            SetupStep::Provision => 3,
+            SetupStep::HealthWait => 4,
+            SetupStep::CredsSync => 5,
         }
     }
 
@@ -69,11 +69,11 @@ impl SetupStep {
     pub fn description(&self) -> &'static str {
         match self {
             SetupStep::Auth => "Authenticating",
+            SetupStep::GhAuth => "Setting up GitHub CLI",
             SetupStep::PreCheck => "Checking VPS status",
             SetupStep::Provision => "Provisioning VPS",
             SetupStep::HealthWait => "Waiting for VPS",
             SetupStep::CredsSync => "Syncing credentials",
-            SetupStep::CredsVerify => "Verifying credentials",
         }
     }
 }
@@ -146,8 +146,6 @@ pub type SetupResult = Result<SetupSuccess, SetupError>;
 /// Central API base URL.
 const CENTRAL_API_BASE: &str = "https://spoq.dev";
 
-/// Default SSH port.
-const SSH_PORT: u16 = 22;
 
 /// Print progress indicator for a step.
 fn print_step_progress(step: SetupStep, total_steps: u8) {
@@ -234,7 +232,25 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
     print_step_complete(SetupStep::Auth, TOTAL_STEPS);
 
     // =========================================================
-    // Step 1: PRE-CHECK - Check if VPS exists
+    // Step 1: GH-AUTH - Ensure GitHub CLI is installed and authenticated
+    // =========================================================
+    print_step_progress(SetupStep::GhAuth, TOTAL_STEPS);
+
+    ensure_gh_authenticated().map_err(|e| match e {
+        GhAuthError::Cancelled => {
+            SetupError::blocking(SetupStep::GhAuth, "GitHub CLI setup cancelled by user")
+        }
+        GhAuthError::NotInstalled => SetupError::blocking(
+            SetupStep::GhAuth,
+            "GitHub CLI not installed. Visit https://cli.github.com to install.",
+        ),
+        _ => SetupError::blocking(SetupStep::GhAuth, format!("GitHub CLI setup failed: {}", e)),
+    })?;
+
+    print_step_complete(SetupStep::GhAuth, TOTAL_STEPS);
+
+    // =========================================================
+    // Step 2: PRE-CHECK - Check if VPS exists
     // =========================================================
     print_step_progress(SetupStep::PreCheck, TOTAL_STEPS);
 
@@ -408,144 +424,90 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
         )
     })?;
 
-    // Get VPS IP for SSH operations - need to fetch from API if not available
-    let vps_ip = if let Some(ip) = final_ip {
-        ip
-    } else {
-        // Try to fetch VPS info from API to get IP
-        let vps_response = runtime
-            .block_on(client.fetch_user_vps())
-            .map_err(|e| {
-                SetupError::blocking(
-                    SetupStep::CredsSync,
-                    format!("Failed to get VPS info: {}", e),
-                )
-            })?
-            .ok_or_else(|| {
-                SetupError::blocking(
-                    SetupStep::CredsSync,
-                    "VPS not found in API after provisioning",
-                )
-            })?;
-
-        vps_response.ip.ok_or_else(|| {
-            SetupError::blocking(
-                SetupStep::CredsSync,
-                "VPS IP address not available - cannot sync credentials via SSH",
-            )
-        })?
-    };
-
-    // Get SSH password from environment variable
-    // SSH password is not stored in credentials for security reasons
-    // It's typically provided during provisioning and passed via environment
-    let ssh_password = std::env::var("SPOQ_VPS_SSH_PASSWORD").unwrap_or_default();
-
     // =========================================================
-    // Step 4: CREDS-SYNC - Sync credentials to VPS
+    // Step 5: CREDS-SYNC - Sync credentials to VPS via HTTP API
     // =========================================================
+    // Uses Conductor's /v1/tokens/sync endpoint which includes verification
     print_step_progress(SetupStep::CredsSync, TOTAL_STEPS);
 
-    if ssh_password.is_empty() {
-        // SSH password not available - skip credential sync
-        // This can happen for existing VPS where password was not stored
-        print_step_skipped(
-            SetupStep::CredsSync,
-            TOTAL_STEPS,
-            "SSH password not available",
-        );
-    } else {
-        let sync_result = runtime
-            .block_on(sync_credentials(&vps_ip, "root", &ssh_password, SSH_PORT))
-            .map_err(|e| {
-                // Credential sync failure is blocking
-                SetupError::blocking(
-                    SetupStep::CredsSync,
-                    format!("Credential sync failed: {}", e),
-                )
-            })?;
+    // Create ConductorClient to sync credentials via HTTP
+    let refresh_token = credentials.refresh_token.clone().unwrap_or_default();
+    let mut conductor_client = ConductorClient::with_url(&vps_url)
+        .with_auth(access_token)
+        .with_refresh_token(&refresh_token);
 
-        if sync_result.any_synced() {
-            print_step_complete(SetupStep::CredsSync, TOTAL_STEPS);
-            if sync_result.claude_synced {
-                println!(
-                    "  Claude credentials synced ({} bytes)",
-                    sync_result.claude_bytes
-                );
-            }
-            if sync_result.github_synced {
-                println!(
-                    "  GitHub credentials synced ({} bytes)",
-                    sync_result.github_bytes
-                );
-            }
-            if sync_result.codex_synced {
-                println!(
-                    "  Codex credentials synced ({} bytes)",
-                    sync_result.codex_bytes
-                );
-            }
-        } else {
-            // No credentials found locally to sync
-            print_step_skipped(
+    let sync_result = runtime
+        .block_on(conductor_client.sync_tokens("all"))
+        .map_err(|e| {
+            SetupError::blocking(
                 SetupStep::CredsSync,
-                TOTAL_STEPS,
-                "No local credentials found",
-            );
+                format!(
+                    "Credential sync failed: {}. \
+                     Please ensure Claude Code and GitHub CLI are authenticated locally, \
+                     then run '/sync' to sync credentials.",
+                    e
+                ),
+            )
+        })?;
+
+    if sync_result.success {
+        print_step_complete(SetupStep::CredsSync, TOTAL_STEPS);
+
+        // Show what was synced
+        if let Some(ref synced) = sync_result.synced {
+            for item in synced {
+                println!("  {} synced", item);
+            }
         }
-    }
 
-    // =========================================================
-    // Step 5: CREDS-VERIFY - Verify credentials work on VPS
-    // =========================================================
-    print_step_progress(SetupStep::CredsVerify, TOTAL_STEPS);
+        // Show verification results
+        if let Some(ref verification) = sync_result.verification {
+            if verification.claude_code_works == Some(true) {
+                println!("  Claude Code: ✓");
+            } else if verification.claude_code_works == Some(false) {
+                println!("  Claude Code: ✗ (credentials synced but not working)");
+            }
+            if verification.github_cli_works == Some(true) {
+                println!("  GitHub CLI: ✓");
+            } else if verification.github_cli_works == Some(false) {
+                println!("  GitHub CLI: ✗ (credentials synced but not working)");
+            }
+        }
 
-    if ssh_password.is_empty() {
-        // Can't verify without SSH access
-        print_step_skipped(
-            SetupStep::CredsVerify,
-            TOTAL_STEPS,
-            "SSH password not available",
-        );
-    } else {
-        let verify_result = runtime
-            .block_on(verify_credentials(&vps_ip, "root", &ssh_password, SSH_PORT))
-            .map_err(|e| {
-                // Credential verification failure is BLOCKING
-                SetupError::blocking(
-                    SetupStep::CredsVerify,
+        // Check if verification failed
+        if let Some(ref verification) = sync_result.verification {
+            let claude_ok = verification.claude_code_works.unwrap_or(true);
+            let github_ok = verification.github_cli_works.unwrap_or(true);
+
+            if !claude_ok || !github_ok {
+                let mut failures = Vec::new();
+                if !claude_ok {
+                    failures.push("Claude Code not authenticated");
+                }
+                if !github_ok {
+                    failures.push("GitHub CLI not authenticated");
+                }
+                return Err(SetupError::blocking(
+                    SetupStep::CredsSync,
                     format!(
                         "Credential verification failed: {}. \
-                         Please ensure Claude Code and GitHub CLI are authenticated locally, \
-                         then run 'spoq --sync' to sync credentials.",
-                        e
+                         Please run 'gh auth login' and 'claude' (then /login) locally, \
+                         then run '/sync' to sync credentials.",
+                        failures.join(", ")
                     ),
-                )
-            })?;
-
-        if verify_result.all_ok() {
-            print_step_complete(SetupStep::CredsVerify, TOTAL_STEPS);
-            println!("  Claude Code: ✓");
-            println!("  GitHub CLI: ✓");
-        } else {
-            // Partial verification - this is blocking
-            let mut failures = Vec::new();
-            if !verify_result.github_ok {
-                failures.push("GitHub CLI not authenticated");
+                ));
             }
-            if !verify_result.claude_ok {
-                failures.push("Claude Code not authenticated");
-            }
-            return Err(SetupError::blocking(
-                SetupStep::CredsVerify,
-                format!(
-                    "Credential verification failed: {}. \
-                     Please run 'gh auth login' and 'claude' (then /login) locally, \
-                     then run 'spoq --sync' to sync credentials.",
-                    failures.join(", ")
-                ),
-            ));
         }
+    } else {
+        // Sync failed
+        return Err(SetupError::blocking(
+            SetupStep::CredsSync,
+            format!(
+                "Credential sync failed: {}. \
+                 Please ensure Claude Code and GitHub CLI are authenticated locally.",
+                sync_result.message
+            ),
+        ));
     }
 
     // =========================================================
@@ -560,7 +522,7 @@ pub fn run_setup_flow(runtime: &tokio::runtime::Runtime) -> SetupResult {
     Ok(SetupSuccess {
         vps_url,
         vps_hostname: final_hostname,
-        vps_ip: Some(vps_ip),
+        vps_ip: final_ip,
         vps_id,
         credentials: credentials.clone(),
     })
@@ -573,32 +535,29 @@ mod tests {
     #[test]
     fn test_setup_step_number() {
         assert_eq!(SetupStep::Auth.number(), 0);
-        assert_eq!(SetupStep::PreCheck.number(), 1);
-        assert_eq!(SetupStep::Provision.number(), 2);
-        assert_eq!(SetupStep::HealthWait.number(), 3);
-        assert_eq!(SetupStep::CredsSync.number(), 4);
-        assert_eq!(SetupStep::CredsVerify.number(), 5);
+        assert_eq!(SetupStep::GhAuth.number(), 1);
+        assert_eq!(SetupStep::PreCheck.number(), 2);
+        assert_eq!(SetupStep::Provision.number(), 3);
+        assert_eq!(SetupStep::HealthWait.number(), 4);
+        assert_eq!(SetupStep::CredsSync.number(), 5);
     }
 
     #[test]
     fn test_setup_step_description() {
         assert_eq!(SetupStep::Auth.description(), "Authenticating");
+        assert_eq!(SetupStep::GhAuth.description(), "Setting up GitHub CLI");
         assert_eq!(SetupStep::PreCheck.description(), "Checking VPS status");
         assert_eq!(SetupStep::Provision.description(), "Provisioning VPS");
         assert_eq!(SetupStep::HealthWait.description(), "Waiting for VPS");
         assert_eq!(SetupStep::CredsSync.description(), "Syncing credentials");
-        assert_eq!(
-            SetupStep::CredsVerify.description(),
-            "Verifying credentials"
-        );
     }
 
     #[test]
     fn test_setup_step_display() {
         assert_eq!(format!("{}", SetupStep::Auth), "Step 0: Authenticating");
         assert_eq!(
-            format!("{}", SetupStep::CredsVerify),
-            "Step 5: Verifying credentials"
+            format!("{}", SetupStep::CredsSync),
+            "Step 5: Syncing credentials"
         );
     }
 
@@ -622,7 +581,7 @@ mod tests {
     fn test_setup_error_display() {
         let err = SetupError::blocking(SetupStep::Provision, "test message");
         let display = format!("{}", err);
-        assert!(display.contains("Step 2"));
+        assert!(display.contains("Step 3"));
         assert!(display.contains("Provisioning VPS"));
         assert!(display.contains("test message"));
     }
