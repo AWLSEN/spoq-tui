@@ -52,6 +52,8 @@ impl<'a> TextAreaInput<'a> {
         // Configure default styling to match InputBox dark theme
         textarea.set_cursor_line_style(Style::default());
         textarea.set_cursor_style(Style::default().fg(Color::Black).bg(Color::White));
+        // Lighter text color for input (not bright white)
+        textarea.set_style(Style::default().fg(Color::Rgb(180, 180, 190)));
 
         // Configure textarea behavior
         textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)
@@ -77,6 +79,8 @@ impl<'a> TextAreaInput<'a> {
         let mut textarea = TextArea::new(lines);
         textarea.set_cursor_line_style(Style::default());
         textarea.set_cursor_style(Style::default().fg(Color::Black).bg(Color::White));
+        // Lighter text color for input (not bright white)
+        textarea.set_style(Style::default().fg(Color::Rgb(180, 180, 190)));
 
         // Configure textarea behavior
         textarea.set_tab_length(4); // 4 spaces per tab (matches common Rust convention)

@@ -88,8 +88,9 @@ impl CursorBlinkState {
     }
 
     /// Get the current visibility state of the cursor.
+    /// Always returns true for solid caret (no blinking).
     pub fn is_visible(&self) -> bool {
-        self.is_visible
+        true
     }
 }
 
@@ -136,7 +137,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cursor_starts_blinking_after_blinkwait() {
+    fn test_cursor_always_visible_solid_mode() {
+        // Cursor is now always visible (solid caret mode)
         let mut state = CursorBlinkState::new();
         state.reset(0);
 
@@ -144,44 +146,37 @@ mod tests {
         state.update(31);
         assert!(
             state.is_visible(),
-            "Cursor should be visible at start of blink cycle"
+            "Cursor should always be visible in solid mode"
         );
 
-        // Move to second half of first blink cycle (tick 31 + 16 = 47)
+        // Even in what would be hidden phase, cursor stays visible
         state.update(47);
         assert!(
-            !state.is_visible(),
-            "Cursor should be hidden in second half of blink cycle"
+            state.is_visible(),
+            "Cursor should always be visible in solid mode"
         );
     }
 
     #[test]
-    fn test_blink_cycle_repeats() {
+    fn test_cursor_stays_visible_at_all_ticks() {
+        // Cursor is now always visible (solid caret mode)
         let mut state = CursorBlinkState::new();
         state.reset(0);
 
-        // Full cycle is 32 ticks (16 visible + 16 hidden)
-        // After blinkwait (31), we start at tick 31
-
-        // Tick 31-46: visible (first half of cycle 1)
-        state.update(31);
-        assert!(state.is_visible());
-
-        // Tick 47-62: hidden (second half of cycle 1)
-        state.update(47);
-        assert!(!state.is_visible());
-
-        // Tick 63-78: visible (first half of cycle 2)
-        state.update(63);
-        assert!(state.is_visible());
-
-        // Tick 79-94: hidden (second half of cycle 2)
-        state.update(79);
-        assert!(!state.is_visible());
+        // Test various tick values - cursor should always be visible
+        for tick in [0, 31, 47, 63, 79, 100, 200, 500] {
+            state.update(tick);
+            assert!(
+                state.is_visible(),
+                "Cursor should be visible at tick {}",
+                tick
+            );
+        }
     }
 
     #[test]
-    fn test_update_returns_true_on_visibility_change() {
+    fn test_update_returns_change_status() {
+        // Internal state still tracks blink cycles, but is_visible() always returns true
         let mut state = CursorBlinkState::new();
         state.reset(0);
 
@@ -189,45 +184,34 @@ mod tests {
         let changed = state.update(10);
         assert!(!changed, "Should return false when visibility unchanged");
 
-        // Change when entering hidden phase
+        // Internal state changes when entering hidden phase
         let changed = state.update(47);
-        assert!(changed, "Should return true when becoming hidden");
+        assert!(changed, "Should return true when internal state changes");
 
-        // No change while still hidden
-        let changed = state.update(48);
-        assert!(!changed, "Should return false when staying hidden");
-
-        // Change when becoming visible again
-        let changed = state.update(63);
-        assert!(changed, "Should return true when becoming visible");
+        // Cursor is still visible externally
+        assert!(state.is_visible(), "External visibility always true");
     }
 
     #[test]
-    fn test_reset_during_blink_restarts_blinkwait() {
+    fn test_reset_always_keeps_visible() {
+        // Cursor is now always visible (solid caret mode)
         let mut state = CursorBlinkState::new();
         state.reset(0);
 
-        // Move to hidden phase
+        // Move to what would be hidden phase
         state.update(50);
-        assert!(!state.is_visible());
+        assert!(state.is_visible(), "Cursor should be visible");
 
         // Reset at tick 100
         state.reset(100);
-        assert!(state.is_visible());
+        assert!(state.is_visible(), "Cursor should be visible after reset");
 
-        // Should stay visible during new blinkwait period
+        // Should stay visible always
         state.update(120);
-        assert!(
-            state.is_visible(),
-            "Should be visible during new blinkwait period"
-        );
+        assert!(state.is_visible(), "Cursor should be visible");
 
-        // Should start blinking again after new blinkwait
-        state.update(131); // tick 100 + 31 = 131
-        assert!(state.is_visible(), "First half of new blink cycle");
-
-        state.update(147); // tick 131 + 16 = 147
-        assert!(!state.is_visible(), "Second half of new blink cycle");
+        state.update(147);
+        assert!(state.is_visible(), "Cursor should always be visible");
     }
 
     #[test]

@@ -30,6 +30,7 @@ fn calculate_dialog_height(visible_count: usize, area_height: u16) -> u16 {
 
 /// Anchor mode for the autocomplete dropdown
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum AnchorMode {
     /// Bottom of dropdown anchored to input (dropdown grows upward) - used in CommandDeck
     Above,

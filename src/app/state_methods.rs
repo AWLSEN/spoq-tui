@@ -57,6 +57,12 @@ impl App {
     pub fn tick(&mut self) {
         self.tick_count = self.tick_count.wrapping_add(1);
 
+        // Process batched scroll events (one render per tick for all scroll events)
+        if self.scroll_changed {
+            self.scroll_changed = false;
+            self.mark_dirty();
+        }
+
         // Update cursor blink state and mark dirty if visibility changed
         let cursor_visibility_changed = self.cursor_blink.update(self.tick_count);
         if cursor_visibility_changed {
@@ -129,13 +135,13 @@ impl App {
             // Hit bottom boundary
             self.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
             self.boundary_hit_tick = self.tick_count;
-            self.scroll_velocity = 0.0; // Stop on boundary hit
+            self.scroll_velocity *= 0.1; // Damped stop instead of hard stop
             self.user_has_scrolled = false; // Back at bottom
         } else if new_position > max && self.scroll_position <= max && self.max_scroll > 0 {
             // Hit top boundary
             self.scroll_boundary_hit = Some(ScrollBoundary::Top);
             self.boundary_hit_tick = self.tick_count;
-            self.scroll_velocity = 0.0; // Stop on boundary hit
+            self.scroll_velocity *= 0.1; // Damped stop instead of hard stop
         } else {
             // Apply friction when not hitting boundary
             self.scroll_velocity *= FRICTION;
@@ -1962,20 +1968,20 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_reset_cursor_blink_resets_to_visible() {
+    fn test_reset_cursor_blink_keeps_visible() {
+        // Cursor is now always visible (solid caret mode)
         let mut app = create_test_app();
-        // Initialize blink state and move it to hidden phase
         app.cursor_blink.reset(0);
-        app.tick_count = 50; // Well past blinkwait (31) + first half cycle (16) = 47
+        app.tick_count = 50;
         app.cursor_blink.update(app.tick_count);
 
-        // Verify cursor is hidden before reset (in second half of blink cycle)
-        assert!(!app.cursor_blink.is_visible(), "Cursor should be hidden at tick 50");
+        // In solid mode, cursor is always visible
+        assert!(app.cursor_blink.is_visible(), "Cursor should always be visible in solid mode");
 
         // Reset cursor blink at current tick
         app.reset_cursor_blink();
 
-        // After reset, cursor should be visible (solid)
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after reset");
     }
 

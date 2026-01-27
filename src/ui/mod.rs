@@ -732,7 +732,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
         app.screen = Screen::Conversation;
-        app.tick_count = 0; // Ensure cursor is visible (tick_count / 5) % 2 == 0
+        app.tick_count = 0;
 
         // Create a streaming thread
         let thread_id = app.cache.create_streaming_thread("Test".to_string());
@@ -747,15 +747,16 @@ mod tests {
 
         let buffer = terminal.backend().buffer();
         let buffer_str: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
-        // The cursor character █ should be present when tick_count makes it visible
+        // The cursor character ● should be present (solid circle cursor)
         assert!(
-            buffer_str.contains("█"),
-            "Conversation screen should show blinking cursor during streaming"
+            buffer_str.contains("●"),
+            "Conversation screen should show solid circle cursor during streaming"
         );
     }
 
     #[test]
-    fn test_conversation_screen_cursor_blinks() {
+    fn test_conversation_screen_cursor_always_visible() {
+        // Streaming cursor is now always visible (solid circle ●)
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         let mut app = create_test_app();
@@ -766,7 +767,7 @@ mod tests {
         app.cache.append_to_message(&thread_id, "Response");
         app.active_thread_id = Some(thread_id.clone());
 
-        // Test cursor visible (tick_count = 0, 0/5 % 2 == 0)
+        // Test at tick_count = 0
         app.tick_count = 0;
         terminal
             .draw(|f| {
@@ -775,10 +776,9 @@ mod tests {
             .unwrap();
 
         let buffer = terminal.backend().buffer();
-        let buffer_str_visible: String =
-            buffer.content().iter().map(|cell| cell.symbol()).collect();
+        let buffer_str_0: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
 
-        // Test cursor hidden (tick_count = 5, 5/5 % 2 == 1)
+        // Test at tick_count = 5
         app.tick_count = 5;
         let backend2 = TestBackend::new(100, 30);
         let mut terminal2 = Terminal::new(backend2).unwrap();
@@ -789,19 +789,16 @@ mod tests {
             .unwrap();
 
         let buffer2 = terminal2.backend().buffer();
-        let buffer_str_hidden: String =
-            buffer2.content().iter().map(|cell| cell.symbol()).collect();
+        let buffer_str_5: String = buffer2.content().iter().map(|cell| cell.symbol()).collect();
 
-        // When visible, should have █; when hidden, the cursor position should have space
+        // Cursor should always be visible (solid circle ●) regardless of tick_count
         assert!(
-            buffer_str_visible.contains("█"),
+            buffer_str_0.contains("●"),
             "Cursor should be visible at tick_count=0"
         );
-        // Note: The hidden cursor shows a space, so we check that █ is not present
-        // or that the behavior differs
         assert!(
-            !buffer_str_hidden.contains("█"),
-            "Cursor should be hidden at tick_count=5"
+            buffer_str_5.contains("●"),
+            "Cursor should be visible at tick_count=5 (no blinking)"
         );
     }
 

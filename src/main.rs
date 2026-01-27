@@ -1518,46 +1518,22 @@ where
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll down = see newer content / input
-                                        app.scroll_velocity = 0.0; // Reset momentum on user scroll
-                                        let needs_redraw = if app.unified_scroll >= 1 {
+                                        if app.unified_scroll >= 1 {
                                             app.unified_scroll -= 1;
-                                            app.scroll_position = app.unified_scroll as f32;
-                                            true
-                                        } else if app.unified_scroll > 0 {
-                                            app.unified_scroll = 0;
-                                            app.user_has_scrolled = false; // Back at bottom
-                                            app.scroll_position = 0.0;
-                                            true
                                         } else {
-                                            app.scroll_boundary_hit = Some(ScrollBoundary::Bottom);
-                                            app.boundary_hit_tick = app.tick_count;
-                                            true
-                                        };
-                                        if needs_redraw {
-                                            app.mark_dirty();
+                                            app.unified_scroll = 0;
                                         }
+                                        // Don't mark_dirty() - scroll_changed flag will trigger render
+                                        app.scroll_changed = true;
                                     }
                                 }
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll up = see older content
-                                        app.scroll_velocity = 0.0; // Reset momentum on user scroll
-                                        app.user_has_scrolled = true;
                                         let new_scroll = (app.unified_scroll + 1).min(app.max_scroll);
-                                        let needs_redraw = if new_scroll != app.unified_scroll {
-                                            app.unified_scroll = new_scroll;
-                                            app.scroll_position = app.unified_scroll as f32;
-                                            true
-                                        } else if app.max_scroll > 0 {
-                                            app.scroll_boundary_hit = Some(ScrollBoundary::Top);
-                                            app.boundary_hit_tick = app.tick_count;
-                                            true
-                                        } else {
-                                            false
-                                        };
-                                        if needs_redraw {
-                                            app.mark_dirty();
-                                        }
+                                        app.unified_scroll = new_scroll;
+                                        // Don't mark_dirty() - scroll_changed flag will trigger render
+                                        app.scroll_changed = true;
                                     }
                                 }
                                 // Ignore other mouse events (right click, drag, etc.)

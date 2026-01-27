@@ -27,7 +27,7 @@ use errors::render_inline_error_banners;
 use segments::render_message_segments;
 use text_wrapping::{apply_background_to_line, wrap_lines_with_prefix};
 use thinking::render_thinking_block;
-use virtualization::{calculate_visible_range, estimate_message_height_fast, MessageHeight};
+use virtualization::{estimate_message_height_fast, MessageHeight};
 
 use ratatui::{
     layout::Rect,
@@ -73,11 +73,9 @@ pub fn render_single_message(
 
     // Handle streaming vs completed messages
     if message.is_streaming {
-        // Display streaming content with blinking cursor
-        // Blink cursor every ~500ms (assuming 10 ticks/sec, toggle every 5 ticks)
-        let show_cursor = (app.tick_count / 5).is_multiple_of(2);
+        // Display streaming content with solid circle cursor
         let cursor_span = Span::styled(
-            if show_cursor { "\u{2588}" } else { " " },
+            "\u{25CF}", // ● Black Circle
             Style::default().fg(COLOR_ACCENT),
         );
 
@@ -275,7 +273,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     // Phase 1: Get heights from pre-computed cache (prepared in prepare_render)
     // The height cache is updated in prepare_render(), we just read from it here
     let current_thread_id = app.active_thread_id.clone();
-    let (message_heights, total_visual_lines, message_count) = {
+    let (_message_heights, _total_visual_lines, message_count) = {
         let cached_messages = current_thread_id.as_ref().and_then(|id| {
             crate::app::log_thread_update(&format!(
                 "RENDER: Looking for messages for thread_id: {}",
@@ -387,120 +385,38 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         // === UNIFIED SCROLL: Record total for scroll calculations ===
         app.total_content_lines = lines.len();
 
-        // === UNIFIED SCROLL: Calculate scroll ===
-        let total_visual = lines.len() as u16;
-        let unified_scroll_from_top = if total_visual <= inner.height {
-            0 // Content fits, no scroll
-        } else if !app.user_has_scrolled {
-            total_visual.saturating_sub(inner.height)
-        } else {
-            let unified_max_scroll = total_visual.saturating_sub(inner.height);
-            unified_max_scroll.saturating_sub(app.unified_scroll)
-        };
-
-        app.max_scroll = total_visual.saturating_sub(inner.height);
+        // === SIMPLE SCROLL ===
+        let total_lines = lines.len();
+        let max_possible_scroll = total_lines.saturating_sub(inner.height as usize);
+        let scroll_from_top = max_possible_scroll.saturating_sub(app.unified_scroll as usize);
+        app.max_scroll = max_possible_scroll as u16;
 
         let messages_widget = Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .scroll((unified_scroll_from_top, 0));
+            .scroll((scroll_from_top as u16, 0));
         frame.render_widget(messages_widget, inner);
         return;
     }
 
     let input_lines = super::input::build_input_section(app, inner.width);
-    let total_content_lines = total_visual_lines + input_lines.len();
 
-    // Calculate max scroll (how far up we can scroll from bottom)
-    // scroll=0 means showing the bottom (latest content)
-    // scroll=max means showing the top (oldest content)
-    let max_scroll = total_content_lines.saturating_sub(viewport_height) as u16;
-    app.max_scroll = max_scroll;
-
-    // Clamp user's scroll to valid range (unified_scroll is the source of truth)
-    let clamped_scroll = if app.user_has_scrolled {
-        app.unified_scroll.min(max_scroll)
-    } else {
-        0
-    };
-
-    // Convert from "scroll from bottom" to ratatui's "scroll from top"
-    // If user_scroll=0, show bottom -> actual_scroll = max_scroll
-    // If user_scroll=max, show top -> actual_scroll = 0
-    let scroll_from_top = (max_scroll.saturating_sub(clamped_scroll)) as usize;
-
-    crate::app::log_thread_update(&format!(
-        "RENDER: total_visual_lines={}, total_content_lines={}, max_scroll={}, unified_scroll={}, scroll_from_top={}",
-        total_visual_lines,
-        total_content_lines,
-        max_scroll,
-        app.unified_scroll,
-        scroll_from_top
-    ));
-
-    let total_message_lines = total_visual_lines.saturating_sub(header_visual_lines);
-    let message_scroll_start = scroll_from_top
-        .saturating_sub(header_visual_lines)
-        .min(total_message_lines);
-    let message_scroll_end = scroll_from_top
-        .saturating_add(viewport_height)
-        .saturating_sub(header_visual_lines)
-        .min(total_message_lines);
-    let message_viewport_height = message_scroll_end.saturating_sub(message_scroll_start);
-
-    // Phase 2: Calculate visible range
-    let (start_index, end_index, first_message_line_offset) = calculate_visible_range(
-        &message_heights,
-        message_scroll_start,
-        message_viewport_height,
-    );
-
-    crate::app::log_thread_update(&format!(
-        "RENDER: Virtualization - rendering messages {}..{} of {}",
-        start_index, end_index, message_count
-    ));
-
-    // Phase 3: Render only visible messages
-    // Clone ONLY the visible range instead of all messages - major optimization
-    let visible_messages: Vec<Message> = app
+    // SIMPLE: Render ALL messages (no virtualization)
+    // This ensures smooth 1-line-at-a-time scrolling
+    let all_messages: Vec<Message> = app
         .active_thread_id
         .as_ref()
         .and_then(|id| app.cache.get_messages(id))
-        .map(|msgs| {
-            msgs.iter()
-                .skip(start_index)
-                .take(end_index - start_index)
-                .cloned()
-                .collect()
-        })
+        .map(|msgs| msgs.to_vec())
         .unwrap_or_default();
 
     let mut lines: Vec<Line> = header_lines;
 
-    // Render visible messages (using the cloned subset)
-    // Extract thread_id for passing to render_single_message
+    // Render ALL messages
     let thread_id = app.active_thread_id.clone().unwrap_or_default();
-    for message in visible_messages.iter() {
+    for message in all_messages.iter() {
         let message_lines = render_single_message(&thread_id, message, app, ctx);
         lines.extend(message_lines);
     }
-
-    // Log what's actually in the first few lines
-    for (i, line) in lines.iter().take(5).enumerate() {
-        let content: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-        crate::app::log_thread_update(&format!(
-            "RENDER: Line {}: {:?}",
-            i,
-            content.chars().take(80).collect::<String>()
-        ));
-    }
-
-    crate::app::log_thread_update(&format!(
-        "RENDER: Generated {} lines for {} visible messages, viewport={}x{}",
-        lines.len(),
-        end_index - start_index,
-        viewport_width,
-        viewport_height
-    ));
 
     // Detect if any visible lines contain hyperlinks (OSC 8 escape sequences)
     // OSC 8 format starts with: \x1b]8;;
@@ -522,31 +438,27 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         lines.extend(perm_lines);
     }
 
-    // === UNIFIED SCROLL: Record where input section starts ===
+    // Record where input section starts
     app.input_section_start = lines.len();
 
-    // === UNIFIED SCROLL: Append input section ===
+    // Append input section
     lines.extend(input_lines);
 
-    // === UNIFIED SCROLL: Record total for scroll calculations ===
-    app.total_content_lines = total_content_lines;
+    // SIMPLE SCROLL CALCULATION:
+    // total_lines = everything we rendered
+    // max_scroll = how far we can scroll (total - viewport)
+    // scroll_from_top = max_scroll - unified_scroll (converts from "from bottom" to "from top")
+    let total_lines = lines.len();
+    app.total_content_lines = total_lines;
 
-    // === UNIFIED SCROLL: Calculate scroll offset based on actual rendered content ===
-    // When at bottom (unified_scroll = 0), ensure input is visible by scrolling
-    // to show the bottom of rendered content. When scrolled up, use the
-    // virtualization offset within the first visible message.
-    let rendered_lines = lines.len();
-    let unified_scroll_from_top = if !app.user_has_scrolled || app.unified_scroll == 0 {
-        // At bottom: scroll to show input at the bottom of viewport
-        rendered_lines.saturating_sub(viewport_height) as u16
-    } else {
-        // Scrolled up: use offset within first visible message
-        first_message_line_offset.min(u16::MAX as usize) as u16
-    };
+    let max_scroll = total_lines.saturating_sub(viewport_height);
+    app.max_scroll = max_scroll as u16;
+
+    let scroll_from_top = max_scroll.saturating_sub(app.unified_scroll as usize);
 
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .scroll((unified_scroll_from_top, 0));
+        .scroll((scroll_from_top as u16, 0));
     frame.render_widget(messages_widget, inner);
 }
 

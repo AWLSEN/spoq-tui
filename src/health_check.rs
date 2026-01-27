@@ -98,7 +98,7 @@ pub async fn run_health_checks(vps_url: &str, credentials: &Credentials) -> Heal
 /// # Arguments
 /// * `result` - Health check results to display
 /// * `vps_ip` - Optional VPS IP address for instructions
-pub fn display_health_check_results(result: &HealthCheckResult, vps_ip: Option<&str>) {
+pub fn display_health_check_results(result: &HealthCheckResult, _vps_ip: Option<&str>) {
     println!();
 
     // Conductor health

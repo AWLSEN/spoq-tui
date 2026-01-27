@@ -327,159 +327,137 @@ mod tests {
     }
 
     // =========================================================================
-    // Cursor Blink Reset Tests
+    // Cursor Visibility Tests (Solid Cursor Mode)
     // =========================================================================
+    // Note: Cursor is now always visible (solid caret mode).
+    // These tests verify cursor stays visible through various editing operations.
 
     #[test]
-    fn test_insert_char_resets_cursor_blink() {
+    fn test_insert_char_keeps_cursor_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Insert a character
         handle_editing_command(&mut app, &Command::InsertChar('a'));
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after typing");
     }
 
     #[test]
-    fn test_backspace_resets_cursor_blink() {
+    fn test_backspace_keeps_cursor_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
         app.textarea.insert_char('x');
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Backspace
         handle_editing_command(&mut app, &Command::Backspace);
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after backspace");
     }
 
     #[test]
-    fn test_delete_char_resets_cursor_blink() {
+    fn test_delete_char_keeps_cursor_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
         app.textarea.insert_char('x');
         app.textarea.move_cursor_left();
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Delete char
         handle_editing_command(&mut app, &Command::DeleteChar);
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after delete");
     }
 
     #[test]
-    fn test_move_cursor_left_resets_blink() {
+    fn test_move_cursor_left_keeps_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
         app.textarea.set_content("hello");
         app.textarea.move_cursor_end();
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Move cursor
         handle_editing_command(&mut app, &Command::MoveCursorLeft);
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after cursor movement");
     }
 
     #[test]
-    fn test_move_cursor_right_resets_blink() {
+    fn test_move_cursor_right_keeps_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
         app.textarea.set_content("hello");
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Move cursor
         handle_editing_command(&mut app, &Command::MoveCursorRight);
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after cursor movement");
     }
 
     #[test]
-    fn test_paste_resets_cursor_blink() {
+    fn test_paste_keeps_cursor_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Paste text
         handle_editing_command(&mut app, &Command::Paste("text".to_string()));
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after paste");
     }
 
     #[test]
-    fn test_history_up_resets_cursor_blink() {
+    fn test_history_up_keeps_cursor_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
         app.input_history.add("previous".to_string());
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Navigate history
         handle_editing_command(&mut app, &Command::HistoryUp);
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after history navigation");
     }
 
     #[test]
-    fn test_history_down_resets_cursor_blink() {
+    fn test_history_down_keeps_cursor_visible() {
         let mut app = create_test_app();
         app.focus = Focus::Input;
         app.input_history.add("previous".to_string());
         app.input_history.navigate_up(""); // Move up in history
 
-        // Move cursor to hidden phase
-        app.cursor_blink.reset(0);
-        app.tick_count = 50;
-        app.cursor_blink.update(app.tick_count);
-        assert!(!app.cursor_blink.is_visible(), "Setup: cursor should be hidden");
+        // Cursor should always be visible in solid mode
+        assert!(app.cursor_blink.is_visible(), "Cursor should be visible initially");
 
         // Navigate history down
         handle_editing_command(&mut app, &Command::HistoryDown);
 
-        // Cursor should be visible after reset
+        // Cursor should still be visible
         assert!(app.cursor_blink.is_visible(), "Cursor should be visible after history navigation");
     }
 }

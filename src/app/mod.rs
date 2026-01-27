@@ -210,6 +210,8 @@ pub struct App {
     pub input_section_start: usize,
     /// Total content lines from last render
     pub total_content_lines: usize,
+    /// Flag to batch scroll events (set on scroll, cleared in tick)
+    pub scroll_changed: bool,
     /// Current permission mode for Claude interactions
     pub permission_mode: PermissionMode,
     /// Session-level state (skills, permissions, oauth, tokens)
@@ -449,6 +451,7 @@ impl App {
             user_has_scrolled: false,
             input_section_start: 0,
             total_content_lines: 0,
+            scroll_changed: false,
             permission_mode: PermissionMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
