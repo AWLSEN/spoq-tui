@@ -175,6 +175,7 @@ mod tests {
             max_retries: 1,
             max_backoff_secs: 1,
             auth_token: None,
+            use_tls: false,
         };
 
         let result = TungsteniteWsConnection::connect(config).await;

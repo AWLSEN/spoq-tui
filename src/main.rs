@@ -199,12 +199,14 @@ fn main() -> Result<()> {
         let mut ws_config = WsClientConfig::default();
 
         // Use VPS URL for WebSocket host (strip protocol prefix)
+        // Use wss:// for HTTPS URLs, ws:// for HTTP/plain URLs
         if let Some(ref url) = app.vps_url {
+            let use_tls = url.starts_with("https://");
             let host = url
                 .strip_prefix("https://")
                 .or_else(|| url.strip_prefix("http://"))
                 .unwrap_or(url);
-            ws_config = ws_config.with_host(host);
+            ws_config = ws_config.with_host(host).with_tls(use_tls);
         }
 
         // Add auth token if available

@@ -49,6 +49,8 @@ pub struct WsClientConfig {
     pub max_backoff_secs: u64,
     /// Optional authentication token for Bearer auth
     pub auth_token: Option<String>,
+    /// Whether to use TLS (wss://) for the connection
+    pub use_tls: bool,
 }
 
 impl Default for WsClientConfig {
@@ -63,6 +65,7 @@ impl Default for WsClientConfig {
             max_retries: 5,
             max_backoff_secs: 30,
             auth_token,
+            use_tls: false, // Default to non-TLS for local/IP connections
         }
     }
 }
@@ -84,6 +87,14 @@ impl WsClientConfig {
         self.auth_token = Some(token.to_string());
         self
     }
+
+    /// Set whether to use TLS (wss://) for the connection.
+    ///
+    /// Returns self for method chaining.
+    pub fn with_tls(mut self, use_tls: bool) -> Self {
+        self.use_tls = use_tls;
+        self
+    }
 }
 
 /// WebSocket client for communicating with the Claude Code server
@@ -103,11 +114,12 @@ impl WsClient {
     ///
     /// Returns a WsClient on success, or WsError if initial connection fails
     pub async fn connect(config: WsClientConfig) -> Result<Self, WsError> {
-        // Build URL with optional token query param
+        // Build URL with correct protocol based on TLS setting
+        let protocol = if config.use_tls { "wss" } else { "ws" };
         let url = if let Some(ref token) = config.auth_token {
-            format!("ws://{}/ws?token={}", config.host, token)
+            format!("{}://{}/ws?token={}", protocol, config.host, token)
         } else {
-            format!("ws://{}/ws", config.host)
+            format!("{}://{}/ws", protocol, config.host)
         };
 
         // Log connection attempt
@@ -515,6 +527,7 @@ mod tests {
             max_retries: 1,
             max_backoff_secs: 1,
             auth_token: None,
+            use_tls: false,
         };
 
         let result = WsClient::connect(config).await;
@@ -563,6 +576,7 @@ mod tests {
             max_retries: 10,
             max_backoff_secs: 60,
             auth_token: None,
+            use_tls: false,
         };
 
         assert_eq!(config.host, "example.com:8080");
@@ -578,6 +592,7 @@ mod tests {
             max_retries: 3,
             max_backoff_secs: 15,
             auth_token: Some("test-token".to_string()),
+            use_tls: false,
         };
 
         let cloned = config.clone();
@@ -665,6 +680,7 @@ mod tests {
             max_retries: 5,
             max_backoff_secs: 30,
             auth_token: None,
+            use_tls: false,
         };
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("test.example.com:8000"));
@@ -691,6 +707,7 @@ mod tests {
             max_retries: 3,
             max_backoff_secs: 10,
             auth_token: Some("secret-token".to_string()),
+            use_tls: false,
         };
         assert_eq!(config.host, "custom.example.com:9000");
         assert_eq!(config.auth_token, Some("secret-token".to_string()));

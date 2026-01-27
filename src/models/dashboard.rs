@@ -198,47 +198,26 @@ pub fn infer_status_from_agent_state(state: &str) -> ThreadStatus {
 
 /// Derive display repository name from full path
 ///
-/// Converts absolute paths to user-friendly format:
-/// - `/Users/sam/api` -> `~/api`
-/// - `/home/user/project` -> `~/project`
-/// - Short paths remain unchanged
+/// Shows only the last folder name for a clean, minimal display:
+/// - `/Users/sam/my-project` -> `/my-project`
+/// - `/home/user/api` -> `/api`
+/// - `/root/workspaces/spoq-web` -> `/spoq-web`
+///
+/// Truncation for long folder names happens in the UI layer.
 pub fn derive_repository(path: &str) -> String {
     if path.is_empty() {
         return String::new();
     }
 
-    // Try to find home directory patterns and replace with ~
-    let path = if let Some(rest) = path.strip_prefix("/Users/") {
-        // macOS: /Users/username/... -> ~/...
-        if let Some(slash_idx) = rest.find('/') {
-            format!("~{}", &rest[slash_idx..])
-        } else {
-            "~".to_string()
-        }
-    } else if let Some(rest) = path.strip_prefix("/home/") {
-        // Linux: /home/username/... -> ~/...
-        if let Some(slash_idx) = rest.find('/') {
-            format!("~{}", &rest[slash_idx..])
-        } else {
-            "~".to_string()
-        }
-    } else {
-        path.to_string()
-    };
+    // Get the last folder name only
+    let folder_name = path
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(path);
 
-    // If path is still long, just take the last component(s)
-    if path.len() > 30 {
-        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-        if parts.len() >= 2 {
-            format!(".../{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
-        } else if !parts.is_empty() {
-            format!(".../{}", parts[parts.len() - 1])
-        } else {
-            path
-        }
-    } else {
-        path
-    }
+    // Return as /folder_name
+    format!("/{}", folder_name)
 }
 
 /// Compute human-readable duration from a timestamp
@@ -669,36 +648,33 @@ mod tests {
 
     #[test]
     fn test_derive_repository_macos_path() {
-        assert_eq!(derive_repository("/Users/sam/api"), "~/api");
-        assert_eq!(
-            derive_repository("/Users/sam/projects/myapp"),
-            "~/projects/myapp"
-        );
-        assert_eq!(derive_repository("/Users/john"), "~");
+        // Now just extracts the last folder name
+        assert_eq!(derive_repository("/Users/sam/api"), "/api");
+        assert_eq!(derive_repository("/Users/sam/projects/myapp"), "/myapp");
+        assert_eq!(derive_repository("/Users/john"), "/john");
     }
 
     #[test]
     fn test_derive_repository_linux_path() {
-        assert_eq!(derive_repository("/home/sam/api"), "~/api");
-        assert_eq!(
-            derive_repository("/home/user/projects/myapp"),
-            "~/projects/myapp"
-        );
-        assert_eq!(derive_repository("/home/john"), "~");
+        // Now just extracts the last folder name
+        assert_eq!(derive_repository("/home/sam/api"), "/api");
+        assert_eq!(derive_repository("/home/user/projects/myapp"), "/myapp");
+        assert_eq!(derive_repository("/home/john"), "/john");
     }
 
     #[test]
     fn test_derive_repository_other_path() {
-        assert_eq!(derive_repository("/var/www/app"), "/var/www/app");
-        assert_eq!(derive_repository("/opt/project"), "/opt/project");
+        // Now just extracts the last folder name
+        assert_eq!(derive_repository("/var/www/app"), "/app");
+        assert_eq!(derive_repository("/opt/project"), "/project");
     }
 
     #[test]
     fn test_derive_repository_long_path() {
+        // Now just returns the last folder name regardless of path length
         let long_path = "/Users/sam/very/deep/nested/directory/structure/here";
         let result = derive_repository(long_path);
-        assert!(result.len() <= 35); // Should be truncated
-        assert!(result.starts_with("..."));
+        assert_eq!(result, "/here");
     }
 
     // -------------------- compute_duration Tests --------------------

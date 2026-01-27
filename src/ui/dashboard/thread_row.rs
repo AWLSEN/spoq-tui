@@ -85,20 +85,20 @@ fn render_action_thread(
     render_text(buf, x, y, &title_text, title_style, area);
     x += title_width;
 
-    // Repository column
-    let repo_text = truncate(&thread.repository, repo_width.saturating_sub(1) as usize);
+    // Repository column (with 1 space left padding for visual centering)
+    let repo_text = truncate(&thread.repository, repo_width.saturating_sub(2) as usize);
     let repo_style = Style::default().fg(ctx.theme.dim);
-    render_text(buf, x, y, &repo_text, repo_style, area);
+    render_text(buf, x + 1, y, &repo_text, repo_style, area);
     x += repo_width;
 
-    // Mode column
+    // Mode column (with 1 space left padding)
     let mode_text = match thread.mode {
         ThreadMode::Normal => "normal",
         ThreadMode::Plan => "plan",
         ThreadMode::Exec => "exec",
     };
     let mode_style = Style::default().fg(ctx.theme.dim);
-    render_text(buf, x, y, mode_text, mode_style, area);
+    render_text(buf, x + 1, y, mode_text, mode_style, area);
     x += mode_width;
 
     // Status column (colored by status)
@@ -139,20 +139,20 @@ fn render_autonomous_thread(
     render_text(buf, x, y, &title_text, title_style, area);
     x += title_width;
 
-    // Repository column
-    let repo_text = truncate(&thread.repository, repo_width.saturating_sub(1) as usize);
+    // Repository column (with 1 space left padding for visual centering)
+    let repo_text = truncate(&thread.repository, repo_width.saturating_sub(2) as usize);
     let repo_style = Style::default().fg(ctx.theme.dim);
-    render_text(buf, x, y, &repo_text, repo_style, area);
+    render_text(buf, x + 1, y, &repo_text, repo_style, area);
     x += repo_width;
 
-    // Mode column
+    // Mode column (with 1 space left padding)
     let mode_text = match thread.mode {
         ThreadMode::Normal => "normal",
         ThreadMode::Plan => "plan",
         ThreadMode::Exec => "exec",
     };
     let mode_style = Style::default().fg(ctx.theme.dim);
-    render_text(buf, x, y, mode_text, mode_style, area);
+    render_text(buf, x + 1, y, mode_text, mode_style, area);
     x += mode_width;
 
     // Activity column - uses activity_text or falls back to computed value
