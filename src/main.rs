@@ -508,132 +508,165 @@ where
                                 }
                             }
 
-                            // Handle permission prompt keys when a permission is pending
+                            // Handle input routing based on the top needs-action thread type
                             // This takes priority over all other key handling
-                            if app.dashboard.has_pending_permission() {
-                                // Check if this is an AskUserQuestion prompt
-                                // State is already initialized when permission is received
-                                if app.is_ask_user_question_pending() {
+                            if let Some((thread_id, waiting_for)) = app.dashboard.get_top_needs_action_thread() {
+                                match waiting_for {
+                                    WaitingFor::Permission { ref request_id, ref tool_name } => {
+                                        // Check if this is an AskUserQuestion prompt
+                                        if tool_name == "AskUserQuestion" && app.is_ask_user_question_pending() {
+                                            // Handle "Other" text input mode
+                                            if app.question_state.other_active {
+                                                match key.code {
+                                                    KeyCode::Esc => {
+                                                        app.question_cancel_other();
+                                                        continue;
+                                                    }
+                                                    KeyCode::Enter => {
+                                                        if app.question_confirm() {
+                                                            continue;
+                                                        }
+                                                        continue;
+                                                    }
+                                                    KeyCode::Backspace => {
+                                                        app.question_backspace();
+                                                        continue;
+                                                    }
+                                                    KeyCode::Char(c) => {
+                                                        app.question_type_char(c);
+                                                        continue;
+                                                    }
+                                                    _ => continue,
+                                                }
+                                            }
 
-                                    // Handle "Other" text input mode
-                                    if app.question_state.other_active {
+                                            // Handle question navigation keys
+                                            match key.code {
+                                                KeyCode::Tab => {
+                                                    app.question_next_tab();
+                                                    continue;
+                                                }
+                                                KeyCode::Up => {
+                                                    app.question_prev_option();
+                                                    continue;
+                                                }
+                                                KeyCode::Down => {
+                                                    app.question_next_option();
+                                                    continue;
+                                                }
+                                                KeyCode::Char(' ') => {
+                                                    app.question_toggle_option();
+                                                    continue;
+                                                }
+                                                KeyCode::Enter => {
+                                                    app.question_confirm();
+                                                    continue;
+                                                }
+                                                KeyCode::Char('n') | KeyCode::Char('N') => {
+                                                    // Allow 'n' to deny/cancel - use the permission_id from this permission
+                                                    let permission_id = app.dashboard.pending_permissions_iter()
+                                                        .find(|(_, p)| p.tool_name == "AskUserQuestion")
+                                                        .map(|(_, p)| p.permission_id.clone());
+                                                    if let Some(pid) = permission_id {
+                                                        app.deny_permission(&pid);
+                                                    }
+                                                    continue;
+                                                }
+                                                KeyCode::Char('a') | KeyCode::Char('A') => {
+                                                    // 'A' opens the dialog overlay for this AskUserQuestion
+                                                    if app.open_ask_user_question_dialog() {
+                                                        tracing::debug!("Opened AskUserQuestion dialog via 'A' key");
+                                                    }
+                                                    continue;
+                                                }
+                                                _ => continue,
+                                            }
+                                        } else {
+                                            // Standard permission prompt (y/a/n)
+                                            if let KeyCode::Char(c) = key.code {
+                                                // Debug: emit key press to debug system
+                                                app.emit_debug_state_change(
+                                                    "permission_key",
+                                                    "Key pressed during permission",
+                                                    &format!("key: '{}', tool: {}, request_id: {}", c, tool_name, request_id),
+                                                );
+                                                if app.handle_permission_key(c) {
+                                                    app.emit_debug_state_change(
+                                                        "permission_key",
+                                                        "Permission handled",
+                                                        &format!("key: '{}' -> handled", c),
+                                                    );
+                                                    continue;
+                                                }
+                                                app.emit_debug_state_change(
+                                                    "permission_key",
+                                                    "Key not handled",
+                                                    &format!("key: '{}' -> not Y/N/A", c),
+                                                );
+                                                // When permission is pending, ignore all other keys except Ctrl+C
+                                                continue;
+                                            } else {
+                                                // Non-char keys (arrows, etc.) - ignore when permission pending
+                                                continue;
+                                            }
+                                        }
+                                    }
+
+                                    WaitingFor::UserInput => {
+                                        // UserInput dialogs only capture specific dialog navigation keys
+                                        // Let ALL other keys (including Y/N/A) fall through to normal input handling
                                         match key.code {
-                                            KeyCode::Esc => {
-                                                app.question_cancel_other();
+                                            KeyCode::Tab => {
+                                                app.question_next_tab();
+                                                continue;
+                                            }
+                                            KeyCode::Up => {
+                                                app.question_prev_option();
+                                                continue;
+                                            }
+                                            KeyCode::Down => {
+                                                app.question_next_option();
+                                                continue;
+                                            }
+                                            KeyCode::Char(' ') => {
+                                                app.question_toggle_option();
                                                 continue;
                                             }
                                             KeyCode::Enter => {
-                                                if app.question_confirm() {
-                                                    continue;
-                                                }
+                                                app.question_confirm();
                                                 continue;
                                             }
-                                            KeyCode::Backspace => {
-                                                app.question_backspace();
-                                                continue;
+                                            // All other keys fall through to normal input handling
+                                            // This includes Y/N/A which should NOT be captured here
+                                            _ => {
+                                                // Fall through - let the key be handled by normal input processing
                                             }
-                                            KeyCode::Char(c) => {
-                                                app.question_type_char(c);
-                                                continue;
-                                            }
-                                            _ => continue,
                                         }
                                     }
 
-                                    // Handle question navigation keys
-                                    match key.code {
-                                        KeyCode::Tab => {
-                                            app.question_next_tab();
-                                            continue;
-                                        }
-                                        KeyCode::Up => {
-                                            app.question_prev_option();
-                                            continue;
-                                        }
-                                        KeyCode::Down => {
-                                            app.question_next_option();
-                                            continue;
-                                        }
-                                        KeyCode::Char(' ') => {
-                                            app.question_toggle_option();
-                                            continue;
-                                        }
-                                        KeyCode::Enter => {
-                                            app.question_confirm();
-                                            continue;
-                                        }
-                                        KeyCode::Char('n') | KeyCode::Char('N') => {
-                                            // Allow 'n' to deny/cancel - find the AskUserQuestion permission
-                                            let permission_id = app.dashboard.pending_permissions_iter()
-                                                .find(|(_, p)| p.tool_name == "AskUserQuestion")
-                                                .map(|(_, p)| p.permission_id.clone());
-                                            if let Some(pid) = permission_id {
-                                                app.deny_permission(&pid);
-                                            }
-                                            continue;
-                                        }
-                                        KeyCode::Char('a') | KeyCode::Char('A') => {
-                                            // 'A' opens the dialog overlay for this AskUserQuestion
-                                            if app.open_ask_user_question_dialog() {
-                                                tracing::debug!("Opened AskUserQuestion dialog via 'A' key");
-                                            }
-                                            continue;
-                                        }
-                                        _ => continue,
-                                    }
-                                }
-
-                                // Standard permission prompt (y/a/n)
-                                // Check if 'A' key should open UserInput dialog instead of "Always Allow"
-                                if let KeyCode::Char('a') | KeyCode::Char('A') = key.code {
-                                    if let Some((_, wf)) = app.dashboard.get_top_needs_action_thread() {
-                                        if matches!(wf, spoq::models::dashboard::WaitingFor::UserInput) {
-                                            // Let 'A' fall through to dialog opener (don't consume here)
-                                            // Skip the permission block entirely
-                                        } else {
-                                            // Top thread is Permission/PlanApproval - handle as Always Allow
-                                            if let KeyCode::Char(c) = key.code {
-                                                if app.handle_permission_key(c) {
-                                                    continue;
-                                                }
-                                            }
-                                            continue;
-                                        }
-                                    } else {
-                                        // No top thread - handle as Always Allow
+                                    WaitingFor::PlanApproval { ref request_id } => {
+                                        // Plan approval handles Y/N/A keys
                                         if let KeyCode::Char(c) = key.code {
+                                            app.emit_debug_state_change(
+                                                "plan_approval_key",
+                                                "Key pressed during plan approval",
+                                                &format!("key: '{}', request_id: {}, thread_id: {}", c, request_id, thread_id),
+                                            );
                                             if app.handle_permission_key(c) {
+                                                app.emit_debug_state_change(
+                                                    "plan_approval_key",
+                                                    "Plan approval handled",
+                                                    &format!("key: '{}' -> handled", c),
+                                                );
                                                 continue;
                                             }
+                                            // When plan approval is pending, ignore non-Y/N/A keys
+                                            continue;
+                                        } else {
+                                            // Non-char keys - ignore when plan approval pending
+                                            continue;
                                         }
-                                        continue;
                                     }
-                                } else if let KeyCode::Char(c) = key.code {
-                                    // Non-A keys: normal permission handling
-                                    // Debug: emit key press to debug system
-                                    app.emit_debug_state_change(
-                                        "permission_key",
-                                        "Key pressed during permission",
-                                        &format!("key: '{}', pending: true", c),
-                                    );
-                                    if app.handle_permission_key(c) {
-                                        app.emit_debug_state_change(
-                                            "permission_key",
-                                            "Permission handled",
-                                            &format!("key: '{}' -> handled", c),
-                                        );
-                                        continue;
-                                    }
-                                    app.emit_debug_state_change(
-                                        "permission_key",
-                                        "Key not handled",
-                                        &format!("key: '{}' -> not Y/N/A", c),
-                                    );
-                                    // When permission is pending, ignore all other keys except Ctrl+C
-                                    continue;
-                                } else {
-                                    // Non-char keys (arrows, etc.) - ignore when permission pending
-                                    continue;
                                 }
                             }
 
