@@ -159,6 +159,7 @@ fn route_ws_message(
             message_tx
                 .send(AppMessage::PermissionRequested {
                     permission_id: req.request_id,
+                    thread_id: req.thread_id,
                     tool_name: req.tool_name,
                     description: req.description,
                     tool_input: Some(req.tool_input),

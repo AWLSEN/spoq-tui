@@ -312,6 +312,7 @@ impl App {
                             // Send permission request to app for user approval
                             let _ = message_tx.send(AppMessage::PermissionRequested {
                                 permission_id: perm_event.permission_id,
+                                thread_id: Some(thread_id.to_string()),
                                 tool_name: perm_event.tool_name,
                                 description: perm_event.description,
                                 tool_input: perm_event.tool_input,

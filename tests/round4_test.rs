@@ -30,6 +30,7 @@ fn create_ask_user_question_permission(
 
     PermissionRequest {
         permission_id: permission_id.to_string(),
+        thread_id: None,
         tool_name: "AskUserQuestion".to_string(),
         description: "Answer questions".to_string(),
         context: None,
@@ -55,6 +56,7 @@ fn test_question_state_auto_initialized_on_permission_receipt() {
 
     let msg = AppMessage::PermissionRequested {
         permission_id: perm.permission_id.clone(),
+        thread_id: None,
         tool_name: perm.tool_name.clone(),
         description: perm.description.clone(),
         tool_input,
@@ -83,6 +85,7 @@ fn test_question_state_not_initialized_for_non_ask_question_permission() {
     // Simulate receiving a different tool permission (e.g., Bash)
     let msg = AppMessage::PermissionRequested {
         permission_id: "perm-bash".to_string(),
+        thread_id: None,
         tool_name: "Bash".to_string(),
         description: "Run a command".to_string(),
         tool_input: Some(serde_json::json!({"command": "ls -la"})),
@@ -172,6 +175,7 @@ fn test_auto_approve_skips_question_initialization() {
 
     let msg = AppMessage::PermissionRequested {
         permission_id: perm.permission_id.clone(),
+        thread_id: None,
         tool_name: perm.tool_name.clone(),
         description: perm.description.clone(),
         tool_input,
@@ -197,6 +201,7 @@ fn test_question_state_with_multi_select_questions() {
 
     let perm = PermissionRequest {
         permission_id: "perm-multi".to_string(),
+        thread_id: None,
         tool_name: "AskUserQuestion".to_string(),
         description: "Answer questions".to_string(),
         context: None,
@@ -255,6 +260,7 @@ fn test_is_ask_user_question_pending_after_auto_init() {
 
     let msg = AppMessage::PermissionRequested {
         permission_id: perm.permission_id.clone(),
+        thread_id: None,
         tool_name: perm.tool_name.clone(),
         description: perm.description.clone(),
         tool_input,
@@ -289,6 +295,7 @@ fn test_main_does_not_redundantly_check_initialization() {
     // Permission is received -> handler auto-initializes -> UI ready
     let msg = AppMessage::PermissionRequested {
         permission_id: perm.permission_id.clone(),
+        thread_id: None,
         tool_name: perm.tool_name.clone(),
         description: perm.description.clone(),
         tool_input,

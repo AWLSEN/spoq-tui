@@ -39,6 +39,7 @@ pub enum AppMessage {
     /// Permission request from the assistant - needs user approval
     PermissionRequested {
         permission_id: String,
+        thread_id: Option<String>,
         tool_name: String,
         description: String,
         tool_input: Option<serde_json::Value>,

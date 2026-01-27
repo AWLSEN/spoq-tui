@@ -2710,6 +2710,7 @@ mod tests {
         use crate::state::PermissionRequest;
         app.session_state.set_pending_permission(PermissionRequest {
             permission_id: "perm-123".to_string(),
+            thread_id: None,
             tool_name: "Bash".to_string(),
             description: "Run npm install".to_string(),
             context: None,
@@ -2736,6 +2737,7 @@ mod tests {
         use crate::state::PermissionRequest;
         app.session_state.set_pending_permission(PermissionRequest {
             permission_id: "perm-456".to_string(),
+            thread_id: None,
             tool_name: "Write".to_string(),
             description: "Write file".to_string(),
             context: Some("/home/user/test.rs".to_string()),
@@ -2762,6 +2764,7 @@ mod tests {
         use crate::state::PermissionRequest;
         app.session_state.set_pending_permission(PermissionRequest {
             permission_id: "perm-789".to_string(),
+            thread_id: None,
             tool_name: "Edit".to_string(),
             description: "Edit file".to_string(),
             context: None,
@@ -2787,6 +2790,7 @@ mod tests {
         use crate::state::PermissionRequest;
         app.session_state.set_pending_permission(PermissionRequest {
             permission_id: "perm-abc".to_string(),
+            thread_id: None,
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: None,
@@ -2807,6 +2811,7 @@ mod tests {
         use crate::state::PermissionRequest;
         app.session_state.set_pending_permission(PermissionRequest {
             permission_id: "perm-def".to_string(),
+            thread_id: None,
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: None,
@@ -2834,6 +2839,7 @@ mod tests {
         // Receive a permission request for Bash
         app.handle_message(AppMessage::PermissionRequested {
             permission_id: "perm-auto".to_string(),
+            thread_id: None,
             tool_name: "Bash".to_string(),
             description: "Run npm install".to_string(),
             tool_input: None,
@@ -2853,6 +2859,7 @@ mod tests {
         // Receive a permission request for Bash
         app.handle_message(AppMessage::PermissionRequested {
             permission_id: "perm-store".to_string(),
+            thread_id: None,
             tool_name: "Bash".to_string(),
             description: "Run npm install".to_string(),
             tool_input: Some(serde_json::json!({"command": "npm install"})),
@@ -2877,6 +2884,7 @@ mod tests {
         use crate::state::PermissionRequest;
         app.session_state.set_pending_permission(PermissionRequest {
             permission_id: "perm-first".to_string(),
+            thread_id: None,
             tool_name: "Read".to_string(),
             description: "Read file".to_string(),
             context: None,
@@ -2891,6 +2899,7 @@ mod tests {
         // Second request for Read tool (simulated)
         app.handle_message(AppMessage::PermissionRequested {
             permission_id: "perm-second".to_string(),
+            thread_id: None,
             tool_name: "Read".to_string(),
             description: "Read another file".to_string(),
             tool_input: None,

@@ -13,6 +13,9 @@ use std::time::Instant;
 pub struct PermissionRequest {
     /// Unique ID for this permission request (for responding to backend)
     pub permission_id: String,
+    /// Thread ID this request belongs to (optional for backwards compatibility)
+    #[serde(default)]
+    pub thread_id: Option<String>,
     /// Tool that requires permission
     pub tool_name: String,
     /// Description of what the tool wants to do

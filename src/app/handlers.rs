@@ -238,6 +238,7 @@ impl App {
             }
             AppMessage::PermissionRequested {
                 permission_id,
+                thread_id,
                 tool_name,
                 description,
                 tool_input,
@@ -253,6 +254,7 @@ impl App {
                     self.session_state
                         .set_pending_permission(PermissionRequest {
                             permission_id: permission_id.clone(),
+                            thread_id,
                             tool_name: tool_name.clone(),
                             description,
                             context: None, // Context will be extracted from tool_input in UI
