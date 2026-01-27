@@ -861,16 +861,18 @@ mod tests {
         // Set pending permission
         app.dashboard.set_pending_permission(thread_id, permission);
 
-        // Set waiting state
-        app.dashboard.waiting_for.insert(
-            thread_id.to_string(),
-            WaitingFor::Permission {
+        // Set waiting state using public API
+        app.dashboard.update_thread_status(
+            thread_id,
+            ThreadStatus::Waiting,
+            Some(WaitingFor::Permission {
                 request_id: "test-request".to_string(),
-            },
+                tool_name: "Bash".to_string(),
+            }),
         );
 
-        // Rebuild thread views to ensure needs_action is set
-        app.dashboard.rebuild_thread_views();
+        // Trigger thread views computation to ensure needs_action is set
+        let _ = app.dashboard.compute_thread_views();
     }
 
     #[test]
@@ -1398,7 +1400,7 @@ mod tests {
     fn test_question_toggle_option_multi_select() {
         let mut app = App::default();
         let perm = create_multi_question_permission("perm-toggle");
-        app.dashboard.set_pending_permission(TEST_THREAD_ID, perm);
+        setup_thread_with_permission(&mut app, TEST_THREAD_ID, perm);
         app.init_question_state();
 
         // Switch to second question (multi-select)
@@ -1420,7 +1422,8 @@ mod tests {
     #[test]
     fn test_question_toggle_option_single_select_no_effect() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-no-toggle"),
         );
@@ -1437,7 +1440,8 @@ mod tests {
     #[test]
     fn test_question_type_char_and_backspace() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-type"),
         );
@@ -1475,7 +1479,8 @@ mod tests {
     #[test]
     fn test_question_cancel_other() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-cancel"),
         );
@@ -1495,7 +1500,8 @@ mod tests {
     #[test]
     fn test_question_confirm_activates_other() {
         let mut app = App::default();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-confirm"),
         );
@@ -1517,7 +1523,8 @@ mod tests {
     #[test]
     fn test_question_confirm_on_option() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-submit"),
         );
@@ -1574,7 +1581,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_advances_tab() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_multi_question_permission("perm-multi-advance"),
         );
@@ -1595,7 +1603,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_submits_on_last() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_multi_question_permission("perm-multi-submit"),
         );
@@ -1618,7 +1627,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_answered_tracking() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_multi_question_permission("perm-multi-track"),
         );
@@ -1642,7 +1652,8 @@ mod tests {
     #[test]
     fn test_question_confirm_single_question_submits_immediately() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_ask_user_question_permission("perm-single-submit"),
         );
@@ -1657,7 +1668,8 @@ mod tests {
     #[test]
     fn test_question_confirm_multi_question_update_answered() {
         let (mut app, _rx) = create_test_app_with_ws();
-        app.dashboard.set_pending_permission(
+        setup_thread_with_permission(
+            &mut app,
             TEST_THREAD_ID,
             create_multi_question_permission("perm-multi-update"),
         );

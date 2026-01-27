@@ -6,11 +6,36 @@
 
 use spoq::app::{App, AppMessage};
 use spoq::state::PermissionRequest;
+use spoq::models::{Thread, ThreadMode, ThreadStatus, ThreadType};
+use spoq::models::dashboard::WaitingFor;
+use chrono::Utc;
 use std::time::Instant;
 
 // ============================================================================
 // AskUserQuestion Auto-Initialization Tests
 // ============================================================================
+
+/// Helper to create a thread with waiting status for permission tests
+fn setup_thread(app: &mut App, thread_id: &str) {
+    let thread = Thread {
+        id: thread_id.to_string(),
+        title: "Test Thread".to_string(),
+        description: None,
+        preview: String::new(),
+        updated_at: Utc::now(),
+        thread_type: ThreadType::Conversation,
+        mode: ThreadMode::Normal,
+        model: None,
+        permission_mode: None,
+        message_count: 0,
+        created_at: Utc::now(),
+        working_directory: None,
+        status: Some(ThreadStatus::Waiting),
+        verified: None,
+        verified_at: None,
+    };
+    app.dashboard.add_thread(thread);
+}
 
 /// Helper to create an AskUserQuestion permission with the specified question count
 fn create_ask_user_question_permission(
@@ -48,6 +73,9 @@ fn create_ask_user_question_permission(
 #[test]
 fn test_question_state_auto_initialized_on_permission_receipt() {
     let mut app = App::default();
+
+    // Set up thread first (handlers will use "unknown" as thread_id when None)
+    setup_thread(&mut app, "unknown");
 
     // Before receiving permission - question state should be empty
     assert_eq!(app.question_state.selections.len(), 0);
@@ -107,9 +135,26 @@ fn test_question_state_reset_on_deny() {
     app.ws_sender = Some(tx);
     app.ws_connection_state = spoq::websocket::WsConnectionState::Connected;
 
+    // Set up thread first
+    setup_thread(&mut app, "test-thread");
+
     // Initialize with a permission
     let perm = create_ask_user_question_permission("perm-deny-test", 2);
     app.dashboard.set_pending_permission("test-thread", perm.clone());
+
+    // Set waiting state so thread has needs_action
+    app.dashboard.update_thread_status(
+        "test-thread",
+        ThreadStatus::Waiting,
+        Some(WaitingFor::Permission {
+            request_id: perm.permission_id.clone(),
+            tool_name: "AskUserQuestion".to_string(),
+        }),
+    );
+
+    // Compute thread views to populate needs_action
+    let _ = app.dashboard.compute_thread_views();
+
     app.init_question_state();
 
     // Verify state is initialized
@@ -140,8 +185,24 @@ fn test_question_state_reset_on_deny() {
 fn test_question_state_initialized_exactly_once() {
     let mut app = App::default();
 
+    // Set up thread first
+    setup_thread(&mut app, "test-thread");
+
     let perm = create_ask_user_question_permission("perm-once", 1);
     app.dashboard.set_pending_permission("test-thread", perm.clone());
+
+    // Set waiting state so thread has needs_action
+    app.dashboard.update_thread_status(
+        "test-thread",
+        ThreadStatus::Waiting,
+        Some(WaitingFor::Permission {
+            request_id: perm.permission_id.clone(),
+            tool_name: "AskUserQuestion".to_string(),
+        }),
+    );
+
+    // Compute thread views to populate needs_action
+    let _ = app.dashboard.compute_thread_views();
 
     // Initialize multiple times
     app.init_question_state();
@@ -200,6 +261,9 @@ fn test_auto_approve_skips_question_initialization() {
 fn test_question_state_with_multi_select_questions() {
     let mut app = App::default();
 
+    // Set up thread first
+    setup_thread(&mut app, "test-thread");
+
     let perm = PermissionRequest {
         permission_id: "perm-multi".to_string(),
         thread_id: None,
@@ -233,7 +297,21 @@ fn test_question_state_with_multi_select_questions() {
         received_at: Instant::now(),
     };
 
-    app.dashboard.set_pending_permission("test-thread", perm);
+    app.dashboard.set_pending_permission("test-thread", perm.clone());
+
+    // Set waiting state so thread has needs_action
+    app.dashboard.update_thread_status(
+        "test-thread",
+        ThreadStatus::Waiting,
+        Some(WaitingFor::Permission {
+            request_id: perm.permission_id.clone(),
+            tool_name: "AskUserQuestion".to_string(),
+        }),
+    );
+
+    // Compute thread views to populate needs_action
+    let _ = app.dashboard.compute_thread_views();
+
     app.init_question_state();
 
     // Verify initialization for mixed question types
@@ -254,6 +332,9 @@ fn test_question_state_with_multi_select_questions() {
 #[test]
 fn test_is_ask_user_question_pending_after_auto_init() {
     let mut app = App::default();
+
+    // Set up thread first
+    setup_thread(&mut app, "unknown");
 
     // Send permission message
     let perm = create_ask_user_question_permission("perm-check", 1);
@@ -287,6 +368,9 @@ fn test_main_does_not_redundantly_check_initialization() {
     // We test the behavior indirectly through the handler tests above
 
     let mut app = App::default();
+
+    // Set up thread first
+    setup_thread(&mut app, "unknown");
 
     // Simulate the flow that would happen in main
     let perm = create_ask_user_question_permission("perm-main-flow", 1);

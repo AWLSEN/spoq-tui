@@ -269,6 +269,19 @@ impl App {
                         },
                     );
 
+                    // Set thread waiting state to ensure it shows as needs_action
+                    self.dashboard.update_thread_status(
+                        &effective_thread_id,
+                        crate::models::dashboard::ThreadStatus::Waiting,
+                        Some(crate::models::dashboard::WaitingFor::Permission {
+                            request_id: permission_id.clone(),
+                            tool_name: tool_name.clone(),
+                        }),
+                    );
+
+                    // Compute thread views to ensure needs_action is set
+                    let _ = self.dashboard.compute_thread_views();
+
                     // AskUserQuestion requires auto-initialization of question state
                     if tool_name == "AskUserQuestion" {
                         self.init_question_state();
