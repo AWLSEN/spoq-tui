@@ -19,7 +19,7 @@ pub use cache::MarkdownCache;
 pub use links::{detect_plain_urls, LinkInfo, ParsedMarkdown};
 pub use styles::wrap_osc8_hyperlink;
 
-use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -70,7 +70,12 @@ pub fn render_markdown(text: &str) -> Vec<Line<'static>> {
 /// Gracefully handles incomplete markdown during streaming by rendering
 /// partial content without crashing.
 pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
-    let parser = Parser::new(text);
+    // Enable table parsing in addition to default options
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+
+    let parser = Parser::new_ext(text, options);
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
     let mut links: Vec<LinkInfo> = Vec::new();
@@ -85,6 +90,12 @@ pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
 
     // Track byte position for plain URL detection
     let mut byte_position: usize = 0;
+
+    // Table rendering state
+    let mut in_table = false;
+    let mut table_rows: Vec<Vec<String>> = Vec::new();
+    let mut current_row: Vec<String> = Vec::new();
+    let mut current_cell = String::new();
 
     for event in parser {
         match event {
@@ -133,6 +144,23 @@ pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
                         style_stack
                             .push(current.fg(Color::Blue).add_modifier(Modifier::UNDERLINED));
                     }
+                    Tag::Table(_) => {
+                        // Start of a table - flush current content and initialize table state
+                        if !current_spans.is_empty() {
+                            lines.push(Line::from(std::mem::take(&mut current_spans)));
+                        }
+                        in_table = true;
+                        table_rows.clear();
+                    }
+                    Tag::TableHead => {
+                        current_row.clear();
+                    }
+                    Tag::TableRow => {
+                        current_row.clear();
+                    }
+                    Tag::TableCell => {
+                        current_cell.clear();
+                    }
                     _ => {}
                 }
             }
@@ -180,6 +208,22 @@ pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
                         }
                         style_stack.pop();
                     }
+                    TagEnd::TableCell => {
+                        // End of table cell - save the cell content
+                        current_row.push(std::mem::take(&mut current_cell));
+                    }
+                    TagEnd::TableHead | TagEnd::TableRow => {
+                        // End of table row - save the row
+                        if !current_row.is_empty() {
+                            table_rows.push(std::mem::take(&mut current_row));
+                        }
+                    }
+                    TagEnd::Table => {
+                        // End of table - render the collected table data
+                        render_table_to_lines(&table_rows, &mut lines);
+                        in_table = false;
+                        table_rows.clear();
+                    }
                     _ => {}
                 }
             }
@@ -192,7 +236,10 @@ pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
                     current_link_text.push_str(&text_str);
                 }
 
-                if in_code_block {
+                // If we're inside a table, buffer the cell content
+                if in_table {
+                    current_cell.push_str(&text_str);
+                } else if in_code_block {
                     // In code blocks, preserve all whitespace and split on newlines
                     // Each newline becomes a separate Line object
                     let mut first = true;
@@ -243,18 +290,33 @@ pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
                 }
             }
             Event::Code(code) => {
-                // Inline code - cyan color
-                current_spans.push(Span::styled(code.to_string(), STYLE_INLINE_CODE));
+                if in_table {
+                    // Inside a table cell - buffer the code text
+                    current_cell.push_str(&code);
+                } else {
+                    // Inline code - cyan color
+                    current_spans.push(Span::styled(code.to_string(), STYLE_INLINE_CODE));
+                }
             }
             Event::SoftBreak => {
-                // Soft break - create new line with blank line for visual separation
-                // This gives proper paragraph-like spacing in streamed content
-                lines.push(Line::from(std::mem::take(&mut current_spans)));
-                lines.push(Line::from("")); // Add blank line for visual separation
+                if in_table {
+                    // Inside a table cell - convert to space
+                    current_cell.push(' ');
+                } else {
+                    // Soft break - create new line with blank line for visual separation
+                    // This gives proper paragraph-like spacing in streamed content
+                    lines.push(Line::from(std::mem::take(&mut current_spans)));
+                    lines.push(Line::from("")); // Add blank line for visual separation
+                }
             }
             Event::HardBreak => {
-                // Hard break - new line
-                lines.push(Line::from(std::mem::take(&mut current_spans)));
+                if in_table {
+                    // Inside a table cell - convert to space
+                    current_cell.push(' ');
+                } else {
+                    // Hard break - new line
+                    lines.push(Line::from(std::mem::take(&mut current_spans)));
+                }
             }
             _ => {}
         }
@@ -271,6 +333,117 @@ pub fn render_markdown_with_links(text: &str) -> ParsedMarkdown {
     }
 
     ParsedMarkdown { lines, links }
+}
+
+/// Render a table to styled Lines.
+///
+/// Takes the collected table rows (each row is a Vec of cell strings) and
+/// renders them as formatted lines with proper column alignment and borders.
+fn render_table_to_lines(table_rows: &[Vec<String>], lines: &mut Vec<Line<'static>>) {
+    if table_rows.is_empty() {
+        return;
+    }
+
+    // Calculate the maximum width for each column
+    let num_cols = table_rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    if num_cols == 0 {
+        return;
+    }
+
+    let mut col_widths: Vec<usize> = vec![0; num_cols];
+    for row in table_rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < num_cols {
+                col_widths[i] = col_widths[i].max(cell.trim().len());
+            }
+        }
+    }
+
+    // Ensure minimum column width of 3 for readability
+    for width in &mut col_widths {
+        *width = (*width).max(3);
+    }
+
+    // Style for table borders
+    let border_style = Style::default().fg(Color::DarkGray);
+    let header_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let cell_style = Style::default();
+
+    // Build the top border
+    let top_border = build_table_border(&col_widths, '┌', '┬', '┐');
+    lines.push(Line::from(Span::styled(top_border, border_style)));
+
+    // Render each row
+    for (row_idx, row) in table_rows.iter().enumerate() {
+        let mut spans: Vec<Span<'static>> = Vec::new();
+        spans.push(Span::styled("│".to_string(), border_style));
+
+        for (col_idx, cell) in row.iter().enumerate() {
+            if col_idx < num_cols {
+                let width = col_widths[col_idx];
+                let content = cell.trim();
+                let padded = format!(" {:<width$} ", content, width = width);
+
+                // Use header style for first row, regular style for others
+                let style = if row_idx == 0 {
+                    header_style
+                } else {
+                    cell_style
+                };
+                spans.push(Span::styled(padded, style));
+                spans.push(Span::styled("│".to_string(), border_style));
+            }
+        }
+
+        // Pad missing columns
+        for col_idx in row.len()..num_cols {
+            let width = col_widths[col_idx];
+            let padded = format!(" {:<width$} ", "", width = width);
+            let style = if row_idx == 0 {
+                header_style
+            } else {
+                cell_style
+            };
+            spans.push(Span::styled(padded, style));
+            spans.push(Span::styled("│".to_string(), border_style));
+        }
+
+        lines.push(Line::from(spans));
+
+        // Add separator after header row
+        if row_idx == 0 && table_rows.len() > 1 {
+            let separator = build_table_border(&col_widths, '├', '┼', '┤');
+            lines.push(Line::from(Span::styled(separator, border_style)));
+        }
+    }
+
+    // Build the bottom border
+    let bottom_border = build_table_border(&col_widths, '└', '┴', '┘');
+    lines.push(Line::from(Span::styled(bottom_border, border_style)));
+
+    // Add blank line after table for visual separation
+    lines.push(Line::from(""));
+}
+
+/// Build a table border line with the given corner and junction characters.
+fn build_table_border(col_widths: &[usize], left: char, middle: char, right: char) -> String {
+    let mut border = String::new();
+    border.push(left);
+
+    for (i, &width) in col_widths.iter().enumerate() {
+        // +2 for padding on each side of cell content
+        for _ in 0..(width + 2) {
+            border.push('─');
+        }
+        if i < col_widths.len() - 1 {
+            border.push(middle);
+        }
+    }
+
+    border.push(right);
+    border
 }
 
 #[cfg(test)]
@@ -611,5 +784,108 @@ mod tests {
             .iter()
             .any(|s| s.content == "world" && s.style.add_modifier.contains(Modifier::BOLD));
         assert!(has_bold);
+    }
+
+    #[test]
+    fn test_table_rendering() {
+        let md = "| Name | Age |\n|------|-----|\n| Alice | 30 |\n| Bob | 25 |";
+        let lines = render_markdown(md);
+
+        // Should have multiple lines for the table structure
+        // (top border, header row, separator, data rows, bottom border, blank line)
+        assert!(
+            lines.len() >= 5,
+            "Table should create multiple lines, got {} lines",
+            lines.len()
+        );
+
+        // Verify table content is present
+        let all_content: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(all_content.contains("Alice"), "Should contain 'Alice'");
+        assert!(all_content.contains("Bob"), "Should contain 'Bob'");
+        assert!(all_content.contains("30"), "Should contain '30'");
+        assert!(all_content.contains("25"), "Should contain '25'");
+
+        // Verify box drawing characters are used (not raw pipe characters)
+        assert!(
+            all_content.contains('│') || all_content.contains('┌'),
+            "Should use box drawing characters for borders"
+        );
+    }
+
+    #[test]
+    fn test_table_with_header_styling() {
+        let md = "| Header1 | Header2 |\n|---------|----------|\n| Cell1 | Cell2 |";
+        let lines = render_markdown(md);
+
+        // Find header row (should be the second line after top border)
+        // Header cells should have cyan + bold styling
+        let header_line = &lines[1]; // After top border
+        let has_cyan_bold = header_line.spans.iter().any(|s| {
+            s.style.fg == Some(Color::Cyan) && s.style.add_modifier.contains(Modifier::BOLD)
+        });
+        assert!(has_cyan_bold, "Header should have cyan + bold styling");
+    }
+
+    #[test]
+    fn test_empty_table() {
+        // Edge case: table with no content rows
+        let md = "| Header |\n|--------|";
+        let lines = render_markdown(md);
+
+        // Should not panic and should produce some output
+        assert!(!lines.is_empty(), "Should handle table with only header");
+    }
+
+    #[test]
+    fn test_table_column_alignment() {
+        // Longer content in cells should result in wider columns
+        let md = "| Short | VeryLongContent |\n|-------|------------------|\n| A | B |";
+        let lines = render_markdown(md);
+
+        // Table should be rendered
+        assert!(lines.len() >= 4, "Should render table structure");
+    }
+
+    #[test]
+    fn test_table_mixed_with_text() {
+        let md = "Here's a table:\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nEnd of table.";
+        let lines = render_markdown(md);
+
+        // Should have content from both text and table
+        let all_content: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(all_content.contains("table"), "Should contain surrounding text");
+        assert!(all_content.contains("1"), "Should contain table content");
+    }
+
+    #[test]
+    fn test_table_with_inline_code() {
+        // Tables often contain inline code like function names
+        let md = "| Function | Description |\n|----------|-------------|\n| `foo()` | Does foo |\n| `bar()` | Does bar |";
+        let lines = render_markdown(md);
+
+        // Should have the code content in the table (without backticks)
+        let all_content: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect();
+        assert!(all_content.contains("foo()"), "Should contain 'foo()' from inline code");
+        assert!(all_content.contains("bar()"), "Should contain 'bar()' from inline code");
+        assert!(all_content.contains("Does foo"), "Should contain description text");
+    }
+
+    #[test]
+    fn test_empty_table_renders() {
+        let md = "| Col1 | Col2 |\n|------|------|\n| | |";
+        let lines = render_markdown(md);
+
+        // Should not panic on empty cells
+        assert!(lines.len() >= 4, "Should render table structure even with empty cells");
     }
 }
