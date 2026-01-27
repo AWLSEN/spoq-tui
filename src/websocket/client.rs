@@ -5,7 +5,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::{
-    connect_async, tungstenite::client::IntoClientRequest, tungstenite::Message,
+    connect_async_tls_with_config, tungstenite::client::IntoClientRequest, tungstenite::Message,
 };
 use tracing::{debug, error, info, warn};
 
@@ -135,11 +135,14 @@ impl WsClient {
             .into_client_request()
             .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
 
-        // Try initial connection with 5 second timeout
-        let ws_stream = tokio::time::timeout(Duration::from_secs(5), connect_async(request))
-            .await
-            .map_err(|_| WsError::ConnectionFailed(format!("Connection timeout to {}", url)))?
-            .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
+        // Try initial connection with 15 second timeout (Cloudflare Tunnel needs more time)
+        let ws_stream = tokio::time::timeout(
+            Duration::from_secs(15),
+            connect_async_tls_with_config(request, None, false, None),
+        )
+        .await
+        .map_err(|_| WsError::ConnectionFailed(format!("Connection timeout to {}", url)))?
+        .map_err(|e| WsError::ConnectionFailed(e.to_string()))?;
 
         info!("Connected to WebSocket server at {}", url);
 
@@ -418,7 +421,7 @@ async fn attempt_reconnect(
             }
         };
 
-        match connect_async(request).await {
+        match connect_async_tls_with_config(request, None, false, None).await {
             Ok((ws_stream, _)) => {
                 info!("Reconnected successfully on attempt {}", attempt);
                 let (ws_sink, ws_stream) = ws_stream.split();

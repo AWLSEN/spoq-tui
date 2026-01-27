@@ -200,12 +200,20 @@ fn main() -> Result<()> {
 
         // Use VPS URL for WebSocket host (strip protocol prefix)
         // Use wss:// for HTTPS URLs, ws:// for HTTP/plain URLs
+        // Default to wss:// for domains (likely behind Cloudflare Tunnel)
         if let Some(ref url) = app.vps_url {
-            let use_tls = url.starts_with("https://");
-            let host = url
-                .strip_prefix("https://")
-                .or_else(|| url.strip_prefix("http://"))
-                .unwrap_or(url);
+            let (host, use_tls) = if url.starts_with("https://") {
+                (url.strip_prefix("https://").unwrap(), true)
+            } else if url.starts_with("http://") {
+                (url.strip_prefix("http://").unwrap(), false)
+            } else {
+                // No protocol prefix - default to TLS for domains, non-TLS for IPs
+                let is_ip = url.split(':').next().map_or(false, |h| {
+                    h.parse::<std::net::Ipv4Addr>().is_ok()
+                        || h.parse::<std::net::Ipv6Addr>().is_ok()
+                });
+                (url.as_str(), !is_ip) // Use TLS for domains
+            };
             ws_config = ws_config.with_host(host).with_tls(use_tls);
         }
 
@@ -221,8 +229,9 @@ fn main() -> Result<()> {
                     StateType::WebSocket,
                     "WS_CONNECTING",
                     format!(
-                        "Connecting to {} (has_token={})",
+                        "Connecting to {} (use_tls={}, has_token={})",
                         ws_config.host,
+                        ws_config.use_tls,
                         ws_config.auth_token.is_some()
                     ),
                 ),
