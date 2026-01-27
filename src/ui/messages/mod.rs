@@ -6,6 +6,7 @@
 mod errors;
 pub mod height;
 mod permission_inline;
+mod plan_events;
 mod segments;
 mod subagent_events;
 mod text_wrapping;
