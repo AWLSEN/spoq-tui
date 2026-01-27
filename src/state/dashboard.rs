@@ -280,6 +280,10 @@ pub struct DashboardState {
     /// Each thread can have at most one pending permission at a time
     pending_permissions: HashMap<String, PermissionRequest>,
 
+    /// Threads currently in plan mode (actively planning)
+    /// Set when ThreadModeUpdate { mode: Plan } received, cleared on exit
+    planning_threads: HashSet<String>,
+
     /// Current overlay state (if an overlay is open)
     overlay: Option<OverlayState>,
     /// Navigation state for question overlay (when Question overlay is open)
@@ -311,6 +315,7 @@ impl DashboardState {
             phase_progress: HashMap::new(),
             pending_questions: HashMap::new(),
             pending_permissions: HashMap::new(),
+            planning_threads: HashSet::new(),
             overlay: None,
             question_state: None,
             aggregate: Aggregate::new(),
@@ -441,6 +446,27 @@ impl DashboardState {
     pub fn set_plan_request(&mut self, thread_id: &str, request_id: String, summary: PlanSummary) {
         self.plan_requests
             .insert(thread_id.to_string(), (request_id, summary));
+    }
+
+    /// Check if a thread is currently in planning mode
+    ///
+    /// Returns true when the thread has received ThreadModeUpdate { mode: Plan }
+    /// and hasn't yet exited plan mode (via PlanApprovalRequest).
+    pub fn is_thread_planning(&self, thread_id: &str) -> bool {
+        self.planning_threads.contains(thread_id)
+    }
+
+    /// Set or clear the planning state for a thread
+    ///
+    /// Called when ThreadModeUpdate events are received:
+    /// - `planning=true` when mode is Plan
+    /// - `planning=false` when mode is Normal or Exec
+    pub fn set_thread_planning(&mut self, thread_id: &str, planning: bool) {
+        if planning {
+            self.planning_threads.insert(thread_id.to_string());
+        } else {
+            self.planning_threads.remove(thread_id);
+        }
     }
 
     /// Update agent state for a thread (fallback status inference)
