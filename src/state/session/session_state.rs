@@ -2,7 +2,9 @@
 //!
 //! SessionState contains information that persists at the session level,
 //! not per-thread. This includes active skills, context usage tracking,
-//! pending permissions, and OAuth requirements.
+//! and OAuth requirements.
+//!
+//! Note: Pending permissions are stored per-thread in DashboardState.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -38,9 +40,10 @@ pub struct PermissionRequest {
 /// not specific to any single thread. It tracks things like:
 /// - Active skills that have been loaded
 /// - Context token usage from compaction events
-/// - Pending permission prompts that need user input
 /// - OAuth requirements for certain skills
 /// - Tools that have been allowed for the session ("allow always")
+///
+/// Note: Pending permissions are stored per-thread in DashboardState.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionState {
     /// Active skills loaded in this session
@@ -52,9 +55,6 @@ pub struct SessionState {
 
     /// Context token limit (max capacity)
     pub context_token_limit: Option<u32>,
-
-    /// Current permission request awaiting user input
-    pub pending_permission: Option<PermissionRequest>,
 
     /// OAuth requirement: (provider, skill_name)
     /// Set when a skill requires OAuth authentication
@@ -112,21 +112,6 @@ impl SessionState {
         self.oauth_url = None;
     }
 
-    /// Set a pending permission request
-    pub fn set_pending_permission(&mut self, request: PermissionRequest) {
-        self.pending_permission = Some(request);
-    }
-
-    /// Clear the pending permission request (after user responds)
-    pub fn clear_pending_permission(&mut self) {
-        self.pending_permission = None;
-    }
-
-    /// Check if there's a pending permission request
-    pub fn has_pending_permission(&self) -> bool {
-        self.pending_permission.is_some()
-    }
-
     /// Set OAuth requirement
     pub fn set_oauth_required(&mut self, provider: String, skill_name: String) {
         self.oauth_required = Some((provider, skill_name));
@@ -162,7 +147,6 @@ impl SessionState {
         self.skills.clear();
         self.context_tokens_used = None;
         self.context_token_limit = None;
-        self.pending_permission = None;
         self.oauth_required = None;
         self.oauth_url = None;
         self.allowed_tools.clear();
@@ -178,7 +162,6 @@ mod tests {
         let state = SessionState::new();
         assert!(state.skills.is_empty());
         assert!(state.context_tokens_used.is_none());
-        assert!(state.pending_permission.is_none());
         assert!(state.oauth_required.is_none());
         assert!(state.allowed_tools.is_empty());
     }
@@ -262,44 +245,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pending_permission() {
-        let mut state = SessionState::new();
-        assert!(!state.has_pending_permission());
-
-        let request = PermissionRequest {
-            permission_id: "perm-001".to_string(),
-            tool_name: "Bash".to_string(),
-            description: "Run npm install".to_string(),
-            context: None,
-            tool_input: None,
-            received_at: Instant::now(),
-        };
-        state.set_pending_permission(request.clone());
-
-        assert!(state.has_pending_permission());
-        assert_eq!(state.pending_permission, Some(request));
-    }
-
-    #[test]
-    fn test_clear_pending_permission() {
-        let mut state = SessionState::new();
-        let request = PermissionRequest {
-            permission_id: "perm-002".to_string(),
-            tool_name: "Bash".to_string(),
-            description: "Run npm install".to_string(),
-            context: Some("Installing dependencies".to_string()),
-            tool_input: None,
-            received_at: Instant::now(),
-        };
-        state.set_pending_permission(request);
-        assert!(state.has_pending_permission());
-
-        state.clear_pending_permission();
-        assert!(!state.has_pending_permission());
-        assert!(state.pending_permission.is_none());
-    }
-
-    #[test]
     fn test_oauth_required() {
         let mut state = SessionState::new();
         assert!(!state.needs_oauth());
@@ -329,14 +274,6 @@ mod tests {
         state.add_skill("commit".to_string());
         state.add_skill("review".to_string());
         state.set_context_tokens(5000);
-        state.set_pending_permission(PermissionRequest {
-            permission_id: "perm-003".to_string(),
-            tool_name: "Bash".to_string(),
-            description: "Run command".to_string(),
-            context: None,
-            tool_input: None,
-            received_at: Instant::now(),
-        });
         state.set_oauth_required("github".to_string(), "skill".to_string());
         state.allow_tool("Bash".to_string());
 
@@ -344,7 +281,6 @@ mod tests {
 
         assert!(state.skills.is_empty());
         assert!(state.context_tokens_used.is_none());
-        assert!(state.pending_permission.is_none());
         assert!(state.oauth_required.is_none());
         assert!(state.allowed_tools.is_empty());
     }

@@ -5,7 +5,7 @@
 
 use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
 use crate::models::{Thread, ThreadMode};
-use crate::state::session::AskUserQuestionData;
+use crate::state::session::{AskUserQuestionData, PermissionRequest};
 use crate::view_state::{
     OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
@@ -276,6 +276,9 @@ pub struct DashboardState {
     /// Pending question data by thread_id (for AskUserQuestion tool)
     /// Stores (request_id, question_data) tuple for WebSocket response
     pending_questions: HashMap<String, (String, AskUserQuestionData)>,
+    /// Pending permission requests by thread_id (for permission prompts)
+    /// Each thread can have at most one pending permission at a time
+    pending_permissions: HashMap<String, PermissionRequest>,
 
     /// Current overlay state (if an overlay is open)
     overlay: Option<OverlayState>,
@@ -307,6 +310,7 @@ impl DashboardState {
             locally_verified: HashSet::new(),
             phase_progress: HashMap::new(),
             pending_questions: HashMap::new(),
+            pending_permissions: HashMap::new(),
             overlay: None,
             question_state: None,
             aggregate: Aggregate::new(),
@@ -579,6 +583,35 @@ impl DashboardState {
     /// Called after the user has answered the question or the request is cancelled.
     pub fn clear_pending_question(&mut self, thread_id: &str) {
         self.pending_questions.remove(thread_id);
+        self.thread_views_dirty = true;
+    }
+
+    /// Store a pending permission request for a thread
+    ///
+    /// Called when receiving a permission request from WebSocket.
+    /// Each thread can have at most one pending permission at a time.
+    /// If a new permission arrives for a thread that already has one,
+    /// it replaces the old one.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The thread this permission belongs to
+    /// * `request` - The permission request data
+    pub fn set_pending_permission(&mut self, thread_id: &str, request: PermissionRequest) {
+        self.pending_permissions
+            .insert(thread_id.to_string(), request);
+        self.thread_views_dirty = true;
+    }
+
+    /// Get pending permission request for a thread
+    pub fn get_pending_permission(&self, thread_id: &str) -> Option<&PermissionRequest> {
+        self.pending_permissions.get(thread_id)
+    }
+
+    /// Clear pending permission for a thread
+    ///
+    /// Called after the user has responded to the permission or the request is cancelled.
+    pub fn clear_pending_permission(&mut self, thread_id: &str) {
+        self.pending_permissions.remove(thread_id);
         self.thread_views_dirty = true;
     }
 
@@ -3889,5 +3922,208 @@ mod tests {
 
         // Value should be the option label, not description
         assert_eq!(answers.get("Select tool"), Some(&"ESLint".to_string()));
+    }
+
+    // -------------------- pending_permissions Tests --------------------
+
+    #[test]
+    fn test_set_pending_permission() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        let request = PermissionRequest {
+            permission_id: "perm-001".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run npm install".to_string(),
+            context: Some("/Users/test/project".to_string()),
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+
+        state.set_pending_permission("t1", request.clone());
+
+        let result = state.get_pending_permission("t1");
+        assert!(result.is_some());
+        let perm = result.unwrap();
+        assert_eq!(perm.permission_id, "perm-001");
+        assert_eq!(perm.tool_name, "Bash");
+    }
+
+    #[test]
+    fn test_get_pending_permission_returns_none_for_unknown_thread() {
+        let state = DashboardState::new();
+        assert!(state.get_pending_permission("unknown").is_none());
+    }
+
+    #[test]
+    fn test_clear_pending_permission() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        let request = PermissionRequest {
+            permission_id: "perm-002".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Read".to_string(),
+            description: "Read file".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+
+        state.set_pending_permission("t1", request);
+        assert!(state.get_pending_permission("t1").is_some());
+
+        state.clear_pending_permission("t1");
+        assert!(state.get_pending_permission("t1").is_none());
+    }
+
+    #[test]
+    fn test_pending_permission_replaces_existing() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        let request1 = PermissionRequest {
+            permission_id: "perm-001".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "First command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+
+        let request2 = PermissionRequest {
+            permission_id: "perm-002".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Write".to_string(),
+            description: "Second command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+
+        state.set_pending_permission("t1", request1);
+        state.set_pending_permission("t1", request2);
+
+        let result = state.get_pending_permission("t1").unwrap();
+        assert_eq!(result.permission_id, "perm-002");
+        assert_eq!(result.tool_name, "Write");
+    }
+
+    #[test]
+    fn test_pending_permissions_multiple_threads() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        let request1 = PermissionRequest {
+            permission_id: "perm-t1".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Command for t1".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+
+        let request2 = PermissionRequest {
+            permission_id: "perm-t2".to_string(),
+            thread_id: Some("t2".to_string()),
+            tool_name: "Read".to_string(),
+            description: "Read for t2".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+
+        state.set_pending_permission("t1", request1);
+        state.set_pending_permission("t2", request2);
+
+        let perm1 = state.get_pending_permission("t1").unwrap();
+        let perm2 = state.get_pending_permission("t2").unwrap();
+
+        assert_eq!(perm1.permission_id, "perm-t1");
+        assert_eq!(perm2.permission_id, "perm-t2");
+    }
+
+    #[test]
+    fn test_set_pending_permission_marks_views_dirty() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Compute views to clear dirty flag
+        let _ = state.compute_thread_views();
+        assert!(!state.thread_views_dirty);
+
+        // Set pending permission
+        let request = PermissionRequest {
+            permission_id: "perm-001".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+
+        state.set_pending_permission("t1", request);
+
+        // Verify dirty flag is set
+        assert!(state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_clear_pending_permission_marks_views_dirty() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set permission first
+        let request = PermissionRequest {
+            permission_id: "perm-001".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        // Compute views to clear dirty flag
+        let _ = state.compute_thread_views();
+        assert!(!state.thread_views_dirty);
+
+        // Clear pending permission
+        state.clear_pending_permission("t1");
+
+        // Verify dirty flag is set
+        assert!(state.thread_views_dirty);
+    }
+
+    #[test]
+    fn test_clear_nonexistent_pending_permission_marks_views_dirty() {
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Compute views to clear dirty flag
+        let _ = state.compute_thread_views();
+        assert!(!state.thread_views_dirty);
+
+        // Clear a non-existent permission (should still mark dirty for consistency)
+        state.clear_pending_permission("t1");
+
+        // Verify dirty flag is set
+        assert!(state.thread_views_dirty);
     }
 }
