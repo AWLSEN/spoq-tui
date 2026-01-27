@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::text_utils::strip_thread_prefix;
 use super::tools::{SubagentEvent, SubagentEventStatus, ToolCall, ToolEvent, ToolEventStatus};
 
 /// Content block in the new API format - either text or tool use
@@ -85,9 +86,14 @@ impl ServerMessage {
                 for block in blocks {
                     match block {
                         ContentBlock::Text { text } => {
-                            full_text.push_str(&text);
-                            if !text.is_empty() {
-                                segments.push(MessageSegment::Text(text));
+                            let processed_text = if role == MessageRole::User {
+                                strip_thread_prefix(&text)
+                            } else {
+                                text
+                            };
+                            full_text.push_str(&processed_text);
+                            if !processed_text.is_empty() {
+                                segments.push(MessageSegment::Text(processed_text));
                             }
                         }
                         ContentBlock::ToolUse {
@@ -110,9 +116,14 @@ impl ServerMessage {
                 }
             }
             Some(MessageContent::Legacy(text)) => {
-                full_text = text.clone();
-                if !text.is_empty() {
-                    segments.push(MessageSegment::Text(text));
+                let processed_text = if role == MessageRole::User {
+                    strip_thread_prefix(&text)
+                } else {
+                    text
+                };
+                full_text = processed_text.clone();
+                if !processed_text.is_empty() {
+                    segments.push(MessageSegment::Text(processed_text));
                 }
                 // Handle legacy tool_calls if present
                 if let Some(tool_calls) = self.tool_calls {
@@ -1074,6 +1085,68 @@ mod tests {
             assert!(!event.result_is_error);
         } else {
             panic!("Expected ToolEvent segment");
+        }
+    }
+
+    // ============================================================================
+    // Thread Prefix Stripping Tests
+    // ============================================================================
+
+    #[test]
+    fn test_to_client_message_user_strips_thread_prefix() {
+        let server_msg = ServerMessage {
+            role: MessageRole::User,
+            content: Some(MessageContent::Legacy(
+                "[Thread: test-uuid-123]\n\nUser's actual message".to_string(),
+            )),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+        let client_msg = server_msg.to_client_message("thread-1", 1);
+        assert_eq!(client_msg.content, "User's actual message");
+        assert_eq!(client_msg.segments.len(), 1);
+        if let MessageSegment::Text(text) = &client_msg.segments[0] {
+            assert_eq!(text, "User's actual message");
+        } else {
+            panic!("Expected Text segment");
+        }
+    }
+
+    #[test]
+    fn test_to_client_message_assistant_preserves_thread_prefix() {
+        let server_msg = ServerMessage {
+            role: MessageRole::Assistant,
+            content: Some(MessageContent::Legacy(
+                "[Thread: test-uuid]\n\nSome text".to_string(),
+            )),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+        let client_msg = server_msg.to_client_message("thread-1", 1);
+        // Assistant messages should NOT have prefix stripped
+        assert_eq!(client_msg.content, "[Thread: test-uuid]\n\nSome text");
+    }
+
+    #[test]
+    fn test_to_client_message_user_blocks_strips_thread_prefix() {
+        let server_msg = ServerMessage {
+            role: MessageRole::User,
+            content: Some(MessageContent::Blocks(vec![ContentBlock::Text {
+                text: "[Thread: block-uuid]\n\nBlock content".to_string(),
+            }])),
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        };
+        let client_msg = server_msg.to_client_message("thread-1", 1);
+        assert_eq!(client_msg.content, "Block content");
+        assert_eq!(client_msg.segments.len(), 1);
+        if let MessageSegment::Text(text) = &client_msg.segments[0] {
+            assert_eq!(text, "Block content");
+        } else {
+            panic!("Expected Text segment");
         }
     }
 }
