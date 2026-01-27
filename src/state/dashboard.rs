@@ -4491,4 +4491,518 @@ mod tests {
         assert_eq!(views[1].id, "t1");
         assert!(!views[1].needs_action);
     }
+
+    // ============================================================================
+    // Top-Card Input Routing Tests (Phase 4 - Bug Fix)
+    // ============================================================================
+    //
+    // These tests verify the fix for Y/N/A key capture when the top card is NOT
+    // a permission prompt. The bug was that Y/N/A keys were being captured even
+    // when the top card was an AskUserQuestion dialog.
+    //
+    // The fix routes input based on the TOP card's WaitingFor type:
+    // - Permission -> Y/N/A captured
+    // - UserInput -> Y/N/A should flow to text input
+    // - PlanApproval -> Y/N/A captured
+
+    #[test]
+    fn test_get_top_needs_action_thread_user_input_is_top_when_most_recent() {
+        // Setup: Thread 1 has Permission, Thread 2 has UserInput (more recent)
+        // Expected: UserInput thread should be returned as top
+        let mut state = DashboardState::new();
+
+        // Thread 1: Permission, older
+        let mut t1 = make_thread("t1", "Permission Thread");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Thread 2: UserInput, newer
+        let mut t2 = make_thread("t2", "UserInput Thread");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now();
+        state.threads.insert("t2".to_string(), t2);
+
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-1".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+        state.waiting_for.insert("t2".to_string(), WaitingFor::UserInput);
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        let result = state.get_top_needs_action_thread();
+        assert!(result.is_some());
+        let (thread_id, waiting_for) = result.unwrap();
+
+        // UserInput thread (t2) is more recent, so it should be top
+        assert_eq!(thread_id, "t2");
+        assert!(matches!(waiting_for, WaitingFor::UserInput));
+    }
+
+    #[test]
+    fn test_get_top_needs_action_thread_permission_is_top_when_most_recent() {
+        // Setup: Thread 1 has UserInput (older), Thread 2 has Permission (more recent)
+        // Expected: Permission thread should be returned as top
+        let mut state = DashboardState::new();
+
+        // Thread 1: UserInput, older
+        let mut t1 = make_thread("t1", "UserInput Thread");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Thread 2: Permission, newer
+        let mut t2 = make_thread("t2", "Permission Thread");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now();
+        state.threads.insert("t2".to_string(), t2);
+
+        state.waiting_for.insert("t1".to_string(), WaitingFor::UserInput);
+        state.waiting_for.insert(
+            "t2".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-2".to_string(),
+                tool_name: "Edit".to_string(),
+            },
+        );
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        let result = state.get_top_needs_action_thread();
+        assert!(result.is_some());
+        let (thread_id, waiting_for) = result.unwrap();
+
+        // Permission thread (t2) is more recent, so it should be top
+        assert_eq!(thread_id, "t2");
+        assert!(matches!(waiting_for, WaitingFor::Permission { .. }));
+    }
+
+    #[test]
+    fn test_get_top_pending_permission_returns_none_when_top_is_user_input() {
+        // Setup: Top thread is UserInput, second thread has Permission
+        // Expected: get_top_pending_permission should return None
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        // Thread 1: Permission, older
+        let mut t1 = make_thread("t1", "Permission Thread");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Thread 2: UserInput, newer (TOP)
+        let mut t2 = make_thread("t2", "UserInput Thread");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now();
+        state.threads.insert("t2".to_string(), t2);
+
+        // Set waiting_for states
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-1".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+        state.waiting_for.insert("t2".to_string(), WaitingFor::UserInput);
+
+        // Set pending permission for t1
+        let request = PermissionRequest {
+            permission_id: "perm-1".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Verify t2 (UserInput) is top
+        let top = state.get_top_needs_action_thread();
+        assert_eq!(top.as_ref().map(|(id, _)| id.as_str()), Some("t2"));
+        assert!(matches!(top.as_ref().map(|(_, wf)| wf), Some(WaitingFor::UserInput)));
+
+        // get_top_pending_permission should return None because top is UserInput
+        let top_permission = state.get_top_pending_permission();
+        assert!(top_permission.is_none());
+    }
+
+    #[test]
+    fn test_get_top_pending_permission_returns_permission_when_top_is_permission() {
+        // Setup: Top thread has Permission
+        // Expected: get_top_pending_permission should return the permission
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        // Thread 1: UserInput, older
+        let mut t1 = make_thread("t1", "UserInput Thread");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Thread 2: Permission, newer (TOP)
+        let mut t2 = make_thread("t2", "Permission Thread");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now();
+        state.threads.insert("t2".to_string(), t2);
+
+        // Set waiting_for states
+        state.waiting_for.insert("t1".to_string(), WaitingFor::UserInput);
+        state.waiting_for.insert(
+            "t2".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-top".to_string(),
+                tool_name: "Edit".to_string(),
+            },
+        );
+
+        // Set pending permission for t2 (the top thread)
+        let request = PermissionRequest {
+            permission_id: "perm-top".to_string(),
+            thread_id: Some("t2".to_string()),
+            tool_name: "Edit".to_string(),
+            description: "Edit file".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t2", request);
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Verify t2 (Permission) is top
+        let top = state.get_top_needs_action_thread();
+        assert_eq!(top.as_ref().map(|(id, _)| id.as_str()), Some("t2"));
+        assert!(matches!(top.as_ref().map(|(_, wf)| wf), Some(WaitingFor::Permission { .. })));
+
+        // get_top_pending_permission should return the permission for t2
+        let top_permission = state.get_top_pending_permission();
+        assert!(top_permission.is_some());
+        assert_eq!(top_permission.unwrap().permission_id, "perm-top");
+        assert_eq!(top_permission.unwrap().tool_name, "Edit");
+    }
+
+    #[test]
+    fn test_thread_removal_changes_top_needs_action() {
+        // Test input isolation: when top card is removed, next card becomes active
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        // Thread 1: Permission, older
+        let mut t1 = make_thread("t1", "Permission Thread");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Thread 2: UserInput, newer (TOP initially)
+        let mut t2 = make_thread("t2", "UserInput Thread");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now();
+        state.threads.insert("t2".to_string(), t2);
+
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-1".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+        state.waiting_for.insert("t2".to_string(), WaitingFor::UserInput);
+
+        // Set pending permission for t1
+        let request = PermissionRequest {
+            permission_id: "perm-1".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Initially, t2 (UserInput) should be top
+        let top = state.get_top_needs_action_thread();
+        assert_eq!(top.as_ref().map(|(id, _)| id.as_str()), Some("t2"));
+
+        // Simulate removing the top thread by clearing its waiting state
+        state.clear_waiting_for("t2");
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Now t1 (Permission) should become top
+        let new_top = state.get_top_needs_action_thread();
+        assert!(new_top.is_some());
+        let (new_thread_id, new_waiting_for) = new_top.unwrap();
+        assert_eq!(new_thread_id, "t1");
+        assert!(matches!(new_waiting_for, WaitingFor::Permission { .. }));
+
+        // And get_top_pending_permission should now return the permission
+        let top_permission = state.get_top_pending_permission();
+        assert!(top_permission.is_some());
+        assert_eq!(top_permission.unwrap().permission_id, "perm-1");
+    }
+
+    #[test]
+    fn test_stacked_cards_isolation_three_threads() {
+        // Test with 3 stacked cards to verify isolation between all types
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        // Thread 1: Permission, oldest
+        let mut t1 = make_thread("t1", "Permission Thread");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now() - chrono::Duration::seconds(20);
+        state.threads.insert("t1".to_string(), t1);
+
+        // Thread 2: PlanApproval, middle
+        let mut t2 = make_thread("t2", "Plan Thread");
+        t2.status = Some(ThreadStatus::Waiting);
+        t2.updated_at = Utc::now() - chrono::Duration::seconds(10);
+        state.threads.insert("t2".to_string(), t2);
+
+        // Thread 3: UserInput, newest (TOP)
+        let mut t3 = make_thread("t3", "UserInput Thread");
+        t3.status = Some(ThreadStatus::Waiting);
+        t3.updated_at = Utc::now();
+        state.threads.insert("t3".to_string(), t3);
+
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-1".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+        state.waiting_for.insert(
+            "t2".to_string(),
+            WaitingFor::PlanApproval {
+                request_id: "plan-1".to_string(),
+            },
+        );
+        state.waiting_for.insert("t3".to_string(), WaitingFor::UserInput);
+
+        // Set pending permission for t1
+        let request = PermissionRequest {
+            permission_id: "perm-1".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Step 1: Top should be t3 (UserInput)
+        let top = state.get_top_needs_action_thread();
+        assert_eq!(top.as_ref().map(|(id, _)| id.as_str()), Some("t3"));
+        assert!(state.get_top_pending_permission().is_none());
+
+        // Step 2: Remove t3 from needs_action
+        state.clear_waiting_for("t3");
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Now top should be t2 (PlanApproval)
+        let top = state.get_top_needs_action_thread();
+        assert_eq!(top.as_ref().map(|(id, _)| id.as_str()), Some("t2"));
+        assert!(matches!(top.as_ref().map(|(_, wf)| wf), Some(WaitingFor::PlanApproval { .. })));
+        assert!(state.get_top_pending_permission().is_none()); // PlanApproval doesn't have permission
+
+        // Step 3: Remove t2 from needs_action
+        state.clear_waiting_for("t2");
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Now top should be t1 (Permission)
+        let top = state.get_top_needs_action_thread();
+        assert_eq!(top.as_ref().map(|(id, _)| id.as_str()), Some("t1"));
+        assert!(matches!(top.as_ref().map(|(_, wf)| wf), Some(WaitingFor::Permission { .. })));
+
+        // Now get_top_pending_permission should return the permission
+        let perm = state.get_top_pending_permission();
+        assert!(perm.is_some());
+        assert_eq!(perm.unwrap().permission_id, "perm-1");
+    }
+
+    #[test]
+    fn test_ask_user_question_permission_tool_is_user_input_type() {
+        // Verify that AskUserQuestion tool (which is a Permission in WaitingFor)
+        // has the correct routing behavior
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        // Thread with AskUserQuestion permission
+        let mut t1 = make_thread("t1", "AskUserQuestion Thread");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now();
+        state.threads.insert("t1".to_string(), t1);
+
+        // AskUserQuestion shows as Permission in WaitingFor but with special tool_name
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "ask-1".to_string(),
+                tool_name: "AskUserQuestion".to_string(),
+            },
+        );
+
+        // Set pending permission for AskUserQuestion
+        let request = PermissionRequest {
+            permission_id: "ask-1".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "AskUserQuestion".to_string(),
+            description: "Answer a question".to_string(),
+            context: None,
+            tool_input: Some(serde_json::json!({
+                "questions": [
+                    {
+                        "question": "What color?",
+                        "header": "Color",
+                        "options": [
+                            {"label": "Red", "description": "Color red"},
+                            {"label": "Blue", "description": "Color blue"}
+                        ],
+                        "multiSelect": false
+                    }
+                ],
+                "answers": {}
+            })),
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // get_top_needs_action_thread should return the thread with Permission type
+        let top = state.get_top_needs_action_thread();
+        assert!(top.is_some());
+        let (_, waiting_for) = top.unwrap();
+
+        // The WaitingFor type is Permission, but tool_name tells us it's AskUserQuestion
+        if let WaitingFor::Permission { tool_name, .. } = waiting_for {
+            assert_eq!(tool_name, "AskUserQuestion");
+        } else {
+            panic!("Expected Permission variant");
+        }
+
+        // get_top_pending_permission returns the permission since it IS a Permission type
+        // The main.rs input handler checks tool_name to route AskUserQuestion specially
+        let perm = state.get_top_pending_permission();
+        assert!(perm.is_some());
+        assert_eq!(perm.unwrap().tool_name, "AskUserQuestion");
+    }
+
+    #[test]
+    fn test_needs_action_flag_set_for_waiting_threads() {
+        // Verify needs_action flag is correctly set based on waiting state
+        let mut state = DashboardState::new();
+
+        // Thread 1: Waiting for Permission
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        t1.updated_at = Utc::now();
+        state.threads.insert("t1".to_string(), t1);
+
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-1".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+
+        state.thread_views_dirty = true;
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        // Waiting thread should have needs_action set
+        assert!(views[0].needs_action);
+        assert_eq!(views[0].waiting_for, Some(WaitingFor::Permission {
+            request_id: "perm-1".to_string(),
+            tool_name: "Bash".to_string(),
+        }));
+    }
+
+    #[test]
+    fn test_needs_action_flag_set_for_pending_permission_threads() {
+        // Verify needs_action is set when thread has pending permission
+        // (even if not in Waiting status)
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        // Thread 1: Running status but has pending permission
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Running);
+        t1.updated_at = Utc::now();
+        state.threads.insert("t1".to_string(), t1);
+
+        // Set pending permission (but not waiting_for)
+        let request = PermissionRequest {
+            permission_id: "perm-1".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Read".to_string(),
+            description: "Read file".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        state.thread_views_dirty = true;
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        // Thread with pending permission should have needs_action set
+        assert!(views[0].needs_action);
+    }
+
+    #[test]
+    fn test_get_top_pending_permission_empty_state() {
+        // Edge case: no threads at all
+        let state = DashboardState::new();
+        assert!(state.get_top_pending_permission().is_none());
+    }
+
+    #[test]
+    fn test_get_top_pending_permission_no_permissions() {
+        // Edge case: threads exist but no permissions
+        let mut state = DashboardState::new();
+
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Waiting);
+        state.threads.insert("t1".to_string(), t1);
+        state.waiting_for.insert("t1".to_string(), WaitingFor::UserInput);
+
+        state.thread_views_dirty = true;
+        let _ = state.compute_thread_views();
+
+        // Top thread is UserInput, no permissions set
+        assert!(state.get_top_pending_permission().is_none());
+    }
 }
