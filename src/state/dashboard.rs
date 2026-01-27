@@ -1207,6 +1207,14 @@ impl DashboardState {
         None
     }
 
+    /// Get the pending permission for the top needs-action thread only
+    pub fn get_top_pending_permission(&self) -> Option<&PermissionRequest> {
+        if let Some((thread_id, _)) = self.get_top_needs_action_thread() {
+            return self.get_pending_permission(&thread_id);
+        }
+        None
+    }
+
     // ========================================================================
     // Private Helpers
     // ========================================================================

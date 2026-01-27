@@ -60,8 +60,17 @@ impl CommandRegistry {
         }
 
         // Priority 2: Modal bindings (modal takes over all input)
+        // Exception: Permission modal only intercepts character keys (y/n/a)
         if context.is_modal_active() {
-            return self.dispatch_modal(key, context);
+            if context.modal == ModalType::Permission {
+                // Permission: only capture char keys for y/n/a handling
+                if let KeyCode::Char(c) = key.code {
+                    return Some(Command::HandlePermissionKey(c));
+                }
+                // Non-char keys (ESC, arrows, etc.) fall through to normal handling
+            } else {
+                return self.dispatch_modal(key, context);
+            }
         }
 
         // Priority 3: Check remaining global bindings
@@ -133,12 +142,9 @@ impl CommandRegistry {
             }
 
             ModalType::Permission => {
-                // Permission prompt: check for Y/N/A keys
-                if let KeyCode::Char(c) = key.code {
-                    return Some(Command::HandlePermissionKey(c));
-                }
-                // Ignore other keys during permission prompt
-                Some(Command::Noop)
+                // Permission is now handled in dispatch() before dispatch_modal is called.
+                // This case is unreachable but kept for exhaustive match.
+                unreachable!("Permission modal handled in dispatch()")
             }
 
             ModalType::AskUserQuestion => {

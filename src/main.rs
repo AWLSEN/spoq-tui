@@ -3,6 +3,7 @@ use spoq::cli::{parse_args, run_cli_command};
 use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
 use spoq::input::translate_shifted_char;
 use spoq::models;
+use spoq::models::dashboard::WaitingFor;
 use spoq::startup::{run_preflight_checks, StartupConfig};
 use spoq::terminal::{setup_panic_hook, TerminalManager};
 use spoq::ui;

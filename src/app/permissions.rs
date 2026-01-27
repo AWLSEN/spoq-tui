@@ -334,23 +334,31 @@ impl App {
     // AskUserQuestion Navigation Methods
     // ========================================================================
 
-    /// Find an AskUserQuestion permission from any thread
+    /// Find an AskUserQuestion permission from the top needs-action thread
     ///
     /// Returns the permission if found, None otherwise.
     fn find_ask_user_question_permission(&self) -> Option<&crate::state::PermissionRequest> {
-        for (_, perm) in self.dashboard.pending_permissions_iter() {
-            if perm.tool_name == "AskUserQuestion" {
-                return Some(perm);
+        // Only check the TOP needs-action thread
+        if let Some((thread_id, _)) = self.dashboard.get_top_needs_action_thread() {
+            if let Some(perm) = self.dashboard.get_pending_permission(&thread_id) {
+                if perm.tool_name == "AskUserQuestion" {
+                    return Some(perm);
+                }
             }
         }
         None
     }
 
-    /// Check if there is a pending AskUserQuestion permission
+    /// Check if there is a pending AskUserQuestion permission on the top needs-action thread
     pub fn is_ask_user_question_pending(&self) -> bool {
-        if let Some(perm) = self.find_ask_user_question_permission() {
-            if let Some(ref tool_input) = perm.tool_input {
-                return parse_ask_user_question(tool_input).is_some();
+        // Only check the TOP needs-action thread
+        if let Some((thread_id, _)) = self.dashboard.get_top_needs_action_thread() {
+            if let Some(perm) = self.dashboard.get_pending_permission(&thread_id) {
+                if perm.tool_name == "AskUserQuestion" {
+                    if let Some(ref tool_input) = perm.tool_input {
+                        return parse_ask_user_question(tool_input).is_some();
+                    }
+                }
             }
         }
         false
