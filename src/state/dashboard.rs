@@ -644,6 +644,46 @@ impl DashboardState {
         self.thread_views_dirty = true;
     }
 
+    /// Find a pending permission by its permission_id across all threads
+    ///
+    /// Returns the thread_id and permission reference if found.
+    /// This is useful when you have a permission_id but don't know which thread it belongs to.
+    pub fn find_permission_by_id(&self, permission_id: &str) -> Option<(&str, &PermissionRequest)> {
+        for (thread_id, perm) in &self.pending_permissions {
+            if perm.permission_id == permission_id {
+                return Some((thread_id.as_str(), perm));
+            }
+        }
+        None
+    }
+
+    /// Clear a pending permission by its permission_id (searches across all threads)
+    ///
+    /// Returns the thread_id if found and cleared.
+    pub fn clear_permission_by_id(&mut self, permission_id: &str) -> Option<String> {
+        let thread_id = self
+            .pending_permissions
+            .iter()
+            .find(|(_, perm)| perm.permission_id == permission_id)
+            .map(|(tid, _)| tid.clone());
+
+        if let Some(ref tid) = thread_id {
+            self.pending_permissions.remove(tid);
+            self.thread_views_dirty = true;
+        }
+
+        thread_id
+    }
+
+    /// Iterate over all pending permissions
+    ///
+    /// Returns an iterator of (thread_id, permission) pairs.
+    pub fn pending_permissions_iter(
+        &self,
+    ) -> impl Iterator<Item = (&String, &PermissionRequest)> {
+        self.pending_permissions.iter()
+    }
+
     // ========================================================================
     // UI State (from click handlers)
     // ========================================================================
@@ -1231,7 +1271,10 @@ impl DashboardState {
                         ThreadStatus::Waiting => None, // Uses old layout with status + actions
                     };
 
-                    ThreadView::new(
+                    // Check if this thread has a pending permission (needs action)
+                    let has_pending_permission = self.pending_permissions.contains_key(&thread.id);
+
+                    let mut view = ThreadView::new(
                         thread.id.clone(),
                         thread.title.clone(),
                         thread.display_repository(),
@@ -1242,7 +1285,14 @@ impl DashboardState {
                     .with_progress(progress)
                     .with_duration(thread.display_duration())
                     .with_current_operation(current_operation)
-                    .with_activity_text(activity_text)
+                    .with_activity_text(activity_text);
+
+                    // If thread has a pending permission, mark as needing action
+                    if has_pending_permission {
+                        view.needs_action = true;
+                    }
+
+                    view
                 })
                 .collect();
 
@@ -4154,5 +4204,278 @@ mod tests {
 
         // Verify dirty flag is set
         assert!(state.thread_views_dirty);
+    }
+
+    // -------------------- update_thread_status clears pending_permissions Tests --------------------
+
+    #[test]
+    fn test_update_thread_status_clears_pending_permission_on_done() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set up pending permission
+        let request = PermissionRequest {
+            permission_id: "perm-001".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        // Set waiting_for to Permission
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-001".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+
+        assert!(state.get_pending_permission("t1").is_some());
+
+        // Update status to Done
+        state.update_thread_status("t1", ThreadStatus::Done, None);
+
+        // Pending permission should be cleared
+        assert!(state.get_pending_permission("t1").is_none());
+    }
+
+    #[test]
+    fn test_update_thread_status_clears_pending_permission_on_error() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set up pending permission
+        let request = PermissionRequest {
+            permission_id: "perm-002".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Write".to_string(),
+            description: "Write file".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-002".to_string(),
+                tool_name: "Write".to_string(),
+            },
+        );
+
+        assert!(state.get_pending_permission("t1").is_some());
+
+        // Update status to Error
+        state.update_thread_status("t1", ThreadStatus::Error, None);
+
+        // Pending permission should be cleared
+        assert!(state.get_pending_permission("t1").is_none());
+    }
+
+    #[test]
+    fn test_update_thread_status_clears_pending_permission_on_idle() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set up pending permission
+        let request = PermissionRequest {
+            permission_id: "perm-003".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Read".to_string(),
+            description: "Read file".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-003".to_string(),
+                tool_name: "Read".to_string(),
+            },
+        );
+
+        assert!(state.get_pending_permission("t1").is_some());
+
+        // Update status to Idle
+        state.update_thread_status("t1", ThreadStatus::Idle, None);
+
+        // Pending permission should be cleared
+        assert!(state.get_pending_permission("t1").is_none());
+    }
+
+    #[test]
+    fn test_update_thread_status_clears_pending_permission_when_no_longer_waiting_for_permission() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set up pending permission
+        let request = PermissionRequest {
+            permission_id: "perm-004".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        // Set waiting_for to Permission
+        state.waiting_for.insert(
+            "t1".to_string(),
+            WaitingFor::Permission {
+                request_id: "perm-004".to_string(),
+                tool_name: "Bash".to_string(),
+            },
+        );
+
+        assert!(state.get_pending_permission("t1").is_some());
+
+        // Update status to Running with no waiting_for (permission was approved)
+        state.update_thread_status("t1", ThreadStatus::Running, None);
+
+        // Pending permission should be cleared
+        assert!(state.get_pending_permission("t1").is_none());
+    }
+
+    #[test]
+    fn test_update_thread_status_keeps_pending_permission_when_still_waiting() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set up pending permission
+        let request = PermissionRequest {
+            permission_id: "perm-005".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        // Update status to Waiting with Permission waiting_for (permission still pending)
+        state.update_thread_status(
+            "t1",
+            ThreadStatus::Waiting,
+            Some(WaitingFor::Permission {
+                request_id: "perm-005".to_string(),
+                tool_name: "Bash".to_string(),
+            }),
+        );
+
+        // Pending permission should NOT be cleared
+        assert!(state.get_pending_permission("t1").is_some());
+    }
+
+    // -------------------- needs_action with pending_permissions Tests --------------------
+
+    #[test]
+    fn test_build_thread_views_sets_needs_action_for_pending_permission() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // Set up pending permission (without waiting_for set yet)
+        let request = PermissionRequest {
+            permission_id: "perm-006".to_string(),
+            thread_id: Some("t1".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t1", request);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        // Thread should have needs_action = true due to pending permission
+        assert!(views[0].needs_action);
+    }
+
+    #[test]
+    fn test_build_thread_views_needs_action_false_without_pending_permission() {
+        let mut state = DashboardState::new();
+        let mut thread = make_thread("t1", "Test Thread");
+        thread.status = Some(ThreadStatus::Running);
+        state.threads.insert("t1".to_string(), thread);
+
+        // No pending permission
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 1);
+        // Thread should have needs_action = false (Running status doesn't need attention)
+        assert!(!views[0].needs_action);
+    }
+
+    #[test]
+    fn test_build_thread_views_sorts_pending_permission_threads_first() {
+        use std::time::Instant;
+
+        let mut state = DashboardState::new();
+
+        // Thread 1: Running, no pending permission
+        let mut t1 = make_thread("t1", "Thread 1");
+        t1.status = Some(ThreadStatus::Running);
+        t1.updated_at = Utc::now();
+        state.threads.insert("t1".to_string(), t1);
+
+        // Thread 2: Running, has pending permission
+        let mut t2 = make_thread("t2", "Thread 2");
+        t2.status = Some(ThreadStatus::Running);
+        t2.updated_at = Utc::now() - chrono::Duration::hours(1); // Older thread
+        state.threads.insert("t2".to_string(), t2);
+
+        // Set pending permission for t2
+        let request = PermissionRequest {
+            permission_id: "perm-007".to_string(),
+            thread_id: Some("t2".to_string()),
+            tool_name: "Bash".to_string(),
+            description: "Run command".to_string(),
+            context: None,
+            tool_input: None,
+            received_at: Instant::now(),
+        };
+        state.set_pending_permission("t2", request);
+
+        let views = state.compute_thread_views();
+
+        assert_eq!(views.len(), 2);
+        // t2 should come first because it has needs_action = true
+        assert_eq!(views[0].id, "t2");
+        assert!(views[0].needs_action);
+        // t1 should come second
+        assert_eq!(views[1].id, "t1");
+        assert!(!views[1].needs_action);
     }
 }
