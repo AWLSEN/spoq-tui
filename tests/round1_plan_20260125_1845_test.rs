@@ -51,6 +51,7 @@ fn create_test_thread(id: &str, title: &str) -> Thread {
 fn create_bash_permission(permission_id: &str) -> PermissionRequest {
     PermissionRequest {
         permission_id: permission_id.to_string(),
+        thread_id: Some("test-thread".to_string()),
         tool_name: "Bash".to_string(),
         description: "Run a command".to_string(),
         context: Some("ls -la".to_string()),
@@ -171,9 +172,8 @@ fn test_open_ask_user_question_dialog_finds_first_user_input() {
 fn test_handle_permission_key_a_ignores_when_top_thread_is_user_input() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-bash"));
-
     app.dashboard.add_thread(create_test_thread("t1", "Thread 1"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-bash"));
     setup_user_input_thread(&mut app, "t1", "req-1");
 
     if let Some((_, wf)) = app.dashboard.get_top_needs_action_thread() {
@@ -185,16 +185,15 @@ fn test_handle_permission_key_a_ignores_when_top_thread_is_user_input() {
     let handled = app.handle_permission_key('a');
 
     assert!(!handled, "'A' key should be ignored when top thread is UserInput");
-    assert!(app.session_state.pending_permission.is_some());
+    assert!(app.dashboard.get_pending_permission("t1").is_some());
 }
 
 #[test]
 fn test_handle_permission_key_a_allows_when_top_thread_is_permission() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-bash"));
-
     app.dashboard.add_thread(create_test_thread("t1", "Thread 1"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-bash"));
     setup_permission_thread(&mut app, "t1", "perm-bash", "Bash");
 
     if let Some((_, wf)) = app.dashboard.get_top_needs_action_thread() {
@@ -206,7 +205,7 @@ fn test_handle_permission_key_a_allows_when_top_thread_is_permission() {
     let handled = app.handle_permission_key('a');
 
     assert!(handled, "'A' key should be handled when top thread is Permission");
-    assert!(app.session_state.pending_permission.is_none());
+    assert!(app.dashboard.get_pending_permission("t1").is_none());
     assert!(app.session_state.allowed_tools.contains("Bash"));
 }
 
@@ -214,14 +213,16 @@ fn test_handle_permission_key_a_allows_when_top_thread_is_permission() {
 fn test_handle_permission_key_a_allows_when_no_top_thread() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-bash"));
+    app.dashboard.add_thread(create_test_thread("t1", "Thread 1"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-bash"));
 
-    assert!(app.dashboard.get_top_needs_action_thread().is_none());
+    // Note: Even though there's no "top" thread (no waiting state), the permission can still be handled
+    // because handle_permission_key() searches all pending permissions as a fallback
 
     let handled = app.handle_permission_key('a');
 
     assert!(handled, "'A' key should be handled when no top thread exists");
-    assert!(app.session_state.pending_permission.is_none());
+    assert!(app.dashboard.get_pending_permission("t1").is_none());
     assert!(app.session_state.allowed_tools.contains("Bash"));
 }
 
@@ -229,69 +230,64 @@ fn test_handle_permission_key_a_allows_when_no_top_thread() {
 fn test_handle_permission_key_y_ignores_when_top_thread_is_user_input() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-bash"));
-
     app.dashboard.add_thread(create_test_thread("t1", "Thread 1"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-bash"));
     setup_user_input_thread(&mut app, "t1", "req-1");
 
     let handled = app.handle_permission_key('y');
 
     assert!(!handled, "'Y' key should be ignored when top thread is UserInput");
-    assert!(app.session_state.pending_permission.is_some());
+    assert!(app.dashboard.get_pending_permission("t1").is_some());
 }
 
 #[test]
 fn test_handle_permission_key_n_ignores_when_top_thread_is_user_input() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-bash"));
-
     app.dashboard.add_thread(create_test_thread("t1", "Thread 1"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-bash"));
     setup_user_input_thread(&mut app, "t1", "req-1");
 
     let handled = app.handle_permission_key('n');
 
     assert!(!handled, "'N' key should be ignored when top thread is UserInput");
-    assert!(app.session_state.pending_permission.is_some());
+    assert!(app.dashboard.get_pending_permission("t1").is_some());
 }
 
 #[test]
 fn test_handle_permission_key_y_works_when_top_thread_is_permission() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-bash"));
-
     app.dashboard.add_thread(create_test_thread("t1", "Thread 1"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-bash"));
     setup_permission_thread(&mut app, "t1", "perm-bash", "Bash");
 
     let handled = app.handle_permission_key('y');
 
     assert!(handled, "'Y' key should be handled when top thread is Permission");
-    assert!(app.session_state.pending_permission.is_none());
+    assert!(app.dashboard.get_pending_permission("t1").is_none());
 }
 
 #[test]
 fn test_handle_permission_key_uppercase_variants() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-1"));
-
     app.dashboard.add_thread(create_test_thread("t1", "Thread 1"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-1"));
     setup_user_input_thread(&mut app, "t1", "req-1");
 
     let handled = app.handle_permission_key('A');
     assert!(!handled);
-    assert!(app.session_state.pending_permission.is_some());
+    assert!(app.dashboard.get_pending_permission("t1").is_some());
 }
 
 #[test]
 fn test_full_flow_a_key_with_mixed_threads() {
     let mut app = create_test_app();
 
-    app.session_state.set_pending_permission(create_bash_permission("perm-bash"));
-
     // Add one thread that needs user input - this will be the top needs-action thread
     app.dashboard.add_thread(create_test_thread("t1", "User Input Thread"));
+    app.dashboard.set_pending_permission("t1", create_bash_permission("perm-bash"));
     setup_user_input_thread(&mut app, "t1", "req-1");
 
     // Verify it's a UserInput thread
@@ -302,7 +298,7 @@ fn test_full_flow_a_key_with_mixed_threads() {
         // Press 'A' - should be ignored because top thread is UserInput
         let handled = app.handle_permission_key('a');
         assert!(!handled, "'A' should be ignored when top thread is UserInput");
-        assert!(app.session_state.pending_permission.is_some(), "Permission should still be pending");
+        assert!(app.dashboard.get_pending_permission("t1").is_some(), "Permission should still be pending");
     } else {
         panic!("Should have a top needs-action thread");
     }

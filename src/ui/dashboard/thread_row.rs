@@ -997,7 +997,7 @@ mod tests {
             connected: true,
         });
 
-        let repos: &[crate::models::GitHubRepo] = &[];
+        const REPOS: &[crate::models::GitHubRepo] = &[];
         RenderContext {
             threads: THREADS,
             aggregate: &AGGREGATE,
@@ -1005,7 +1005,7 @@ mod tests {
             system_stats: &SYSTEM_STATS,
             theme,
             question_state: None,
-            repos,
+            repos: REPOS,
         }
     }
 }

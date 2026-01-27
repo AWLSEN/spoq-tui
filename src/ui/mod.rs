@@ -1564,6 +1564,7 @@ mod tests {
 
         let perm = PermissionRequest {
             permission_id: "perm-test".to_string(),
+            thread_id: Some("test-thread".to_string()),
             tool_name: "Write".to_string(),
             description: "Write file".to_string(),
             context: Some("/home/user/test.rs".to_string()),
@@ -1581,6 +1582,7 @@ mod tests {
 
         let perm = PermissionRequest {
             permission_id: "perm-test".to_string(),
+            thread_id: Some("test-thread".to_string()),
             tool_name: "Read".to_string(),
             description: "Read file".to_string(),
             context: None,
@@ -1598,6 +1600,7 @@ mod tests {
 
         let perm = PermissionRequest {
             permission_id: "perm-test".to_string(),
+            thread_id: Some("test-thread".to_string()),
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: None,
@@ -1616,6 +1619,7 @@ mod tests {
         let long_content = "a".repeat(150);
         let perm = PermissionRequest {
             permission_id: "perm-test".to_string(),
+            thread_id: Some("test-thread".to_string()),
             tool_name: "Write".to_string(),
             description: "Write file".to_string(),
             context: None,
@@ -1634,6 +1638,7 @@ mod tests {
 
         let perm = PermissionRequest {
             permission_id: "perm-test".to_string(),
+            thread_id: Some("test-thread".to_string()),
             tool_name: "Custom".to_string(),
             description: "Custom action".to_string(),
             context: None,

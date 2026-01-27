@@ -64,7 +64,7 @@ fn test_dashboard_renders_with_zero_threads() {
     assert!(views.is_empty());
 
     // RenderContext should handle empty thread list
-    let repos = vec![];
+    let repos: Vec<spoq::models::GitHubRepo> = vec![];
     let ctx = state.build_render_context(&stats, &theme, &repos);
     assert_eq!(ctx.threads.len(), 0);
     assert_eq!(ctx.action_count(), 0);
@@ -652,8 +652,7 @@ fn test_render_context_action_count() {
     let aggregate = Aggregate::new();
     let stats = SystemStats::default();
     let theme = Theme::default();
-    let repos = vec![];
-
+    let repos: Vec<spoq::models::GitHubRepo> = vec![];
     let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme, &repos);
 
     // Only Waiting needs action
@@ -666,8 +665,7 @@ fn test_render_context_with_overlay() {
     let aggregate = Aggregate::new();
     let stats = SystemStats::default();
     let theme = Theme::default();
-    let repos = vec![];
-
+    let repos: Vec<spoq::models::GitHubRepo> = vec![];
     let ctx = RenderContext::new(&threads, &aggregate, &stats, &theme, &repos);
     assert!(!ctx.has_overlay());
 

@@ -290,6 +290,7 @@ mod tests {
         let now = Instant::now();
         let req1 = PermissionRequest {
             permission_id: "perm-a".to_string(),
+            thread_id: Some("thread-1".to_string()),
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: Some("context".to_string()),
@@ -298,6 +299,7 @@ mod tests {
         };
         let req2 = PermissionRequest {
             permission_id: "perm-a".to_string(),
+            thread_id: Some("thread-1".to_string()),
             tool_name: "Bash".to_string(),
             description: "Run command".to_string(),
             context: Some("context".to_string()),
@@ -306,6 +308,7 @@ mod tests {
         };
         let req3 = PermissionRequest {
             permission_id: "perm-b".to_string(),
+            thread_id: Some("thread-2".to_string()),
             tool_name: "Read".to_string(),
             description: "Read file".to_string(),
             context: None,

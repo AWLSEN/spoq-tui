@@ -769,7 +769,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
-        let repos = vec![];
+        let repos: Vec<crate::models::GitHubRepo> = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
@@ -808,7 +808,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
-        let repos = vec![];
+        let repos: Vec<crate::models::GitHubRepo> = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
@@ -848,7 +848,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
-        let repos = vec![];
+        let repos: Vec<crate::models::GitHubRepo> = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,
@@ -888,7 +888,7 @@ mod tests {
         let aggregate = crate::models::dashboard::Aggregate::default();
         let system_stats = crate::view_state::SystemStats::default();
         let theme = crate::view_state::Theme::default();
-        let repos = vec![];
+        let repos: Vec<crate::models::GitHubRepo> = vec![];
         let ctx = crate::view_state::RenderContext {
             threads: &threads,
             aggregate: &aggregate,

@@ -496,6 +496,7 @@ mod tests {
     fn make_permission(tool_name: &str, description: &str) -> PermissionRequest {
         PermissionRequest {
             permission_id: "test-perm-001".to_string(),
+            thread_id: Some("test-thread".to_string()),
             tool_name: tool_name.to_string(),
             description: description.to_string(),
             context: None,

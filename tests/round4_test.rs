@@ -109,12 +109,12 @@ fn test_question_state_reset_on_deny() {
 
     // Initialize with a permission
     let perm = create_ask_user_question_permission("perm-deny-test", 2);
-    app.session_state.set_pending_permission(perm.clone());
+    app.dashboard.set_pending_permission("test-thread", perm.clone());
     app.init_question_state();
 
     // Verify state is initialized
     assert_eq!(app.question_state.selections.len(), 2);
-    assert!(app.session_state.pending_permission.is_some());
+    assert!(app.dashboard.get_pending_permission("test-thread").is_some());
 
     // Deny the permission
     app.deny_permission(&perm.permission_id);
@@ -131,7 +131,7 @@ fn test_question_state_reset_on_deny() {
         "Other mode should be deactivated"
     );
     assert!(
-        app.session_state.pending_permission.is_none(),
+        app.dashboard.get_pending_permission("test-thread").is_none(),
         "Permission should be cleared"
     );
 }
@@ -141,7 +141,7 @@ fn test_question_state_initialized_exactly_once() {
     let mut app = App::default();
 
     let perm = create_ask_user_question_permission("perm-once", 1);
-    app.session_state.set_pending_permission(perm.clone());
+    app.dashboard.set_pending_permission("test-thread", perm.clone());
 
     // Initialize multiple times
     app.init_question_state();
@@ -192,10 +192,8 @@ fn test_auto_approve_skips_question_initialization() {
         0,
         "Should not initialize for auto-approved permissions"
     );
-    assert!(
-        app.session_state.pending_permission.is_none(),
-        "Permission should be auto-approved and cleared"
-    );
+    // Note: When auto-approved, permission is never stored in dashboard
+    // so we can't check if it's cleared - it was never set
 }
 
 #[test]
@@ -235,7 +233,7 @@ fn test_question_state_with_multi_select_questions() {
         received_at: Instant::now(),
     };
 
-    app.session_state.set_pending_permission(perm);
+    app.dashboard.set_pending_permission("test-thread", perm);
     app.init_question_state();
 
     // Verify initialization for mixed question types

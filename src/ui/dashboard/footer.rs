@@ -113,7 +113,7 @@ mod tests {
             anchor_y: 15,
         };
 
-        let repos = vec![];
+        let repos: Vec<crate::models::GitHubRepo> = vec![];
         let ctx =
             RenderContext::new(&threads, &aggregate, &stats, &theme, &repos).with_overlay(Some(&overlay));
 
