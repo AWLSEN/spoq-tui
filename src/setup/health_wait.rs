@@ -9,8 +9,12 @@ use std::io::{self, Write};
 use std::time::Duration;
 use tokio::time::{sleep, Instant};
 
-/// Default timeout for health wait (5 minutes)
-pub const DEFAULT_HEALTH_TIMEOUT_SECS: u64 = 300;
+/// Default timeout for health wait (10 minutes)
+/// Based on observed provisioning times:
+/// - Post-install script: ~2.5 min (warm cache) to ~6 min (cold)
+/// - Cloudflared tunnel registration: ~10 sec
+/// - Buffer for slow networks and retries
+pub const DEFAULT_HEALTH_TIMEOUT_SECS: u64 = 600;
 
 /// Interval between health check polls (10 seconds)
 const POLL_INTERVAL_SECS: u64 = 10;
@@ -295,6 +299,6 @@ mod tests {
 
     #[test]
     fn test_default_timeout() {
-        assert_eq!(DEFAULT_HEALTH_TIMEOUT_SECS, 300);
+        assert_eq!(DEFAULT_HEALTH_TIMEOUT_SECS, 600);
     }
 }

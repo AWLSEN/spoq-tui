@@ -506,7 +506,7 @@ fn test_health_wait_error_display_unhealthy() {
 
 #[test]
 fn test_health_wait_default_timeout() {
-    assert_eq!(DEFAULT_HEALTH_TIMEOUT_SECS, 300);
+    assert_eq!(DEFAULT_HEALTH_TIMEOUT_SECS, 600);
 }
 
 #[tokio::test]

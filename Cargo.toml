@@ -49,6 +49,9 @@ bytes = "1"
 # SSH/SFTP for credentials sync to VPS
 ssh2 = "0.9"
 
+# PTY for interactive CLI automation (gh auth login)
+portable-pty = "0.8"
+
 # Vendored OpenSSL for cross-compilation (ssh2 requires OpenSSL)
 openssl = { version = "0.10", features = ["vendored"] }
 
