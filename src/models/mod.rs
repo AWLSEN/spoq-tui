@@ -4,6 +4,7 @@ mod repository;
 mod message;
 pub mod picker;
 mod request;
+mod text_utils;
 mod thread;
 mod tools;
 
@@ -17,6 +18,7 @@ pub use message::*;
 pub use picker::*;
 pub use request::PermissionMode;
 pub use request::*;
+pub use text_utils::strip_thread_prefix;
 pub use thread::*;
 pub use tools::*;
 
