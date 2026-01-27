@@ -531,8 +531,18 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     // === UNIFIED SCROLL: Record total for scroll calculations ===
     app.total_content_lines = total_content_lines;
 
-    // === UNIFIED SCROLL: Use offset within the first visible message ===
-    let unified_scroll_from_top = first_message_line_offset.min(u16::MAX as usize) as u16;
+    // === UNIFIED SCROLL: Calculate scroll offset based on actual rendered content ===
+    // When at bottom (unified_scroll = 0), ensure input is visible by scrolling
+    // to show the bottom of rendered content. When scrolled up, use the
+    // virtualization offset within the first visible message.
+    let rendered_lines = lines.len();
+    let unified_scroll_from_top = if !app.user_has_scrolled || app.unified_scroll == 0 {
+        // At bottom: scroll to show input at the bottom of viewport
+        rendered_lines.saturating_sub(viewport_height) as u16
+    } else {
+        // Scrolled up: use offset within first visible message
+        first_message_line_offset.min(u16::MAX as usize) as u16
+    };
 
     let messages_widget = Paragraph::new(lines)
         .wrap(Wrap { trim: false })

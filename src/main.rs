@@ -1489,13 +1489,13 @@ where
                             // Handle mouse events for scroll only (click/hover system removed)
                             match mouse_event.kind {
                                 // Simple line-based scrolling (like native terminal apps)
-                                // Each scroll event moves 3 lines (unified scroll)
+                                // Each scroll event moves 1 line (unified scroll)
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
                                         // Scroll down = see newer content / input
                                         app.scroll_velocity = 0.0; // Reset momentum on user scroll
-                                        let needs_redraw = if app.unified_scroll >= 3 {
-                                            app.unified_scroll -= 3;
+                                        let needs_redraw = if app.unified_scroll >= 1 {
+                                            app.unified_scroll -= 1;
                                             app.scroll_position = app.unified_scroll as f32;
                                             true
                                         } else if app.unified_scroll > 0 {
@@ -1518,7 +1518,7 @@ where
                                         // Scroll up = see older content
                                         app.scroll_velocity = 0.0; // Reset momentum on user scroll
                                         app.user_has_scrolled = true;
-                                        let new_scroll = (app.unified_scroll + 3).min(app.max_scroll);
+                                        let new_scroll = (app.unified_scroll + 1).min(app.max_scroll);
                                         let needs_redraw = if new_scroll != app.unified_scroll {
                                             app.unified_scroll = new_scroll;
                                             app.scroll_position = app.unified_scroll as f32;
