@@ -1,6 +1,7 @@
 //! Message handling for the App.
 
 use crate::debug::{DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType};
+use crate::models::ThreadMode;
 use crate::state::dashboard::PhaseProgressData;
 
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
@@ -990,6 +991,11 @@ impl App {
                 );
                 // Update thread mode in dashboard state
                 self.dashboard.update_thread_mode(&thread_id, mode);
+
+                // Track planning state for UI indicator
+                self.dashboard
+                    .set_thread_planning(&thread_id, mode == ThreadMode::Plan);
+
                 // Emit StateChange for thread mode update
                 emit_debug(
                     &self.debug_tx,
