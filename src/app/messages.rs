@@ -215,6 +215,22 @@ pub enum AppMessage {
     },
     /// Clone operation failed
     UnifiedPickerCloneFailed { error: String },
+    // =========================================================================
+    // Sync Messages
+    // =========================================================================
+    /// Trigger token sync operation (from /sync command)
+    TriggerSync,
+    /// Sync operation started
+    SyncStarted,
+    /// Sync progress update
+    SyncProgress { message: String },
+    /// Sync completed successfully
+    SyncComplete {
+        claude_code: bool,
+        github_cli: bool,
+    },
+    /// Sync operation failed
+    SyncFailed { error: String },
 }
 
 #[cfg(test)]

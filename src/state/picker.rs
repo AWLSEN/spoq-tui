@@ -126,6 +126,11 @@ pub struct UnifiedPickerState {
     pub cloning: bool,
     /// Clone progress message (shown during clone)
     pub clone_message: Option<String>,
+    /// Validation error (shown prominently, e.g., "message required")
+    pub validation_error: Option<String>,
+    /// Pending selection - stored when picker closes without message
+    /// Used when user types message and presses Enter
+    pub pending_selection: Option<PickerItem>,
 }
 
 impl Default for UnifiedPickerState {
@@ -149,6 +154,8 @@ impl UnifiedPickerState {
             scroll_offset: 0,
             cloning: false,
             clone_message: None,
+            validation_error: None,
+            pending_selection: None,
         }
     }
 
@@ -161,13 +168,15 @@ impl UnifiedPickerState {
         self.scroll_offset = 0;
         self.cloning = false;
         self.clone_message = None;
+        self.validation_error = None;
+        // Don't clear pending_selection - user may reopen to modify
         // Mark sections as loading to trigger initial fetch
         self.repos.set_loading(true);
         self.threads.set_loading(true);
         self.folders.set_loading(true);
     }
 
-    /// Close the picker and reset state
+    /// Close the picker and reset state (but keep pending_selection)
     pub fn close(&mut self) {
         self.visible = false;
         self.query.clear();
@@ -180,11 +189,35 @@ impl UnifiedPickerState {
         self.scroll_offset = 0;
         self.cloning = false;
         self.clone_message = None;
+        self.validation_error = None;
+        // Don't clear pending_selection - it's used after close
+    }
+
+    /// Set pending selection (called when picker closes without message)
+    pub fn set_pending_selection(&mut self, item: PickerItem) {
+        self.pending_selection = Some(item);
+    }
+
+    /// Take and clear pending selection (called when message is submitted)
+    pub fn take_pending_selection(&mut self) -> Option<PickerItem> {
+        self.pending_selection.take()
+    }
+
+    /// Clear pending selection (called on successful thread creation)
+    pub fn clear_pending_selection(&mut self) {
+        self.pending_selection = None;
+    }
+
+    /// Check if there's a pending selection
+    pub fn has_pending_selection(&self) -> bool {
+        self.pending_selection.is_some()
     }
 
     /// Update the search query and filter items locally (instant)
     pub fn set_query(&mut self, query: String) {
         self.query = query.clone();
+        // Clear validation error when user modifies query
+        self.validation_error = None;
         // Filter all sections locally - no API call needed
         self.repos.filter_by_query(&query);
         self.threads.filter_by_query(&query);
@@ -461,6 +494,16 @@ impl UnifiedPickerState {
     /// Check if input should be blocked (during clone)
     pub fn is_input_blocked(&self) -> bool {
         self.cloning
+    }
+
+    /// Set a validation error message (shown prominently in the picker)
+    pub fn set_validation_error(&mut self, error: &str) {
+        self.validation_error = Some(error.to_string());
+    }
+
+    /// Clear the validation error
+    pub fn clear_validation_error(&mut self) {
+        self.validation_error = None;
     }
 }
 
@@ -899,6 +942,56 @@ mod tests {
     fn test_picker_constants() {
         assert_eq!(SEARCH_DEBOUNCE_MS, 150);
         assert_eq!(DEFAULT_SEARCH_LIMIT, 10);
+    }
+
+    // ========================================================================
+    // Validation Error Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validation_error_set_and_clear() {
+        let mut state = UnifiedPickerState::new();
+        assert!(state.validation_error.is_none());
+
+        state.set_validation_error("Test error message");
+        assert_eq!(
+            state.validation_error,
+            Some("Test error message".to_string())
+        );
+
+        state.clear_validation_error();
+        assert!(state.validation_error.is_none());
+    }
+
+    #[test]
+    fn test_validation_error_cleared_on_open() {
+        let mut state = UnifiedPickerState::new();
+        state.validation_error = Some("Old error".to_string());
+
+        state.open();
+
+        assert!(state.validation_error.is_none());
+    }
+
+    #[test]
+    fn test_validation_error_cleared_on_close() {
+        let mut state = UnifiedPickerState::new();
+        state.open();
+        state.validation_error = Some("Error during session".to_string());
+
+        state.close();
+
+        assert!(state.validation_error.is_none());
+    }
+
+    #[test]
+    fn test_validation_error_cleared_on_query_change() {
+        let mut state = UnifiedPickerState::new();
+        state.validation_error = Some("Message required".to_string());
+
+        state.set_query("new query".to_string());
+
+        assert!(state.validation_error.is_none());
     }
 
     // ========================================================================

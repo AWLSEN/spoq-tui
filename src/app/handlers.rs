@@ -1175,6 +1175,184 @@ impl App {
             AppMessage::UnifiedPickerCloneFailed { error } => {
                 self.unified_picker_clone_failed(error);
             }
+
+            // =========================================================================
+            // Sync Messages
+            // =========================================================================
+            AppMessage::TriggerSync => {
+                // Set status to starting and spawn async sync task
+                use crate::app::SyncStatus;
+                use crate::conductor::ConductorClient;
+
+                tracing::info!("TriggerSync received - setting status to Starting");
+                self.sync_status = SyncStatus::Starting;
+                self.mark_dirty(); // CRITICAL: Force UI redraw
+
+                // Extract client config for creating a new client in the async task
+                let base_url = self.client.base_url.clone();
+                let auth_token = self.credentials.access_token.clone();
+                let refresh_token = self.credentials.refresh_token.clone();
+                let tx = self.message_tx.clone();
+
+                tracing::info!("Spawning sync task with base_url: {}", base_url);
+                tokio::spawn(async move {
+                    tracing::info!("Sync task started");
+
+                    // Send started message
+                    let _ = tx.send(AppMessage::SyncStarted);
+
+                    // Send progress message
+                    let _ = tx.send(AppMessage::SyncProgress {
+                        message: "Syncing tokens to VPS...".to_string(),
+                    });
+
+                    // Create a new client for the sync operation (needs &mut self)
+                    let mut client = ConductorClient::with_url(&base_url);
+                    if let Some(token) = auth_token {
+                        client = client.with_auth(&token);
+                    }
+                    if let Some(refresh) = refresh_token {
+                        client = client.with_refresh_token(&refresh);
+                    }
+
+                    tracing::info!("Calling sync_tokens...");
+                    // Perform the actual sync
+                    match client.sync_tokens("all").await {
+                        Ok(result) => {
+                            tracing::info!("Sync succeeded: {:?}", result.success);
+
+                            // Extract verification results from sync response
+                            let (claude_code, github_cli) = if let Some(v) = result.verification {
+                                tracing::info!("Using embedded verification from sync response");
+                                (
+                                    v.claude_code_works.unwrap_or(false),
+                                    v.github_cli_works.unwrap_or(false),
+                                )
+                            } else {
+                                // Fallback: explicitly call verify_tokens()
+                                tracing::info!("No embedded verification, calling verify_tokens()...");
+                                let _ = tx.send(AppMessage::SyncProgress {
+                                    message: "Verifying tokens on VPS...".to_string(),
+                                });
+
+                                match client.verify_tokens().await {
+                                    Ok(verify_result) => {
+                                        tracing::info!("Verify succeeded: claude={}, github={}",
+                                            verify_result.claude_code.authenticated,
+                                            verify_result.github_cli.authenticated);
+                                        (
+                                            verify_result.claude_code.authenticated,
+                                            verify_result.github_cli.authenticated,
+                                        )
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Verify failed, using sync success as fallback: {}", e);
+                                        (result.success, result.success)
+                                    }
+                                }
+                            };
+
+                            let _ = tx.send(AppMessage::SyncComplete {
+                                claude_code,
+                                github_cli,
+                            });
+                        }
+                        Err(e) => {
+                            tracing::error!("Sync failed: {}", e);
+                            let _ = tx.send(AppMessage::SyncFailed {
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                });
+
+                // Emit StateChange for sync triggered
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Sync triggered",
+                        "starting",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::SyncStarted => {
+                use crate::app::SyncStatus;
+                tracing::info!("SyncStarted received");
+                self.sync_status = SyncStatus::InProgress {
+                    message: "Starting sync...".to_string(),
+                };
+                self.mark_dirty(); // Force UI redraw
+                // Emit StateChange for sync started
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Sync started",
+                        "in_progress",
+                    )),
+                    None,
+                );
+            }
+            AppMessage::SyncProgress { message } => {
+                use crate::app::SyncStatus;
+                tracing::info!("SyncProgress received: {}", message);
+                self.sync_status = SyncStatus::InProgress {
+                    message: message.clone(),
+                };
+                self.mark_dirty(); // Force UI redraw
+                // Emit StateChange for sync progress
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Sync progress",
+                        &message,
+                    )),
+                    None,
+                );
+            }
+            AppMessage::SyncComplete {
+                claude_code,
+                github_cli,
+            } => {
+                use crate::app::SyncStatus;
+                tracing::info!("SyncComplete received: claude_code={}, github_cli={}", claude_code, github_cli);
+                self.sync_status = SyncStatus::Complete {
+                    claude_code,
+                    github_cli,
+                };
+                self.mark_dirty(); // Force UI redraw
+                // Emit StateChange for sync complete
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Sync complete",
+                        format!("claude_code: {}, github_cli: {}", claude_code, github_cli),
+                    )),
+                    None,
+                );
+            }
+            AppMessage::SyncFailed { error } => {
+                use crate::app::SyncStatus;
+                tracing::error!("SyncFailed received: {}", error);
+                self.sync_status = SyncStatus::Failed {
+                    error: error.clone(),
+                };
+                self.mark_dirty(); // Force UI redraw
+                // Emit StateChange for sync failed
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Sync failed",
+                        &error,
+                    )),
+                    None,
+                );
+            }
         }
     }
 }

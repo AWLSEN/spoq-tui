@@ -228,15 +228,19 @@ pub fn handle_slash_autocomplete_command(app: &mut App, cmd: &Command) -> bool {
         Command::SelectSlashCommand => {
             let filtered = app.filtered_slash_commands();
             if let Some(command) = filtered.get(app.slash_autocomplete_cursor) {
-                // Replace the / and query with the selected command name
+                // Clone the command before modifying app state
+                let cmd_to_execute = command.clone();
+
+                // Close autocomplete and clear input
                 app.remove_slash_and_query_from_input();
-                let command_text = command.name();
-                for ch in command_text.chars() {
-                    app.textarea.insert_char(ch);
-                }
+                app.textarea.clear();
                 app.slash_autocomplete_visible = false;
                 app.slash_autocomplete_query.clear();
                 app.slash_autocomplete_cursor = 0;
+
+                // Execute the command immediately (no second Enter needed)
+                tracing::info!("SelectSlashCommand: executing {:?}", cmd_to_execute);
+                app.execute_slash_command(cmd_to_execute);
                 app.mark_dirty();
             }
             true

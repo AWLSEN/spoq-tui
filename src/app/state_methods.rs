@@ -552,6 +552,54 @@ impl App {
         self.mark_dirty();
     }
 
+    /// Execute a slash command.
+    ///
+    /// This is called when the user types a slash command and presses Enter.
+    /// Each command has its own execution logic.
+    pub fn execute_slash_command(&mut self, cmd: crate::input::SlashCommand) {
+        use crate::input::SlashCommand;
+
+        match cmd {
+            SlashCommand::Sync => {
+                // Trigger sync via the message channel (unbounded sender - no await needed)
+                tracing::info!("SlashCommand::Sync executed - sending TriggerSync message");
+                let _ = self.message_tx.send(crate::app::AppMessage::TriggerSync);
+            }
+            SlashCommand::Manage => {
+                // Open billing portal in browser
+                if let Err(e) = webbrowser::open("https://spoq.dev/billing") {
+                    self.stream_error = Some(format!("Failed to open browser: {}", e));
+                }
+            }
+            SlashCommand::Repos => {
+                // Open unified picker on repos tab
+                self.open_unified_picker();
+                self.unified_picker.selected_section = crate::models::picker::PickerSection::Repos;
+            }
+            SlashCommand::New => {
+                // Navigate to command deck (new chat)
+                self.screen = crate::app::Screen::CommandDeck;
+                self.active_thread_id = None;
+                self.selected_folder = None;
+            }
+            SlashCommand::Help => {
+                // Show help (could open a help overlay or browser)
+                if let Err(e) = webbrowser::open("https://spoq.dev/docs") {
+                    self.stream_error = Some(format!("Failed to open browser: {}", e));
+                }
+            }
+            SlashCommand::Settings => {
+                // TODO: Open settings panel when implemented
+                self.stream_error = Some("Settings panel not yet implemented".to_string());
+            }
+            SlashCommand::Threads => {
+                // Open thread switcher
+                self.thread_switcher.visible = true;
+            }
+        }
+        self.mark_dirty();
+    }
+
     // =========================================================================
     // Unified Picker Methods
     // =========================================================================
@@ -616,7 +664,7 @@ impl App {
                         .into_iter()
                         .map(|r| crate::models::picker::PickerItem::Repo {
                             name: r.name_with_owner,
-                            local_path: None,
+                            local_path: r.local_path,
                             url: r.url,
                         })
                         .collect();
@@ -936,9 +984,11 @@ impl App {
     ///
     /// Called when the async clone operation fails.
     pub fn unified_picker_clone_failed(&mut self, error: String) {
-        // Set error on repos section so it's visible in the picker
-        self.unified_picker.repos.set_error(error);
+        // Show error prominently at top of picker
+        self.unified_picker.set_validation_error(&format!("Clone failed: {}", error));
+        // Clear cloning state but keep picker visible
         self.unified_picker.finish_clone();
+        self.unified_picker.visible = true;
         self.mark_dirty();
     }
 

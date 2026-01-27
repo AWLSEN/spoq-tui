@@ -17,7 +17,7 @@ use crate::models::{MessageSegment, PermissionMode, ToolEventStatus};
 use super::helpers::{inner_rect, truncate_string, SPINNER_FRAMES};
 use super::layout::LayoutContext;
 use super::messages::render_messages_area;
-use super::slash_autocomplete::render_slash_autocomplete;
+use super::slash_autocomplete::{render_slash_autocomplete_anchored, AnchorMode};
 use super::theme::{COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
 
 // ============================================================================
@@ -87,21 +87,20 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
 
         // Render slash autocomplete overlay (if visible) - must be last for proper layering
         if app.slash_autocomplete_visible {
-            // Position dropdown 5 lines above the bottom
-            let textarea_lines = app.textarea.line_count();
-            eprintln!("DEBUG CONV: textarea has {} lines", textarea_lines);
-            eprintln!("DEBUG CONV: viewport bottom would be at y={}", main_chunks[1].y + main_chunks[1].height);
+            // Calculate where input section starts in the viewport
+            // With unified scroll anchored to bottom, input is near the bottom
+            let viewport_height = main_chunks[1].height as usize;
+            let content_top = app.total_content_lines.saturating_sub(viewport_height + app.unified_scroll as usize);
+            let input_y_in_viewport = app.input_section_start.saturating_sub(content_top);
 
-            let anchor_y = main_chunks[1].y + main_chunks[1].height.saturating_sub(5);
-            eprintln!("DEBUG CONV: anchor_y = {}", anchor_y);
-
+            // Position dropdown ABOVE the input (grows upward from input top)
             let input_anchor_area = Rect {
                 x: main_chunks[1].x + 2,
-                y: anchor_y,
+                y: main_chunks[1].y + input_y_in_viewport as u16,
                 width: main_chunks[1].width.saturating_sub(4),
                 height: 1,
             };
-            render_slash_autocomplete(frame, app, input_anchor_area);
+            render_slash_autocomplete_anchored(frame, app, input_anchor_area, AnchorMode::Above);
         }
     } else {
         // Layout without streaming indicator (2 sections)
@@ -118,21 +117,20 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
 
         // Render slash autocomplete overlay (if visible) - must be last for proper layering
         if app.slash_autocomplete_visible {
-            // Position dropdown 5 lines above the bottom
-            let textarea_lines = app.textarea.line_count();
-            eprintln!("DEBUG CONV: textarea has {} lines", textarea_lines);
-            eprintln!("DEBUG CONV: viewport bottom would be at y={}", main_chunks[1].y + main_chunks[1].height);
+            // Calculate where input section starts in the viewport
+            // With unified scroll anchored to bottom, input is near the bottom
+            let viewport_height = main_chunks[1].height as usize;
+            let content_top = app.total_content_lines.saturating_sub(viewport_height + app.unified_scroll as usize);
+            let input_y_in_viewport = app.input_section_start.saturating_sub(content_top);
 
-            let anchor_y = main_chunks[1].y + main_chunks[1].height.saturating_sub(5);
-            eprintln!("DEBUG CONV: anchor_y = {}", anchor_y);
-
+            // Position dropdown ABOVE the input (grows upward from input top)
             let input_anchor_area = Rect {
                 x: main_chunks[1].x + 2,
-                y: anchor_y,
+                y: main_chunks[1].y + input_y_in_viewport as u16,
                 width: main_chunks[1].width.saturating_sub(4),
                 height: 1,
             };
-            render_slash_autocomplete(frame, app, input_anchor_area);
+            render_slash_autocomplete_anchored(frame, app, input_anchor_area, AnchorMode::Above);
         }
     }
 }

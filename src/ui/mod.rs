@@ -64,7 +64,8 @@ pub use prepare::{
 
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
@@ -104,6 +105,9 @@ pub fn render(frame: &mut Frame, app: &mut App) {
 
     // Render thread switcher overlay (if visible)
     render_thread_switcher(frame, app);
+
+    // Render sync dialog overlay (if sync in progress or recently completed)
+    render_sync_dialog(frame, app);
 }
 
 /// Render a message when the terminal is too small
@@ -128,6 +132,124 @@ fn render_terminal_too_small(frame: &mut Frame, area: Rect) {
         .style(Style::default().fg(Color::Yellow));
 
     frame.render_widget(paragraph, area);
+}
+
+/// Render sync dialog overlay when /sync is running
+fn render_sync_dialog(frame: &mut Frame, app: &App) {
+    use crate::app::SyncStatus;
+    use ratatui::widgets::{Block, BorderType, Borders, Clear};
+    use theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIM, COLOR_HEADER};
+
+    // Only show if sync is not idle
+    if app.sync_status == SyncStatus::Idle {
+        return;
+    }
+
+    tracing::debug!("render_sync_dialog: status = {:?}", app.sync_status);
+
+    let area = frame.area();
+
+    // Dialog dimensions
+    let dialog_width: u16 = 50;
+    let dialog_height: u16 = 7;
+
+    // Center the dialog
+    let x = (area.width.saturating_sub(dialog_width)) / 2;
+    let y = (area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect {
+        x,
+        y,
+        width: dialog_width,
+        height: dialog_height,
+    };
+
+    // Clear the background
+    frame.render_widget(Clear, dialog_area);
+
+    // Create border with title
+    let block = Block::default()
+        .title(Span::styled(
+            " Token Sync ",
+            Style::default()
+                .fg(COLOR_HEADER)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(COLOR_BORDER));
+
+    frame.render_widget(block, dialog_area);
+
+    // Inner area for content
+    let inner = Rect {
+        x: dialog_area.x + 2,
+        y: dialog_area.y + 2,
+        width: dialog_area.width.saturating_sub(4),
+        height: dialog_area.height.saturating_sub(4),
+    };
+
+    // Build content based on status
+    let lines: Vec<Line> = match &app.sync_status {
+        SyncStatus::Idle => vec![],
+        SyncStatus::Starting => vec![
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled("Starting sync...", Style::default().fg(COLOR_DIM)),
+            ]),
+        ],
+        SyncStatus::InProgress { message } => vec![
+            Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(message.as_str(), Style::default().fg(COLOR_ACCENT)),
+            ]),
+        ],
+        SyncStatus::Complete {
+            claude_code,
+            github_cli,
+        } => {
+            let claude_status = if *claude_code { "✓" } else { "✗" };
+            let github_status = if *github_cli { "✓" } else { "✗" };
+            let claude_color = if *claude_code { Color::Green } else { Color::Red };
+            let github_color = if *github_cli { Color::Green } else { Color::Red };
+
+            vec![
+                Line::from(vec![
+                    Span::styled(claude_status, Style::default().fg(claude_color)),
+                    Span::styled(" Claude Code", Style::default().fg(COLOR_DIM)),
+                    Span::raw("    "),
+                    Span::styled(github_status, Style::default().fg(github_color)),
+                    Span::styled(" GitHub CLI", Style::default().fg(COLOR_DIM)),
+                ]),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("  Press any key to close", Style::default().fg(COLOR_DIM)),
+                ]),
+            ]
+        }
+        SyncStatus::Failed { error } => {
+            // Truncate error message if too long
+            let truncated: String = if error.len() > 40 {
+                format!("{}...", &error[..37])
+            } else {
+                error.clone()
+            };
+            vec![
+                Line::from(vec![
+                    Span::styled("✗ ", Style::default().fg(Color::Red)),
+                    Span::styled("Sync failed", Style::default().fg(Color::Red)),
+                ]),
+                Line::from(Span::styled(truncated, Style::default().fg(COLOR_DIM))),
+                Line::from(Span::styled(
+                    "  Press any key to close",
+                    Style::default().fg(COLOR_DIM),
+                )),
+            ]
+        }
+    };
+
+    let content = Paragraph::new(lines);
+    frame.render_widget(content, inner);
 }
 
 #[cfg(test)]

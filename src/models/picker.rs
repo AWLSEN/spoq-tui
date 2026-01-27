@@ -53,6 +53,9 @@ pub struct SearchReposResponse {
 pub struct RepoEntry {
     pub name_with_owner: String,
     pub url: String,
+    /// Local path if repo is cloned (detected by conductor via .git check)
+    #[serde(default)]
+    pub local_path: Option<String>,
     // These fields are returned by conductor but not needed for picker
     #[serde(default)]
     pub description: Option<String>,

@@ -157,6 +157,55 @@ fn build_picker_lines(state: &UnifiedPickerState, available_width: usize) -> (Ve
         }
     }
 
+    // Show validation error prominently (with text wrapping)
+    if let Some(ref error) = state.validation_error {
+        let prefix = "  ⚠ ";
+        let prefix_width = 4; // "  ⚠ " is 4 chars
+        let text_width = available_width.saturating_sub(prefix_width + 4); // Leave margin
+
+        if text_width > 10 {
+            // Wrap error text to multiple lines
+            let wrapped_lines = wrap_text(error, text_width);
+            for (i, line_text) in wrapped_lines.iter().enumerate() {
+                if i == 0 {
+                    // First line with icon
+                    lines.push(Line::from(vec![
+                        Span::styled(prefix, Style::default().fg(ratatui::style::Color::Yellow)),
+                        Span::styled(
+                            line_text.clone(),
+                            Style::default()
+                                .fg(ratatui::style::Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
+                } else {
+                    // Continuation lines (indented to align with first line)
+                    lines.push(Line::from(vec![
+                        Span::styled("    ", Style::default()),
+                        Span::styled(
+                            line_text.clone(),
+                            Style::default()
+                                .fg(ratatui::style::Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
+                }
+            }
+        } else {
+            // Fallback: single line (truncated)
+            lines.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(ratatui::style::Color::Yellow)),
+                Span::styled(
+                    error.clone(),
+                    Style::default()
+                        .fg(ratatui::style::Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
+        }
+        lines.push(Line::from("")); // Empty line for spacing
+    }
+
     // Sections in display order
     let sections = [
         (PickerSection::Repos, &state.repos),
@@ -313,6 +362,48 @@ fn truncate_path(path: &str, max_len: usize) -> String {
     format!("...{}", path.chars().skip(skip).collect::<String>())
 }
 
+/// Wrap text to fit within max_width characters per line
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if max_width == 0 {
+        return vec![text.to_string()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current_line = String::new();
+    let mut current_width = 0;
+
+    for word in text.split_whitespace() {
+        let word_len = word.chars().count();
+
+        if current_width == 0 {
+            // First word on line
+            current_line = word.to_string();
+            current_width = word_len;
+        } else if current_width + 1 + word_len <= max_width {
+            // Word fits on current line
+            current_line.push(' ');
+            current_line.push_str(word);
+            current_width += 1 + word_len;
+        } else {
+            // Word doesn't fit, start new line
+            lines.push(current_line);
+            current_line = word.to_string();
+            current_width = word_len;
+        }
+    }
+
+    // Don't forget the last line
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,5 +556,36 @@ mod tests {
         // Should contain the item name
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(text.contains("my-project"));
+    }
+
+    #[test]
+    fn test_wrap_text_short() {
+        let text = "Short text";
+        let wrapped = wrap_text(text, 50);
+        assert_eq!(wrapped, vec!["Short text"]);
+    }
+
+    #[test]
+    fn test_wrap_text_long() {
+        let text = "Clone failed: Server error (500): Requested application not found";
+        let wrapped = wrap_text(text, 30);
+        assert!(wrapped.len() > 1);
+        for line in &wrapped {
+            assert!(line.chars().count() <= 30);
+        }
+    }
+
+    #[test]
+    fn test_wrap_text_very_narrow() {
+        let text = "Some error message";
+        let wrapped = wrap_text(text, 10);
+        assert!(wrapped.len() > 1);
+    }
+
+    #[test]
+    fn test_wrap_text_empty() {
+        let text = "";
+        let wrapped = wrap_text(text, 50);
+        assert_eq!(wrapped, vec![""]);
     }
 }

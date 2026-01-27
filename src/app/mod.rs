@@ -145,6 +145,22 @@ pub enum AuthError {
     RefreshFailed,
 }
 
+/// Status of the /sync operation for UI dialog display.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum SyncStatus {
+    /// No sync in progress
+    #[default]
+    Idle,
+    /// Sync is starting
+    Starting,
+    /// Sync in progress with status message
+    InProgress { message: String },
+    /// Sync completed successfully
+    Complete { claude_code: bool, github_cli: bool },
+    /// Sync failed with error
+    Failed { error: String },
+}
+
 /// Maximum number of threads to display in the dashboard
 const MAX_DASHBOARD_THREADS: usize = 20;
 
@@ -178,6 +194,8 @@ pub struct App {
     pub connection_status: bool,
     /// Last stream error for display
     pub stream_error: Option<String>,
+    /// Current sync operation status (for /sync dialog display)
+    pub sync_status: SyncStatus,
     /// Conductor API client (shared across async tasks)
     pub client: Arc<ConductorClient>,
     /// Tick counter for animations (blinking cursor, etc.)
@@ -419,6 +437,7 @@ impl App {
             message_tx,
             connection_status: false,
             stream_error: None,
+            sync_status: SyncStatus::default(),
             client,
             tick_count: 0,
             max_scroll: 0,

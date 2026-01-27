@@ -8,13 +8,11 @@ fn test_local_token_verification_structure() {
     let verification = LocalTokenVerification {
         claude_code_present: true,
         github_cli_present: false,
-        codex_present: true,
         all_required_present: false, // Because github_cli is missing
     };
 
     assert!(verification.claude_code_present);
     assert!(!verification.github_cli_present);
-    assert!(verification.codex_present);
     assert!(!verification.all_required_present); // Should be false when required token missing
 }
 
@@ -24,7 +22,6 @@ fn test_local_verification_all_required_present() {
     let verification = LocalTokenVerification {
         claude_code_present: true,
         github_cli_present: true,
-        codex_present: false, // Optional token, doesn't affect required
         all_required_present: true,
     };
 
@@ -37,7 +34,6 @@ fn test_local_verification_missing_claude_code() {
     let verification = LocalTokenVerification {
         claude_code_present: false,
         github_cli_present: true,
-        codex_present: true,
         all_required_present: false,
     };
 
@@ -51,7 +47,6 @@ fn test_local_verification_missing_github_cli() {
     let verification = LocalTokenVerification {
         claude_code_present: true,
         github_cli_present: false,
-        codex_present: true,
         all_required_present: false,
     };
 
@@ -130,14 +125,12 @@ fn test_local_verification_clone() {
     let original = LocalTokenVerification {
         claude_code_present: true,
         github_cli_present: true,
-        codex_present: false,
         all_required_present: true,
     };
 
     let cloned = original.clone();
     assert_eq!(cloned.claude_code_present, original.claude_code_present);
     assert_eq!(cloned.github_cli_present, original.github_cli_present);
-    assert_eq!(cloned.codex_present, original.codex_present);
     assert_eq!(cloned.all_required_present, original.all_required_present);
 }
 
@@ -173,7 +166,6 @@ fn test_local_verification_debug() {
     let verification = LocalTokenVerification {
         claude_code_present: true,
         github_cli_present: true,
-        codex_present: false,
         all_required_present: true,
     };
 

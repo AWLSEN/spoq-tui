@@ -1187,7 +1187,7 @@ impl ConductorClient {
 
     /// Clone a GitHub repository to the workspace.
     ///
-    /// POST /v1/clone with body {"repo_name": repo_name}
+    /// POST /v1/clone with body {"repo": repo_name}
     ///
     /// This triggers the conductor to clone the repo using `gh repo clone`
     /// to the configured workspace root (default: ~/workspaces/programming).
@@ -1201,7 +1201,7 @@ impl ConductorClient {
         let url = format!("{}/v1/clone", self.base_url);
 
         let body = serde_json::json!({
-            "repo_name": repo_name
+            "repo": repo_name
         });
 
         let builder = self.client.post(&url).json(&body);

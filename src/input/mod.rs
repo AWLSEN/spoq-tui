@@ -171,7 +171,7 @@ impl App {
     ///
     /// Returns `true` if the command was handled.
     pub fn execute_command(&mut self, cmd: Command) -> bool {
-        eprintln!("DEBUG: execute_command called with: {:?}", cmd);
+        tracing::info!("execute_command: {:?}", cmd);
 
         // Mark dirty for most commands
         if cmd.marks_dirty() {
@@ -183,7 +183,9 @@ impl App {
 
         // Try handlers in order of specificity
         // Modal handlers first (they have highest priority)
-        match self.build_input_context().modal {
+        let modal = self.build_input_context().modal;
+        tracing::info!("execute_command: modal={:?}", modal);
+        match modal {
             ModalType::FolderPicker => {
                 if handlers::handle_folder_picker_command(self, &cmd) {
                     return true;
@@ -219,12 +221,12 @@ impl App {
         }
 
         // Try editing commands
-        eprintln!("DEBUG: About to call handle_editing_command");
+        tracing::debug!("About to call handle_editing_command for {:?}", cmd);
         if handlers::handle_editing_command(self, &cmd) {
-            eprintln!("DEBUG: handle_editing_command returned true");
+            tracing::debug!("handle_editing_command returned true");
             return true;
         }
-        eprintln!("DEBUG: handle_editing_command returned false");
+        tracing::debug!("handle_editing_command returned false");
 
         // Try navigation commands
         if handlers::handle_navigation_command(self, &cmd) {

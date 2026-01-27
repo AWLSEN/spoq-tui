@@ -120,6 +120,9 @@ fn main() -> Result<()> {
 
     color_eyre::install()?;
 
+    // Log startup to confirm new binary is running
+    tracing::info!("=== SPOQ STARTING (sync debug build) ===");
+
     // Setup panic hook to ensure terminal cleanup on panic
     setup_panic_hook();
 
@@ -405,6 +408,23 @@ where
                             }
 
                             // =========================================================
+                            // Sync Dialog Dismissal
+                            // Any key press dismisses the sync dialog when complete/failed
+                            // =========================================================
+                            {
+                                use spoq::app::SyncStatus;
+                                match &app.sync_status {
+                                    SyncStatus::Complete { .. } | SyncStatus::Failed { .. } => {
+                                        // Any key press dismisses the dialog
+                                        app.sync_status = SyncStatus::Idle;
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            // =========================================================
                             // Dashboard Question Overlay Key Handling (CommandDeck)
                             // MUST come BEFORE permission handling to take priority
                             // =========================================================
@@ -616,35 +636,33 @@ where
                             // Slash Autocomplete Key Handling (HIGHEST PRIORITY when visible)
                             // =========================================================
                             if app.slash_autocomplete_visible {
-                                eprintln!("DEBUG: Slash autocomplete key handling - key={:?}", key.code);
                                 match key.code {
                                     KeyCode::Esc => {
                                         // Close autocomplete, remove / + query from input
-                                        eprintln!("DEBUG: ESC pressed in slash autocomplete");
                                         app.remove_slash_and_query_from_input();
                                         app.slash_autocomplete_visible = false;
                                         app.mark_dirty();
                                         continue;
                                     }
                                     KeyCode::Enter => {
-                                        // Select command, close autocomplete
-                                        eprintln!("DEBUG: ENTER pressed in slash autocomplete");
+                                        // Select and execute command
                                         let filtered = app.filtered_slash_commands();
                                         if let Some(command) = filtered.get(app.slash_autocomplete_cursor) {
-                                            // Remove / and query from input
+                                            let cmd_to_execute = command.clone();
+                                            // Clean up: remove / and query, clear textarea
                                             app.remove_slash_and_query_from_input();
-                                            // Insert the command name
-                                            let command_name = command.name();
-                                            for ch in command_name.chars() {
-                                                app.textarea.insert_char(ch);
-                                            }
+                                            app.textarea.clear();
                                             app.slash_autocomplete_visible = false;
+                                            app.slash_autocomplete_query.clear();
+                                            app.slash_autocomplete_cursor = 0;
+                                            // Execute the command immediately
+                                            tracing::info!("Slash autocomplete: executing {:?}", cmd_to_execute);
+                                            app.execute_slash_command(cmd_to_execute);
                                             app.mark_dirty();
                                         }
                                         continue;
                                     }
                                     KeyCode::Backspace => {
-                                        eprintln!("DEBUG: BACKSPACE in slash autocomplete, query='{}'", app.slash_autocomplete_query);
                                         if app.slash_autocomplete_query.is_empty() {
                                             // Query is empty, close autocomplete and remove /
                                             app.textarea.backspace(); // Remove the /
@@ -662,7 +680,6 @@ where
                                         continue;
                                     }
                                     KeyCode::Up => {
-                                        eprintln!("DEBUG: UP in slash autocomplete");
                                         let filtered = app.filtered_slash_commands();
                                         if !filtered.is_empty() {
                                             app.slash_autocomplete_cursor = app.slash_autocomplete_cursor.saturating_sub(1);
@@ -671,7 +688,6 @@ where
                                         continue;
                                     }
                                     KeyCode::Down => {
-                                        eprintln!("DEBUG: DOWN in slash autocomplete");
                                         let filtered = app.filtered_slash_commands();
                                         if !filtered.is_empty() {
                                             app.slash_autocomplete_cursor = (app.slash_autocomplete_cursor + 1).min(filtered.len() - 1);
@@ -680,7 +696,6 @@ where
                                         continue;
                                     }
                                     KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
-                                        eprintln!("DEBUG: CHAR '{}' in slash autocomplete", c);
                                         // Append character to query
                                         app.slash_autocomplete_query.push(c);
                                         // Also insert in textarea
@@ -691,7 +706,6 @@ where
                                         continue;
                                     }
                                     _ => {
-                                        eprintln!("DEBUG: Other key in slash autocomplete - ignoring");
                                         // Other keys are ignored while autocomplete is open
                                         continue;
                                     }
@@ -703,8 +717,29 @@ where
                             if app.unified_picker.visible {
                                 match key.code {
                                     KeyCode::Esc => {
+                                        // Close picker and remove @query from textarea
                                         app.close_unified_picker();
                                         app.remove_unified_picker_query_from_input();
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Char(' ') => {
+                                        // Space = "I want to type a message first"
+                                        // Show selection in input and save for later submission
+                                        if let Some(item) = app.unified_picker.selected_item().cloned() {
+                                            let display_name = item.display_name();
+
+                                            // Replace @query with @selection + space
+                                            app.remove_unified_picker_query_from_input();
+                                            app.textarea.insert_char('@');
+                                            for ch in display_name.chars() {
+                                                app.textarea.insert_char(ch);
+                                            }
+                                            app.textarea.insert_char(' ');
+
+                                            app.unified_picker.set_pending_selection(item);
+                                        }
+                                        app.unified_picker.close();
                                         app.mark_dirty();
                                         continue;
                                     }
@@ -714,14 +749,31 @@ where
 
                                         match action {
                                             UnifiedPickerAction::None => {
-                                                // Nothing selected, do nothing
+                                                // Nothing selected - do nothing
                                             }
                                             UnifiedPickerAction::MessageRequired => {
-                                                // Show error - message is required for folder/repo selection
-                                                // For now, just don't close the picker
-                                                // TODO: Show visual feedback that message is required
+                                                // No message - save pending selection, show selection in input, add space
+                                                if let Some(item) = app.unified_picker.selected_item().cloned() {
+                                                    // Get the display name for the selected item
+                                                    let display_name = item.display_name();
+
+                                                    // Remove current @query from textarea and replace with @selection
+                                                    app.remove_unified_picker_query_from_input();
+                                                    // Insert @name followed by space
+                                                    app.textarea.insert_char('@');
+                                                    for ch in display_name.chars() {
+                                                        app.textarea.insert_char(ch);
+                                                    }
+                                                    app.textarea.insert_char(' ');
+
+                                                    app.unified_picker.set_pending_selection(item);
+                                                }
+                                                app.unified_picker.close();
                                             }
                                             UnifiedPickerAction::StartNewThread { path, name, message } => {
+                                                // Clear pending selection on success
+                                                app.unified_picker.clear_pending_selection();
+
                                                 // Set working directory
                                                 let folder = models::Folder { name, path };
                                                 app.selected_folder = Some(folder);
@@ -734,7 +786,11 @@ where
                                                 app.submit_input(models::ThreadType::Programming);
                                             }
                                             UnifiedPickerAction::CloneRepo { name, url: _, message } => {
-                                                // Clone repo asynchronously using repo name (owner/repo format)
+                                                // Show clone progress in picker
+                                                app.unified_picker.start_clone(&format!("Cloning {}...", name));
+                                                app.mark_dirty();
+
+                                                // Clone repo asynchronously
                                                 let client = app.client.clone();
                                                 let message_tx = app.message_tx.clone();
                                                 let clone_name = name.clone();
@@ -757,6 +813,9 @@ where
                                                 });
                                             }
                                             UnifiedPickerAction::ResumeThread { id, title: _, message } => {
+                                                // Clear pending selection on success
+                                                app.unified_picker.clear_pending_selection();
+
                                                 // Open the thread
                                                 app.open_thread(id);
 
@@ -935,8 +994,6 @@ where
                                     }
                                     // Plain characters (no modifiers or only SHIFT)
                                     KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
-                                        eprintln!("DEBUG: KeyCode::Char received: '{}' (modifiers: {:?})", c, key.modifiers);
-
                                         // Reset scroll to show input when typing (unified scroll)
                                         if app.screen == Screen::Conversation {
                                             app.user_has_scrolled = false;
@@ -1075,7 +1132,77 @@ where
                                         continue;
                                     }
                                     KeyCode::Enter => {
-                                        // Plain Enter = Conversation thread
+                                        // Check for pending selection from @ picker
+                                        if app.unified_picker.has_pending_selection() {
+                                            use crate::models::picker::PickerItem;
+
+                                            if let Some(pending) = app.unified_picker.take_pending_selection() {
+                                                // Extract message - remove @query prefix if present
+                                                let content = app.textarea.content_expanded();
+                                                let message = if content.starts_with('@') {
+                                                    // Find the space after @query and take everything after
+                                                    content.splitn(2, ' ').nth(1).unwrap_or("").trim().to_string()
+                                                } else {
+                                                    content.trim().to_string()
+                                                };
+
+                                                if message.is_empty() {
+                                                    // Still no message - reopen picker
+                                                    app.unified_picker.set_pending_selection(pending);
+                                                    app.open_unified_picker();
+                                                    continue;
+                                                }
+
+                                                match pending {
+                                                    PickerItem::Folder { path, name } | PickerItem::Repo { local_path: Some(path), name, .. } => {
+                                                        // Set working directory and submit
+                                                        let folder = models::Folder { name, path };
+                                                        app.selected_folder = Some(folder);
+                                                        app.textarea.clear();
+                                                        app.textarea.set_content(&message);
+                                                        app.submit_input(models::ThreadType::Programming);
+                                                    }
+                                                    PickerItem::Repo { local_path: None, name, url: _ } => {
+                                                        // Remote repo needs clone first
+                                                        // Show picker with clone progress (don't reset state)
+                                                        app.unified_picker.visible = true;
+                                                        app.unified_picker.start_clone(&format!("Cloning {}...", name));
+                                                        app.mark_dirty();
+
+                                                        let client = app.client.clone();
+                                                        let message_tx = app.message_tx.clone();
+                                                        let clone_name = name.clone();
+                                                        let clone_message = message.clone();
+                                                        tokio::spawn(async move {
+                                                            match client.clone_repo(&clone_name).await {
+                                                                Ok(response) => {
+                                                                    let _ = message_tx.send(AppMessage::UnifiedPickerCloneComplete {
+                                                                        local_path: response.path,
+                                                                        name: clone_name,
+                                                                        message: clone_message,
+                                                                    });
+                                                                }
+                                                                Err(e) => {
+                                                                    let _ = message_tx.send(AppMessage::UnifiedPickerCloneFailed {
+                                                                        error: e.to_string(),
+                                                                    });
+                                                                }
+                                                            }
+                                                        });
+                                                    }
+                                                    PickerItem::Thread { id, .. } => {
+                                                        // Resume thread with message
+                                                        app.open_thread(id);
+                                                        app.textarea.clear();
+                                                        app.textarea.set_content(&message);
+                                                        app.submit_input(models::ThreadType::Programming);
+                                                    }
+                                                }
+                                                continue;
+                                            }
+                                        }
+
+                                        // No pending selection - plain Enter = Conversation thread
                                         app.submit_input(models::ThreadType::Conversation);
                                         continue;
                                     }

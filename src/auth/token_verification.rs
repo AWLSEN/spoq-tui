@@ -8,7 +8,6 @@ use super::token_migration::detect_tokens;
 pub struct LocalTokenVerification {
     pub claude_code_present: bool,
     pub github_cli_present: bool,
-    pub codex_present: bool,
     pub all_required_present: bool,
 }
 
@@ -76,7 +75,6 @@ pub fn verify_local_tokens() -> Result<LocalTokenVerification, TokenVerification
     let verification = LocalTokenVerification {
         claude_code_present: detection.claude_code,
         github_cli_present: detection.github_cli,
-        codex_present: detection.codex,
         all_required_present,
     };
 

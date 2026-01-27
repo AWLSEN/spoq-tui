@@ -9,16 +9,13 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use std::path::PathBuf;
-
 use super::central_api::{
     ByovpsPendingResponse, CentralApiClient, CentralApiError, ConfirmVpsRequest, DataCenter,
     VpsPlan, VpsStatusResponse,
 };
 use super::credentials::{Credentials, CredentialsManager};
-use super::token_migration::{detect_tokens, export_tokens, wait_for_claude_code_token};
 use crate::cli_output::{self, icons, SPINNER_CHARS};
-use crate::setup::creds_sync::sync_credentials;
+use crate::conductor::ConductorClient;
 
 /// VPS type selection.
 #[derive(Debug, Clone, PartialEq)]
@@ -77,120 +74,59 @@ fn check_interrupt(interrupted: &Arc<AtomicBool>) {
     }
 }
 
-/// Result of token migration containing the archive path if successful.
-#[derive(Debug, Clone)]
-pub struct TokenMigrationResult {
-    /// Path to the exported token archive, if export succeeded
-    pub archive_path: Option<PathBuf>,
-    /// List of detected token types
-    pub detected_tokens: Vec<String>,
-    /// Whether migration completed successfully
-    pub success: bool,
-    /// Warning message if migration had issues
-    pub warning: Option<String>,
-}
-
-/// Run token migration to detect and export credentials for VPS setup.
+/// Sync tokens to VPS via HTTP API using the Conductor client.
 ///
 /// This function:
-/// 1. Detects available tokens (GitHub CLI, Claude Code, Codex)
-/// 2. If Claude Code token is missing, prompts user to login
-/// 3. Exports detected tokens to an archive for later use
+/// 1. Creates a Conductor client with auth tokens
+/// 2. Calls sync_tokens() which reads from Keychain and filesystem
+/// 3. Posts tokens to VPS via HTTP
 ///
-/// Errors are handled gracefully - the function warns but doesn't block VPS setup.
-///
-/// # Returns
-///
-/// Returns `TokenMigrationResult` containing archive path and detected tokens.
-fn run_token_migration() -> TokenMigrationResult {
-    println!("\n--- Token Migration ---");
-    println!("Detecting available credentials...");
+/// # Arguments
+/// * `runtime` - Tokio runtime for async operations
+/// * `vps_url` - URL of the VPS conductor
+/// * `credentials` - User credentials containing access/refresh tokens
+fn sync_tokens_to_vps(
+    runtime: &tokio::runtime::Runtime,
+    vps_url: &str,
+    credentials: &Credentials,
+) {
+    println!("\nSyncing tokens to VPS via HTTP...");
 
-    // Step 1: Detect tokens
-    let detection = match detect_tokens() {
-        Ok(d) => d,
-        Err(e) => {
-            let warning = format!("Token detection failed: {}. VPS setup will continue.", e);
-            eprintln!("Warning: {}", warning);
-            return TokenMigrationResult {
-                archive_path: None,
-                detected_tokens: vec![],
-                success: false,
-                warning: Some(warning),
-            };
-        }
-    };
-
-    // Build list of detected tokens for display
-    let mut detected_tokens = Vec::new();
-    if detection.github_cli {
-        detected_tokens.push("GitHub CLI".to_string());
+    let mut conductor = ConductorClient::with_url(vps_url);
+    if let Some(ref token) = credentials.access_token {
+        conductor = conductor.with_auth(token);
     }
-    if detection.claude_code {
-        detected_tokens.push("Claude Code".to_string());
-    }
-    if detection.codex {
-        detected_tokens.push("Codex".to_string());
+    if let Some(ref refresh) = credentials.refresh_token {
+        conductor = conductor.with_refresh_token(refresh);
     }
 
-    // Step 2: If Claude Code is missing, prompt user to login
-    if !detection.claude_code {
-        println!("Claude Code token not found. Prompting for login...");
-        if let Err(e) = wait_for_claude_code_token() {
-            let warning = format!(
-                "Claude Code token not available: {}. VPS setup will continue without it.",
-                e
-            );
-            eprintln!("Warning: {}", warning);
-            // Continue without Claude Code token - don't block VPS setup
-        } else {
-            // Token was detected after retry, add to list
-            if !detected_tokens.contains(&"Claude Code".to_string()) {
-                detected_tokens.push("Claude Code".to_string());
+    match runtime.block_on(conductor.sync_tokens("all")) {
+        Ok(result) => {
+            let synced = result.synced.unwrap_or_default();
+            if synced.contains(&"claude_code".to_string()) {
+                println!("  ✓ Claude Code tokens synced");
+            }
+            if synced.contains(&"github_cli".to_string()) {
+                println!("  ✓ GitHub CLI tokens synced");
+            }
+            if synced.is_empty() {
+                println!("  ⚠ No tokens found locally to sync");
+            }
+
+            // Show verification results if available
+            if let Some(verification) = result.verification {
+                if verification.claude_code_works == Some(true) {
+                    println!("  ✓ Claude Code verified on VPS");
+                }
+                if verification.github_cli_works == Some(true) {
+                    println!("  ✓ GitHub CLI verified on VPS");
+                }
             }
         }
-    }
-
-    // Step 3: Export tokens to archive
-    println!("Exporting tokens to archive...");
-    let archive_path = match export_tokens() {
-        Ok(export_result) => {
-            println!(
-                "Token archive created: {:?} ({} bytes)",
-                export_result.archive_path, export_result.size_bytes
-            );
-            Some(export_result.archive_path)
-        }
         Err(e) => {
-            let warning = format!(
-                "Token export failed: {}. VPS setup will continue without token migration.",
-                e
-            );
-            eprintln!("Warning: {}", warning);
-            return TokenMigrationResult {
-                archive_path: None,
-                detected_tokens,
-                success: false,
-                warning: Some(warning),
-            };
+            eprintln!("  Warning: Token sync failed: {}", e);
+            eprintln!("  You can run 'spoq --sync' later to sync tokens manually.");
         }
-    };
-
-    // Step 4: Print summary
-    if detected_tokens.is_empty() {
-        println!("Token migration prepared. No tokens detected.");
-    } else {
-        println!(
-            "Token migration prepared. Found: [{}]",
-            detected_tokens.join(", ")
-        );
-    }
-
-    TokenMigrationResult {
-        archive_path,
-        detected_tokens,
-        success: true,
-        warning: None,
     }
 }
 
@@ -587,11 +523,6 @@ fn run_managed_vps_flow(
     check_interrupt(interrupted);
     if !prompt_confirmation_with_interrupt(interrupted)? {
         println!("Provisioning cancelled.");
-
-        // Run token migration before exiting
-        println!("Running token migration...");
-        run_token_migration();
-
         return Ok(());
     }
 
@@ -639,11 +570,6 @@ fn run_managed_vps_flow(
         Err(CentralApiError::ServerError { status: 409, .. }) => {
             println!("\nYou already have an active VPS.");
             println!("Please use your existing VPS or contact support to delete it first.");
-
-            // Run token migration before exiting
-            println!("Running token migration...");
-            run_token_migration();
-
             return Ok(());
         }
         Err(e) => return Err(e),
@@ -710,26 +636,18 @@ fn run_managed_vps_flow(
         println!("  URL: {}", url);
     }
 
-    // Run token migration after VPS is ready
-    println!("Running token migration...");
-    run_token_migration();
+    // Sync tokens to VPS via HTTP API
+    let vps_url = status
+        .url
+        .clone()
+        .or_else(|| status.hostname.as_ref().map(|h| format!("https://{}", h)))
+        .or_else(|| status.ip.as_ref().map(|ip| format!("http://{}:8000", ip)));
 
-    // Verify tokens work on VPS
-    if let Some(ref vps_ip) = status.ip {
-        println!("\nVerifying tokens on VPS...");
-        match super::token_verification::verify_vps_tokens(
-            vps_ip,
-            "root", // Managed VPS uses "root" username
-            &ssh_password,
-        ) {
-            Ok(verification) => {
-                super::token_verification::display_vps_verification_results(&verification);
-            }
-            Err(e) => {
-                eprintln!("Warning: Could not verify tokens on VPS: {}", e);
-                eprintln!("You may need to manually SSH and login to Claude Code/GitHub.");
-            }
-        }
+    if let Some(url) = vps_url {
+        sync_tokens_to_vps(runtime, &url, credentials);
+    } else {
+        eprintln!("Warning: No VPS URL available for token sync.");
+        eprintln!("You can run 'spoq --sync' later to sync tokens manually.");
     }
 
     Ok(())
@@ -974,79 +892,82 @@ fn run_byovps_flow_with_retry(
                             }
                             cli_output::print_step_end();
 
-                            // STEP 5: CREDENTIAL SYNC
+                            // STEP 5: CREDENTIAL SYNC (via HTTP API)
                             cli_output::print_step_start(5, "CREDENTIAL SYNC");
-                            match runtime.block_on(sync_credentials(
-                                &byovps_creds.vps_ip,
-                                &byovps_creds.ssh_username,
-                                &byovps_creds.ssh_password,
-                                22,
-                            )) {
+                            let mut has_warnings = false;
+
+                            // Construct conductor URL for HTTP sync
+                            let conductor_url_for_sync = if !byovps_creds.ssh_username.is_empty()
+                                && byovps_creds.ssh_username != "root"
+                            {
+                                format!("https://{}.spoq.dev", byovps_creds.ssh_username)
+                            } else {
+                                format!("http://{}:8000", byovps_creds.vps_ip)
+                            };
+
+                            let mut conductor = ConductorClient::with_url(&conductor_url_for_sync);
+                            if let Some(ref token) = credentials.access_token {
+                                conductor = conductor.with_auth(token);
+                            }
+                            if let Some(ref refresh) = credentials.refresh_token {
+                                conductor = conductor.with_refresh_token(refresh);
+                            }
+
+                            match runtime.block_on(conductor.sync_tokens("all")) {
                                 Ok(sync_result) => {
-                                    if sync_result.claude_synced {
+                                    let synced = sync_result.synced.unwrap_or_default();
+                                    if synced.contains(&"claude_code".to_string()) {
                                         cli_output::print_step_line(
                                             icons::SUCCESS,
                                             "Claude Code synced",
                                         );
                                     }
-                                    if sync_result.github_synced {
+                                    if synced.contains(&"github_cli".to_string()) {
                                         cli_output::print_step_line(
                                             icons::SUCCESS,
                                             "GitHub CLI synced",
                                         );
                                     }
-                                    if sync_result.codex_synced {
-                                        cli_output::print_step_line(icons::SUCCESS, "Codex synced");
+                                    if synced.is_empty() {
+                                        cli_output::print_step_line(
+                                            icons::WARNING,
+                                            "No local tokens found to sync",
+                                        );
                                     }
-                                }
-                                Err(e) => {
-                                    cli_output::print_step_line(
-                                        icons::WARNING,
-                                        &format!("Sync failed: {}", e),
-                                    );
-                                }
-                            }
-                            cli_output::print_step_end();
 
-                            // STEP 6: VERIFICATION
-                            cli_output::print_step_start(6, "VERIFICATION");
-                            let mut has_warnings = false;
-                            match super::token_verification::verify_vps_tokens(
-                                &byovps_creds.vps_ip,
-                                &byovps_creds.ssh_username,
-                                &byovps_creds.ssh_password,
-                            ) {
-                                Ok(verification) => {
-                                    if verification.claude_code_works {
-                                        cli_output::print_step_line(
-                                            icons::SUCCESS,
-                                            "Claude Code verified on VPS",
-                                        );
-                                    } else {
-                                        has_warnings = true;
-                                        cli_output::print_step_line(
-                                            icons::FAILURE,
-                                            "Claude Code verification failed",
-                                        );
-                                    }
-                                    if verification.github_cli_works {
-                                        cli_output::print_step_line(
-                                            icons::SUCCESS,
-                                            "GitHub CLI verified on VPS",
-                                        );
-                                    } else {
-                                        has_warnings = true;
-                                        cli_output::print_step_line(
-                                            icons::FAILURE,
-                                            "GitHub CLI verification failed",
-                                        );
+                                    // Show verification results from sync response
+                                    if let Some(verification) = sync_result.verification {
+                                        if verification.claude_code_works == Some(true) {
+                                            cli_output::print_step_line(
+                                                icons::SUCCESS,
+                                                "Claude Code verified on VPS",
+                                            );
+                                        } else if synced.contains(&"claude_code".to_string()) {
+                                            has_warnings = true;
+                                            cli_output::print_step_line(
+                                                icons::WARNING,
+                                                "Claude Code synced but not verified",
+                                            );
+                                        }
+                                        if verification.github_cli_works == Some(true) {
+                                            cli_output::print_step_line(
+                                                icons::SUCCESS,
+                                                "GitHub CLI verified on VPS",
+                                            );
+                                        } else if synced.contains(&"github_cli".to_string()) {
+                                            has_warnings = true;
+                                            cli_output::print_step_line(
+                                                icons::WARNING,
+                                                "GitHub CLI synced but not verified",
+                                            );
+                                        }
                                     }
                                 }
                                 Err(e) => {
                                     has_warnings = true;
                                     cli_output::print_step_line(
-                                        icons::FAILURE,
-                                        &format!("Verification error: {}", e),
+                                        icons::WARNING,
+                                        &format!("Sync failed: {}", e),
                                     );
                                 }
                             }
@@ -1363,80 +1284,65 @@ fn run_byovps_flow(
     cli_output::print_step_end();
 
     // ═══════════════════════════════════════════════════════════════════
-    // STEP 5: CREDENTIAL SYNC
+    // STEP 5: CREDENTIAL SYNC (via HTTP API)
     // ═══════════════════════════════════════════════════════════════════
     cli_output::print_step_start(5, "CREDENTIAL SYNC");
     check_interrupt(interrupted);
 
-    // Sync credentials to VPS via SFTP
-    match runtime.block_on(sync_credentials(
-        &byovps_creds.vps_ip,
-        &byovps_creds.ssh_username,
-        &byovps_creds.ssh_password,
-        22,
-    )) {
+    // Sync credentials to VPS via HTTP API
+    let conductor_url_for_sync = format!("https://{}", pending_response.hostname);
+    let mut conductor = ConductorClient::with_url(&conductor_url_for_sync);
+    if let Some(ref token) = credentials.access_token {
+        conductor = conductor.with_auth(token);
+    }
+    if let Some(ref refresh) = credentials.refresh_token {
+        conductor = conductor.with_refresh_token(refresh);
+    }
+
+    match runtime.block_on(conductor.sync_tokens("all")) {
         Ok(sync_result) => {
-            if sync_result.claude_synced {
+            let synced = sync_result.synced.unwrap_or_default();
+            if synced.contains(&"claude_code".to_string()) {
                 cli_output::print_step_line(icons::SUCCESS, "Claude Code synced");
             }
-            if sync_result.github_synced {
+            if synced.contains(&"github_cli".to_string()) {
                 cli_output::print_step_line(icons::SUCCESS, "GitHub CLI synced");
             }
-            if sync_result.codex_synced {
-                cli_output::print_step_line(icons::SUCCESS, "Codex synced");
-            }
-            if !sync_result.any_synced() {
+            if synced.is_empty() {
                 has_warnings = true;
-                cli_output::print_step_line(icons::WARNING, "No credentials found to sync");
+                cli_output::print_step_line(icons::WARNING, "No local tokens found to sync");
+            }
+
+            // Show verification results from sync response
+            if let Some(verification) = sync_result.verification {
+                if verification.claude_code_works == Some(true) {
+                    cli_output::print_step_line(icons::SUCCESS, "Claude Code verified on VPS");
+                } else if synced.contains(&"claude_code".to_string()) {
+                    has_warnings = true;
+                    cli_output::print_step_line(icons::WARNING, "Claude Code synced but not verified");
+                }
+                if verification.github_cli_works == Some(true) {
+                    cli_output::print_step_line(icons::SUCCESS, "GitHub CLI verified on VPS");
+                } else if synced.contains(&"github_cli".to_string()) {
+                    has_warnings = true;
+                    cli_output::print_step_line(icons::WARNING, "GitHub CLI synced but not verified");
+                }
+
+                if has_warnings {
+                    cli_output::print_troubleshoot(&[
+                        &format!(
+                            "1. SSH to VPS: ssh {}@{}",
+                            byovps_creds.ssh_username, byovps_creds.vps_ip
+                        ),
+                        "2. Run: claude, then type /login (if Claude failed)",
+                        "3. Run: gh auth login (if GitHub failed)",
+                    ]);
+                }
             }
         }
         Err(e) => {
             has_warnings = true;
             cli_output::print_step_line(icons::WARNING, &format!("Sync failed: {}", e));
-        }
-    }
-    cli_output::print_step_end();
-
-    // ═══════════════════════════════════════════════════════════════════
-    // STEP 6: VERIFICATION
-    // ═══════════════════════════════════════════════════════════════════
-    cli_output::print_step_start(6, "VERIFICATION");
-    check_interrupt(interrupted);
-
-    match super::token_verification::verify_vps_tokens(
-        &byovps_creds.vps_ip,
-        &byovps_creds.ssh_username,
-        &byovps_creds.ssh_password,
-    ) {
-        Ok(verification) => {
-            if verification.claude_code_works {
-                cli_output::print_step_line(icons::SUCCESS, "Claude Code verified on VPS");
-            } else {
-                has_warnings = true;
-                cli_output::print_step_line(icons::FAILURE, "Claude Code verification failed");
-            }
-
-            if verification.github_cli_works {
-                cli_output::print_step_line(icons::SUCCESS, "GitHub CLI verified on VPS");
-            } else {
-                has_warnings = true;
-                cli_output::print_step_line(icons::FAILURE, "GitHub CLI verification failed");
-            }
-
-            if !verification.claude_code_works || !verification.github_cli_works {
-                cli_output::print_troubleshoot(&[
-                    &format!(
-                        "1. SSH to VPS: ssh {}@{}",
-                        byovps_creds.ssh_username, byovps_creds.vps_ip
-                    ),
-                    "2. Run: claude, then type /login (if Claude failed)",
-                    "3. Run: gh auth login (if GitHub failed)",
-                ]);
-            }
-        }
-        Err(e) => {
-            has_warnings = true;
-            cli_output::print_step_line(icons::FAILURE, &format!("Verification error: {}", e));
         }
     }
     cli_output::print_step_end();
@@ -2784,107 +2690,5 @@ mod tests {
         assert!(success_msg.contains("refreshed"));
     }
 
-    #[test]
-    fn test_token_migration_result_struct() {
-        use std::path::PathBuf;
-
-        // Test TokenMigrationResult with successful migration
-        let result = TokenMigrationResult {
-            archive_path: Some(PathBuf::from("/home/user/.spoq-migration/archive.tar.gz")),
-            detected_tokens: vec!["GitHub CLI".to_string(), "Claude Code".to_string()],
-            success: true,
-            warning: None,
-        };
-
-        assert!(result.archive_path.is_some());
-        assert_eq!(result.detected_tokens.len(), 2);
-        assert!(result.success);
-        assert!(result.warning.is_none());
-    }
-
-    #[test]
-    fn test_token_migration_result_failure() {
-        // Test TokenMigrationResult with failed migration
-        let result = TokenMigrationResult {
-            archive_path: None,
-            detected_tokens: vec!["GitHub CLI".to_string()],
-            success: false,
-            warning: Some("Token export failed: No credentials found".to_string()),
-        };
-
-        assert!(result.archive_path.is_none());
-        assert_eq!(result.detected_tokens.len(), 1);
-        assert!(!result.success);
-        assert!(result.warning.is_some());
-        assert!(result.warning.unwrap().contains("Token export failed"));
-    }
-
-    #[test]
-    fn test_token_migration_result_no_tokens() {
-        // Test TokenMigrationResult with no tokens detected
-        let result = TokenMigrationResult {
-            archive_path: None,
-            detected_tokens: vec![],
-            success: false,
-            warning: Some("Token detection failed: script not found".to_string()),
-        };
-
-        assert!(result.archive_path.is_none());
-        assert!(result.detected_tokens.is_empty());
-        assert!(!result.success);
-    }
-
-    #[test]
-    fn test_token_migration_result_clone() {
-        use std::path::PathBuf;
-
-        let result = TokenMigrationResult {
-            archive_path: Some(PathBuf::from("/tmp/archive.tar.gz")),
-            detected_tokens: vec!["Claude Code".to_string()],
-            success: true,
-            warning: None,
-        };
-
-        let cloned = result.clone();
-        assert_eq!(cloned.archive_path, result.archive_path);
-        assert_eq!(cloned.detected_tokens, result.detected_tokens);
-        assert_eq!(cloned.success, result.success);
-        assert_eq!(cloned.warning, result.warning);
-    }
-
-    #[test]
-    fn test_token_migration_result_debug() {
-        let result = TokenMigrationResult {
-            archive_path: None,
-            detected_tokens: vec![],
-            success: false,
-            warning: Some("Error".to_string()),
-        };
-
-        let debug_str = format!("{:?}", result);
-        assert!(debug_str.contains("TokenMigrationResult"));
-        assert!(debug_str.contains("success"));
-    }
-
-    #[test]
-    fn test_token_migration_detected_tokens_list_format() {
-        let detected_tokens = vec![
-            "GitHub CLI".to_string(),
-            "Claude Code".to_string(),
-            "Codex".to_string(),
-        ];
-
-        let formatted = detected_tokens.join(", ");
-        assert_eq!(formatted, "GitHub CLI, Claude Code, Codex");
-    }
-
-    #[test]
-    fn test_token_migration_archive_path_conversion() {
-        use std::path::PathBuf;
-
-        let archive_path = PathBuf::from("/home/user/.spoq-migration/archive.tar.gz");
-        let path_string = archive_path.to_string_lossy().to_string();
-
-        assert_eq!(path_string, "/home/user/.spoq-migration/archive.tar.gz");
-    }
+    // NOTE: TokenMigrationResult tests removed - SSH-based sync was replaced with HTTP sync
 }

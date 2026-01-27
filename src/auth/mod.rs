@@ -34,14 +34,10 @@ pub use credentials::{Credentials, CredentialsManager};
 pub use device_flow::{run_device_flow, DeviceFlowError};
 pub use flow::run_auth_flow;
 pub use provisioning_flow::{run_provisioning_flow, start_stopped_vps};
-pub use token_migration::{
-    detect_tokens, export_tokens, transfer_tokens_to_vps, transfer_tokens_with_credentials,
-    wait_for_claude_code_token, SshTransferError, TokenDetectionResult, TokenExportResult,
-    TokenTransferResult, VpsConnectionInfo,
-};
+pub use token_migration::{detect_tokens, get_local_credentials_info, TokenDetectionResult};
 pub use token_verification::{
-    display_missing_tokens_error, display_vps_verification_results, verify_local_tokens,
-    verify_vps_tokens, LocalTokenVerification, TokenVerificationError, VpsTokenVerification,
+    display_missing_tokens_error, verify_local_tokens, LocalTokenVerification,
+    TokenVerificationError,
 };
 
 /// Error type for authentication operations.

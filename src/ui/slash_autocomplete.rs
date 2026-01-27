@@ -28,13 +28,28 @@ fn calculate_dialog_height(visible_count: usize, area_height: u16) -> u16 {
     content_height.min(max_height)
 }
 
-/// Render the slash command autocomplete dropdown as a bottom-anchored overlay
+/// Anchor mode for the autocomplete dropdown
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorMode {
+    /// Bottom of dropdown anchored to input (dropdown grows upward) - used in CommandDeck
+    Above,
+    /// Top of dropdown anchored below input (dropdown grows downward) - used in Conversation
+    Below,
+}
+
+/// Render the slash command autocomplete dropdown as an overlay
 ///
 /// # Arguments
 /// * `frame` - The ratatui frame to render into
 /// * `app` - The application state containing autocomplete state
 /// * `input_area` - The input field area to anchor the dropdown to
-pub fn render_slash_autocomplete(frame: &mut Frame, app: &App, input_area: Rect) {
+/// * `anchor_mode` - How to position the dropdown relative to input
+pub fn render_slash_autocomplete_anchored(
+    frame: &mut Frame,
+    app: &App,
+    input_area: Rect,
+    anchor_mode: AnchorMode,
+) {
     if !app.slash_autocomplete_visible {
         return;
     }
@@ -54,9 +69,21 @@ pub fn render_slash_autocomplete(frame: &mut Frame, app: &App, input_area: Rect)
     let dialog_width = 50.min(input_area.width);
     let dialog_height = calculate_dialog_height(visible_count, area.height);
 
-    // Position: horizontally aligned with input area (left-aligned), bottom-anchored (above input area)
+    // Position based on anchor mode
     let x = input_area.x;
-    let y = input_area.y.saturating_sub(dialog_height);
+    let y = match anchor_mode {
+        AnchorMode::Above => {
+            // Bottom-anchored: dropdown appears ABOVE input, grows upward
+            input_area.y.saturating_sub(dialog_height)
+        }
+        AnchorMode::Below => {
+            // Top-anchored: dropdown appears BELOW input, grows downward
+            // Position just below the input line (input_area.y + input_area.height)
+            let below_y = input_area.y + input_area.height;
+            // Cap so it doesn't go off screen
+            below_y.min(area.height.saturating_sub(dialog_height))
+        }
+    };
 
     let dialog_area = Rect {
         x,
@@ -180,6 +207,14 @@ pub fn render_slash_autocomplete(frame: &mut Frame, app: &App, input_area: Rect)
     // Render the content
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, inner);
+}
+
+/// Render the slash command autocomplete dropdown (default: above input)
+///
+/// This is a convenience wrapper that uses `AnchorMode::Above` for backwards compatibility.
+/// Use `render_slash_autocomplete_anchored` for explicit anchor control.
+pub fn render_slash_autocomplete(frame: &mut Frame, app: &App, input_area: Rect) {
+    render_slash_autocomplete_anchored(frame, app, input_area, AnchorMode::Above)
 }
 
 #[cfg(test)]
