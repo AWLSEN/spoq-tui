@@ -31,7 +31,7 @@ axum = { version = "0.7", features = ["ws"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum-extra = { version = "0.9", features = ["typed-header"] }
-tokio-tungstenite = "0.21"
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
 tower-http = { version = "0.5", features = ["cors"] }
 arboard = "3"
 tui-textarea = { path = "vendor/tui-textarea", features = ["crossterm_0_28"] }
