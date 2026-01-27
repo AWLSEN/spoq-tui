@@ -20,8 +20,8 @@ mod view;
 mod websocket;
 
 pub use messages::AppMessage;
-pub use state_methods::UnifiedPickerAction;
-pub use types::{Focus, Screen, ScrollBoundary, ThreadSwitcher};
+pub use state_methods::{BrowseListSelectAction, UnifiedPickerAction};
+pub use types::{BrowseListMode, BrowseListState, Focus, Screen, ScrollBoundary, ThreadSwitcher};
 pub use websocket::{start_websocket, start_websocket_with_config};
 
 use crate::auth::{
@@ -232,6 +232,8 @@ pub struct App {
     pub cumulative_token_count: u64,
     /// Thread switcher dialog state (double-tap Tab to switch threads)
     pub thread_switcher: ThreadSwitcher,
+    /// Full-screen browse list state (for /threads and /repos commands)
+    pub browse_list: BrowseListState,
     /// Timestamp of last Tab press (for double-tap detection)
     pub last_tab_press: Option<std::time::Instant>,
     /// WebSocket sender for sending messages to the server
@@ -456,6 +458,7 @@ impl App {
             last_event_time: None,
             cumulative_token_count: 0,
             thread_switcher: ThreadSwitcher::default(),
+            browse_list: BrowseListState::default(),
             last_tab_press: None,
             ws_sender: None,
             ws_connection_state: WsConnectionState::Disconnected,
@@ -763,6 +766,7 @@ impl App {
         let screen_name = match self.screen {
             Screen::CommandDeck => "CommandDeck",
             Screen::Conversation => "Conversation",
+            Screen::BrowseList => "BrowseList",
         };
         emit_debug(
             &self.debug_tx,

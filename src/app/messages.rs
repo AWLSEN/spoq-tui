@@ -231,6 +231,36 @@ pub enum AppMessage {
     },
     /// Sync operation failed
     SyncFailed { error: String },
+    // =========================================================================
+    // Browse List Messages (for /threads and /repos full-screen views)
+    // =========================================================================
+    /// Threads loaded for browse list
+    BrowseListThreadsLoaded {
+        threads: Vec<crate::models::picker::ThreadEntry>,
+        offset: usize,
+        has_more: bool,
+    },
+    /// Repos loaded for browse list
+    BrowseListReposLoaded {
+        repos: Vec<crate::models::picker::RepoEntry>,
+        offset: usize,
+        has_more: bool,
+    },
+    /// Error loading browse list data
+    BrowseListError(String),
+    /// Trigger debounced search (fired after 300ms delay)
+    BrowseListSearchDebounced {
+        query: String,
+    },
+    /// Clone completed (for /repos remote repo selection)
+    BrowseListCloneComplete {
+        local_path: String,
+        name: String,
+    },
+    /// Clone failed (for /repos remote repo selection)
+    BrowseListCloneFailed {
+        error: String,
+    },
 }
 
 #[cfg(test)]

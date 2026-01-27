@@ -1,4 +1,4 @@
-use spoq::app::{start_websocket_with_config, App, AppMessage, Focus, Screen, ScrollBoundary, UnifiedPickerAction};
+use spoq::app::{start_websocket_with_config, App, AppMessage, BrowseListSelectAction, Focus, Screen, ScrollBoundary, UnifiedPickerAction};
 use spoq::cli::{parse_args, run_cli_command};
 use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
 use spoq::input::translate_shifted_char;
@@ -890,6 +890,136 @@ where
                                         app.confirm_switcher_selection();
                                         continue;
                                     }
+                                }
+                            }
+
+                            // BrowseList screen handling (full-screen threads/repos view)
+                            // Auto-search: typing characters starts searching automatically
+                            // Arrow keys always work for navigation
+                            if app.screen == Screen::BrowseList {
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        // If searching, clear search first; otherwise return to CommandDeck
+                                        if !app.browse_list.search_query.is_empty() {
+                                            app.browse_list_clear_search();
+                                        } else {
+                                            app.close_browse_list();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Up => {
+                                        app.browse_list_move_up();
+                                        continue;
+                                    }
+                                    KeyCode::Down => {
+                                        app.browse_list_move_down();
+                                        continue;
+                                    }
+                                    KeyCode::Char('k') if key.modifiers.is_empty() && app.browse_list.search_query.is_empty() => {
+                                        // vim-style up (only when not searching)
+                                        app.browse_list_move_up();
+                                        continue;
+                                    }
+                                    KeyCode::Char('j') if key.modifiers.is_empty() && app.browse_list.search_query.is_empty() => {
+                                        // vim-style down (only when not searching)
+                                        app.browse_list_move_down();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        // Select the current item
+                                        let action = app.browse_list_select();
+                                        match action {
+                                            BrowseListSelectAction::OpenThread { id, .. } => {
+                                                // Close browse list and navigate to the thread
+                                                app.screen = Screen::CommandDeck; // Temporarily go to CommandDeck
+                                                app.open_thread(id); // This handles all the navigation and message loading
+                                            }
+                                            BrowseListSelectAction::SetWorkingDirectory { path, name } => {
+                                                // Set working directory and go to CommandDeck
+                                                app.close_browse_list();
+                                                app.selected_folder = Some(models::Folder {
+                                                    name,
+                                                    path,
+                                                });
+                                                app.mark_dirty();
+                                            }
+                                            BrowseListSelectAction::CloneRepo { name, url: _ } => {
+                                                // Start clone animation
+                                                app.browse_list_start_clone(&name);
+
+                                                // Clone repo asynchronously
+                                                let client = app.client.clone();
+                                                let message_tx = app.message_tx.clone();
+                                                let clone_name = name.clone();
+
+                                                tokio::spawn(async move {
+                                                    match client.clone_repo(&clone_name).await {
+                                                        Ok(response) => {
+                                                            let _ = message_tx.send(AppMessage::BrowseListCloneComplete {
+                                                                local_path: response.path,
+                                                                name: clone_name,
+                                                            });
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = message_tx.send(AppMessage::BrowseListCloneFailed {
+                                                                error: e.to_string(),
+                                                            });
+                                                        }
+                                                    }
+                                                });
+                                            }
+                                            BrowseListSelectAction::None => {}
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Backspace => {
+                                        // Remove last character from search
+                                        match app.browse_list.mode {
+                                            spoq::app::BrowseListMode::Threads => {
+                                                // Threads: debounced API search
+                                                if let Some(query) = app.browse_list_backspace() {
+                                                    let message_tx = app.message_tx.clone();
+                                                    tokio::spawn(async move {
+                                                        tokio::time::sleep(std::time::Duration::from_millis(
+                                                            spoq::ui::SEARCH_DEBOUNCE_MS,
+                                                        ))
+                                                        .await;
+                                                        let _ = message_tx
+                                                            .send(AppMessage::BrowseListSearchDebounced { query });
+                                                    });
+                                                }
+                                            }
+                                            spoq::app::BrowseListMode::Repos => {
+                                                // Repos: instant local filter
+                                                app.browse_list_repos_backspace();
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
+                                        // Auto-search: any printable character adds to search
+                                        match app.browse_list.mode {
+                                            spoq::app::BrowseListMode::Threads => {
+                                                // Threads: debounced API search
+                                                let query = app.browse_list_type_char(c);
+                                                let message_tx = app.message_tx.clone();
+                                                tokio::spawn(async move {
+                                                    tokio::time::sleep(std::time::Duration::from_millis(
+                                                        spoq::ui::SEARCH_DEBOUNCE_MS,
+                                                    ))
+                                                    .await;
+                                                    let _ = message_tx
+                                                        .send(AppMessage::BrowseListSearchDebounced { query });
+                                                });
+                                            }
+                                            spoq::app::BrowseListMode::Repos => {
+                                                // Repos: instant local filter
+                                                app.browse_list_repos_type_char(c);
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    _ => continue,
                                 }
                             }
 

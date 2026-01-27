@@ -223,6 +223,7 @@ impl App {
         self.thread_switcher.selected_index = match self.screen {
             Screen::CommandDeck => 0,
             Screen::Conversation => 1,
+            Screen::BrowseList => 0, // Start at most recent when coming from browse list
         };
         self.thread_switcher.scroll_offset = 0;
         self.thread_switcher.last_nav_time = Some(std::time::Instant::now());

@@ -1353,6 +1353,83 @@ impl App {
                     None,
                 );
             }
+            // =========================================================================
+            // Browse List Messages
+            // =========================================================================
+            AppMessage::BrowseListThreadsLoaded {
+                threads,
+                offset,
+                has_more,
+            } => {
+                // Only update if we're still on the BrowseList screen in Threads mode
+                if self.screen == crate::app::Screen::BrowseList
+                    && self.browse_list.mode == crate::app::BrowseListMode::Threads
+                {
+                    if offset == 0 {
+                        // Initial load - replace items
+                        self.browse_list.threads = threads;
+                    } else {
+                        // Pagination - append items
+                        self.browse_list.threads.extend(threads);
+                    }
+                    self.browse_list.total_count = self.browse_list.threads.len();
+                    self.browse_list.has_more = has_more;
+                    self.browse_list.loading = false;
+                    self.browse_list.searching = false;
+                    self.mark_dirty();
+                }
+            }
+            AppMessage::BrowseListReposLoaded {
+                repos,
+                offset,
+                has_more,
+            } => {
+                // Only update if we're still on the BrowseList screen in Repos mode
+                if self.screen == crate::app::Screen::BrowseList
+                    && self.browse_list.mode == crate::app::BrowseListMode::Repos
+                {
+                    if offset == 0 {
+                        // Initial load - store in both all_repos (master) and repos (filtered view)
+                        self.browse_list.all_repos = repos.clone();
+                        self.browse_list.repos = repos;
+                    } else {
+                        // Pagination - append items
+                        self.browse_list.all_repos.extend(repos.clone());
+                        self.browse_list.repos.extend(repos);
+                    }
+                    self.browse_list.total_count = self.browse_list.repos.len();
+                    self.browse_list.has_more = has_more;
+                    self.browse_list.loading = false;
+                    self.browse_list.searching = false;
+                    self.mark_dirty();
+                }
+            }
+            AppMessage::BrowseListError(error) => {
+                if self.screen == crate::app::Screen::BrowseList {
+                    self.browse_list.error = Some(error);
+                    self.browse_list.loading = false;
+                    self.browse_list.searching = false;
+                    self.mark_dirty();
+                }
+            }
+            AppMessage::BrowseListSearchDebounced { query } => {
+                // Execute debounced search if query still matches pending
+                if self.screen == crate::app::Screen::BrowseList {
+                    self.browse_list_execute_search(query);
+                }
+            }
+            AppMessage::BrowseListCloneComplete { local_path, name } => {
+                // Clone succeeded - set folder and close browse list
+                if self.screen == crate::app::Screen::BrowseList {
+                    self.browse_list_clone_complete(local_path, name);
+                }
+            }
+            AppMessage::BrowseListCloneFailed { error } => {
+                // Clone failed - show error
+                if self.screen == crate::app::Screen::BrowseList {
+                    self.browse_list_clone_failed(error);
+                }
+            }
         }
     }
 }

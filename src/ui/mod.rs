@@ -18,6 +18,7 @@
 //! All render functions receive a `LayoutContext` parameter to enable responsive
 //! sizing decisions throughout the UI hierarchy.
 
+mod browse_list;
 mod command_deck;
 pub mod context;
 mod conversation;
@@ -31,6 +32,10 @@ mod slash_autocomplete;
 mod theme;
 mod thread_switcher;
 mod unified_picker;
+
+// Re-export browse_list constants
+pub use browse_list::MAX_ITEMS;
+pub use browse_list::SEARCH_DEBOUNCE_MS;
 
 // Re-export unified picker render function for external use
 pub use unified_picker::render_unified_picker;
@@ -71,6 +76,7 @@ use ratatui::{
 };
 
 use crate::app::{App, Screen};
+use browse_list::render_browse_list;
 use command_deck::render_command_deck;
 use conversation::render_conversation_screen;
 use thread_switcher::render_thread_switcher;
@@ -101,10 +107,13 @@ pub fn render(frame: &mut Frame, app: &mut App) {
     match app.screen {
         Screen::CommandDeck => render_command_deck(frame, app),
         Screen::Conversation => render_conversation_screen(frame, app),
+        Screen::BrowseList => render_browse_list(frame, app),
     }
 
-    // Render thread switcher overlay (if visible)
-    render_thread_switcher(frame, app);
+    // Render thread switcher overlay (if visible) - not shown on BrowseList
+    if app.screen != Screen::BrowseList {
+        render_thread_switcher(frame, app);
+    }
 
     // Render sync dialog overlay (if sync in progress or recently completed)
     render_sync_dialog(frame, app);

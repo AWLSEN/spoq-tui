@@ -572,9 +572,8 @@ impl App {
                 }
             }
             SlashCommand::Repos => {
-                // Open unified picker on repos tab
-                self.open_unified_picker();
-                self.unified_picker.selected_section = crate::models::picker::PickerSection::Repos;
+                // Open full-screen repos browser
+                self.open_browse_list(crate::app::BrowseListMode::Repos);
             }
             SlashCommand::New => {
                 // Navigate to command deck (new chat)
@@ -593,8 +592,8 @@ impl App {
                 self.stream_error = Some("Settings panel not yet implemented".to_string());
             }
             SlashCommand::Threads => {
-                // Open thread switcher
-                self.thread_switcher.visible = true;
+                // Open full-screen threads browser
+                self.open_browse_list(crate::app::BrowseListMode::Threads);
             }
         }
         self.mark_dirty();
@@ -999,6 +998,373 @@ impl App {
             self.textarea.backspace();
         }
     }
+
+    // =========================================================================
+    // Browse List Methods (for /threads and /repos commands)
+    // =========================================================================
+
+    /// Open the full-screen browse list view.
+    ///
+    /// Navigates to the BrowseList screen and loads initial data.
+    /// For Repos: uses session cache (same as @ picker) for instant display.
+    /// For Threads: loads from API with debounced search.
+    pub fn open_browse_list(&mut self, mode: crate::app::BrowseListMode) {
+        use crate::ui::MAX_ITEMS;
+
+        // Reset state for the new view
+        self.browse_list = crate::app::BrowseListState {
+            mode,
+            search_query: String::new(),
+            search_focused: false,
+            selected_index: 0,
+            scroll_offset: 0,
+            total_count: 0,
+            threads: Vec::new(),
+            repos: Vec::new(),
+            all_repos: Vec::new(),
+            loading: true,
+            searching: false,
+            error: None,
+            has_more: false,
+            pagination_offset: 0,
+            pending_search: None,
+            cloning: false,
+            clone_message: None,
+        };
+
+        // Navigate to BrowseList screen
+        self.screen = crate::app::Screen::BrowseList;
+        self.mark_dirty();
+
+        match mode {
+            crate::app::BrowseListMode::Threads => {
+                // Threads: load from API
+                self.load_browse_list_data(String::new(), MAX_ITEMS);
+            }
+            crate::app::BrowseListMode::Repos => {
+                // Repos: use session cache (same data as @ picker)
+                if let Some(items) = self.picker_cache.get_repos() {
+                    // Convert PickerItem::Repo to RepoEntry
+                    let repos: Vec<crate::models::picker::RepoEntry> = items
+                        .iter()
+                        .filter_map(|item| {
+                            if let crate::models::picker::PickerItem::Repo { name, local_path, url } = item {
+                                Some(crate::models::picker::RepoEntry {
+                                    name_with_owner: name.clone(),
+                                    url: url.clone(),
+                                    local_path: local_path.clone(),
+                                    description: None,
+                                    is_private: None,
+                                    pushed_at: None,
+                                    is_fork: None,
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    self.browse_list.all_repos = repos.clone();
+                    self.browse_list.repos = repos;
+                    self.browse_list.loading = false;
+                    self.mark_dirty();
+                } else {
+                    // Fallback: load from API if not cached yet
+                    self.load_browse_list_data(String::new(), MAX_ITEMS);
+                }
+            }
+        }
+    }
+
+    /// Close the browse list and return to CommandDeck.
+    pub fn close_browse_list(&mut self) {
+        self.screen = crate::app::Screen::CommandDeck;
+        self.mark_dirty();
+    }
+
+    /// Load data for the browse list (threads or repos).
+    /// Note: The API doesn't support offset pagination, so we load up to `limit` items.
+    pub fn load_browse_list_data(&mut self, query: String, limit: usize) {
+        self.browse_list.loading = true;
+        self.mark_dirty();
+
+        let mode = self.browse_list.mode;
+        let tx = self.message_tx.clone();
+        let client = Arc::clone(&self.client);
+
+        tokio::spawn(async move {
+            match mode {
+                crate::app::BrowseListMode::Threads => {
+                    match client.search_threads(&query, limit).await {
+                        Ok(response) => {
+                            let threads = response.threads;
+                            let _ = tx.send(AppMessage::BrowseListThreadsLoaded {
+                                threads,
+                                offset: 0,
+                                has_more: false,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppMessage::BrowseListError(e.to_string()));
+                        }
+                    }
+                }
+                crate::app::BrowseListMode::Repos => {
+                    match client.search_repos(&query, limit).await {
+                        Ok(response) => {
+                            let repos = response.repos;
+                            let _ = tx.send(AppMessage::BrowseListReposLoaded {
+                                repos,
+                                offset: 0,
+                                has_more: false,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppMessage::BrowseListError(e.to_string()));
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /// Navigate up in the browse list.
+    pub fn browse_list_move_up(&mut self) {
+        if self.browse_list.selected_index > 0 {
+            self.browse_list.selected_index -= 1;
+
+            // Adjust scroll to keep selection visible
+            if self.browse_list.selected_index < self.browse_list.scroll_offset {
+                self.browse_list.scroll_offset = self.browse_list.selected_index;
+            }
+
+            self.mark_dirty();
+        }
+    }
+
+    /// Navigate down in the browse list.
+    pub fn browse_list_move_down(&mut self) {
+        let max_index = match self.browse_list.mode {
+            crate::app::BrowseListMode::Threads => self.browse_list.threads.len().saturating_sub(1),
+            crate::app::BrowseListMode::Repos => self.browse_list.repos.len().saturating_sub(1),
+        };
+
+        if self.browse_list.selected_index < max_index {
+            self.browse_list.selected_index += 1;
+
+            // Adjust scroll to keep selection visible
+            // Each item takes 3 lines (name, path, blank line)
+            const LINES_PER_ITEM: usize = 3;
+            let visible_rows = (self.terminal_height as usize).saturating_sub(8).max(5);
+            let visible_items = visible_rows / LINES_PER_ITEM;
+            if self.browse_list.selected_index >= self.browse_list.scroll_offset + visible_items {
+                self.browse_list.scroll_offset = self.browse_list.selected_index.saturating_sub(visible_items - 1);
+            }
+
+            self.mark_dirty();
+        }
+    }
+
+    /// Update the search query in the browse list.
+    pub fn browse_list_set_search(&mut self, query: String) {
+        use crate::ui::MAX_ITEMS;
+
+        self.browse_list.search_query = query.clone();
+        self.browse_list.selected_index = 0;
+        self.browse_list.scroll_offset = 0;
+        self.browse_list.pagination_offset = 0;
+        self.browse_list.has_more = false;
+
+        // Clear existing data and reload
+        self.browse_list.threads.clear();
+        self.browse_list.repos.clear();
+
+        self.load_browse_list_data(query, MAX_ITEMS);
+        self.mark_dirty();
+    }
+
+    /// Type a character in the browse list search (debounced).
+    /// Returns the query for scheduling debounced search.
+    pub fn browse_list_type_char(&mut self, c: char) -> String {
+        self.browse_list.search_query.push(c);
+        let query = self.browse_list.search_query.clone();
+        self.browse_list.pending_search = Some(query.clone());
+        self.browse_list.selected_index = 0;
+        self.browse_list.scroll_offset = 0;
+        self.mark_dirty();
+        query
+    }
+
+    /// Backspace in the browse list search (debounced).
+    /// Returns Some(query) if search should be scheduled, None if query is empty.
+    pub fn browse_list_backspace(&mut self) -> Option<String> {
+        if self.browse_list.search_query.pop().is_some() {
+            let query = self.browse_list.search_query.clone();
+            self.browse_list.pending_search = Some(query.clone());
+            self.browse_list.selected_index = 0;
+            self.browse_list.scroll_offset = 0;
+            self.mark_dirty();
+            Some(query)
+        } else {
+            None
+        }
+    }
+
+    /// Execute a debounced search if the query matches pending.
+    pub fn browse_list_execute_search(&mut self, query: String) {
+        use crate::ui::MAX_ITEMS;
+
+        // Only execute if this query matches the pending search
+        if self.browse_list.pending_search.as_ref() == Some(&query) {
+            self.browse_list.pending_search = None;
+            self.browse_list.searching = true;
+            self.browse_list.threads.clear();
+            self.browse_list.repos.clear();
+            self.load_browse_list_data(query, MAX_ITEMS);
+        }
+    }
+
+    /// Select the current item in the browse list.
+    ///
+    /// Returns the action to take (navigate to thread, set working directory, etc.)
+    pub fn browse_list_select(&mut self) -> BrowseListSelectAction {
+        match self.browse_list.mode {
+            crate::app::BrowseListMode::Threads => {
+                if let Some(thread) = self.browse_list.threads.get(self.browse_list.selected_index) {
+                    let id = thread.id.clone();
+                    let title = thread.title.clone().unwrap_or_else(|| "Untitled".to_string());
+                    return BrowseListSelectAction::OpenThread { id, title };
+                }
+            }
+            crate::app::BrowseListMode::Repos => {
+                if let Some(repo) = self.browse_list.repos.get(self.browse_list.selected_index) {
+                    if let Some(ref local_path) = repo.local_path {
+                        return BrowseListSelectAction::SetWorkingDirectory {
+                            path: local_path.clone(),
+                            name: repo.name_with_owner.clone(),
+                        };
+                    } else {
+                        return BrowseListSelectAction::CloneRepo {
+                            name: repo.name_with_owner.clone(),
+                            url: repo.url.clone(),
+                        };
+                    }
+                }
+            }
+        }
+        BrowseListSelectAction::None
+    }
+
+    /// Toggle search focus in browse list.
+    pub fn browse_list_toggle_search(&mut self) {
+        self.browse_list.search_focused = !self.browse_list.search_focused;
+        self.mark_dirty();
+    }
+
+    /// Clear the search query and reload/restore all items.
+    pub fn browse_list_clear_search(&mut self) {
+        use crate::ui::MAX_ITEMS;
+        self.browse_list.search_query.clear();
+        self.browse_list.pending_search = None;
+        self.browse_list.searching = false;
+        self.browse_list.selected_index = 0;
+        self.browse_list.scroll_offset = 0;
+
+        match self.browse_list.mode {
+            crate::app::BrowseListMode::Threads => {
+                // Threads: reload from API
+                self.load_browse_list_data(String::new(), MAX_ITEMS);
+            }
+            crate::app::BrowseListMode::Repos => {
+                // Repos: restore from all_repos (local)
+                self.browse_list.repos = self.browse_list.all_repos.clone();
+                self.mark_dirty();
+            }
+        }
+    }
+
+    /// Filter repos locally (no API call).
+    /// Used for instant search in repos mode.
+    pub fn browse_list_filter_repos_local(&mut self, query: &str) {
+        self.browse_list.search_query = query.to_string();
+        self.browse_list.selected_index = 0;
+        self.browse_list.scroll_offset = 0;
+
+        if query.is_empty() {
+            // Restore all repos
+            self.browse_list.repos = self.browse_list.all_repos.clone();
+        } else {
+            // Filter locally (case-insensitive match on name or path)
+            let query_lower = query.to_lowercase();
+            self.browse_list.repos = self.browse_list.all_repos
+                .iter()
+                .filter(|repo| {
+                    repo.name_with_owner.to_lowercase().contains(&query_lower)
+                        || repo.local_path.as_ref().map(|p| p.to_lowercase().contains(&query_lower)).unwrap_or(false)
+                        || repo.url.to_lowercase().contains(&query_lower)
+                })
+                .cloned()
+                .collect();
+        }
+        self.mark_dirty();
+    }
+
+    /// Type a character in repos search (local filter, no debounce).
+    pub fn browse_list_repos_type_char(&mut self, c: char) {
+        let mut query = self.browse_list.search_query.clone();
+        query.push(c);
+        self.browse_list_filter_repos_local(&query);
+    }
+
+    /// Backspace in repos search (local filter, no debounce).
+    pub fn browse_list_repos_backspace(&mut self) {
+        let mut query = self.browse_list.search_query.clone();
+        if query.pop().is_some() {
+            self.browse_list_filter_repos_local(&query);
+        }
+    }
+
+    /// Start cloning a remote repo from browse list.
+    pub fn browse_list_start_clone(&mut self, name: &str) {
+        self.browse_list.cloning = true;
+        self.browse_list.clone_message = Some(format!("Cloning {}...", name));
+        self.mark_dirty();
+    }
+
+    /// Complete clone and set as working directory.
+    pub fn browse_list_clone_complete(&mut self, local_path: String, name: String) {
+        self.browse_list.cloning = false;
+        self.browse_list.clone_message = None;
+
+        // Set cloned repo as working directory
+        self.selected_folder = Some(crate::models::Folder {
+            name,
+            path: local_path,
+        });
+
+        // Close browse list and return to CommandDeck
+        self.close_browse_list();
+    }
+
+    /// Handle clone failure.
+    pub fn browse_list_clone_failed(&mut self, error: String) {
+        self.browse_list.cloning = false;
+        self.browse_list.clone_message = None;
+        self.browse_list.error = Some(error);
+        self.mark_dirty();
+    }
+}
+
+/// Action to take after browse list selection.
+#[derive(Debug, Clone)]
+pub enum BrowseListSelectAction {
+    /// No action (nothing selected)
+    None,
+    /// Open an existing thread
+    OpenThread { id: String, title: String },
+    /// Set working directory to a local repo
+    SetWorkingDirectory { path: String, name: String },
+    /// Clone a remote repo
+    CloneRepo { name: String, url: String },
 }
 
 /// Action to take after unified picker selection.
