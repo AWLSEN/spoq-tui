@@ -88,16 +88,48 @@ pub struct PlanSummary {
     /// Estimated token usage (optional, may be missing or null from backend)
     #[serde(default)]
     pub estimated_tokens: Option<i64>,
+    /// Path to the plan file (optional)
+    #[serde(default)]
+    pub plan_file_path: Option<String>,
+    /// Full content of the plan file (optional, may be truncated for large plans)
+    #[serde(default)]
+    pub plan_content: Option<String>,
 }
 
 impl PlanSummary {
     /// Create a new plan summary
-    pub fn new(title: String, phases: Vec<String>, file_count: i32, estimated_tokens: Option<i64>) -> Self {
+    pub fn new(
+        title: String,
+        phases: Vec<String>,
+        file_count: i32,
+        estimated_tokens: Option<i64>,
+    ) -> Self {
         Self {
             title,
             phases,
             file_count,
             estimated_tokens,
+            plan_file_path: None,
+            plan_content: None,
+        }
+    }
+
+    /// Create a new plan summary with content
+    pub fn with_content(
+        title: String,
+        phases: Vec<String>,
+        file_count: i32,
+        estimated_tokens: Option<i64>,
+        plan_file_path: Option<String>,
+        plan_content: Option<String>,
+    ) -> Self {
+        Self {
+            title,
+            phases,
+            file_count,
+            estimated_tokens,
+            plan_file_path,
+            plan_content,
         }
     }
 
