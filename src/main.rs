@@ -1,5 +1,6 @@
 use spoq::app::{start_websocket_with_config, App, AppMessage, BrowseListSelectAction, Focus, Screen, ScrollBoundary, UnifiedPickerAction};
 use spoq::cli::{parse_args, run_cli_command};
+use spoq::credential_watcher::{spawn_file_watcher, spawn_keychain_poller};
 use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
 use spoq::input::translate_shifted_char;
 use spoq::models;
@@ -267,6 +268,28 @@ fn main() -> Result<()> {
                 app.ws_sender = None;
             }
         }
+
+        // =========================================================================
+        // Initialize Credential Auto-Sync
+        // =========================================================================
+        tracing::info!("Starting credential change detection...");
+
+        // Start file watcher for ~/.claude.json and ~/.config/gh/hosts.yml
+        match spawn_file_watcher(app.message_tx.clone()) {
+            Ok(watcher) => {
+                app.set_credential_file_watcher(watcher);
+                tracing::info!("Credential file watcher started");
+            }
+            Err(e) => {
+                // Non-fatal: Keychain polling still works
+                tracing::warn!("Failed to start file watcher: {}", e);
+            }
+        }
+
+        // Start Keychain poller (30s interval)
+        let poller = spawn_keychain_poller(app.message_tx.clone());
+        app.set_credential_keychain_poller(poller);
+        tracing::info!("Keychain poller started");
     });
 
     // Main event loop

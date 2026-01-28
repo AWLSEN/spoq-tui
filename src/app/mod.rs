@@ -334,11 +334,9 @@ pub struct App {
     /// Debouncer for coalescing rapid credential changes
     pub credential_debouncer: Debouncer,
     /// File watcher handle (must keep alive - dropping stops watching)
-    #[allow(dead_code)]
-    credential_file_watcher: Option<RecommendedWatcher>,
+    pub(crate) credential_file_watcher: Option<RecommendedWatcher>,
     /// Keychain poller task handle
-    #[allow(dead_code)]
-    credential_keychain_poller: Option<JoinHandle<()>>,
+    pub(crate) credential_keychain_poller: Option<JoinHandle<()>>,
 }
 
 impl App {
@@ -533,6 +531,18 @@ impl App {
             credential_file_watcher: None,
             credential_keychain_poller: None,
         })
+    }
+
+    /// Set the credential file watcher handle.
+    ///
+    /// The watcher must be kept alive - dropping it stops watching.
+    pub fn set_credential_file_watcher(&mut self, watcher: RecommendedWatcher) {
+        self.credential_file_watcher = Some(watcher);
+    }
+
+    /// Set the keychain poller task handle.
+    pub fn set_credential_keychain_poller(&mut self, poller: JoinHandle<()>) {
+        self.credential_keychain_poller = Some(poller);
     }
 
     /// Ensure we have a valid access token, refreshing if necessary.
