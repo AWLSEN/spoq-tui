@@ -30,6 +30,7 @@ use crate::auth::{
 };
 use crate::cache::ThreadCache;
 use crate::conductor::ConductorClient;
+use crate::credential_watcher::{CredentialWatchState, Debouncer};
 use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
@@ -43,8 +44,10 @@ use crate::websocket::WsConnectionState;
 use crate::widgets::textarea_input::TextAreaInput;
 use chrono::Utc;
 use color_eyre::Result;
+use notify::RecommendedWatcher;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use cursor_blink::CursorBlinkState;
 
@@ -322,6 +325,20 @@ pub struct App {
     pub help_dialog_visible: bool,
     /// Flag to prevent double-cancel requests (set when cancel is in progress)
     pub cancel_in_progress: bool,
+
+    // =========================================================================
+    // Credential Auto-Sync
+    // =========================================================================
+    /// Credential change detection state (backoff, sync status)
+    pub credential_watch_state: CredentialWatchState,
+    /// Debouncer for coalescing rapid credential changes
+    pub credential_debouncer: Debouncer,
+    /// File watcher handle (must keep alive - dropping stops watching)
+    #[allow(dead_code)]
+    credential_file_watcher: Option<RecommendedWatcher>,
+    /// Keychain poller task handle
+    #[allow(dead_code)]
+    credential_keychain_poller: Option<JoinHandle<()>>,
 }
 
 impl App {
@@ -510,6 +527,11 @@ impl App {
             cursor_blink: CursorBlinkState::default(),
             help_dialog_visible: false,
             cancel_in_progress: false,
+            // Credential auto-sync
+            credential_watch_state: CredentialWatchState::new(),
+            credential_debouncer: Debouncer::new(),
+            credential_file_watcher: None,
+            credential_keychain_poller: None,
         })
     }
 

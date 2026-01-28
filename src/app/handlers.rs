@@ -1,5 +1,8 @@
 //! Message handling for the App.
 
+use crate::credential_watcher::{
+    handle_credential_change, handle_debounce_expired, handle_sync_complete, handle_sync_failed,
+};
 use crate::debug::{DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType};
 use crate::models::ThreadMode;
 use crate::state::dashboard::PhaseProgressData;
@@ -1459,6 +1462,8 @@ impl App {
                     claude_code,
                     github_cli,
                 };
+                // Reset credential watcher backoff on success
+                handle_sync_complete(&mut self.credential_watch_state);
                 self.mark_dirty(); // Force UI redraw
                 // Emit StateChange for sync complete
                 emit_debug(
@@ -1477,6 +1482,8 @@ impl App {
                 self.sync_status = SyncStatus::Failed {
                     error: error.clone(),
                 };
+                // Record failure in credential watcher backoff
+                handle_sync_failed(&mut self.credential_watch_state, &error);
                 self.mark_dirty(); // Force UI redraw
                 // Emit StateChange for sync failed
                 emit_debug(
@@ -1568,19 +1575,30 @@ impl App {
             }
 
             // =========================================================================
-            // Credential Auto-Sync Messages (Phase 8 will implement full logic)
+            // Credential Auto-Sync Messages
             // =========================================================================
             AppMessage::CredentialFileChanged { path } => {
-                tracing::debug!("Credential file changed (handler pending): {}", path);
-                // Full implementation in Phase 8
+                handle_credential_change(
+                    &mut self.credential_watch_state,
+                    &mut self.credential_debouncer,
+                    &self.message_tx,
+                    &format!("file: {}", path),
+                );
             }
             AppMessage::CredentialKeychainChanged => {
-                tracing::debug!("Keychain credentials changed (handler pending)");
-                // Full implementation in Phase 8
+                handle_credential_change(
+                    &mut self.credential_watch_state,
+                    &mut self.credential_debouncer,
+                    &self.message_tx,
+                    "Keychain",
+                );
             }
             AppMessage::CredentialDebounceExpired => {
-                tracing::debug!("Debounce expired (handler pending)");
-                // Full implementation in Phase 8
+                handle_debounce_expired(
+                    &mut self.credential_watch_state,
+                    &mut self.credential_debouncer,
+                    &self.message_tx,
+                );
             }
         }
     }
