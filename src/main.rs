@@ -11,6 +11,8 @@ use spoq::websocket::WsClientConfig;
 
 use color_eyre::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
+use crossterm::execute;
 use futures::StreamExt;
 use ratatui::Terminal;
 use std::thread;
@@ -321,9 +323,14 @@ where
 
         // Draw the UI only when needed (dirty flag or streaming)
         if app.needs_redraw || app.is_streaming() {
+            // Synchronized output (DEC mode 2026) - batch all updates atomically
+            // This prevents flickering/tearing during render
+            let mut stdout = std::io::stdout();
+            let _ = execute!(stdout, BeginSynchronizedUpdate);
             terminal.draw(|f| {
                 ui::render(f, &mut *app);
             })?;
+            let _ = execute!(stdout, EndSynchronizedUpdate);
             app.needs_redraw = false;
         }
 
@@ -1513,26 +1520,21 @@ where
                         Event::Mouse(mouse_event) => {
                             // Handle mouse events for scroll only (click/hover system removed)
                             match mouse_event.kind {
-                                // Simple line-based scrolling (like native terminal apps)
-                                // Each scroll event moves 1 line (unified scroll)
+                                // Momentum-based scrolling for smooth feel
+                                // Each scroll event adds velocity, momentum system handles animation
                                 MouseEventKind::ScrollDown => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll down = see newer content / input
-                                        if app.unified_scroll >= 1 {
+                                        if app.unified_scroll > 0 {
                                             app.unified_scroll -= 1;
-                                        } else {
-                                            app.unified_scroll = 0;
                                         }
-                                        // Don't mark_dirty() - scroll_changed flag will trigger render
+                                        app.user_has_scrolled = app.unified_scroll > 0;
                                         app.scroll_changed = true;
                                     }
                                 }
                                 MouseEventKind::ScrollUp => {
                                     if app.screen == Screen::Conversation {
-                                        // Scroll up = see older content
-                                        let new_scroll = (app.unified_scroll + 1).min(app.max_scroll);
-                                        app.unified_scroll = new_scroll;
-                                        // Don't mark_dirty() - scroll_changed flag will trigger render
+                                        app.unified_scroll = (app.unified_scroll + 1).min(app.max_scroll);
+                                        app.user_has_scrolled = true;
                                         app.scroll_changed = true;
                                     }
                                 }

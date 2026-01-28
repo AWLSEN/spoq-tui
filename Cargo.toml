@@ -54,6 +54,7 @@ portable-pty = "0.8"
 
 # Vendored OpenSSL for cross-compilation (ssh2 requires OpenSSL)
 openssl = { version = "0.10", features = ["vendored"] }
+tui-scrollview = "0.6.2"
 
 # macOS Keychain access (for Claude Code OAuth tokens)
 [target.'cfg(target_os = "macos")'.dependencies]

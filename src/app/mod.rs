@@ -212,6 +212,8 @@ pub struct App {
     pub total_content_lines: usize,
     /// Flag to batch scroll events (set on scroll, cleared in tick)
     pub scroll_changed: bool,
+    /// Accumulates fractional scroll for smooth scrolling (moves line when >= 1.0)
+    pub scroll_accumulator: f32,
     /// Current permission mode for Claude interactions
     pub permission_mode: PermissionMode,
     /// Session-level state (skills, permissions, oauth, tokens)
@@ -452,6 +454,7 @@ impl App {
             input_section_start: 0,
             total_content_lines: 0,
             scroll_changed: false,
+            scroll_accumulator: 0.0,
             permission_mode: PermissionMode::default(),
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),

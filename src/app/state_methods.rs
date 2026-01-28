@@ -112,7 +112,7 @@ impl App {
     /// and is synced FROM `unified_scroll` when momentum stops.
     fn update_smooth_scroll(&mut self) {
         // Friction factor: lower = more friction, stops faster
-        const FRICTION: f32 = 0.85;
+        const FRICTION: f32 = 0.6;
         const VELOCITY_THRESHOLD: f32 = 0.1;
 
         // Skip if no velocity
