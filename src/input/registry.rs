@@ -111,6 +111,26 @@ impl CommandRegistry {
                 Some(Command::Noop)
             }
 
+            ModalType::FilePicker => {
+                // Check modal-specific bindings first
+                if let Some(cmd) = self.config.get_modal(ModalType::FilePicker, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Handle character input for filter (no modifiers)
+                if let KeyCode::Char(c) = key.code {
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+                    {
+                        return Some(Command::FilePickerTypeChar(c));
+                    }
+                }
+
+                // Ignore other keys in file picker
+                Some(Command::Noop)
+            }
+
             ModalType::SlashAutocomplete => {
                 // Check modal-specific bindings first
                 if let Some(cmd) = self.config.get_modal(ModalType::SlashAutocomplete, &combo) {

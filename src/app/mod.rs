@@ -36,8 +36,8 @@ use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
 use crate::models::{Folder, GitHubRepo, PermissionMode};
 use crate::state::{
-    AskUserQuestionState, DashboardState, SessionState, SubagentTracker, Task, Thread, Todo,
-    ToolTracker, UnifiedPickerState,
+    AskUserQuestionState, DashboardState, FilePickerState, SessionState, SubagentTracker, Task,
+    Thread, Todo, ToolTracker, UnifiedPickerState,
 };
 use crate::ui::dashboard::SystemStats;
 use crate::websocket::WsConnectionState;
@@ -299,6 +299,8 @@ pub struct App {
     pub folder_picker_cursor: usize,
     /// Unified @ picker state (combines repos, threads, folders)
     pub unified_picker: UnifiedPickerState,
+    /// File picker state for Conversation screen (files in thread's working_directory)
+    pub file_picker: FilePickerState,
     /// App-level cache for picker data (repos loaded at startup, threads with TTL)
     pub picker_cache: crate::state::AppCache,
     /// Is the slash command autocomplete dropdown showing
@@ -512,6 +514,7 @@ impl App {
             folder_picker_filter: String::new(),
             folder_picker_cursor: 0,
             unified_picker: UnifiedPickerState::new(),
+            file_picker: FilePickerState::new(),
             picker_cache: crate::state::AppCache::new(),
             slash_autocomplete_visible: false,
             slash_autocomplete_query: String::new(),

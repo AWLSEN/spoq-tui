@@ -373,6 +373,135 @@ impl App {
         self.handle_message(super::AppMessage::FolderPickerClose);
     }
 
+    // =========================================================================
+    // File Picker (Conversation Screen)
+    // =========================================================================
+
+    /// Check if an @ character should trigger the file picker.
+    ///
+    /// The file picker is triggered when:
+    /// - Current screen is Conversation
+    /// - @ is at position 0 (start of line), OR
+    /// - @ is immediately after whitespace
+    ///
+    /// This prevents triggering on email addresses like `user@example.com`.
+    ///
+    /// # Arguments
+    /// * `line_content` - The content of the current line
+    /// * `col` - Column position within the line where @ would be inserted
+    ///
+    /// # Returns
+    /// `true` if @ should trigger the file picker, `false` otherwise
+    pub fn is_file_picker_trigger(&self, line_content: &str, col: usize) -> bool {
+        // Only trigger on Conversation screen
+        if self.screen != super::Screen::Conversation {
+            return false;
+        }
+
+        // @ at position 0 always triggers
+        if col == 0 {
+            return true;
+        }
+
+        // Check character before cursor position
+        if let Some(prev_char) = line_content.chars().nth(col.saturating_sub(1)) {
+            // @ after whitespace triggers
+            prev_char.is_whitespace()
+        } else {
+            // Empty line or at start
+            true
+        }
+    }
+
+    /// Open the file picker overlay for the current thread.
+    ///
+    /// Uses the thread's working_directory as the base path.
+    /// Falls back to home directory if thread has no working_directory.
+    pub fn open_file_picker(&mut self) {
+        // Get base path from current thread's working_directory
+        let base_path = self
+            .active_thread_id
+            .as_ref()
+            .and_then(|id| self.cache.get_thread(id))
+            .and_then(|thread| thread.working_directory.clone())
+            .unwrap_or_else(|| {
+                // Fall back to home directory
+                dirs::home_dir()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "/".to_string())
+            });
+
+        self.file_picker.open(&base_path);
+        self.mark_dirty();
+    }
+
+    /// Close the file picker overlay.
+    pub fn close_file_picker(&mut self) {
+        self.file_picker.close();
+        self.mark_dirty();
+    }
+
+    /// Cancel the file picker (clears selected files).
+    pub fn cancel_file_picker(&mut self) {
+        self.file_picker.cancel();
+        self.mark_dirty();
+    }
+
+    /// Remove the @ and filter text from input when closing file picker.
+    pub fn remove_at_and_filter_from_input_file_picker(&mut self) {
+        // We need to remove the @ plus the query characters that were typed
+        let query_len = self.file_picker.query.len();
+        // Remove query characters one by one
+        for _ in 0..query_len {
+            self.textarea.backspace();
+        }
+        // Remove the @ character
+        self.textarea.backspace();
+    }
+
+    /// Confirm file picker selection and insert @paths into textarea.
+    pub fn confirm_file_picker_selection(&mut self) {
+        // Get selected files (or current item if none selected)
+        let selected = if self.file_picker.selected_count() > 0 {
+            self.file_picker.selected_relative_paths()
+        } else if let Some(item) = self.file_picker.selected_item() {
+            if !item.is_dir {
+                // Single file selected via cursor
+                vec![item.relative_path(&self.file_picker.base_path.to_string_lossy())]
+            } else {
+                vec![]
+            }
+        } else {
+            vec![]
+        };
+
+        if selected.is_empty() {
+            // No files selected, just close picker
+            self.remove_at_and_filter_from_input_file_picker();
+            self.close_file_picker();
+            return;
+        }
+
+        // Remove the @ and query from input (we'll add properly formatted @paths)
+        self.remove_at_and_filter_from_input_file_picker();
+
+        // Insert @path references for each selected file
+        for (i, path) in selected.iter().enumerate() {
+            if i > 0 {
+                self.textarea.insert_char(' ');
+            }
+            self.textarea.insert_char('@');
+            for c in path.chars() {
+                self.textarea.insert_char(c);
+            }
+        }
+        // Add space after last path so user can type message
+        self.textarea.insert_char(' ');
+
+        // Close the picker
+        self.close_file_picker();
+    }
+
     /// Get filtered folders based on the current filter text.
     ///
     /// Performs case-insensitive matching on folder name and path.

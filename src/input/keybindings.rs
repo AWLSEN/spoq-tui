@@ -143,6 +143,21 @@ impl KeybindingConfig {
         );
         self.modal.insert(ModalType::FolderPicker, folder_picker);
 
+        // File picker bindings (Conversation screen)
+        let mut file_picker = HashMap::new();
+        file_picker.insert(KeyCombo::plain(KeyCode::Esc), Command::CloseFilePicker);
+        file_picker.insert(KeyCombo::plain(KeyCode::Enter), Command::FilePickerConfirm);
+        file_picker.insert(KeyCombo::plain(KeyCode::Up), Command::FilePickerCursorUp);
+        file_picker.insert(KeyCombo::plain(KeyCode::Down), Command::FilePickerCursorDown);
+        file_picker.insert(
+            KeyCombo::plain(KeyCode::Backspace),
+            Command::FilePickerBackspace,
+        );
+        file_picker.insert(KeyCombo::plain(KeyCode::Tab), Command::FilePickerToggleSelect);
+        file_picker.insert(KeyCombo::plain(KeyCode::Right), Command::FilePickerNavigateIn);
+        file_picker.insert(KeyCombo::plain(KeyCode::Left), Command::FilePickerNavigateUp);
+        self.modal.insert(ModalType::FilePicker, file_picker);
+
         // Slash command autocomplete bindings
         let mut slash_autocomplete = HashMap::new();
         slash_autocomplete.insert(

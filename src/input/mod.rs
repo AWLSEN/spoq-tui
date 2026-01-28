@@ -104,6 +104,8 @@ impl App {
     pub fn build_input_context(&self) -> InputContext {
         let modal = if self.folder_picker_visible {
             ModalType::FolderPicker
+        } else if self.file_picker.visible {
+            ModalType::FilePicker
         } else if self.slash_autocomplete_visible {
             ModalType::SlashAutocomplete
         } else if self.thread_switcher.visible {
@@ -202,6 +204,11 @@ impl App {
         match modal {
             ModalType::FolderPicker => {
                 if handlers::handle_folder_picker_command(self, &cmd) {
+                    return true;
+                }
+            }
+            ModalType::FilePicker => {
+                if handlers::handle_file_picker_command(self, &cmd) {
                     return true;
                 }
             }

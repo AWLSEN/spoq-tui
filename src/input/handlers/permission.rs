@@ -255,6 +255,109 @@ pub fn handle_folder_picker_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles file picker-related commands (Conversation screen).
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_file_picker_command(app: &mut App, cmd: &Command) -> bool {
+    match cmd {
+        Command::CloseFilePicker => {
+            // Remove the @ and any filter text from input
+            app.remove_at_and_filter_from_input_file_picker();
+            app.cancel_file_picker();
+            true
+        }
+
+        Command::FilePickerConfirm => {
+            // If on a directory, navigate into it
+            if let Some(item) = app.file_picker.selected_item() {
+                if item.is_dir {
+                    if item.name == ".." {
+                        app.file_picker.navigate_up();
+                        // TODO: Trigger HTTP call to load parent directory
+                        app.mark_dirty();
+                    } else {
+                        let dir_name = item.name.clone();
+                        app.file_picker.navigate_into(&dir_name);
+                        // TODO: Trigger HTTP call to load new directory
+                        app.mark_dirty();
+                    }
+                    return true;
+                }
+            }
+
+            // If we have selected files or cursor on a file, confirm selection
+            app.confirm_file_picker_selection();
+            true
+        }
+
+        Command::FilePickerTypeChar(c) => {
+            // Add to query filter
+            let mut query = app.file_picker.query.clone();
+            query.push(*c);
+            app.file_picker.set_query(query);
+            app.mark_dirty();
+            true
+        }
+
+        Command::FilePickerBackspace => {
+            if app.file_picker.query.is_empty() {
+                // Close picker when backspacing with empty query
+                app.textarea.backspace(); // Remove the @
+                app.cancel_file_picker();
+            } else {
+                // Remove last character from query
+                let mut query = app.file_picker.query.clone();
+                query.pop();
+                app.file_picker.set_query(query);
+            }
+            app.mark_dirty();
+            true
+        }
+
+        Command::FilePickerCursorUp => {
+            app.file_picker.move_up();
+            app.mark_dirty();
+            true
+        }
+
+        Command::FilePickerCursorDown => {
+            app.file_picker.move_down();
+            app.mark_dirty();
+            true
+        }
+
+        Command::FilePickerToggleSelect => {
+            app.file_picker.toggle_selection();
+            app.mark_dirty();
+            true
+        }
+
+        Command::FilePickerNavigateIn => {
+            // Navigate into directory if selected item is a directory
+            if let Some(item) = app.file_picker.selected_item() {
+                if item.is_dir && item.name != ".." {
+                    let dir_name = item.name.clone();
+                    app.file_picker.navigate_into(&dir_name);
+                    // TODO: Trigger HTTP call to load new directory
+                    app.mark_dirty();
+                }
+            }
+            true
+        }
+
+        Command::FilePickerNavigateUp => {
+            if app.file_picker.can_go_up() {
+                app.file_picker.navigate_up();
+                // TODO: Trigger HTTP call to load parent directory
+                app.mark_dirty();
+            }
+            true
+        }
+
+        _ => false,
+    }
+}
+
 /// Handles slash command autocomplete-related commands.
 ///
 /// Returns `true` if the command was handled successfully.

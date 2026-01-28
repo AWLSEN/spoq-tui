@@ -42,6 +42,19 @@ pub fn handle_editing_command(app: &mut App, cmd: &Command) -> bool {
                 }
             }
 
+            // Check for @ trigger for file picker (files in thread's working_directory)
+            if *c == '@' && app.screen == Screen::Conversation {
+                let (row, col) = app.textarea.cursor();
+                let lines = app.textarea.lines();
+                let line_content = lines.get(row).map(|s| s.as_str()).unwrap_or("");
+
+                if app.is_file_picker_trigger(line_content, col) {
+                    app.textarea.insert_char('@');
+                    app.open_file_picker();
+                    return true;
+                }
+            }
+
             // Check for / trigger for slash command autocomplete (only on CommandDeck)
             if *c == '/' && app.screen == Screen::CommandDeck {
                 app.textarea.insert_char('/');

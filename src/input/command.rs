@@ -119,6 +119,28 @@ pub enum Command {
     FolderPickerCursorDown,
 
     // =========================================================================
+    // File Picker Commands (Conversation screen)
+    // =========================================================================
+    /// Close file picker (Escape)
+    CloseFilePicker,
+    /// Confirm file selection (Enter)
+    FilePickerConfirm,
+    /// Type character in file picker filter
+    FilePickerTypeChar(char),
+    /// Backspace in file picker filter
+    FilePickerBackspace,
+    /// Move file picker cursor up
+    FilePickerCursorUp,
+    /// Move file picker cursor down
+    FilePickerCursorDown,
+    /// Toggle file selection (Tab)
+    FilePickerToggleSelect,
+    /// Navigate into directory (Right arrow)
+    FilePickerNavigateIn,
+    /// Navigate to parent directory (Left arrow)
+    FilePickerNavigateUp,
+
+    // =========================================================================
     // Slash Command Autocomplete Commands
     // =========================================================================
     /// Open slash command autocomplete (/ trigger)
@@ -290,6 +312,15 @@ impl Command {
             Command::FolderPickerBackspace => "Backspace in folder filter",
             Command::FolderPickerCursorUp => "Folder picker cursor up",
             Command::FolderPickerCursorDown => "Folder picker cursor down",
+            Command::CloseFilePicker => "Close file picker",
+            Command::FilePickerConfirm => "Confirm file selection",
+            Command::FilePickerTypeChar(_) => "Type in file picker filter",
+            Command::FilePickerBackspace => "Backspace in file picker filter",
+            Command::FilePickerCursorUp => "File picker cursor up",
+            Command::FilePickerCursorDown => "File picker cursor down",
+            Command::FilePickerToggleSelect => "Toggle file selection",
+            Command::FilePickerNavigateIn => "Enter directory",
+            Command::FilePickerNavigateUp => "Go to parent directory",
             Command::OpenSlashAutocomplete => "Open slash command autocomplete",
             Command::CloseSlashAutocomplete => "Close slash command autocomplete",
             Command::SelectSlashCommand => "Select slash command",

@@ -12,8 +12,10 @@ pub enum ModalType {
     /// No modal dialog is active
     #[default]
     None,
-    /// Folder picker is visible
+    /// Folder picker is visible (CommandDeck)
     FolderPicker,
+    /// File picker is visible (Conversation screen)
+    FilePicker,
     /// Slash command autocomplete is visible
     SlashAutocomplete,
     /// Thread switcher is visible

@@ -14,6 +14,7 @@ use ratatui::{
 use crate::app::App;
 use crate::models::{MessageSegment, PermissionMode, ToolEventStatus};
 
+use super::file_picker::render_file_picker;
 use super::helpers::{inner_rect, truncate_string, SPINNER_FRAMES};
 use super::layout::LayoutContext;
 use super::messages::render_messages_area;
@@ -102,6 +103,23 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
             };
             render_slash_autocomplete_anchored(frame, app, input_anchor_area, AnchorMode::Above);
         }
+
+        // Render file picker overlay (if visible)
+        if app.file_picker.visible {
+            // Calculate where input section starts in the viewport
+            let viewport_height = main_chunks[1].height as usize;
+            let content_top = app.total_content_lines.saturating_sub(viewport_height + app.unified_scroll as usize);
+            let input_y_in_viewport = app.input_section_start.saturating_sub(content_top);
+
+            // Position picker ABOVE the input
+            let input_anchor_area = Rect {
+                x: main_chunks[1].x + 2,
+                y: main_chunks[1].y + input_y_in_viewport as u16,
+                width: main_chunks[1].width.saturating_sub(4),
+                height: 1,
+            };
+            render_file_picker(frame, &app.file_picker, input_anchor_area);
+        }
     } else {
         // Layout without streaming indicator (2 sections)
         let main_chunks = Layout::default()
@@ -131,6 +149,23 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
                 height: 1,
             };
             render_slash_autocomplete_anchored(frame, app, input_anchor_area, AnchorMode::Above);
+        }
+
+        // Render file picker overlay (if visible)
+        if app.file_picker.visible {
+            // Calculate where input section starts in the viewport
+            let viewport_height = main_chunks[1].height as usize;
+            let content_top = app.total_content_lines.saturating_sub(viewport_height + app.unified_scroll as usize);
+            let input_y_in_viewport = app.input_section_start.saturating_sub(content_top);
+
+            // Position picker ABOVE the input
+            let input_anchor_area = Rect {
+                x: main_chunks[1].x + 2,
+                y: main_chunks[1].y + input_y_in_viewport as u16,
+                width: main_chunks[1].width.saturating_sub(4),
+                height: 1,
+            };
+            render_file_picker(frame, &app.file_picker, input_anchor_area);
         }
     }
 }
