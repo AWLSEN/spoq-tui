@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "excalidraw": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/Users/sam/excalidraw-mcp/mcp-server/dist/index.js"]
+    }
+  }
+}

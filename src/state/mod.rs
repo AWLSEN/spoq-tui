@@ -9,6 +9,7 @@
 
 pub mod cache;
 pub mod dashboard;
+pub mod file_picker;
 pub mod picker;
 pub mod session;
 pub mod tools;
@@ -19,6 +20,7 @@ use serde::{Deserialize, Serialize};
 // Re-export new state types at module level
 pub use cache::AppCache;
 pub use dashboard::DashboardState;
+pub use file_picker::{FilePickerState, MAX_VISIBLE_ROWS as FILE_PICKER_MAX_VISIBLE_ROWS};
 pub use picker::{
     SectionState, UnifiedPickerState, DEFAULT_SEARCH_LIMIT, SEARCH_DEBOUNCE_MS,
 };

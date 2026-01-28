@@ -1,4 +1,5 @@
 pub mod dashboard;
+pub mod file;
 mod folder;
 mod repository;
 mod message;
@@ -12,6 +13,7 @@ pub use dashboard::{
     compute_duration, compute_local_aggregate, derive_repository, infer_status_from_agent_state,
     Aggregate, PlanSummary, ThreadStatus, WaitingFor,
 };
+pub use file::FileEntry;
 pub use folder::Folder;
 pub use repository::{GitHubRepo, PrimaryLanguage};
 pub use message::*;
