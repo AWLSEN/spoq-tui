@@ -239,13 +239,16 @@ impl App {
             ModalType::None => {}
         }
 
-        // Try editing commands
-        tracing::debug!("About to call handle_editing_command for {:?}", cmd);
-        if handlers::handle_editing_command(self, &cmd) {
-            tracing::debug!("handle_editing_command returned true");
-            return true;
+        // Try editing commands - skip if permission modal is active
+        // (user must respond to permission before typing more input)
+        if modal != ModalType::Permission && modal != ModalType::AskUserQuestion {
+            tracing::debug!("About to call handle_editing_command for {:?}", cmd);
+            if handlers::handle_editing_command(self, &cmd) {
+                tracing::debug!("handle_editing_command returned true");
+                return true;
+            }
+            tracing::debug!("handle_editing_command returned false");
         }
-        tracing::debug!("handle_editing_command returned false");
 
         // Try navigation commands
         if handlers::handle_navigation_command(self, &cmd) {
