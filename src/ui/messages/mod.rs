@@ -381,12 +381,12 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
             }
         }
 
-        // === UNIFIED SCROLL: Record where input section starts ===
-        app.input_section_start = lines.len();
-
-        // === UNIFIED SCROLL: Append input section ===
-        let input_lines = super::input::build_input_section(app, inner.width);
-        lines.extend(input_lines);
+        // === UNIFIED SCROLL: Append input section (if no pending permission) ===
+        if should_show_input_section(app) {
+            app.input_section_start = lines.len();
+            let input_lines = super::input::build_input_section(app, inner.width);
+            lines.extend(input_lines);
+        }
 
         // === UNIFIED SCROLL: Record total for scroll calculations ===
         app.total_content_lines = lines.len();
