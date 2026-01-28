@@ -219,6 +219,18 @@ pub enum AppMessage {
     /// Clone operation failed
     UnifiedPickerCloneFailed { error: String },
     // =========================================================================
+    // Credential Auto-Sync Messages
+    // =========================================================================
+    /// File watcher detected a credential file change
+    CredentialFileChanged {
+        /// Path of the changed file
+        path: String,
+    },
+    /// Keychain poller detected credential change
+    CredentialKeychainChanged,
+    /// Debounce timer expired - time to sync
+    CredentialDebounceExpired,
+    // =========================================================================
     // Sync Messages
     // =========================================================================
     /// Trigger token sync operation (from /sync command)

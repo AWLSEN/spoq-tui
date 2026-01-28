@@ -227,8 +227,10 @@ pub struct ConductorClient {
 ///
 /// On macOS, Claude Code stores OAuth tokens in Keychain under "Claude Code-credentials".
 /// The account name is the current username.
+///
+/// This function is public so the credential_watcher module can use it for change detection.
 #[cfg(target_os = "macos")]
-fn read_claude_keychain_credentials() -> Option<String> {
+pub fn read_claude_keychain_credentials() -> Option<String> {
     // Claude Code stores credentials with service name "Claude Code-credentials"
     // The account name is the current username
     let username = std::env::var("USER").unwrap_or_else(|_| "".to_string());
@@ -242,9 +244,11 @@ fn read_claude_keychain_credentials() -> Option<String> {
     }
 }
 
-/// Stub for non-macOS platforms
+/// Stub for non-macOS platforms.
+///
+/// Returns None since Keychain is macOS-specific.
 #[cfg(not(target_os = "macos"))]
-fn read_claude_keychain_credentials() -> Option<String> {
+pub fn read_claude_keychain_credentials() -> Option<String> {
     None
 }
 

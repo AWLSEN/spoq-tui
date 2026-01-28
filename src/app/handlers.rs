@@ -1566,6 +1566,22 @@ impl App {
                     self.browse_list_clone_failed(error);
                 }
             }
+
+            // =========================================================================
+            // Credential Auto-Sync Messages (Phase 8 will implement full logic)
+            // =========================================================================
+            AppMessage::CredentialFileChanged { path } => {
+                tracing::debug!("Credential file changed (handler pending): {}", path);
+                // Full implementation in Phase 8
+            }
+            AppMessage::CredentialKeychainChanged => {
+                tracing::debug!("Keychain credentials changed (handler pending)");
+                // Full implementation in Phase 8
+            }
+            AppMessage::CredentialDebounceExpired => {
+                tracing::debug!("Debounce expired (handler pending)");
+                // Full implementation in Phase 8
+            }
         }
     }
 }
