@@ -203,6 +203,18 @@ pub enum Command {
     DashboardQuestionTypeChar(char),
 
     // =========================================================================
+    // Plan Approval Commands
+    // =========================================================================
+    /// Scroll plan content up (see more of plan above)
+    PlanScrollUp,
+    /// Scroll plan content down (see more of plan below)
+    PlanScrollDown,
+    /// Approve plan (Y/y when plan approval is pending)
+    ApprovePlan,
+    /// Reject plan (N/n when plan approval is pending)
+    RejectPlan,
+
+    // =========================================================================
     // Conversation Screen Commands
     // =========================================================================
     /// Dismiss focused error (d key)
@@ -310,6 +322,10 @@ impl Command {
             Command::DashboardQuestionCancelOther => "Cancel dashboard other input",
             Command::DashboardQuestionBackspace => "Backspace in dashboard other input",
             Command::DashboardQuestionTypeChar(_) => "Type in dashboard other input",
+            Command::PlanScrollUp => "Scroll plan up",
+            Command::PlanScrollDown => "Scroll plan down",
+            Command::ApprovePlan => "Approve plan",
+            Command::RejectPlan => "Reject plan",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

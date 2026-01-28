@@ -9,6 +9,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use crate::markdown::MarkdownCache;
 use crate::models::dashboard::PlanSummary;
 
 use super::super::helpers::SPINNER_FRAMES;
@@ -46,23 +47,37 @@ pub fn render_planning_indicator(tick_count: u64) -> Vec<Line<'static>> {
     ]
 }
 
-/// Render plan approval prompt
+/// Render plan approval prompt with full plan content
 ///
-/// Shows plan summary with phases and approve/reject action hints.
+/// When plan_content is available, renders the full markdown content with borders.
+/// Falls back to phase list when content is unavailable.
 ///
-/// # Display format
+/// # Display format (with content)
 /// ```text
 /// │
-///   ◈ Plan ready · 5 phases · 8 files
+///   ◈ Plan ready for approval
 /// │
-/// │   1. First phase description
-/// │   2. Second phase description
-/// │   ... (max 5 shown)
+/// ├────────────────────────────────────────────────────────
+/// │ # Plan Title
 /// │
-/// │   [y] approve    [n] reject
+/// │ ## Summary
+/// │ Description of the plan...
+/// │
+/// │ ## Implementation Steps
+/// │ 1. First step
+/// │ 2. Second step
+/// ├────────────────────────────────────────────────────────
+/// │
+/// │   Saved to: ~/.claude/plans/plan-abc123.md
+/// │
+/// │   [y] approve and continue    [n] reject
 /// │
 /// ```
-pub fn render_plan_approval(summary: &PlanSummary, ctx: &LayoutContext) -> Vec<Line<'static>> {
+pub fn render_plan_approval(
+    summary: &PlanSummary,
+    ctx: &LayoutContext,
+    markdown_cache: &mut MarkdownCache,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Header line
@@ -71,51 +86,108 @@ pub fn render_plan_approval(summary: &PlanSummary, ctx: &LayoutContext) -> Vec<L
         Span::raw("  "),
         Span::styled("◈ ", Style::default().fg(COLOR_PLAN)),
         Span::styled(
-            format!(
-                "Plan ready · {} phases · {} files",
-                summary.phases.len(),
-                summary.file_count
-            ),
+            "Plan ready for approval",
             Style::default().fg(COLOR_PLAN).add_modifier(Modifier::BOLD),
         ),
     ]));
     lines.push(Line::raw("│"));
 
-    // Phase list (max 5 visible)
-    let max_phases = 5.min(summary.phases.len());
-    for (i, phase) in summary.phases.iter().take(max_phases).enumerate() {
-        // Calculate responsive max length for phase description
-        let max_len = ctx.text_wrap_width(2).saturating_sub(5) as usize;
-        let display = if phase.len() > max_len && max_len > 3 {
-            format!("{}...", &phase[..max_len.saturating_sub(3)])
+    // Calculate separator width
+    let separator_width = ctx.text_wrap_width(0) as usize;
+
+    // Top separator
+    lines.push(Line::from(vec![
+        Span::styled("├", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "─".repeat(separator_width.saturating_sub(1)),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]));
+
+    // Plan content (markdown rendered) or fallback
+    if let Some(content) = &summary.plan_content {
+        if !content.trim().is_empty() {
+            let rendered = markdown_cache.render(content);
+            for line in rendered.iter() {
+                // Prefix each line with │
+                let mut prefixed = vec![Span::styled("│ ", Style::default().fg(Color::DarkGray))];
+                prefixed.extend(line.spans.iter().cloned());
+                lines.push(Line::from(prefixed));
+            }
         } else {
-            phase.clone()
-        };
-
+            // Content exists but is empty
+            lines.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "(Plan content is empty)",
+                    Style::default().fg(Color::Yellow),
+                ),
+            ]));
+        }
+    } else {
+        // Fallback: show title and phases with notice
         lines.push(Line::from(vec![
-            Span::raw("│   "),
-            Span::styled(format!("{}. ", i + 1), Style::default().fg(COLOR_PHASE)),
-            Span::raw(display),
-        ]));
-    }
-
-    // Show "... +N more" if there are more than 5 phases
-    if summary.phases.len() > max_phases {
-        lines.push(Line::from(vec![
-            Span::raw("│   "),
+            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
             Span::styled(
-                format!("... +{} more", summary.phases.len() - max_phases),
-                Style::default().fg(Color::DarkGray),
+                summary.title.clone(),
+                Style::default().add_modifier(Modifier::BOLD),
             ),
         ]));
+        lines.push(Line::from(vec![Span::styled(
+            "│",
+            Style::default().fg(Color::DarkGray),
+        )]));
+
+        // Notice about content unavailability
+        lines.push(Line::from(vec![
+            Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                "(Full plan content unavailable - showing summary)",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "│",
+            Style::default().fg(Color::DarkGray),
+        )]));
+
+        // Show phases as fallback
+        for (i, phase) in summary.phases.iter().enumerate() {
+            lines.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{}. ", i + 1), Style::default().fg(COLOR_PHASE)),
+                Span::raw(phase.clone()),
+            ]));
+        }
+    }
+
+    // Bottom separator
+    lines.push(Line::from(vec![
+        Span::styled("├", Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            "─".repeat(separator_width.saturating_sub(1)),
+            Style::default().fg(Color::DarkGray),
+        ),
+    ]));
+    lines.push(Line::raw("│"));
+
+    // File path (if available)
+    if let Some(path) = &summary.plan_file_path {
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::styled("Saved to: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(path.clone(), Style::default().fg(Color::DarkGray)),
+        ]));
+        lines.push(Line::raw("│"));
     }
 
     // Action hints
-    lines.push(Line::raw("│"));
     lines.push(Line::from(vec![
         Span::raw("│   "),
         Span::styled("[y]", Style::default().fg(Color::Green)),
-        Span::raw(" approve    "),
+        Span::raw(" approve and continue    "),
         Span::styled("[n]", Style::default().fg(Color::Red)),
         Span::raw(" reject"),
     ]));
@@ -150,7 +222,37 @@ mod tests {
     }
 
     #[test]
-    fn test_render_plan_approval_basic() {
+    fn test_render_plan_approval_with_content() {
+        let summary = PlanSummary::with_content(
+            "Test Plan".to_string(),
+            vec!["Phase 1".to_string(), "Phase 2".to_string()],
+            5,
+            Some(1000),
+            Some("/path/to/plan.md".to_string()),
+            Some("# Test Plan\n\nThis is the plan content.".to_string()),
+        );
+        let ctx = LayoutContext::new(100, 40);
+        let mut cache = MarkdownCache::new();
+        let lines = render_plan_approval(&summary, &ctx, &mut cache);
+
+        // Should have header, separators, content, file path, actions
+        assert!(lines.len() >= 8);
+
+        // Check header contains "Plan ready for approval"
+        let header_str = lines[1].to_string();
+        assert!(header_str.contains("Plan ready for approval"));
+
+        // Check content is rendered (markdown renders "# Test Plan" as styled text)
+        let full_text: String = lines.iter().map(|l| l.to_string()).collect();
+        assert!(full_text.contains("Test Plan"));
+        assert!(full_text.contains("plan content"));
+
+        // Check file path is shown
+        assert!(full_text.contains("/path/to/plan.md"));
+    }
+
+    #[test]
+    fn test_render_plan_approval_fallback_without_content() {
         let summary = PlanSummary::new(
             "Test Plan".to_string(),
             vec!["Phase 1".to_string(), "Phase 2".to_string()],
@@ -158,39 +260,17 @@ mod tests {
             Some(1000),
         );
         let ctx = LayoutContext::new(100, 40);
-        let lines = render_plan_approval(&summary, &ctx);
+        let mut cache = MarkdownCache::new();
+        let lines = render_plan_approval(&summary, &ctx, &mut cache);
 
-        // Should have: │, header, │, phase1, phase2, │, actions, │
-        assert!(lines.len() >= 7);
-
-        // Check header contains phase count
-        let header_str = lines[1].to_string();
-        assert!(header_str.contains("2 phases"));
-        assert!(header_str.contains("5 files"));
-    }
-
-    #[test]
-    fn test_render_plan_approval_truncates_phases() {
-        let summary = PlanSummary::new(
-            "Test Plan".to_string(),
-            vec![
-                "Phase 1".to_string(),
-                "Phase 2".to_string(),
-                "Phase 3".to_string(),
-                "Phase 4".to_string(),
-                "Phase 5".to_string(),
-                "Phase 6".to_string(),
-                "Phase 7".to_string(),
-            ],
-            10,
-            None,
-        );
-        let ctx = LayoutContext::new(100, 40);
-        let lines = render_plan_approval(&summary, &ctx);
-
-        // Should show "... +2 more" for the 2 hidden phases
         let full_text: String = lines.iter().map(|l| l.to_string()).collect();
-        assert!(full_text.contains("+2 more"));
+
+        // Should show fallback notice
+        assert!(full_text.contains("unavailable"));
+
+        // Should show phases as fallback
+        assert!(full_text.contains("1. Phase 1"));
+        assert!(full_text.contains("2. Phase 2"));
     }
 
     #[test]
@@ -202,7 +282,8 @@ mod tests {
             None,
         );
         let ctx = LayoutContext::new(100, 40);
-        let lines = render_plan_approval(&summary, &ctx);
+        let mut cache = MarkdownCache::new();
+        let lines = render_plan_approval(&summary, &ctx, &mut cache);
 
         let full_text: String = lines.iter().map(|l| l.to_string()).collect();
         assert!(full_text.contains("[y]"));

@@ -376,8 +376,12 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
             }
 
             // Add plan mode indicators (planning spinner or plan approval UI)
-            if let Some((_, summary)) = app.dashboard.get_plan_request(thread_id) {
-                lines.extend(plan_events::render_plan_approval(summary, ctx));
+            if let Some(plan_request) = app.dashboard.get_plan_request(thread_id) {
+                lines.extend(plan_events::render_plan_approval(
+                    &plan_request.summary,
+                    ctx,
+                    &mut app.markdown_cache,
+                ));
             } else if app.dashboard.is_thread_planning(thread_id)
                 && app.dashboard.get_pending_permission(thread_id).is_none()
             {
@@ -450,9 +454,13 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
     // Add plan mode indicators (planning spinner or plan approval UI)
     // Priority: plan approval > planning indicator (only if no permission pending)
-    if let Some((_, summary)) = app.dashboard.get_plan_request(&thread_id) {
+    if let Some(plan_request) = app.dashboard.get_plan_request(&thread_id) {
         // Plan approval is pending - show plan summary with approve/reject options
-        lines.extend(plan_events::render_plan_approval(summary, ctx));
+        lines.extend(plan_events::render_plan_approval(
+            &plan_request.summary,
+            ctx,
+            &mut app.markdown_cache,
+        ));
     } else if app.dashboard.is_thread_planning(&thread_id)
         && app.dashboard.get_pending_permission(&thread_id).is_none()
     {

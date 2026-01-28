@@ -428,6 +428,70 @@ pub fn handle_misc_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles plan approval-related commands (scroll, approve, reject).
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_plan_approval_command(app: &mut App, cmd: &Command) -> bool {
+    // Get current thread for plan approval
+    let thread_id = match &app.active_thread_id {
+        Some(id) => id.clone(),
+        None => return false,
+    };
+
+    // Verify there's a plan pending for this thread
+    if app.dashboard.get_plan_request(&thread_id).is_none() {
+        return false;
+    }
+
+    match cmd {
+        Command::PlanScrollUp => {
+            // Scroll up in conversation to see plan content above
+            app.scroll_velocity = 0.0;
+            app.user_has_scrolled = true;
+            let new_scroll = (app.unified_scroll + 3).min(app.max_scroll);
+            if new_scroll != app.unified_scroll {
+                app.unified_scroll = new_scroll;
+                app.scroll_position = app.unified_scroll as f32;
+                app.mark_dirty();
+            }
+            true
+        }
+
+        Command::PlanScrollDown => {
+            // Scroll down in conversation
+            app.scroll_velocity = 0.0;
+            if app.unified_scroll >= 3 {
+                app.unified_scroll -= 3;
+                app.scroll_position = app.unified_scroll as f32;
+                if app.unified_scroll == 0 {
+                    app.user_has_scrolled = false;
+                }
+                app.mark_dirty();
+            } else if app.unified_scroll > 0 {
+                app.unified_scroll = 0;
+                app.scroll_position = 0.0;
+                app.user_has_scrolled = false;
+                app.mark_dirty();
+            }
+            true
+        }
+
+        Command::ApprovePlan => {
+            // Approve plan using existing permission key handler
+            // It will check for plan approval after finding no pending permission
+            app.handle_permission_key('y')
+        }
+
+        Command::RejectPlan => {
+            // Reject plan using existing permission key handler
+            // It will check for plan approval after finding no pending permission
+            app.handle_permission_key('n')
+        }
+
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -294,7 +294,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::dashboard::PlanSummary;
+    use crate::models::dashboard::{PlanRequest, PlanSummary};
     use crate::models::ThreadStatus;
     use tokio::sync::mpsc;
 
@@ -535,12 +535,14 @@ mod tests {
         );
         app.dashboard.set_plan_request(
             "t2",
-            "plan-t2".to_string(),
-            PlanSummary::new(
-                "Test Plan".to_string(),
-                vec!["Phase 1".to_string()],
-                3,
-                Some(1000),
+            PlanRequest::new(
+                "plan-t2".to_string(),
+                PlanSummary::new(
+                    "Test Plan".to_string(),
+                    vec!["Phase 1".to_string()],
+                    3,
+                    Some(1000),
+                ),
             ),
         );
 

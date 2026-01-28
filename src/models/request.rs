@@ -38,6 +38,9 @@ pub struct StreamRequest {
     /// Working directory for the request
     #[serde(skip_serializing_if = "Option::is_none")]
     pub working_directory: Option<String>,
+    /// Plan mode flag - when true, conductor uses read-only tool registry
+    #[serde(default)]
+    pub plan_mode: bool,
 }
 
 impl StreamRequest {
@@ -51,6 +54,7 @@ impl StreamRequest {
             thread_type: None,
             permission_mode: None,
             working_directory: None,
+            plan_mode: false,
         }
     }
 
@@ -64,6 +68,7 @@ impl StreamRequest {
             thread_type: None,
             permission_mode: None,
             working_directory: None,
+            plan_mode: false,
         }
     }
 
@@ -78,6 +83,7 @@ impl StreamRequest {
             thread_type: None,
             permission_mode: None,
             working_directory: None,
+            plan_mode: false,
         }
     }
 
@@ -96,6 +102,12 @@ impl StreamRequest {
     /// Set working directory for this request (builder pattern)
     pub fn with_working_directory(mut self, path: Option<String>) -> Self {
         self.working_directory = path;
+        self
+    }
+
+    /// Set plan mode for this request (builder pattern)
+    pub fn with_plan_mode(mut self, plan_mode: bool) -> Self {
+        self.plan_mode = plan_mode;
         self
     }
 }

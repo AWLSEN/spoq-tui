@@ -172,7 +172,7 @@ impl Thread {
 
     /// Get display-friendly repository name
     ///
-    /// Uses working_directory if available, otherwise returns empty string
+    /// Uses working_directory if available, returns last folder name
     pub fn display_repository(&self) -> String {
         self.working_directory
             .as_deref()

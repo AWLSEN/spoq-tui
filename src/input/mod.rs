@@ -137,7 +137,7 @@ impl App {
                 ModalType::None
             }
         } else if let Some(ref thread_id) = self.active_thread_id {
-            // For Conversation screen, check thread-scoped permission
+            // For Conversation screen, check thread-scoped permission or plan approval
             if let Some(perm) = self.dashboard.get_pending_permission(thread_id) {
                 // Check if this is an AskUserQuestion by tool_name
                 if perm.tool_name == "AskUserQuestion" && perm.tool_input.is_some() {
@@ -149,6 +149,9 @@ impl App {
                 } else {
                     ModalType::Permission
                 }
+            } else if self.dashboard.get_plan_request(thread_id).is_some() {
+                // Plan approval is pending (e.g., ExitPlanMode converted to plan approval)
+                ModalType::PlanApproval
             } else {
                 ModalType::None
             }
@@ -225,6 +228,11 @@ impl App {
                     return true;
                 }
                 if handlers::handle_question_command(self, &cmd) {
+                    return true;
+                }
+            }
+            ModalType::PlanApproval => {
+                if handlers::handle_plan_approval_command(self, &cmd) {
                     return true;
                 }
             }

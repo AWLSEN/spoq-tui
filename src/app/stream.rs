@@ -9,7 +9,7 @@ use crate::debug::{
     DebugEventKind, ErrorData, ErrorSource, ProcessedEventData, StreamLifecycleData, StreamPhase,
 };
 use crate::events::SseEvent;
-use crate::models::{StreamRequest, ThreadType};
+use crate::models::{PermissionMode, StreamRequest, ThreadType};
 use crate::state::Todo;
 
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, Screen};
@@ -128,10 +128,12 @@ impl App {
         // Build unified StreamRequest with thread_type
         // Always send thread_id - for new threads, we generate a UUID upfront
         // The backend will use our client-generated UUID as the canonical thread_id
+        let is_plan_mode = self.permission_mode == PermissionMode::Plan;
         let request = StreamRequest::with_thread(content, thread_id)
             .with_type(new_thread_type)
             .with_permission_mode(self.permission_mode)
-            .with_working_directory(working_directory);
+            .with_working_directory(working_directory)
+            .with_plan_mode(is_plan_mode);
 
         // Emit debug event with full StreamRequest JSON
         if let Ok(json_string) = serde_json::to_string_pretty(&request) {

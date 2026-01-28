@@ -216,6 +216,21 @@ impl CommandRegistry {
                 Some(Command::Noop)
             }
 
+            ModalType::PlanApproval => {
+                // Check modal-specific bindings (Up/Down for scroll, y/n for approve/reject)
+                if let Some(cmd) = self.config.get_modal(ModalType::PlanApproval, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Allow PageUp/PageDown to also scroll the conversation
+                if matches!(key.code, KeyCode::PageUp | KeyCode::PageDown) {
+                    return None; // Fall through to normal handling
+                }
+
+                // Ignore other keys
+                Some(Command::Noop)
+            }
+
             ModalType::None => {
                 // Should not reach here, but handle gracefully
                 None

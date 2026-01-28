@@ -3,6 +3,7 @@
 use crate::debug::{DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType};
 use crate::models::ThreadMode;
 use crate::state::dashboard::PhaseProgressData;
+use tracing::info;
 
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
 
@@ -244,6 +245,76 @@ impl App {
                 description,
                 tool_input,
             } => {
+                info!("PermissionRequested: tool={} id={} thread={:?}", tool_name, permission_id, thread_id);
+
+                // Special handling for ExitPlanMode - convert to plan approval flow
+                // This allows showing the full plan markdown content instead of a generic Y/N prompt
+                if tool_name == "ExitPlanMode" {
+                    use crate::models::dashboard::{
+                        PlanRequest, PlanSummary, ThreadStatus, WaitingFor,
+                    };
+
+                    // Extract plan content from tool_input.plan
+                    let plan_content = tool_input
+                        .as_ref()
+                        .and_then(|input| input.get("plan"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from);
+
+                    let effective_thread_id = thread_id
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string());
+
+                    info!(
+                        "Converting ExitPlanMode permission to plan approval: thread={}, has_content={}",
+                        effective_thread_id,
+                        plan_content.is_some()
+                    );
+
+                    // Create PlanSummary with the plan content
+                    let plan_summary = PlanSummary::with_content(
+                        "Plan Approval".to_string(), // Default title
+                        vec![],                       // No phases in this format
+                        0,                            // No file count
+                        None,                         // No token estimate
+                        None,                         // Plan file path (could extract if available)
+                        plan_content,                 // The actual plan markdown
+                    );
+
+                    // Update dashboard as plan approval request
+                    self.dashboard.update_thread_status(
+                        &effective_thread_id,
+                        ThreadStatus::Waiting,
+                        Some(WaitingFor::PlanApproval {
+                            request_id: permission_id.clone(),
+                        }),
+                    );
+                    self.dashboard.set_plan_request(
+                        &effective_thread_id,
+                        PlanRequest::from_permission(permission_id.clone(), plan_summary.clone()),
+                    );
+
+                    // Compute thread views to ensure needs_action is set
+                    self.dashboard.compute_thread_views();
+
+                    // Emit StateChange for plan approval
+                    emit_debug(
+                        &self.debug_tx,
+                        DebugEventKind::StateChange(StateChangeData::new(
+                            StateType::DashboardState,
+                            "ExitPlanMode converted to plan approval",
+                            format!(
+                                "id: {}, thread: {}, title: {}",
+                                permission_id, effective_thread_id, plan_summary.title
+                            ),
+                        )),
+                        Some(&effective_thread_id),
+                    );
+
+                    // Skip normal permission handling
+                    return;
+                }
+
                 // Check if this tool is already allowed (user previously chose "Always")
                 if self.session_state.is_tool_allowed(&tool_name) {
                     // Auto-approve - send approval back to backend
@@ -281,7 +352,7 @@ impl App {
                     );
 
                     // Compute thread views to ensure needs_action is set
-                    let _ = self.dashboard.compute_thread_views();
+                    self.dashboard.compute_thread_views();
 
                     // AskUserQuestion requires auto-initialization of question state
                     if tool_name == "AskUserQuestion" {
@@ -884,12 +955,6 @@ impl App {
                 status,
                 waiting_for,
             } => {
-                // Log for terminal debugging
-                tracing::info!(
-                    "WS_THREAD_STATUS: thread={}, status={:?}",
-                    thread_id,
-                    status
-                );
                 // Update dashboard state with thread status
                 self.dashboard
                     .update_thread_status(&thread_id, status, waiting_for.clone());
@@ -930,6 +995,7 @@ impl App {
                 request_id,
                 plan_summary,
             } => {
+                info!("PlanApprovalRequest: thread={} req={} phases={}", thread_id, request_id, plan_summary.phases.len());
                 // Update dashboard state with plan request and waiting state
                 use crate::models::dashboard::{ThreadStatus, WaitingFor};
                 self.dashboard.update_thread_status(
@@ -941,8 +1007,10 @@ impl App {
                 );
                 self.dashboard.set_plan_request(
                     &thread_id,
-                    request_id.clone(),
-                    plan_summary.clone(),
+                    crate::models::dashboard::PlanRequest::new(
+                        request_id.clone(),
+                        plan_summary.clone(),
+                    ),
                 );
                 // Emit StateChange for plan approval request
                 emit_debug(

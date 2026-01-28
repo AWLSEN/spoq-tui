@@ -249,6 +249,19 @@ impl KeybindingConfig {
         );
         self.modal
             .insert(ModalType::DashboardQuestionOverlayOther, dashboard_question_other);
+
+        // Plan approval modal bindings
+        // Up/Down for scrolling plan content, y/n for approve/reject
+        let mut plan_approval = HashMap::new();
+        plan_approval.insert(KeyCombo::plain(KeyCode::Up), Command::PlanScrollUp);
+        plan_approval.insert(KeyCombo::plain(KeyCode::Down), Command::PlanScrollDown);
+        plan_approval.insert(KeyCombo::plain(KeyCode::PageUp), Command::PlanScrollUp);
+        plan_approval.insert(KeyCombo::plain(KeyCode::PageDown), Command::PlanScrollDown);
+        plan_approval.insert(KeyCombo::plain(KeyCode::Char('y')), Command::ApprovePlan);
+        plan_approval.insert(KeyCombo::plain(KeyCode::Char('Y')), Command::ApprovePlan);
+        plan_approval.insert(KeyCombo::plain(KeyCode::Char('n')), Command::RejectPlan);
+        plan_approval.insert(KeyCombo::plain(KeyCode::Char('N')), Command::RejectPlan);
+        self.modal.insert(ModalType::PlanApproval, plan_approval);
     }
 
     /// Sets up screen-specific keybindings.

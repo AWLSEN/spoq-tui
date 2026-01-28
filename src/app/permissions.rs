@@ -335,6 +335,9 @@ impl App {
     ///
     /// Returns true if a plan approval was handled, false if no pending plan approval.
     /// This is called when no permission is pending but y/n was pressed.
+    ///
+    /// Note: If the plan originated from an ExitPlanMode permission request,
+    /// we send a permission_response instead of plan_approval_response.
     fn handle_plan_approval_key(&mut self, key: char) -> bool {
         // Get active thread ID (conversation view)
         let thread_id = match &self.active_thread_id {
@@ -354,10 +357,22 @@ impl App {
             }
         };
 
+        // Check if this plan came from a permission request (ExitPlanMode)
+        let from_permission = self.dashboard.is_plan_from_permission(&thread_id);
+
         match key {
             'y' | 'Y' => {
-                info!("User pressed 'y' - approving plan {}", request_id);
-                let sent = self.send_plan_approval_response(&request_id, true);
+                info!(
+                    "User pressed 'y' - approving plan {} (from_permission={})",
+                    request_id, from_permission
+                );
+                // Send appropriate response type based on origin
+                // If from_permission, send permission_response; otherwise plan_approval_response
+                let sent = if from_permission {
+                    self.send_permission_response_for_thread(&request_id, true)
+                } else {
+                    self.send_plan_approval_response(&request_id, true)
+                };
                 if sent {
                     self.dashboard.remove_plan_request(&thread_id);
                     self.dashboard.set_thread_planning(&thread_id, false);
@@ -365,8 +380,17 @@ impl App {
                 sent
             }
             'n' | 'N' => {
-                info!("User pressed 'n' - rejecting plan {}", request_id);
-                let sent = self.send_plan_approval_response(&request_id, false);
+                info!(
+                    "User pressed 'n' - rejecting plan {} (from_permission={})",
+                    request_id, from_permission
+                );
+                // Send appropriate response type based on origin
+                // If from_permission, send permission_response; otherwise plan_approval_response
+                let sent = if from_permission {
+                    self.send_permission_response_for_thread(&request_id, false)
+                } else {
+                    self.send_plan_approval_response(&request_id, false)
+                };
                 if sent {
                     self.dashboard.remove_plan_request(&thread_id);
                     self.dashboard.set_thread_planning(&thread_id, false);
@@ -427,10 +451,6 @@ impl App {
         if let Some(data) = question_data {
             self.question_state = AskUserQuestionState::from_data(&data);
             self.mark_dirty();
-            debug!(
-                "Initialized question state with {} questions",
-                data.questions.len()
-            );
         }
     }
 

@@ -140,6 +140,42 @@ impl PlanSummary {
 }
 
 // ============================================================================
+// Plan Request (wraps PlanSummary with metadata)
+// ============================================================================
+
+/// A plan request awaiting approval, with metadata about its origin
+#[derive(Debug, Clone)]
+pub struct PlanRequest {
+    /// Unique request ID for responding to the backend
+    pub request_id: String,
+    /// The plan summary to display
+    pub summary: PlanSummary,
+    /// True if this originated from a permission_request (ExitPlanMode)
+    /// When true, send permission_response instead of plan_approval_response
+    pub from_permission: bool,
+}
+
+impl PlanRequest {
+    /// Create a new plan request
+    pub fn new(request_id: String, summary: PlanSummary) -> Self {
+        Self {
+            request_id,
+            summary,
+            from_permission: false,
+        }
+    }
+
+    /// Create a plan request that originated from a permission request
+    pub fn from_permission(request_id: String, summary: PlanSummary) -> Self {
+        Self {
+            request_id,
+            summary,
+            from_permission: true,
+        }
+    }
+}
+
+// ============================================================================
 // Aggregate
 // ============================================================================
 

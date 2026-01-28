@@ -3,7 +3,7 @@
 //! This module provides the state container for the multi-thread dashboard view,
 //! managing thread data, computed views, and overlay states.
 
-use crate::models::dashboard::{Aggregate, PlanSummary, ThreadStatus, WaitingFor};
+use crate::models::dashboard::{Aggregate, PlanRequest, ThreadStatus, WaitingFor};
 use crate::models::{Thread, ThreadMode};
 use crate::state::session::{AskUserQuestionData, PermissionRequest};
 use crate::view_state::{
@@ -11,6 +11,7 @@ use crate::view_state::{
 };
 use crate::websocket::messages::PhaseStatus;
 use std::collections::{HashMap, HashSet};
+use tracing::info;
 
 // ============================================================================
 // DashboardQuestionState
@@ -267,8 +268,8 @@ pub struct DashboardState {
     agent_states: HashMap<String, (String, Option<String>)>,
     /// What each thread is waiting for
     waiting_for: HashMap<String, WaitingFor>,
-    /// Plan requests pending approval: thread_id -> (request_id, summary)
-    plan_requests: HashMap<String, (String, PlanSummary)>,
+    /// Plan requests pending approval: thread_id -> PlanRequest
+    plan_requests: HashMap<String, PlanRequest>,
     /// Thread IDs verified locally (backend fallback)
     locally_verified: HashSet<String>,
     /// Phase progress data by thread_id during plan execution
@@ -443,9 +444,18 @@ impl DashboardState {
     }
 
     /// Store a plan request for approval
-    pub fn set_plan_request(&mut self, thread_id: &str, request_id: String, summary: PlanSummary) {
+    pub fn set_plan_request(&mut self, thread_id: &str, request: PlanRequest) {
+        self.plan_requests.insert(thread_id.to_string(), request);
+    }
+
+    /// Check if a plan request originated from a permission request
+    ///
+    /// Returns true if the plan should send a permission_response instead of plan_approval_response
+    pub fn is_plan_from_permission(&self, thread_id: &str) -> bool {
         self.plan_requests
-            .insert(thread_id.to_string(), (request_id, summary));
+            .get(thread_id)
+            .map(|req| req.from_permission)
+            .unwrap_or(false)
     }
 
     /// Check if a thread is currently in planning mode
@@ -735,15 +745,15 @@ impl DashboardState {
 
         self.overlay = match waiting_for {
             Some(WaitingFor::PlanApproval { .. }) => {
-                if let Some((request_id, summary)) = self.plan_requests.get(thread_id) {
+                if let Some(plan_request) = self.plan_requests.get(thread_id) {
                     // Clear question state when opening Plan overlay
                     self.question_state = None;
                     Some(OverlayState::Plan {
                         thread_id: thread_id.to_string(),
                         thread_title: thread.title.clone(),
                         repository: thread.display_repository(),
-                        request_id: request_id.clone(),
-                        summary: summary.clone(),
+                        request_id: plan_request.request_id.clone(),
+                        summary: plan_request.summary.clone(),
                         scroll_offset: 0,
                         anchor_y,
                     })
@@ -1172,13 +1182,15 @@ impl DashboardState {
 
     /// Get plan request ID for a thread
     pub fn get_plan_request_id(&self, thread_id: &str) -> Option<&str> {
-        self.plan_requests.get(thread_id).map(|(id, _)| id.as_str())
+        self.plan_requests
+            .get(thread_id)
+            .map(|req| req.request_id.as_str())
     }
 
-    /// Get the full plan request for a thread (request_id, summary)
+    /// Get the full plan request for a thread
     ///
     /// Returns None if no plan approval is pending for this thread.
-    pub fn get_plan_request(&self, thread_id: &str) -> Option<&(String, PlanSummary)> {
+    pub fn get_plan_request(&self, thread_id: &str) -> Option<&PlanRequest> {
         self.plan_requests.get(thread_id)
     }
 
@@ -1233,6 +1245,7 @@ impl DashboardState {
         for view in &self.thread_views {
             if view.needs_action {
                 if let Some(wf) = self.waiting_for.get(&view.id) {
+                    info!("top_needs_action: id={} wf={:?}", view.id, wf);
                     return Some((view.id.clone(), wf.clone()));
                 }
             }
@@ -1371,6 +1384,7 @@ impl DashboardState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::dashboard::PlanSummary;
     use chrono::Utc;
 
     fn make_thread(id: &str, title: &str) -> Thread {
@@ -1430,7 +1444,7 @@ mod tests {
         );
         state.plan_requests.insert(
             "t1".to_string(),
-            (
+            PlanRequest::new(
                 "req-123".to_string(),
                 PlanSummary::new("Test".to_string(), vec!["Phase 1".to_string()], 3, Some(1000)),
             ),
@@ -1557,7 +1571,7 @@ mod tests {
         );
         state.plan_requests.insert(
             "t1".to_string(),
-            (
+            PlanRequest::new(
                 "req-1".to_string(),
                 PlanSummary::new("Test".to_string(), vec![], 0, None),
             ),
@@ -1586,7 +1600,7 @@ mod tests {
         );
         state.plan_requests.insert(
             "t1".to_string(),
-            (
+            PlanRequest::new(
                 "req-1".to_string(),
                 PlanSummary::new("Test".to_string(), vec![], 0, None),
             ),
@@ -1640,7 +1654,7 @@ mod tests {
             Some(10000),
         );
 
-        state.set_plan_request("t1", "req-123".to_string(), summary);
+        state.set_plan_request("t1", PlanRequest::new("req-123".to_string(), summary));
 
         assert_eq!(state.get_plan_request_id("t1"), Some("req-123"));
     }
