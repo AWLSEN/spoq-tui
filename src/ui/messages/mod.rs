@@ -43,7 +43,65 @@ use crate::models::{Message, MessageRole};
 
 use super::helpers::inner_rect;
 use super::layout::LayoutContext;
-use super::theme::{COLOR_DIM, COLOR_HUMAN_BG};
+use super::theme::{COLOR_ACCENT, COLOR_DIM, COLOR_HUMAN_BG};
+
+/// Extract @path file references from message content.
+///
+/// Returns (file_paths, remaining_content) where file_paths are the paths
+/// without the @ prefix, and remaining_content is the text with @paths removed.
+fn extract_file_references(content: &str) -> (Vec<String>, String) {
+    let mut paths = Vec::new();
+    let mut remaining = String::new();
+    let mut chars = content.chars().peekable();
+    let mut last_was_whitespace = true;
+
+    while let Some(c) = chars.next() {
+        if c == '@' && last_was_whitespace {
+            // Potential file reference
+            let mut path = String::new();
+            while let Some(&next) = chars.peek() {
+                if next.is_whitespace() {
+                    break;
+                }
+                path.push(chars.next().unwrap());
+            }
+            if !path.is_empty() && (path.contains('/') || path.contains('.')) {
+                // Looks like a file path
+                paths.push(path);
+            } else if !path.is_empty() {
+                // Not a file path, keep the @path in remaining
+                remaining.push('@');
+                remaining.push_str(&path);
+            } else {
+                remaining.push('@');
+            }
+            last_was_whitespace = false;
+        } else {
+            remaining.push(c);
+            last_was_whitespace = c.is_whitespace();
+        }
+    }
+
+    (paths, remaining.trim().to_string())
+}
+
+/// Build a line with file reference chips.
+///
+/// Renders file paths as chips with 📎 icon.
+fn build_file_chips_line(paths: &[String], label: &str, label_style: Style) -> Line<'static> {
+    let mut spans = vec![Span::styled(label.to_string(), label_style)];
+
+    for path in paths {
+        spans.push(Span::styled(
+            format!(" 📎 {} ", path),
+            Style::default()
+                .fg(COLOR_ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    Line::from(spans)
+}
 
 /// Check if the input section should be shown in conversation view.
 ///
@@ -165,16 +223,32 @@ pub fn render_single_message(
             }
         } else {
             // Fall back to content field for non-assistant messages or empty segments
-            let content_lines_arc = app.markdown_cache.render(&message.content);
+            // For user messages, extract @path file references and render as chips
+            let (file_refs, display_content) = if message.role == MessageRole::User {
+                extract_file_references(&message.content)
+            } else {
+                (Vec::new(), message.content.clone())
+            };
+
+            // Render file reference chips if present (for user messages)
+            if !file_refs.is_empty() {
+                let mut chips_line = build_file_chips_line(&file_refs, label, label_style);
+                apply_background_to_line(&mut chips_line, COLOR_HUMAN_BG, max_width);
+                message_lines.push(chips_line);
+            }
+
+            let content_lines_arc = app.markdown_cache.render(&display_content);
             let content_lines = (*content_lines_arc).clone();
 
             if content_lines.is_empty() {
-                // Empty content, just show vertical bar
-                let mut empty_line = Line::from(vec![Span::styled(label, label_style)]);
-                if message.role == MessageRole::User {
-                    apply_background_to_line(&mut empty_line, COLOR_HUMAN_BG, max_width);
+                // Empty content, just show vertical bar (only if no file refs either)
+                if file_refs.is_empty() {
+                    let mut empty_line = Line::from(vec![Span::styled(label, label_style)]);
+                    if message.role == MessageRole::User {
+                        apply_background_to_line(&mut empty_line, COLOR_HUMAN_BG, max_width);
+                    }
+                    message_lines.push(empty_line);
                 }
-                message_lines.push(empty_line);
             } else {
                 // Wrap and prepend vertical bar to ALL lines
                 let bg = if message.role == MessageRole::User {
@@ -559,5 +633,69 @@ mod tests {
         let ctx = LayoutContext::new(50, 24);
         // 80% of 50 = 40, clamped between 40 and 80
         assert_eq!(ctx.bounded_width(80, 40, 80), 40);
+    }
+
+    #[test]
+    fn test_extract_file_references_single_path() {
+        let (paths, remaining) = super::extract_file_references("@src/main.rs Check this file");
+        assert_eq!(paths, vec!["src/main.rs"]);
+        assert_eq!(remaining, "Check this file");
+    }
+
+    #[test]
+    fn test_extract_file_references_multiple_paths() {
+        let (paths, remaining) =
+            super::extract_file_references("@src/main.rs @src/lib.rs Review these files");
+        assert_eq!(paths, vec!["src/main.rs", "src/lib.rs"]);
+        assert_eq!(remaining, "Review these files");
+    }
+
+    #[test]
+    fn test_extract_file_references_no_paths() {
+        let (paths, remaining) =
+            super::extract_file_references("No file references here");
+        assert!(paths.is_empty());
+        assert_eq!(remaining, "No file references here");
+    }
+
+    #[test]
+    fn test_extract_file_references_email_not_extracted() {
+        let (paths, remaining) =
+            super::extract_file_references("Contact me at user@example.com");
+        // @ in the middle of a word is not extracted
+        assert!(paths.is_empty());
+        assert_eq!(remaining, "Contact me at user@example.com");
+    }
+
+    #[test]
+    fn test_extract_file_references_at_only() {
+        let (paths, remaining) = super::extract_file_references("@ alone");
+        assert!(paths.is_empty());
+        assert_eq!(remaining, "@ alone");
+    }
+
+    #[test]
+    fn test_extract_file_references_path_at_end() {
+        let (paths, remaining) =
+            super::extract_file_references("Check @src/config.rs");
+        assert_eq!(paths, vec!["src/config.rs"]);
+        assert_eq!(remaining, "Check");
+    }
+
+    #[test]
+    fn test_extract_file_references_path_with_extension_only() {
+        let (paths, remaining) =
+            super::extract_file_references("@Cargo.toml Update dependencies");
+        assert_eq!(paths, vec!["Cargo.toml"]);
+        assert_eq!(remaining, "Update dependencies");
+    }
+
+    #[test]
+    fn test_extract_file_references_not_path_like() {
+        // @username without / or . should not be extracted as a file path
+        let (paths, remaining) =
+            super::extract_file_references("@username mentions are not files");
+        assert!(paths.is_empty());
+        assert_eq!(remaining, "@username mentions are not files");
     }
 }

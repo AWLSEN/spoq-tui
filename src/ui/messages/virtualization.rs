@@ -95,6 +95,17 @@ pub fn estimate_message_height_fast(message: &Message, viewport_width: usize) ->
         &message.content
     };
 
+    // For user messages, check if there are file references (@path)
+    // and add 1 line for the chips row
+    if message.role == MessageRole::User && content.contains('@') {
+        // Quick check: look for @ followed by path-like content
+        if content.split_whitespace().any(|word| {
+            word.starts_with('@') && word.len() > 1 && (word.contains('/') || word.contains('.'))
+        }) {
+            estimated_lines += 1;
+        }
+    }
+
     let char_count = content.chars().count();
     let logical_lines = if char_count == 0 {
         1
