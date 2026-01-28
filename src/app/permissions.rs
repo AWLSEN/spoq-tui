@@ -320,8 +320,11 @@ impl App {
                     true
                 }
                 _ => {
-                    info!("Key '{}' not recognized for permission handling", key);
-                    false
+                    // Consume all non-permission keys when permission modal is active.
+                    // This prevents any fallback handling that might insert chars into
+                    // the textarea, which would break subsequent Y/N/A key handling.
+                    info!("Key '{}' consumed (not a permission key)", key);
+                    true
                 }
             }
         } else {
@@ -1163,16 +1166,43 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_permission_key_invalid_key() {
+    fn test_handle_permission_key_non_yna_key_consumed() {
+        // Non-Y/N/A keys should be consumed (return true) when permission is pending
+        // This prevents fallback handling from inserting chars into textarea
         let mut app = App::default();
         app.dashboard
             .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-x"));
 
         let handled = app.handle_permission_key('x');
-        assert!(!handled);
+        assert!(handled); // Key should be consumed (not fall through)
 
-        // Permission should still be pending
+        // Permission should still be pending (not approved or denied)
         assert!(app.dashboard.get_pending_permission(TEST_THREAD_ID).is_some());
+    }
+
+    #[test]
+    fn test_handle_permission_key_various_non_yna_keys_consumed() {
+        // Various non-permission keys should all be consumed
+        let mut app = App::default();
+        app.dashboard
+            .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-multi"));
+
+        // Test several different keys
+        for key in ['g', 'z', '1', ' ', '.', 'q'] {
+            // Reset permission for each test
+            app.dashboard
+                .set_pending_permission(TEST_THREAD_ID, create_test_permission("perm-multi"));
+
+            let handled = app.handle_permission_key(key);
+            assert!(handled, "Key '{}' should be consumed", key);
+
+            // Permission should still be pending
+            assert!(
+                app.dashboard.get_pending_permission(TEST_THREAD_ID).is_some(),
+                "Permission should still be pending after key '{}'",
+                key
+            );
+        }
     }
 
     #[test]
