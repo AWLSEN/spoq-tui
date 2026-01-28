@@ -486,4 +486,78 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_editing_blocked_when_permission_pending() {
+        use crate::state::PermissionRequest;
+
+        let mut app = create_test_app();
+
+        // Set up conversation screen with an active thread
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("test-thread-123".to_string());
+
+        // Add a pending permission for this thread
+        app.dashboard.set_pending_permission(
+            "test-thread-123",
+            PermissionRequest {
+                permission_id: "perm-001".to_string(),
+                thread_id: Some("test-thread-123".to_string()),
+                tool_name: "Bash".to_string(),
+                description: "Run command".to_string(),
+                context: None,
+                tool_input: None,
+                received_at: std::time::Instant::now(),
+            },
+        );
+
+        // Verify modal type is Permission
+        let ctx = app.build_input_context();
+        assert_eq!(ctx.modal, ModalType::Permission);
+
+        // Clear textarea first to ensure it's empty
+        app.textarea.clear();
+        assert!(app.textarea.content().is_empty());
+
+        // Try to insert a character - should be blocked
+        let handled = app.execute_command(Command::InsertChar('x'));
+
+        // The command should not be handled (falls through)
+        assert!(!handled);
+
+        // The textarea should remain empty (editing was blocked)
+        assert!(
+            app.textarea.content().is_empty(),
+            "Textarea should be empty when permission is pending"
+        );
+    }
+
+    #[test]
+    fn test_editing_allowed_when_no_permission_pending() {
+        let mut app = create_test_app();
+
+        // Set up conversation screen with an active thread but NO permission
+        app.screen = Screen::Conversation;
+        app.active_thread_id = Some("test-thread-456".to_string());
+
+        // Verify modal type is None
+        let ctx = app.build_input_context();
+        assert_eq!(ctx.modal, ModalType::None);
+
+        // Clear textarea first
+        app.textarea.clear();
+        assert!(app.textarea.content().is_empty());
+
+        // Insert a character - should work
+        let handled = app.execute_command(Command::InsertChar('y'));
+
+        // The command should be handled
+        assert!(handled);
+
+        // The textarea should contain the character
+        assert!(
+            app.textarea.content().contains('y'),
+            "Textarea should contain 'y' when no permission is pending"
+        );
+    }
 }
