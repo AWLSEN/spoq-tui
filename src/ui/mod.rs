@@ -23,6 +23,7 @@ mod command_deck;
 pub mod context;
 mod conversation;
 pub mod dashboard;
+mod file_picker;
 mod helpers;
 pub mod input;
 mod layout;
@@ -39,6 +40,9 @@ pub use browse_list::SEARCH_DEBOUNCE_MS;
 
 // Re-export unified picker render function for external use
 pub use unified_picker::render_unified_picker;
+
+// Re-export file picker render function for external use
+pub use file_picker::render_file_picker;
 
 // Re-export theme colors for external use
 pub use theme::{
