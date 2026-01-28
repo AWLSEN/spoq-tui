@@ -404,8 +404,6 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         return;
     }
 
-    let input_lines = super::input::build_input_section(app, inner.width);
-
     // SIMPLE: Render ALL messages (no virtualization)
     // This ensures smooth 1-line-at-a-time scrolling
     let all_messages: Vec<Message> = app
@@ -460,11 +458,12 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         lines.extend(plan_events::render_planning_indicator(app.tick_count));
     }
 
-    // Record where input section starts
-    app.input_section_start = lines.len();
-
-    // Append input section
-    lines.extend(input_lines);
+    // Append input section (if no pending permission)
+    if should_show_input_section(app) {
+        app.input_section_start = lines.len();
+        let input_lines = super::input::build_input_section(app, inner.width);
+        lines.extend(input_lines);
+    }
 
     // SIMPLE SCROLL CALCULATION:
     // total_lines = everything we rendered
