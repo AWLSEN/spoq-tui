@@ -117,6 +117,25 @@ pub(super) fn parse_system_init_event(
     })
 }
 
+/// Parse cancelled event
+pub(super) fn parse_cancelled_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
+    #[derive(serde::Deserialize)]
+    struct CancelledPayload {
+        reason: String,
+    }
+    let payload: CancelledPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::Cancelled {
+        reason: payload.reason,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::sse::events::SseEvent;
@@ -264,6 +283,35 @@ mod tests {
                 model: "opus".to_string(),
                 tool_count: 15,
             }
+        );
+    }
+
+    #[test]
+    fn test_parse_cancelled() {
+        let result = parse_sse_event("cancelled", r#"{"reason": "user_requested"}"#);
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::Cancelled {
+                reason: "user_requested".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn test_parser_cancelled_event() {
+        let mut parser = SseParser::new();
+
+        parser.feed_line("event: cancelled").unwrap();
+        parser
+            .feed_line(r#"data: {"reason": "user_requested"}"#)
+            .unwrap();
+
+        let event = parser.feed_line("").unwrap();
+        assert_eq!(
+            event,
+            Some(SseEvent::Cancelled {
+                reason: "user_requested".to_string(),
+            })
         );
     }
 }

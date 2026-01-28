@@ -112,6 +112,38 @@ impl StreamRequest {
     }
 }
 
+/// Request structure for cancelling an active stream
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CancelRequest {
+    /// The thread ID whose stream should be cancelled
+    pub thread_id: String,
+}
+
+impl CancelRequest {
+    /// Create a new CancelRequest for the given thread
+    pub fn new(thread_id: String) -> Self {
+        Self { thread_id }
+    }
+}
+
+/// Response structure from the cancel endpoint
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CancelResponse {
+    /// Status of the cancellation ("cancelled" or "not_found")
+    pub status: String,
+    /// Echo of the thread ID (backend calls this session_id)
+    pub session_id: String,
+    /// Human-readable message
+    pub message: String,
+}
+
+impl CancelResponse {
+    /// Check if the cancellation was successful
+    pub fn is_cancelled(&self) -> bool {
+        self.status == "cancelled"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +337,57 @@ mod tests {
             request.working_directory,
             Some("/Users/dev/project".to_string())
         );
+    }
+
+    // ============= CancelRequest Tests =============
+
+    #[test]
+    fn test_cancel_request_new() {
+        let request = CancelRequest::new("thread-123".to_string());
+        assert_eq!(request.thread_id, "thread-123");
+    }
+
+    #[test]
+    fn test_cancel_request_serialization() {
+        let request = CancelRequest::new("thread-abc".to_string());
+        let json = serde_json::to_string(&request).expect("Failed to serialize");
+        assert_eq!(json, r#"{"thread_id":"thread-abc"}"#);
+
+        let deserialized: CancelRequest =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+        assert_eq!(request, deserialized);
+    }
+
+    // ============= CancelResponse Tests =============
+
+    #[test]
+    fn test_cancel_response_is_cancelled_true() {
+        let response = CancelResponse {
+            status: "cancelled".to_string(),
+            session_id: "thread-123".to_string(),
+            message: "Stream cancelled successfully".to_string(),
+        };
+        assert!(response.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancel_response_is_cancelled_false() {
+        let response = CancelResponse {
+            status: "not_found".to_string(),
+            session_id: "thread-123".to_string(),
+            message: "Thread not found".to_string(),
+        };
+        assert!(!response.is_cancelled());
+    }
+
+    #[test]
+    fn test_cancel_response_deserialization() {
+        let json = r#"{"status":"cancelled","session_id":"thread-xyz","message":"OK"}"#;
+        let response: CancelResponse = serde_json::from_str(json).expect("Failed to deserialize");
+
+        assert_eq!(response.status, "cancelled");
+        assert_eq!(response.session_id, "thread-xyz");
+        assert_eq!(response.message, "OK");
+        assert!(response.is_cancelled());
     }
 }

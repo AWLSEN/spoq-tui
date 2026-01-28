@@ -7,7 +7,8 @@ use crate::adapters::ReqwestHttpClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;
 use crate::models::{
-    Folder, GitHubRepo, Message, StreamRequest, Thread, ThreadDetailResponse, ThreadListResponse,
+    CancelRequest, CancelResponse, Folder, GitHubRepo, Message, StreamRequest, Thread,
+    ThreadDetailResponse, ThreadListResponse,
 };
 use crate::models::picker::{
     CloneResponse, SearchFoldersResponse, SearchReposResponse, SearchThreadsResponse,
@@ -934,28 +935,42 @@ impl ConductorClient {
         }
     }
 
-    /// Cancel an ongoing streaming session.
+    /// Cancel an active stream for a thread.
+    ///
+    /// Sends a POST request to `/v1/cancel` to stop the streaming response
+    /// for the specified thread. The backend will send SIGTERM to the
+    /// Claude CLI process group.
     ///
     /// # Arguments
-    /// * `session_id` - The session ID to cancel
-    pub async fn cancel(&self, session_id: &str) -> Result<(), ConductorError> {
+    /// * `thread_id` - The thread ID whose stream should be cancelled
+    ///
+    /// # Returns
+    /// * `Ok(CancelResponse)` - Cancellation was processed (check `is_cancelled()`)
+    /// * `Err(ConductorError)` - Request failed
+    pub async fn cancel_stream(&self, thread_id: &str) -> Result<CancelResponse, ConductorError> {
         let url = format!("{}/v1/cancel", self.base_url);
 
-        let body = serde_json::json!({ "session_id": session_id });
+        let request = CancelRequest::new(thread_id.to_string());
 
-        let builder = self.client.post(&url).json(&body);
+        let builder = self.client.post(&url).json(&request);
         let response = self.add_auth_header(builder).send().await?;
 
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
+        // Both 200 (cancelled) and 404 (not_found) are valid responses
+        // that return JSON CancelResponse
+        let status = response.status();
+        if status.is_success() || status.as_u16() == 404 {
+            Ok(response.json().await?)
+        } else {
+            let status_code = status.as_u16();
             let message = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(ConductorError::ServerError { status, message });
+            Err(ConductorError::ServerError {
+                status: status_code,
+                message,
+            })
         }
-
-        Ok(())
     }
 
     /// Fetch all threads from the backend.
@@ -1538,6 +1553,9 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
             model,
             tool_count,
         }),
+        crate::sse::SseEvent::Cancelled { reason } => {
+            SseEvent::Cancelled(crate::events::CancelledEvent { reason })
+        }
     }
 }
 
@@ -1680,9 +1698,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cancel_with_invalid_server() {
+    async fn test_cancel_stream_with_invalid_server() {
         let client = ConductorClient::with_base_url("http://127.0.0.1:1".to_string());
-        let result = client.cancel("test-session").await;
+        let result = client.cancel_stream("test-thread-123").await;
         // Should fail with HTTP error since server doesn't exist
         assert!(result.is_err());
     }

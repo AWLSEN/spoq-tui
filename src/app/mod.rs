@@ -7,6 +7,7 @@
 //! - [`AppMessage`] - Messages for async communication
 
 mod actions;
+mod cancel;
 pub mod cursor_blink;
 mod handlers;
 mod messages;
@@ -319,6 +320,8 @@ pub struct App {
     pub cursor_blink: CursorBlinkState,
     /// Help dialog visible (shown via /help command)
     pub help_dialog_visible: bool,
+    /// Flag to prevent double-cancel requests (set when cancel is in progress)
+    pub cancel_in_progress: bool,
 }
 
 impl App {
@@ -506,6 +509,7 @@ impl App {
             last_ctrl_c_time: None,
             cursor_blink: CursorBlinkState::default(),
             help_dialog_visible: false,
+            cancel_in_progress: false,
         })
     }
 

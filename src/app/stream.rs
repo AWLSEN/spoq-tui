@@ -605,6 +605,22 @@ impl App {
                             );
                             // No AppMessage needed - just for debugging/logging
                         }
+                        SseEvent::Cancelled(cancelled_event) => {
+                            // Stream was cancelled by user request (Ctrl+C)
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::StreamLifecycle(StreamLifecycleData::with_details(
+                                    StreamPhase::Completed,
+                                    format!("cancelled: {}", cancelled_event.reason),
+                                )),
+                                Some(thread_id),
+                            );
+                            let _ = message_tx.send(AppMessage::StreamCancelled {
+                                thread_id: thread_id.to_string(),
+                                reason: cancelled_event.reason,
+                            });
+                            break; // Exit stream loop
+                        }
                     }
                 }
                 Err(e) => {
@@ -631,7 +647,9 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::events::{SubagentCompletedEvent, SubagentProgressEvent, SubagentStartedEvent};
+    use crate::events::{
+        CancelledEvent, SubagentCompletedEvent, SubagentProgressEvent, SubagentStartedEvent,
+    };
     use tokio::sync::mpsc;
 
     // Helper function to create a trait object stream
@@ -848,5 +866,65 @@ mod tests {
             }
             _ => panic!("Expected SubagentCompleted as fourth message"),
         }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_cancelled() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-cancel";
+
+        // Create a cancelled event
+        let event = SseEvent::Cancelled(CancelledEvent {
+            reason: "user_requested".to_string(),
+        });
+
+        // Create a mock stream with the event
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        // Process the stream
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        // Verify the message was sent
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::StreamCancelled { thread_id, reason } => {
+                assert_eq!(thread_id, "test-thread-cancel");
+                assert_eq!(reason, "user_requested");
+            }
+            _ => panic!("Expected StreamCancelled message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_cancelled_breaks_loop() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-cancel-break";
+
+        // Create events: cancelled followed by content (should not be processed)
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![
+            Ok(SseEvent::Cancelled(CancelledEvent {
+                reason: "user_requested".to_string(),
+            })),
+            Ok(SseEvent::Content(crate::events::ContentEvent {
+                text: "This should not be processed".to_string(),
+                meta: crate::events::EventMeta::default(),
+            })),
+        ];
+        let mut pinned_stream = create_stream(events);
+
+        // Process the stream
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        // Should only receive the cancelled message, not the content
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::StreamCancelled { .. } => {}
+            _ => panic!("Expected StreamCancelled message, got {:?}", msg),
+        }
+
+        // Try to receive another message - should be None since we broke out of the loop
+        // Use try_recv to avoid blocking
+        assert!(rx.try_recv().is_err(), "Should not receive additional messages after cancelled");
     }
 }

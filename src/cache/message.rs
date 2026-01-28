@@ -216,6 +216,31 @@ impl ThreadCache {
         }
     }
 
+    /// Cancel a streaming message (user pressed Ctrl+C).
+    /// Marks the message as no longer streaming and appends a cancellation indicator.
+    pub fn cancel_streaming_message(&mut self, thread_id: &str) {
+        // Resolve the thread_id in case it's a pending ID that was reconciled
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            // Find the streaming message
+            if let Some(streaming_msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                streaming_msg.is_streaming = false;
+                // Use a temporary ID for cancelled messages (negative to distinguish from real IDs)
+                if streaming_msg.id == 0 {
+                    streaming_msg.id = -1;
+                }
+                // Append cancellation indicator to content
+                if !streaming_msg.content.is_empty() {
+                    streaming_msg.content.push_str("\n\n[Cancelled]");
+                } else {
+                    streaming_msg.content = "[Cancelled]".to_string();
+                }
+                // Bump render version to invalidate caches
+                streaming_msg.render_version += 1;
+            }
+        }
+    }
+
     /// Toggle reasoning collapsed state for a specific message in a thread
     /// Used by 't' key handler to expand/collapse thinking blocks
     pub fn toggle_message_reasoning(&mut self, thread_id: &str, message_index: usize) -> bool {

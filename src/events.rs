@@ -278,6 +278,13 @@ pub struct SystemInitEvent {
     pub tool_count: usize,
 }
 
+/// Cancelled event - sent when a stream is cancelled by user request
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct CancelledEvent {
+    /// Reason for cancellation (e.g., "user_requested")
+    pub reason: String,
+}
+
 /// Wrapper enum for all possible SSE event types from Conductor.
 ///
 /// Use pattern matching to handle different event types during stream processing.
@@ -341,6 +348,8 @@ pub enum SseEvent {
     Usage(UsageEvent),
     /// System initialization
     SystemInit(SystemInitEvent),
+    /// Stream was cancelled by user request (Ctrl+C)
+    Cancelled(CancelledEvent),
 }
 
 /// Wraps an SSE event with its metadata.

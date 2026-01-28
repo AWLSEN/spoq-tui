@@ -377,7 +377,15 @@ where
                             // Global keybinds (always active)
                             match key.code {
                                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                    // Double Ctrl+C to exit
+                                    // In Conversation view + streaming: Cancel the stream
+                                    if app.screen == Screen::Conversation && app.is_streaming() {
+                                        app.cancel_active_stream();
+                                        app.last_ctrl_c_time = None; // Reset exit timer
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+
+                                    // Not streaming: Double Ctrl+C to exit
                                     let now = std::time::Instant::now();
                                     if let Some(last_time) = app.last_ctrl_c_time {
                                         if now.duration_since(last_time).as_secs() < 2 {

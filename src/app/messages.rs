@@ -19,6 +19,8 @@ pub enum AppMessage {
     StreamComplete { thread_id: String, message_id: i64 },
     /// An error occurred during streaming
     StreamError { thread_id: String, error: String },
+    /// Stream was cancelled by user request (Ctrl+C)
+    StreamCancelled { thread_id: String, reason: String },
     /// Connection status changed
     ConnectionStatus(bool),
     /// Thread created on backend - reconcile pending ID with real ID
@@ -378,6 +380,22 @@ mod tests {
         let _ = format!("{:?}", started);
         let _ = format!("{:?}", progress);
         let _ = format!("{:?}", completed);
+    }
+
+    #[test]
+    fn test_stream_cancelled_construction() {
+        let msg = AppMessage::StreamCancelled {
+            thread_id: "thread-123".to_string(),
+            reason: "user_requested".to_string(),
+        };
+        let cloned = msg.clone();
+        match cloned {
+            AppMessage::StreamCancelled { thread_id, reason } => {
+                assert_eq!(thread_id, "thread-123");
+                assert_eq!(reason, "user_requested");
+            }
+            _ => panic!("Expected StreamCancelled variant"),
+        }
     }
 
     #[test]

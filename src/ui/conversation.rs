@@ -159,6 +159,18 @@ pub fn render_streaming_indicator(frame: &mut Frame, area: Rect, app: &App, ctx:
         .and_then(|msgs| msgs.iter().find(|m| m.is_streaming));
 
     if let Some(streaming_msg) = streaming_message {
+        // Check if cancel is in progress
+        if app.cancel_in_progress {
+            // Show "Cancelling..." state
+            let indicator_line = Line::from(vec![Span::styled(
+                "  ⏹ Cancelling...".to_string(),
+                Style::default().fg(Color::Yellow),
+            )]);
+            let indicator = Paragraph::new(indicator_line);
+            frame.render_widget(indicator, area);
+            return;
+        }
+
         // Use dots spinner
         let spinner_index = (app.tick_count % 10) as usize;
         let spinner = SPINNER_FRAMES[spinner_index];
@@ -189,10 +201,22 @@ pub fn render_streaming_indicator(frame: &mut Frame, area: Rect, app: &App, ctx:
             "Responding...".to_string()
         };
 
-        let indicator_line = Line::from(vec![Span::styled(
-            format!("  {} {}", spinner, status_text),
-            Style::default().fg(Color::DarkGray),
-        )]);
+        // Add cancel hint for normal streaming
+        let cancel_hint = if ctx.is_extra_small() {
+            "" // No hint on very small terminals
+        } else if ctx.is_narrow() {
+            " [^C]"
+        } else {
+            " [Ctrl+C: Cancel]"
+        };
+
+        let indicator_line = Line::from(vec![
+            Span::styled(
+                format!("  {} {}", spinner, status_text),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(cancel_hint, Style::default().fg(Color::DarkGray)),
+        ]);
 
         let indicator = Paragraph::new(indicator_line);
         frame.render_widget(indicator, area);

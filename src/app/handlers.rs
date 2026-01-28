@@ -102,6 +102,9 @@ impl App {
                 self.last_event_time = None;
                 self.cumulative_token_count = 0;
 
+                // Reset cancel state
+                self.reset_cancel_state();
+
                 // Emit StateChange for message finalization
                 emit_debug(
                     &self.debug_tx,
@@ -137,6 +140,9 @@ impl App {
                 self.last_event_time = None;
                 self.cumulative_token_count = 0;
 
+                // Reset cancel state
+                self.reset_cancel_state();
+
                 // Emit Error debug event
                 emit_debug(
                     &self.debug_tx,
@@ -144,6 +150,37 @@ impl App {
                     None,
                 );
                 self.stream_error = Some(error);
+            }
+            AppMessage::StreamCancelled { thread_id, reason } => {
+                // Mark message as no longer streaming
+                self.cache.cancel_streaming_message(&thread_id);
+
+                // Reset stream statistics
+                self.stream_start_time = None;
+                self.last_event_time = None;
+                self.cumulative_token_count = 0;
+
+                // Reset cancel state
+                self.reset_cancel_state();
+
+                // Clear tool tracker when stream is cancelled
+                self.tool_tracker.clear();
+
+                // Emit StateChange for stream cancellation
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::MessageCache,
+                        "Stream cancelled",
+                        format!("thread: {}, reason: {}", thread_id, reason),
+                    )),
+                    Some(&thread_id),
+                );
+
+                // Auto-scroll to bottom, but only for the active thread
+                if self.active_thread_id.as_ref() == Some(&thread_id) {
+                    self.reset_scroll();
+                }
             }
             AppMessage::ConnectionStatus(connected) => {
                 // Emit StateChange for connection status

@@ -15,9 +15,9 @@ use crate::sse::events::{SseEvent, SseLine, SseParseError};
 // Import parser functions from submodules
 use content::{parse_content_event, parse_reasoning_event};
 use misc::{
-    parse_context_compacted_event, parse_error_event, parse_oauth_consent_event,
-    parse_skills_injected_event, parse_system_init_event, parse_todos_updated_event,
-    parse_usage_event,
+    parse_cancelled_event, parse_context_compacted_event, parse_error_event,
+    parse_oauth_consent_event, parse_skills_injected_event, parse_system_init_event,
+    parse_todos_updated_event, parse_usage_event,
 };
 use permissions::parse_permission_request_event;
 use subagent::{
@@ -86,6 +86,7 @@ pub fn parse_sse_event(event_type: &str, data: &str) -> Result<SseEvent, SsePars
         "thread_updated" => parse_thread_updated_event(event_type, data),
         "usage" => parse_usage_event(event_type, data),
         "system_init" => parse_system_init_event(event_type, data),
+        "cancelled" => parse_cancelled_event(event_type, data),
         // Ignore unknown events instead of erroring (more resilient)
         _ => Ok(SseEvent::Ping),
     }

@@ -128,6 +128,11 @@ pub enum SseEvent {
         /// Number of tools available (Conductor sends tool_count, not tools array)
         tool_count: usize,
     },
+    /// Stream was cancelled by user request
+    Cancelled {
+        /// Reason for cancellation (e.g., "user_requested")
+        reason: String,
+    },
 }
 
 impl SseEvent {
@@ -156,6 +161,7 @@ impl SseEvent {
             SseEvent::ThreadUpdated { .. } => "thread_updated",
             SseEvent::Usage { .. } => "usage",
             SseEvent::SystemInit { .. } => "system_init",
+            SseEvent::Cancelled { .. } => "cancelled",
         }
     }
 }
