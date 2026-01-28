@@ -43,7 +43,18 @@ use crate::models::{Message, MessageRole};
 
 use super::helpers::inner_rect;
 use super::layout::LayoutContext;
-use super::theme::{COLOR_ACCENT, COLOR_DIM, COLOR_HUMAN_BG};
+use super::theme::{COLOR_DIM, COLOR_HUMAN_BG};
+
+/// Check if the input section should be shown in conversation view.
+///
+/// Returns false if the active thread has a pending permission,
+/// since users must respond to the permission before sending more input.
+fn should_show_input_section(app: &App) -> bool {
+    app.active_thread_id
+        .as_ref()
+        .and_then(|tid| app.dashboard.get_pending_permission(tid))
+        .is_none()
+}
 
 /// Render a single message and return its lines.
 ///
@@ -74,12 +85,6 @@ pub fn render_single_message(
 
     // Handle streaming vs completed messages
     if message.is_streaming {
-        // Display streaming content with solid circle cursor
-        let cursor_span = Span::styled(
-            "\u{25CF}", // ● Black Circle
-            Style::default().fg(COLOR_ACCENT),
-        );
-
         // For assistant messages with segments, render segments in order (interleaved)
         // This shows text, tool events, and subagent events in the order they occurred
         if message.role == MessageRole::Assistant && !message.segments.is_empty() {
@@ -93,17 +98,9 @@ pub fn render_single_message(
             );
             lines.extend(segment_lines);
 
-            // If we never added any content, show label with cursor
+            // If we never added any content, show empty label line
             if is_first_line {
-                lines.push(Line::from(vec![
-                    Span::styled(label, label_style),
-                    cursor_span,
-                ]));
-            } else {
-                // Append cursor to last line
-                if let Some(last_pushed) = lines.last_mut() {
-                    last_pushed.spans.push(cursor_span);
-                }
+                lines.push(Line::from(vec![Span::styled(label, label_style)]));
             }
         } else {
             // Fall back to partial_content for backward compatibility
@@ -111,27 +108,22 @@ pub fn render_single_message(
 
             let content_lines = (*app.markdown_cache.render(&message.partial_content)).clone();
 
-            // Wrap and prepend vertical bar to ALL lines, append cursor to last line
+            // Wrap and prepend vertical bar to ALL lines
             if content_lines.is_empty() {
-                // No content yet, just show vertical bar with cursor
-                let mut empty_line =
-                    Line::from(vec![Span::styled(label, label_style), cursor_span]);
+                // No content yet, just show vertical bar
+                let mut empty_line = Line::from(vec![Span::styled(label, label_style)]);
                 if message.role == MessageRole::User {
                     apply_background_to_line(&mut empty_line, COLOR_HUMAN_BG, max_width);
                 }
                 lines.push(empty_line);
             } else {
-                // Wrap lines with prefix, then append cursor to last line
                 let bg = if message.role == MessageRole::User {
                     Some(COLOR_HUMAN_BG)
                 } else {
                     None
                 };
-                let mut wrapped_lines =
+                let wrapped_lines =
                     wrap_lines_with_prefix(content_lines, label, label_style, max_width, bg);
-                if let Some(last_line) = wrapped_lines.last_mut() {
-                    last_line.spans.push(cursor_span);
-                }
                 lines.extend(wrapped_lines);
             }
         }
