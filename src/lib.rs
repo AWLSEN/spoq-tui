@@ -148,3 +148,7 @@ pub mod view_state;
 /// WebSocket client for real-time communication
 #[doc(hidden)]
 pub mod websocket;
+
+/// Credential change detection and auto-sync system
+#[doc(hidden)]
+pub mod credential_watcher;

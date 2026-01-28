@@ -56,6 +56,9 @@ portable-pty = "0.8"
 openssl = { version = "0.10", features = ["vendored"] }
 tui-scrollview = "0.6.2"
 
+# File system watching for credential change detection
+notify = "8.0"
+
 # macOS Keychain access (for Claude Code OAuth tokens)
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "2"
