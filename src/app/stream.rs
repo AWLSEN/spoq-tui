@@ -15,6 +15,82 @@ use crate::state::Todo;
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage, Screen};
 use crate::debug::DebugEventSender;
 
+/// Format server-side tool result for display.
+/// Extracts relevant info based on tool type.
+fn format_server_tool_result(tool_name: &str, content: &serde_json::Value) -> String {
+    match tool_name {
+        "web_search" => {
+            // Extract search results: [{url, title, snippet}, ...]
+            if let Some(results) = content.as_array() {
+                let items: Vec<String> = results
+                    .iter()
+                    .take(5)
+                    .filter_map(|item| {
+                        let title = item.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                        let url = item.get("url").and_then(|u| u.as_str()).unwrap_or("");
+                        if !title.is_empty() {
+                            Some(format!("- {} ({})", title, url))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if items.is_empty() {
+                    "No results found".to_string()
+                } else {
+                    items.join("\n")
+                }
+            } else {
+                serde_json::to_string_pretty(content).unwrap_or_default()
+            }
+        }
+        "code_execution" => {
+            // Extract execution output: {stdout, stderr, exit_code}
+            let stdout = content.get("stdout").and_then(|s| s.as_str()).unwrap_or("");
+            let stderr = content.get("stderr").and_then(|s| s.as_str()).unwrap_or("");
+            let exit_code = content.get("exit_code").and_then(|c| c.as_i64());
+
+            let mut output = String::new();
+            if !stdout.is_empty() {
+                output.push_str(&stdout);
+            }
+            if !stderr.is_empty() {
+                if !output.is_empty() {
+                    output.push_str("\n");
+                }
+                output.push_str("stderr: ");
+                output.push_str(&stderr);
+            }
+            if let Some(code) = exit_code {
+                if code != 0 {
+                    if !output.is_empty() {
+                        output.push_str("\n");
+                    }
+                    output.push_str(&format!("exit code: {}", code));
+                }
+            }
+            if output.is_empty() {
+                "Complete".to_string()
+            } else {
+                output
+            }
+        }
+        _ => {
+            // Default: pretty-print JSON, truncated
+            let pretty = serde_json::to_string_pretty(content).unwrap_or_default();
+            if pretty.len() > 500 {
+                let mut end = 497;
+                while end > 0 && !pretty.is_char_boundary(end) {
+                    end -= 1;
+                }
+                format!("{}...", &pretty[..end])
+            } else {
+                pretty
+            }
+        }
+    }
+}
+
 impl App {
     /// Submit the current input, create a streaming thread, and spawn async API call.
     ///
@@ -424,6 +500,26 @@ impl App {
                                 success,
                                 summary,
                                 result: result.clone(),
+                            });
+                        }
+                        SseEvent::ServerToolResult(event) => {
+                            // Format server tool result for display
+                            let result_text = format_server_tool_result(&event.tool_name, &event.content);
+                            let summary = format!("{} completed", event.tool_name);
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::ProcessedEvent(ProcessedEventData::new(
+                                    "ServerToolResult",
+                                    format!("{}: {}", event.tool_name, event.tool_call_id),
+                                )),
+                                Some(thread_id),
+                            );
+                            let _ = message_tx.send(AppMessage::ToolCompleted {
+                                thread_id: thread_id.to_string(),
+                                tool_call_id: event.tool_call_id,
+                                success: true,
+                                summary,
+                                result: result_text,
                             });
                         }
                         SseEvent::SkillsInjected(skills_event) => {

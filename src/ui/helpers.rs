@@ -173,6 +173,21 @@ pub fn format_tool_args(function_name: &str, args_json: &str) -> String {
                 "NotebookEdit".to_string()
             }
         }
+        // Server-side tools (web_search, code_execution)
+        "web_search" => {
+            if let Some(query) = json.get("query").and_then(|v| v.as_str()) {
+                format!("Searching: {}", truncate_string(query, 50))
+            } else {
+                "web_search".to_string()
+            }
+        }
+        "code_execution" => {
+            if let Some(code) = json.get("code").and_then(|v| v.as_str()) {
+                format!("Running: {}", truncate_string(code, 50))
+            } else {
+                "code_execution".to_string()
+            }
+        }
         _ => function_name.to_string(),
     }
 }

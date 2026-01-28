@@ -96,6 +96,19 @@ pub struct ToolResultEvent {
     pub result: String,
 }
 
+/// Event containing the result of a server-side tool execution (web search, code execution).
+///
+/// These tools are executed server-side by the LLM provider, not by Conductor.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ServerToolResultEvent {
+    /// The tool call this result belongs to
+    pub tool_call_id: String,
+    /// Name of the server tool (e.g., "web_search", "code_execution")
+    pub tool_name: String,
+    /// The result content (search results, execution output, etc.)
+    pub content: serde_json::Value,
+}
+
 /// Event indicating the streaming response is complete.
 ///
 /// Sent when the assistant has finished generating the response.
@@ -320,6 +333,8 @@ pub enum SseEvent {
     ToolExecuting(ToolExecutingEvent),
     /// Tool execution result
     ToolResult(ToolResultEvent),
+    /// Server-side tool result (web search, code execution)
+    ServerToolResult(ServerToolResultEvent),
     /// Streaming complete
     Done(DoneEvent),
     /// Error occurred
