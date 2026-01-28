@@ -1045,6 +1045,40 @@ impl ConductorClient {
         Ok(repos)
     }
 
+    /// Fetch files in a directory from the conductor.
+    ///
+    /// # Arguments
+    /// * `path` - The directory path to list files from
+    /// * `search` - Optional search/filter string
+    ///
+    /// # Returns
+    /// A vector of file entries, or an error if the request fails
+    pub async fn fetch_files(
+        &self,
+        path: &str,
+        search: Option<&str>,
+    ) -> Result<Vec<crate::models::FileEntry>, ConductorError> {
+        let mut url = format!("{}/v1/files?path={}", self.base_url, urlencoding::encode(path));
+        if let Some(s) = search {
+            url.push_str(&format!("&search={}", urlencoding::encode(s)));
+        }
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        let files: Vec<crate::models::FileEntry> = response.json().await?;
+        Ok(files)
+    }
+
     /// Fetch all tasks from the backend.
     ///
     /// TODO: Expected endpoint: GET /v1/tasks

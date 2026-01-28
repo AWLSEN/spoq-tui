@@ -273,12 +273,16 @@ pub fn handle_file_picker_command(app: &mut App, cmd: &Command) -> bool {
                 if item.is_dir {
                     if item.name == ".." {
                         app.file_picker.navigate_up();
-                        // TODO: Trigger HTTP call to load parent directory
+                        // Load files from parent directory
+                        let path = app.file_picker.current_path_str();
+                        app.load_files(&path);
                         app.mark_dirty();
                     } else {
                         let dir_name = item.name.clone();
                         app.file_picker.navigate_into(&dir_name);
-                        // TODO: Trigger HTTP call to load new directory
+                        // Load files from new directory
+                        let path = app.file_picker.current_path_str();
+                        app.load_files(&path);
                         app.mark_dirty();
                     }
                     return true;
@@ -338,7 +342,9 @@ pub fn handle_file_picker_command(app: &mut App, cmd: &Command) -> bool {
                 if item.is_dir && item.name != ".." {
                     let dir_name = item.name.clone();
                     app.file_picker.navigate_into(&dir_name);
-                    // TODO: Trigger HTTP call to load new directory
+                    // Load files from new directory
+                    let path = app.file_picker.current_path_str();
+                    app.load_files(&path);
                     app.mark_dirty();
                 }
             }
@@ -348,7 +354,9 @@ pub fn handle_file_picker_command(app: &mut App, cmd: &Command) -> bool {
         Command::FilePickerNavigateUp => {
             if app.file_picker.can_go_up() {
                 app.file_picker.navigate_up();
-                // TODO: Trigger HTTP call to load parent directory
+                // Load files from parent directory
+                let path = app.file_picker.current_path_str();
+                app.load_files(&path);
                 app.mark_dirty();
             }
             true

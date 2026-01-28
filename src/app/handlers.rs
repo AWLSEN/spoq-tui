@@ -886,6 +886,31 @@ impl App {
                     None,
                 );
             }
+            AppMessage::FilesLoaded(files) => {
+                let count = files.len();
+                self.file_picker.set_items(files);
+                // Emit StateChange for files loaded
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::StateChange(StateChangeData::new(
+                        StateType::SessionState,
+                        "Files loaded",
+                        format!("count={}", count),
+                    )),
+                    None,
+                );
+                self.mark_dirty();
+            }
+            AppMessage::FilesLoadFailed(error) => {
+                self.file_picker.set_error(error.clone());
+                // Emit Error debug event
+                emit_debug(
+                    &self.debug_tx,
+                    DebugEventKind::Error(ErrorData::new(ErrorSource::AppState, &error)),
+                    None,
+                );
+                self.mark_dirty();
+            }
             AppMessage::FolderPickerOpen => {
                 self.folder_picker_visible = true;
                 self.folder_picker_filter.clear();

@@ -129,6 +129,10 @@ pub enum AppMessage {
     ReposLoaded(Vec<GitHubRepo>),
     /// Failed to load repos from API
     ReposLoadFailed(String),
+    /// Files loaded from API for file picker
+    FilesLoaded(Vec<crate::models::FileEntry>),
+    /// Failed to load files from API
+    FilesLoadFailed(String),
     /// Open the folder picker overlay
     FolderPickerOpen,
     /// Close the folder picker overlay

@@ -58,6 +58,7 @@ tui-scrollview = "0.6.2"
 
 # File system watching for credential change detection
 notify = "8.0"
+urlencoding = "2.1.3"
 
 # macOS Keychain access (for Claude Code OAuth tokens)
 [target.'cfg(target_os = "macos")'.dependencies]

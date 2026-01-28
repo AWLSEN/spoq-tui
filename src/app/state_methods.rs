@@ -432,7 +432,29 @@ impl App {
             });
 
         self.file_picker.open(&base_path);
+        // Trigger async load of files
+        self.load_files(&base_path);
         self.mark_dirty();
+    }
+
+    /// Load files from the given directory path.
+    ///
+    /// Spawns an async task to fetch files from the conductor API.
+    pub fn load_files(&mut self, path: &str) {
+        let tx = self.message_tx.clone();
+        let client = std::sync::Arc::clone(&self.client);
+        let path = path.to_string();
+
+        tokio::spawn(async move {
+            match client.fetch_files(&path, None).await {
+                Ok(files) => {
+                    let _ = tx.send(super::AppMessage::FilesLoaded(files));
+                }
+                Err(e) => {
+                    let _ = tx.send(super::AppMessage::FilesLoadFailed(e.to_string()));
+                }
+            }
+        });
     }
 
     /// Close the file picker overlay.
