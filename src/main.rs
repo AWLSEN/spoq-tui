@@ -816,6 +816,14 @@ where
                                 }
                             }
 
+                            // File Picker Key Handling (when visible)
+                            // =========================================================
+                            if app.file_picker.visible {
+                                if app.handle_file_picker_key(key) {
+                                    continue;
+                                }
+                            }
+
                             // Unified @ Picker Key Handling (when visible)
                             // =========================================================
                             if app.unified_picker.visible {

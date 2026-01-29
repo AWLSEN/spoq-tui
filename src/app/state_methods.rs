@@ -3,6 +3,8 @@
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
 use super::{App, AppMessage, ScrollBoundary};
 
 impl App {
@@ -537,6 +539,119 @@ impl App {
 
         // Close the picker
         self.close_file_picker();
+    }
+
+    /// Handle keyboard input for the file picker.
+    ///
+    /// This method is called from main.rs when the file picker is visible.
+    /// Returns `true` if the key was handled, `false` otherwise.
+    pub fn handle_file_picker_key(&mut self, key: KeyEvent) -> bool {
+        if !self.file_picker.visible {
+            return false;
+        }
+
+        match key.code {
+            KeyCode::Esc => {
+                self.remove_at_and_filter_from_input_file_picker();
+                self.cancel_file_picker();
+                self.mark_dirty();
+                true
+            }
+            KeyCode::Enter => {
+                // If on a directory, navigate into it
+                if let Some(item) = self.file_picker.selected_item() {
+                    if item.is_dir {
+                        if item.name == ".." {
+                            self.file_picker.navigate_up();
+                        } else {
+                            let dir_name = item.name.clone();
+                            self.file_picker.navigate_into(&dir_name);
+                        }
+                        let path = self.file_picker.current_path_str();
+                        self.load_files(&path);
+                        self.mark_dirty();
+                        return true;
+                    }
+                }
+                // If on a file, confirm selection
+                self.confirm_file_picker_selection();
+                self.mark_dirty();
+                true
+            }
+            KeyCode::Up => {
+                self.file_picker.move_up();
+                self.mark_dirty();
+                true
+            }
+            KeyCode::Down => {
+                self.file_picker.move_down();
+                self.mark_dirty();
+                true
+            }
+            KeyCode::Left => {
+                // Navigate to parent directory
+                if self.file_picker.can_go_up() {
+                    self.file_picker.navigate_up();
+                    let path = self.file_picker.current_path_str();
+                    self.load_files(&path);
+                    self.mark_dirty();
+                }
+                true
+            }
+            KeyCode::Right => {
+                // Navigate into directory
+                if let Some(item) = self.file_picker.selected_item() {
+                    if item.is_dir && item.name != ".." {
+                        let dir_name = item.name.clone();
+                        self.file_picker.navigate_into(&dir_name);
+                        let path = self.file_picker.current_path_str();
+                        self.load_files(&path);
+                        self.mark_dirty();
+                    }
+                }
+                true
+            }
+            KeyCode::Tab => {
+                // Toggle file selection (multi-select)
+                self.file_picker.toggle_selection();
+                self.mark_dirty();
+                true
+            }
+            KeyCode::Backspace => {
+                if self.file_picker.query.is_empty() {
+                    // Close picker when backspacing with empty query
+                    self.textarea.backspace(); // Remove the @
+                    self.cancel_file_picker();
+                } else {
+                    // Remove last character from query
+                    let mut query = self.file_picker.query.clone();
+                    query.pop();
+                    self.file_picker.set_query(query);
+                    // Also backspace in textarea to remove the character
+                    self.textarea.backspace();
+                }
+                self.mark_dirty();
+                true
+            }
+            KeyCode::Char(c) => {
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+                {
+                    // Add to query filter
+                    let mut query = self.file_picker.query.clone();
+                    query.push(c);
+                    self.file_picker.set_query(query);
+                    // Also insert in textarea
+                    self.textarea.insert_char(c);
+                    self.mark_dirty();
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => true, // Consume all other keys when picker is visible
+        }
     }
 
     /// Get filtered folders based on the current filter text.
