@@ -343,6 +343,33 @@ fn route_ws_message(
                 })
                 .map_err(|e| format!("Failed to send ClaudeLoginVerificationResult: {}", e))
         }
+        WsIncomingMessage::ClaudeAuthTokenRequest(req) => {
+            // Claude CLI auth token request - run setup-token
+            info!(
+                "Received claude_auth_token_request: request_id={}, message={}",
+                req.request_id, req.message
+            );
+            message_tx
+                .send(AppMessage::ClaudeAuthTokenRequest {
+                    request_id: req.request_id,
+                    message: req.message,
+                })
+                .map_err(|e| format!("Failed to send ClaudeAuthTokenRequest: {}", e))
+        }
+        WsIncomingMessage::ClaudeAuthTokenStored(result) => {
+            // Claude CLI auth token stored confirmation
+            info!(
+                "Received claude_auth_token_stored: request_id={}, success={}",
+                result.request_id, result.success
+            );
+            message_tx
+                .send(AppMessage::ClaudeAuthTokenStored {
+                    request_id: result.request_id,
+                    success: result.success,
+                    error: result.error,
+                })
+                .map_err(|e| format!("Failed to send ClaudeAuthTokenStored: {}", e))
+        }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })
             .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),

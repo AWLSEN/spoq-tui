@@ -9,7 +9,8 @@ pub mod messages;
 
 pub use client::{WsClient, WsClientConfig, WsConnectionState, WsError};
 pub use messages::{
-    ClaudeLoginStatus, WsCancelPermission, WsClaudeLoginRequest, WsClaudeLoginResponse,
+    ClaudeLoginStatus, WsCancelPermission, WsClaudeAuthTokenRequest, WsClaudeAuthTokenResponse,
+    WsClaudeAuthTokenStored, WsClaudeLoginRequest, WsClaudeLoginResponse,
     WsClaudeLoginVerificationResult, WsCommandResponse, WsCommandResult, WsIncomingMessage,
     WsOutgoingMessage, WsPermissionData, WsPermissionRequest, WsPlanApprovalResponse,
 };

@@ -41,12 +41,18 @@ pub enum WsIncomingMessage {
     /// Stream started - notifies frontend of thread_id immediately when stream begins
     #[serde(rename = "stream_started")]
     StreamStarted(WsStreamStarted),
-    /// Claude CLI login request - user needs to authenticate
+    /// Claude CLI login request - user needs to authenticate (legacy)
     #[serde(rename = "claude_login_request")]
     ClaudeLoginRequest(WsClaudeLoginRequest),
-    /// Claude CLI login verification result - backend confirms auth status
+    /// Claude CLI login verification result - backend confirms auth status (legacy)
     #[serde(rename = "claude_login_verification_result")]
     ClaudeLoginVerificationResult(WsClaudeLoginVerificationResult),
+    /// Claude CLI auth token request - TUI should run `claude setup-token`
+    #[serde(rename = "claude_auth_token_request")]
+    ClaudeAuthTokenRequest(WsClaudeAuthTokenRequest),
+    /// Claude CLI auth token stored - backend confirms token storage
+    #[serde(rename = "claude_auth_token_stored")]
+    ClaudeAuthTokenStored(WsClaudeAuthTokenStored),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -341,6 +347,36 @@ pub struct WsClaudeLoginVerificationResult {
     pub timestamp: u64,
 }
 
+/// Claude CLI auth token request
+///
+/// Sent when Claude CLI needs authentication on VPS.
+/// TUI should run `claude setup-token` to capture and return the OAuth token.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeAuthTokenRequest {
+    /// Request ID for tracking the response
+    pub request_id: String,
+    /// Human-readable message for the user
+    pub message: String,
+    /// When this request was generated (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Claude CLI auth token stored confirmation
+///
+/// Sent after TUI provides a token, confirming whether storage succeeded.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeAuthTokenStored {
+    /// Request ID matching the original token request
+    pub request_id: String,
+    /// Whether token storage was successful
+    pub success: bool,
+    /// Error message if storage failed
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// When this result was generated (Unix milliseconds)
+    pub timestamp: u64,
+}
+
 /// Claude CLI login response status
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -380,6 +416,29 @@ impl WsClaudeLoginResponse {
     }
 }
 
+/// Claude CLI auth token response sent to backend
+///
+/// Contains the OAuth token captured from `claude setup-token`
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeAuthTokenResponse {
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// Request ID from the original token request
+    pub request_id: String,
+    /// The captured OAuth token (sk-ant-oat01-...)
+    pub token: String,
+}
+
+impl WsClaudeAuthTokenResponse {
+    pub fn new(request_id: String, token: String) -> Self {
+        Self {
+            type_: "claude_auth_token".to_string(),
+            request_id,
+            token,
+        }
+    }
+}
+
 /// Outgoing WebSocket messages (sent to server)
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
@@ -388,6 +447,7 @@ pub enum WsOutgoingMessage {
     CancelPermission(WsCancelPermission),
     PlanApprovalResponse(WsPlanApprovalResponse),
     ClaudeLoginResponse(WsClaudeLoginResponse),
+    ClaudeAuthTokenResponse(WsClaudeAuthTokenResponse),
 }
 
 #[cfg(test)]

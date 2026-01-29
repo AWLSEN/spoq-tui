@@ -249,6 +249,30 @@ pub enum AppMessage {
         error: Option<String>,
     },
     // =========================================================================
+    // Claude CLI Token Messages (VPS setup-token flow)
+    // =========================================================================
+    /// Claude CLI auth token request - run setup-token and capture token
+    ClaudeAuthTokenRequest {
+        request_id: String,
+        message: String,
+    },
+    /// Claude CLI auth token captured - send to backend
+    ClaudeAuthTokenCaptured {
+        request_id: String,
+        token: String,
+    },
+    /// Claude CLI auth token capture failed
+    ClaudeAuthTokenFailed {
+        request_id: String,
+        error: String,
+    },
+    /// Claude CLI auth token stored result from backend
+    ClaudeAuthTokenStored {
+        request_id: String,
+        success: bool,
+        error: Option<String>,
+    },
+    // =========================================================================
     // Sync Messages
     // =========================================================================
     /// Trigger token sync operation (from /sync command)
