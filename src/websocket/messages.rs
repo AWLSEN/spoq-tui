@@ -41,6 +41,12 @@ pub enum WsIncomingMessage {
     /// Stream started - notifies frontend of thread_id immediately when stream begins
     #[serde(rename = "stream_started")]
     StreamStarted(WsStreamStarted),
+    /// Claude CLI login request - user needs to authenticate
+    #[serde(rename = "claude_login_request")]
+    ClaudeLoginRequest(WsClaudeLoginRequest),
+    /// Claude CLI login verification result - backend confirms auth status
+    #[serde(rename = "claude_login_verification_result")]
+    ClaudeLoginVerificationResult(WsClaudeLoginVerificationResult),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -301,6 +307,79 @@ impl WsPlanApprovalResponse {
     }
 }
 
+/// Claude CLI login request from backend
+///
+/// Sent when Claude CLI needs authentication
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeLoginRequest {
+    /// Request ID for tracking the response
+    pub request_id: String,
+    /// The OAuth authentication URL to open in browser
+    pub auth_url: String,
+    /// Whether to automatically open browser
+    pub auto_open: bool,
+    /// When this request was created (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Claude CLI login verification result from backend
+///
+/// Sent after user claims to have completed login, confirming whether auth succeeded
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeLoginVerificationResult {
+    /// Request ID matching the original login request
+    pub request_id: String,
+    /// Whether authentication was successful
+    pub success: bool,
+    /// Account email (present if success=true)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_email: Option<String>,
+    /// Error message (present if success=false)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// When this result was generated (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Claude CLI login response status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeLoginStatus {
+    /// User claims to have completed login in browser
+    Completed,
+    /// User cancelled the login flow
+    Cancelled,
+}
+
+/// Claude CLI login response sent to backend
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeLoginResponse {
+    #[serde(rename = "type")]
+    pub type_: String,
+    /// Request ID from the original login request
+    pub request_id: String,
+    /// Response status
+    pub status: ClaudeLoginStatus,
+}
+
+impl WsClaudeLoginResponse {
+    pub fn new(request_id: String, status: ClaudeLoginStatus) -> Self {
+        Self {
+            type_: "claude_login_response".to_string(),
+            request_id,
+            status,
+        }
+    }
+
+    pub fn completed(request_id: String) -> Self {
+        Self::new(request_id, ClaudeLoginStatus::Completed)
+    }
+
+    pub fn cancelled(request_id: String) -> Self {
+        Self::new(request_id, ClaudeLoginStatus::Cancelled)
+    }
+}
+
 /// Outgoing WebSocket messages (sent to server)
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
@@ -308,6 +387,7 @@ pub enum WsOutgoingMessage {
     CommandResponse(WsCommandResponse),
     CancelPermission(WsCancelPermission),
     PlanApprovalResponse(WsPlanApprovalResponse),
+    ClaudeLoginResponse(WsClaudeLoginResponse),
 }
 
 #[cfg(test)]
@@ -2310,5 +2390,217 @@ mod tests {
             }
             _ => panic!("Expected PhaseProgressUpdate"),
         }
+    }
+
+    // -------------------- Claude Login Request Tests --------------------
+
+    #[test]
+    fn test_deserialize_claude_login_request() {
+        let json = r#"{
+            "type": "claude_login_request",
+            "request_id": "login-req-123",
+            "auth_url": "https://console.anthropic.com/oauth/authorize?client_id=abc",
+            "auto_open": true,
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ClaudeLoginRequest(req) => {
+                assert_eq!(req.request_id, "login-req-123");
+                assert_eq!(req.auth_url, "https://console.anthropic.com/oauth/authorize?client_id=abc");
+                assert!(req.auto_open);
+                assert_eq!(req.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ClaudeLoginRequest"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_claude_login_request_no_auto_open() {
+        let json = r#"{
+            "type": "claude_login_request",
+            "request_id": "login-req-456",
+            "auth_url": "http://localhost:8080/callback",
+            "auto_open": false,
+            "timestamp": 1705315800000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ClaudeLoginRequest(req) => {
+                assert_eq!(req.request_id, "login-req-456");
+                assert_eq!(req.auth_url, "http://localhost:8080/callback");
+                assert!(!req.auto_open);
+                assert_eq!(req.timestamp, 1705315800000);
+            }
+            _ => panic!("Expected ClaudeLoginRequest"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_claude_login_request() {
+        let req = WsClaudeLoginRequest {
+            request_id: "login-serialize".to_string(),
+            auth_url: "https://example.com/auth".to_string(),
+            auto_open: true,
+            timestamp: 1705315800000,
+        };
+
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["request_id"], "login-serialize");
+        assert_eq!(parsed["auth_url"], "https://example.com/auth");
+        assert_eq!(parsed["auto_open"], true);
+        assert_eq!(parsed["timestamp"], 1705315800000_i64);
+    }
+
+    // -------------------- Claude Login Verification Result Tests --------------------
+
+    #[test]
+    fn test_deserialize_claude_login_verification_success() {
+        let json = r#"{
+            "type": "claude_login_verification_result",
+            "request_id": "login-req-123",
+            "success": true,
+            "account_email": "user@example.com",
+            "timestamp": 1705315850000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ClaudeLoginVerificationResult(result) => {
+                assert_eq!(result.request_id, "login-req-123");
+                assert!(result.success);
+                assert_eq!(result.account_email, Some("user@example.com".to_string()));
+                assert!(result.error.is_none());
+                assert_eq!(result.timestamp, 1705315850000);
+            }
+            _ => panic!("Expected ClaudeLoginVerificationResult"),
+        }
+    }
+
+    #[test]
+    fn test_deserialize_claude_login_verification_failed() {
+        let json = r#"{
+            "type": "claude_login_verification_result",
+            "request_id": "login-req-456",
+            "success": false,
+            "error": "Authentication not detected. Please complete login in browser.",
+            "timestamp": 1705315850000
+        }"#;
+
+        let msg: WsIncomingMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsIncomingMessage::ClaudeLoginVerificationResult(result) => {
+                assert_eq!(result.request_id, "login-req-456");
+                assert!(!result.success);
+                assert!(result.account_email.is_none());
+                assert_eq!(result.error, Some("Authentication not detected. Please complete login in browser.".to_string()));
+                assert_eq!(result.timestamp, 1705315850000);
+            }
+            _ => panic!("Expected ClaudeLoginVerificationResult"),
+        }
+    }
+
+    #[test]
+    fn test_serialize_claude_login_verification_success() {
+        let result = WsClaudeLoginVerificationResult {
+            request_id: "verify-serialize".to_string(),
+            success: true,
+            account_email: Some("test@example.com".to_string()),
+            error: None,
+            timestamp: 1705315850000,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["request_id"], "verify-serialize");
+        assert_eq!(parsed["success"], true);
+        assert_eq!(parsed["account_email"], "test@example.com");
+        // error should not be present when None
+        assert!(parsed.get("error").is_none() || parsed["error"].is_null());
+        assert_eq!(parsed["timestamp"], 1705315850000_i64);
+    }
+
+    // -------------------- Claude Login Response Tests --------------------
+
+    #[test]
+    fn test_claude_login_response_completed() {
+        let response = WsClaudeLoginResponse::completed("login-req-789".to_string());
+
+        assert_eq!(response.type_, "claude_login_response");
+        assert_eq!(response.request_id, "login-req-789");
+        assert_eq!(response.status, ClaudeLoginStatus::Completed);
+    }
+
+    #[test]
+    fn test_claude_login_response_cancelled() {
+        let response = WsClaudeLoginResponse::cancelled("login-req-abc".to_string());
+
+        assert_eq!(response.type_, "claude_login_response");
+        assert_eq!(response.request_id, "login-req-abc");
+        assert_eq!(response.status, ClaudeLoginStatus::Cancelled);
+    }
+
+    #[test]
+    fn test_serialize_claude_login_response() {
+        let response = WsClaudeLoginResponse::completed("login-serialize".to_string());
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["type"], "claude_login_response");
+        assert_eq!(parsed["request_id"], "login-serialize");
+        assert_eq!(parsed["status"], "completed");
+    }
+
+    #[test]
+    fn test_serialize_claude_login_response_cancelled() {
+        let response = WsClaudeLoginResponse::cancelled("login-cancel".to_string());
+
+        let json = serde_json::to_string(&response).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["type"], "claude_login_response");
+        assert_eq!(parsed["request_id"], "login-cancel");
+        assert_eq!(parsed["status"], "cancelled");
+    }
+
+    #[test]
+    fn test_ws_outgoing_message_claude_login_response() {
+        let response = WsClaudeLoginResponse::completed("outgoing-test".to_string());
+        let outgoing = WsOutgoingMessage::ClaudeLoginResponse(response);
+
+        let json = serde_json::to_string(&outgoing).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["type"], "claude_login_response");
+        assert_eq!(parsed["request_id"], "outgoing-test");
+        assert_eq!(parsed["status"], "completed");
+    }
+
+    #[test]
+    fn test_claude_login_status_serialize() {
+        // Test that status enum serializes as snake_case
+        let completed: ClaudeLoginStatus = ClaudeLoginStatus::Completed;
+        let cancelled: ClaudeLoginStatus = ClaudeLoginStatus::Cancelled;
+
+        let completed_json = serde_json::to_string(&completed).unwrap();
+        let cancelled_json = serde_json::to_string(&cancelled).unwrap();
+
+        assert_eq!(completed_json, "\"completed\"");
+        assert_eq!(cancelled_json, "\"cancelled\"");
+    }
+
+    #[test]
+    fn test_claude_login_status_deserialize() {
+        let completed: ClaudeLoginStatus = serde_json::from_str("\"completed\"").unwrap();
+        let cancelled: ClaudeLoginStatus = serde_json::from_str("\"cancelled\"").unwrap();
+
+        assert_eq!(completed, ClaudeLoginStatus::Completed);
+        assert_eq!(cancelled, ClaudeLoginStatus::Cancelled);
     }
 }

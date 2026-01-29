@@ -1625,6 +1625,39 @@ impl App {
                     &self.message_tx,
                 );
             }
+
+            // =========================================================================
+            // Claude CLI Login Messages
+            // =========================================================================
+            AppMessage::ClaudeLoginRequired {
+                request_id,
+                auth_url,
+                auto_open,
+            } => {
+                tracing::info!(
+                    "Claude CLI login required: request_id={}, auto_open={}",
+                    request_id, auto_open
+                );
+                // TODO: Phase 8 - Show login dialog UI
+                // For now, just log and auto-open browser if requested
+                if auto_open {
+                    if let Err(e) = open::that(&auth_url) {
+                        tracing::warn!("Failed to open browser: {}", e);
+                    }
+                }
+            }
+            AppMessage::ClaudeLoginVerificationResult {
+                request_id,
+                success,
+                account_email,
+                error,
+            } => {
+                tracing::info!(
+                    "Claude CLI login verification: request_id={}, success={}, email={:?}, error={:?}",
+                    request_id, success, account_email, error
+                );
+                // TODO: Phase 8 - Update login dialog state
+            }
         }
     }
 }

@@ -235,6 +235,22 @@ pub enum AppMessage {
     /// Debounce timer expired - time to sync
     CredentialDebounceExpired,
     // =========================================================================
+    // Claude CLI Login Messages
+    // =========================================================================
+    /// Claude CLI login required - user needs to authenticate via browser
+    ClaudeLoginRequired {
+        request_id: String,
+        auth_url: String,
+        auto_open: bool,
+    },
+    /// Claude CLI login verification result from backend
+    ClaudeLoginVerificationResult {
+        request_id: String,
+        success: bool,
+        account_email: Option<String>,
+        error: Option<String>,
+    },
+    // =========================================================================
     // Sync Messages
     // =========================================================================
     /// Trigger token sync operation (from /sync command)

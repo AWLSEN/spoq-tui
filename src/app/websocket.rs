@@ -314,6 +314,35 @@ fn route_ws_message(
             // Currently informational only - no AppMessage needed
             Ok(())
         }
+        WsIncomingMessage::ClaudeLoginRequest(req) => {
+            // Claude CLI login required - user needs to authenticate
+            info!(
+                "Received claude_login_request: request_id={}, auto_open={}",
+                req.request_id, req.auto_open
+            );
+            message_tx
+                .send(AppMessage::ClaudeLoginRequired {
+                    request_id: req.request_id,
+                    auth_url: req.auth_url,
+                    auto_open: req.auto_open,
+                })
+                .map_err(|e| format!("Failed to send ClaudeLoginRequired: {}", e))
+        }
+        WsIncomingMessage::ClaudeLoginVerificationResult(result) => {
+            // Claude CLI login verification result from backend
+            info!(
+                "Received claude_login_verification_result: request_id={}, success={}",
+                result.request_id, result.success
+            );
+            message_tx
+                .send(AppMessage::ClaudeLoginVerificationResult {
+                    request_id: result.request_id,
+                    success: result.success,
+                    account_email: result.account_email,
+                    error: result.error,
+                })
+                .map_err(|e| format!("Failed to send ClaudeLoginVerificationResult: {}", e))
+        }
         WsIncomingMessage::RawMessage(raw) => message_tx
             .send(AppMessage::WsRawMessage { message: raw })
             .map_err(|e| format!("Failed to send WsRawMessage: {}", e)),
