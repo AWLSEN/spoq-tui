@@ -902,6 +902,7 @@ mod tests {
             WsOutgoingMessage::CancelPermission(_) => panic!("Expected CommandResponse"),
             WsOutgoingMessage::PlanApprovalResponse(_) => panic!("Expected CommandResponse"),
             WsOutgoingMessage::ClaudeLoginResponse(_) => panic!("Expected CommandResponse"),
+            WsOutgoingMessage::ClaudeAuthTokenResponse(_) => panic!("Expected CommandResponse"),
         }
     }
 

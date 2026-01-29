@@ -336,6 +336,8 @@ pub struct App {
     pub credential_debouncer: Debouncer,
     /// File watcher handle (must keep alive - dropping stops watching)
     pub(crate) credential_file_watcher: Option<RecommendedWatcher>,
+    /// Auto-close timer for Claude login success dialog
+    pub claude_login_auto_close: Option<std::time::Instant>,
 }
 
 impl App {
@@ -529,6 +531,7 @@ impl App {
             credential_watch_state: CredentialWatchState::new(),
             credential_debouncer: Debouncer::new(),
             credential_file_watcher: None,
+            claude_login_auto_close: None,
         })
     }
 

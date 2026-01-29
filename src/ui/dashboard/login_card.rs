@@ -37,8 +37,11 @@ pub fn render(
             render_showing_url_content(auth_url, *browser_opened)
         }
         ClaudeLoginState::Verifying => render_verifying_content(),
-        ClaudeLoginState::VerificationSuccess { email } => render_success_content(email),
+        ClaudeLoginState::VerificationSuccess { email, .. } => render_success_content(email),
         ClaudeLoginState::VerificationFailed { error } => render_error_content(error),
+        ClaudeLoginState::BrowserOpenFailed { auth_url, error } => {
+            render_browser_failed_content(auth_url, error)
+        }
     };
 
     let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
@@ -171,6 +174,55 @@ fn render_error_content(error: &str) -> Vec<Line<'static>> {
     ]
 }
 
+/// Render the browser open failed state with manual option
+fn render_browser_failed_content(auth_url: &str, error: &str) -> Vec<Line<'static>> {
+    // Truncate URL if too long
+    let display_url = if auth_url.len() > 50 {
+        format!("{}...", &auth_url[..47])
+    } else {
+        auth_url.to_string()
+    };
+
+    // Truncate error if too long
+    let display_error = if error.len() > 60 {
+        format!("{}...", &error[..57])
+    } else {
+        error.to_string()
+    };
+
+    vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "Could not auto-open browser",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("Error: "),
+            Span::styled(display_error, Style::default().fg(Color::Red)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("URL: "),
+            Span::styled(
+                display_url,
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::UNDERLINED),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("[Enter]", Style::default().fg(Color::Green)),
+            Span::raw(" Try Again  "),
+            Span::styled("[Esc]", Style::default().fg(Color::Red)),
+            Span::raw(" Cancel"),
+        ]),
+    ]
+}
+
 /// Calculate the height needed for the login card based on state
 pub fn calculate_height(state: &ClaudeLoginState) -> u16 {
     match state {
@@ -178,6 +230,7 @@ pub fn calculate_height(state: &ClaudeLoginState) -> u16 {
         ClaudeLoginState::Verifying => 10,
         ClaudeLoginState::VerificationSuccess { .. } => 10,
         ClaudeLoginState::VerificationFailed { .. } => 9,
+        ClaudeLoginState::BrowserOpenFailed { .. } => 10,
     }
 }
 
@@ -269,6 +322,7 @@ mod tests {
                     "https://example.com/auth",
                     &ClaudeLoginState::VerificationSuccess {
                         email: "user@example.com".to_string(),
+                        success_time: std::time::Instant::now(),
                     },
                 );
             })
@@ -336,7 +390,8 @@ mod tests {
         assert_eq!(calculate_height(&ClaudeLoginState::Verifying), 10);
         assert_eq!(
             calculate_height(&ClaudeLoginState::VerificationSuccess {
-                email: "test@example.com".to_string()
+                email: "test@example.com".to_string(),
+                success_time: std::time::Instant::now(),
             }),
             10
         );

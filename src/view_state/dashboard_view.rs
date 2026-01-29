@@ -233,9 +233,11 @@ pub enum ClaudeLoginState {
     /// User pressed Done - waiting for backend verification
     Verifying,
     /// Backend confirmed successful authentication
-    VerificationSuccess { email: String },
+    VerificationSuccess { email: String, success_time: std::time::Instant },
     /// Backend reported authentication failed
     VerificationFailed { error: String },
+    /// Browser auto-open failed - show error with manual option
+    BrowserOpenFailed { auth_url: String, error: String },
 }
 
 impl OverlayState {

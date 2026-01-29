@@ -565,8 +565,8 @@ pub fn handle_claude_login_command(app: &mut App, cmd: &Command) -> bool {
         }
 
         Command::ClaudeLoginDone => {
-            // Only allow Done from ShowingUrl state (either state)
-            if matches!(overlay, ClaudeLoginState::ShowingUrl { .. }) {
+            // Only allow Done from ShowingUrl or BrowserOpenFailed states
+            if matches!(overlay, ClaudeLoginState::ShowingUrl { .. } | ClaudeLoginState::BrowserOpenFailed { .. }) {
                 // Update state to Verifying
                 app.dashboard
                     .update_claude_login_state(ClaudeLoginState::Verifying);
@@ -580,9 +580,10 @@ pub fn handle_claude_login_command(app: &mut App, cmd: &Command) -> bool {
         }
 
         Command::ClaudeLoginCancel => {
-            // Allow cancel from ShowingUrl or VerificationFailed states
+            // Allow cancel from ShowingUrl, BrowserOpenFailed, or VerificationFailed states
             match overlay {
                 ClaudeLoginState::ShowingUrl { .. }
+                | ClaudeLoginState::BrowserOpenFailed { .. }
                 | ClaudeLoginState::VerificationFailed { .. } => {
                     // Send cancel response to backend
                     if let Some(request_id) = app.dashboard.claude_login_request_id() {

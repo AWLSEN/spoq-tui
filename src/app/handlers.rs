@@ -1630,7 +1630,16 @@ impl App {
                         }
                         Err(e) => {
                             tracing::warn!("Failed to open browser: {}", e);
-                            false
+                            // Show specific error state instead of generic message
+                            use crate::view_state::ClaudeLoginState;
+                            self.dashboard.show_claude_login(request_id.clone(), auth_url.clone(), false);
+                            self.dashboard.update_claude_login_state(
+                                ClaudeLoginState::BrowserOpenFailed {
+                                    auth_url: auth_url.clone(),
+                                    error: format!("Could not open browser: {}", e),
+                                }
+                            );
+                            return;
                         }
                     }
                 } else {
@@ -1657,13 +1666,15 @@ impl App {
                 // Only update if this is for the current login dialog
                 if self.dashboard.claude_login_request_id() == Some(&request_id) {
                     if success {
+                        let now = std::time::Instant::now();
                         self.dashboard.update_claude_login_state(
                             ClaudeLoginState::VerificationSuccess {
                                 email: account_email.unwrap_or_else(|| "Unknown".to_string()),
+                                success_time: now,
                             },
                         );
                         // Schedule auto-close after 1.5 seconds
-                        // (The main loop can check for this state and close after delay)
+                        self.claude_login_auto_close = Some(now + std::time::Duration::from_millis(1500));
                     } else {
                         self.dashboard.update_claude_login_state(
                             ClaudeLoginState::VerificationFailed {
@@ -1686,47 +1697,68 @@ impl App {
                     request_id, message
                 );
 
-                // Spawn setup-token in background thread
                 let tx = self.message_tx.clone();
                 let req_id = request_id.clone();
-                std::thread::spawn(move || {
-                    tracing::info!("Running claude setup-token for request_id={}", req_id);
 
-                    match crate::setup::run_claude_setup_token() {
-                        Ok(result) if result.success => {
-                            if let Some(token) = result.token {
-                                tracing::info!(
-                                    "Claude setup-token succeeded: {}...",
-                                    &token[..std::cmp::min(20, token.len())]
-                                );
-                                let _ = tx.send(AppMessage::ClaudeAuthTokenCaptured {
-                                    request_id: req_id,
-                                    token,
-                                });
-                            } else {
-                                tracing::error!("Claude setup-token succeeded but no token captured");
+                // Clone for unwrap_or_else closure
+                let tx_panic = tx.clone();
+                let req_id_panic = req_id.clone();
+
+                // Use tokio::spawn_blocking for CPU-bound blocking operation
+                tokio::spawn(async move {
+                    tokio::task::spawn_blocking(move || {
+                        tracing::info!("Running claude setup-token for request_id={}", req_id);
+
+                        match crate::setup::run_claude_setup_token() {
+                            Ok(result) if result.success => {
+                                if let Some(token) = result.token {
+                                    if token.is_empty() {
+                                        tracing::error!("Claude setup-token returned empty token");
+                                        let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
+                                            request_id: req_id,
+                                            error: "Authentication succeeded but token is empty".to_string(),
+                                        });
+                                        return;
+                                    }
+
+                                    tracing::info!("Claude setup-token succeeded: token_length={}", token.len());
+                                    let _ = tx.send(AppMessage::ClaudeAuthTokenCaptured {
+                                        request_id: req_id,
+                                        token,
+                                    });
+                                } else {
+                                    tracing::error!("Claude setup-token succeeded but no token captured");
+                                    let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
+                                        request_id: req_id,
+                                        error: "Token capture succeeded but token is empty".to_string(),
+                                    });
+                                }
+                            }
+                            Ok(result) => {
+                                let error = result.error.unwrap_or_else(|| "Authentication failed without details".to_string());
+                                tracing::error!("Claude setup-token failed: {}", error);
                                 let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
                                     request_id: req_id,
-                                    error: "Token capture succeeded but token is empty".to_string(),
+                                    error,
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("Claude setup-token error: {}", e);
+                                let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
+                                    request_id: req_id,
+                                    error: e.to_string(),
                                 });
                             }
                         }
-                        Ok(result) => {
-                            let error = result.error.unwrap_or_else(|| "Unknown error".to_string());
-                            tracing::error!("Claude setup-token failed: {}", error);
-                            let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
-                                request_id: req_id,
-                                error,
-                            });
-                        }
-                        Err(e) => {
-                            tracing::error!("Claude setup-token error: {}", e);
-                            let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
-                                request_id: req_id,
-                                error: e.to_string(),
-                            });
-                        }
-                    }
+                    })
+                    .await
+                    .unwrap_or_else(|e| {
+                        tracing::error!("Setup-token task panicked: {}", e);
+                        let _ = tx_panic.send(AppMessage::ClaudeAuthTokenFailed {
+                            request_id: req_id_panic,
+                            error: "Setup-token task failed unexpectedly".to_string(),
+                        });
+                    });
                 });
             }
             AppMessage::ClaudeAuthTokenCaptured {
@@ -1734,19 +1766,31 @@ impl App {
                 token,
             } => {
                 tracing::info!(
-                    "Claude CLI auth token captured: request_id={}, token={}...",
-                    request_id, &token[..std::cmp::min(20, token.len())]
+                    "Claude CLI auth token captured: request_id={}, token_length={}",
+                    request_id, token.len()
                 );
 
                 // Send token to backend via WebSocket
                 use crate::websocket::{WsClaudeAuthTokenResponse, WsOutgoingMessage};
-                let response = WsClaudeAuthTokenResponse::new(request_id, token);
+                let response = WsClaudeAuthTokenResponse::new(request_id.clone(), token);
                 if let Some(ref sender) = self.ws_sender {
                     if let Err(e) = sender.try_send(WsOutgoingMessage::ClaudeAuthTokenResponse(response)) {
                         tracing::error!("Failed to send Claude auth token: {}", e);
+
+                        // Show error to user
+                        let _ = self.message_tx.send(AppMessage::ClaudeAuthTokenFailed {
+                            request_id,
+                            error: "Failed to send token to server - connection may be lost".to_string(),
+                        });
                     }
                 } else {
                     tracing::error!("No WebSocket connection available to send Claude auth token");
+
+                    // Show error to user
+                    let _ = self.message_tx.send(AppMessage::ClaudeAuthTokenFailed {
+                        request_id,
+                        error: "No connection to server - please check your connection".to_string(),
+                    });
                 }
             }
             AppMessage::ClaudeAuthTokenFailed {

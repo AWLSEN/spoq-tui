@@ -105,6 +105,19 @@ impl App {
                 self.mark_dirty();
             }
         }
+
+        // Check auto-close timer for Claude login success dialog
+        if let Some(close_time) = self.claude_login_auto_close {
+            if std::time::Instant::now() >= close_time {
+                // Close the Claude login overlay
+                use crate::view_state::OverlayState;
+                if let Some(OverlayState::ClaudeLogin { .. }) = self.dashboard.overlay() {
+                    self.dashboard.collapse_overlay();
+                    self.claude_login_auto_close = None;
+                    self.mark_dirty();
+                }
+            }
+        }
     }
 
     /// Update smooth scroll position with velocity and friction

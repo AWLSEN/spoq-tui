@@ -182,7 +182,7 @@ pub fn run_claude_setup_token() -> Result<ClaudeAuthResult, ClaudeAuthError> {
                 // Check for token in output
                 if let Some(caps) = token_regex.captures(&clean_line) {
                     captured_token = Some(caps[1].to_string());
-                    tracing::info!("Captured Claude CLI token: {}...", &caps[1][..std::cmp::min(20, caps[1].len())]);
+                    tracing::info!("Captured Claude CLI token: token_length={}", caps[1].len());
                 }
 
                 // Check for errors in output
@@ -229,15 +229,48 @@ pub fn run_claude_setup_token() -> Result<ClaudeAuthResult, ClaudeAuthError> {
 
     // Return result
     if let Some(token) = captured_token {
+        validate_token(&token)?;
         Ok(ClaudeAuthResult::success(token))
     } else {
         // Try one more time to find token in full output
         if let Some(caps) = token_regex.captures(&full_output) {
-            Ok(ClaudeAuthResult::success(caps[1].to_string()))
+            let token = caps[1].to_string();
+            validate_token(&token)?;
+            Ok(ClaudeAuthResult::success(token))
         } else {
             Err(ClaudeAuthError::TokenNotFound)
         }
     }
+}
+
+/// Validate a captured token for security and correctness
+fn validate_token(token: &str) -> Result<(), ClaudeAuthError> {
+    const MIN_TOKEN_LENGTH: usize = 20;
+    const MAX_TOKEN_LENGTH: usize = 500;
+
+    if token.is_empty() {
+        return Err(ClaudeAuthError::TokenNotFound);
+    }
+
+    if token.len() < MIN_TOKEN_LENGTH {
+        return Err(ClaudeAuthError::ProcessError(
+            format!("Token too short: {} chars (min {})", token.len(), MIN_TOKEN_LENGTH)
+        ));
+    }
+
+    if token.len() > MAX_TOKEN_LENGTH {
+        return Err(ClaudeAuthError::ProcessError(
+            format!("Token too long: {} chars (max {})", token.len(), MAX_TOKEN_LENGTH)
+        ));
+    }
+
+    if token.chars().any(|c| c.is_whitespace()) {
+        return Err(ClaudeAuthError::ProcessError(
+            "Token contains invalid whitespace".to_string()
+        ));
+    }
+
+    Ok(())
 }
 
 /// Run setup-token in a background thread and return a channel receiver
@@ -289,5 +322,79 @@ mod tests {
         assert!(!result.success);
         assert!(result.token.is_none());
         assert_eq!(result.error, Some("test error".to_string()));
+    }
+
+    #[test]
+    fn test_validate_token_empty() {
+        let result = validate_token("");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ClaudeAuthError::TokenNotFound));
+    }
+
+    #[test]
+    fn test_validate_token_too_short() {
+        let token = "sk-ant-oat01-abc"; // Only 16 chars
+        let result = validate_token(token);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ClaudeAuthError::ProcessError(msg) => {
+                assert!(msg.contains("too short"));
+                assert!(msg.contains("16 chars"));
+            }
+            _ => panic!("Expected ProcessError for too short token"),
+        }
+    }
+
+    #[test]
+    fn test_validate_token_too_long() {
+        // Create a token that's 501 chars (> MAX_TOKEN_LENGTH of 500)
+        let token = format!("sk-ant-oat01-{}", "a".repeat(488)); // 501 total
+        let result = validate_token(&token);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ClaudeAuthError::ProcessError(msg) => {
+                assert!(msg.contains("too long"));
+                assert!(msg.contains("501 chars"));
+            }
+            _ => panic!("Expected ProcessError for too long token"),
+        }
+    }
+
+    #[test]
+    fn test_validate_token_with_whitespace() {
+        let tokens_with_whitespace = vec![
+            "sk-ant-oat01-abc def",      // space
+            "sk-ant-oat01-abc\ndef",     // newline
+            "sk-ant-oat01-abc\tdef",     // tab
+            "sk-ant-oat01-abc\rdef",     // carriage return
+        ];
+
+        for token in tokens_with_whitespace {
+            let result = validate_token(token);
+            assert!(result.is_err(), "Token with whitespace should fail: {:?}", token);
+            match result.unwrap_err() {
+                ClaudeAuthError::ProcessError(msg) => {
+                    assert!(msg.contains("whitespace"), "Error message should mention whitespace");
+                }
+                _ => panic!("Expected ProcessError for token with whitespace"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_validate_token_valid() {
+        // Valid tokens of various lengths
+        let valid_tokens = vec![
+            "sk-ant-oat01-abcdefghij".to_string(),                           // 23 chars - minimum valid
+            "sk-ant-oat01-abcdef_ghij-klmno".to_string(),                    // With underscores and hyphens
+            "sk-ant-oat01-ABCDEF123456".to_string(),                         // With uppercase
+            format!("sk-ant-oat01-{}", "x".repeat(200)),                     // Long but valid (214 chars)
+            format!("sk-ant-oat01-{}", "a".repeat(486)),                     // Max valid length (500 chars)
+        ];
+
+        for token in valid_tokens {
+            let result = validate_token(&token);
+            assert!(result.is_ok(), "Valid token should pass: {}", token);
+        }
     }
 }
