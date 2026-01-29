@@ -237,6 +237,18 @@ pub enum Command {
     RejectPlan,
 
     // =========================================================================
+    // Claude Login Commands
+    // =========================================================================
+    /// Open browser for Claude login (Enter)
+    ClaudeLoginOpenBrowser,
+    /// Mark Claude login as done (D/d)
+    ClaudeLoginDone,
+    /// Cancel Claude login (Escape)
+    ClaudeLoginCancel,
+    /// Retry Claude login after failure (R/r)
+    ClaudeLoginRetry,
+
+    // =========================================================================
     // Conversation Screen Commands
     // =========================================================================
     /// Dismiss focused error (d key)
@@ -357,6 +369,10 @@ impl Command {
             Command::PlanScrollDown => "Scroll plan down",
             Command::ApprovePlan => "Approve plan",
             Command::RejectPlan => "Reject plan",
+            Command::ClaudeLoginOpenBrowser => "Open browser for Claude login",
+            Command::ClaudeLoginDone => "Confirm Claude login done",
+            Command::ClaudeLoginCancel => "Cancel Claude login",
+            Command::ClaudeLoginRetry => "Retry Claude login",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

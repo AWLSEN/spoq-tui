@@ -11,8 +11,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::models::WaitingFor;
 use crate::websocket::{
-    WsCommandResponse, WsCommandResult, WsConnectionState, WsOutgoingMessage, WsPermissionData,
-    WsPlanApprovalResponse,
+    WsClaudeLoginResponse, WsCommandResponse, WsCommandResult, WsConnectionState,
+    WsOutgoingMessage, WsPermissionData, WsPlanApprovalResponse,
 };
 
 use super::App;
@@ -118,6 +118,58 @@ impl App {
             }
             Err(e) => {
                 error!("Failed to send plan approval response: {}", e);
+                false
+            }
+        }
+    }
+
+    // ========================================================================
+    // Claude Login Response (uses claude_login_response wire format)
+    // ========================================================================
+
+    /// Send a Claude login response via WebSocket.
+    ///
+    /// This method handles Claude CLI login responses from the login dialog.
+    ///
+    /// Wire format:
+    /// ```json
+    /// {
+    ///   "type": "claude_login_response",
+    ///   "request_id": "login-123",
+    ///   "status": "completed" | "cancelled"
+    /// }
+    /// ```
+    pub fn send_claude_login_response(&self, request_id: String, completed: bool) -> bool {
+        let sender = match &self.ws_sender {
+            Some(s) => s,
+            None => {
+                warn!("No WebSocket sender available for Claude login response");
+                return false;
+            }
+        };
+
+        if self.ws_connection_state != WsConnectionState::Connected {
+            warn!("WebSocket not connected for Claude login response");
+            return false;
+        }
+
+        let response = if completed {
+            WsClaudeLoginResponse::completed(request_id.clone())
+        } else {
+            WsClaudeLoginResponse::cancelled(request_id.clone())
+        };
+
+        match sender.try_send(WsOutgoingMessage::ClaudeLoginResponse(response)) {
+            Ok(()) => {
+                info!(
+                    "Sent Claude login response via WebSocket: {} -> {}",
+                    request_id,
+                    if completed { "completed" } else { "cancelled" }
+                );
+                true
+            }
+            Err(e) => {
+                error!("Failed to send Claude login response: {}", e);
                 false
             }
         }

@@ -251,6 +251,17 @@ impl CommandRegistry {
                 Some(Command::Noop)
             }
 
+            ModalType::ClaudeLogin => {
+                // Claude login dialog - handle Enter, D, Esc, R keys
+                match key.code {
+                    KeyCode::Enter => Some(Command::ClaudeLoginOpenBrowser),
+                    KeyCode::Char('d') | KeyCode::Char('D') => Some(Command::ClaudeLoginDone),
+                    KeyCode::Char('r') | KeyCode::Char('R') => Some(Command::ClaudeLoginRetry),
+                    KeyCode::Esc => Some(Command::ClaudeLoginCancel),
+                    _ => Some(Command::Noop), // Ignore other keys
+                }
+            }
+
             ModalType::None => {
                 // Should not reach here, but handle gracefully
                 None

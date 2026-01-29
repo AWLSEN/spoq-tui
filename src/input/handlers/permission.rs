@@ -539,6 +539,85 @@ pub fn handle_misc_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles Claude login dialog commands.
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_claude_login_command(app: &mut App, cmd: &Command) -> bool {
+    use crate::view_state::{ClaudeLoginState, OverlayState};
+
+    // Check that we have a Claude login overlay
+    let overlay = match app.dashboard.overlay() {
+        Some(OverlayState::ClaudeLogin { state, .. }) => state.clone(),
+        _ => return false,
+    };
+
+    match cmd {
+        Command::ClaudeLoginOpenBrowser => {
+            // Open browser and update state
+            if let Some(auth_url) = app.dashboard.claude_login_auth_url() {
+                let _ = open::that(auth_url);
+                app.dashboard
+                    .update_claude_login_state(ClaudeLoginState::ShowingUrl {
+                        browser_opened: true,
+                    });
+            }
+            true
+        }
+
+        Command::ClaudeLoginDone => {
+            // Only allow Done from ShowingUrl state (either state)
+            if matches!(overlay, ClaudeLoginState::ShowingUrl { .. }) {
+                // Update state to Verifying
+                app.dashboard
+                    .update_claude_login_state(ClaudeLoginState::Verifying);
+
+                // Send response to backend
+                if let Some(request_id) = app.dashboard.claude_login_request_id() {
+                    app.send_claude_login_response(request_id.to_string(), true);
+                }
+            }
+            true
+        }
+
+        Command::ClaudeLoginCancel => {
+            // Allow cancel from ShowingUrl or VerificationFailed states
+            match overlay {
+                ClaudeLoginState::ShowingUrl { .. }
+                | ClaudeLoginState::VerificationFailed { .. } => {
+                    // Send cancel response to backend
+                    if let Some(request_id) = app.dashboard.claude_login_request_id() {
+                        app.send_claude_login_response(request_id.to_string(), false);
+                    }
+                    // Close overlay
+                    app.dashboard.collapse_overlay();
+                }
+                ClaudeLoginState::VerificationSuccess { .. } => {
+                    // Just close overlay (success state - don't send cancel)
+                    app.dashboard.collapse_overlay();
+                }
+                ClaudeLoginState::Verifying => {
+                    // Can't cancel while verifying - do nothing
+                }
+            }
+            true
+        }
+
+        Command::ClaudeLoginRetry => {
+            // Only allow retry from VerificationFailed state
+            if matches!(overlay, ClaudeLoginState::VerificationFailed { .. }) {
+                // Reset to ShowingUrl state with browser already opened
+                app.dashboard
+                    .update_claude_login_state(ClaudeLoginState::ShowingUrl {
+                        browser_opened: true,
+                    });
+            }
+            true
+        }
+
+        _ => false,
+    }
+}
+
 /// Handles plan approval-related commands (scroll, approve, reject).
 ///
 /// Returns `true` if the command was handled successfully.

@@ -118,6 +118,8 @@ impl App {
                 } else {
                     ModalType::DashboardQuestionOverlay
                 }
+            } else if let Some(OverlayState::ClaudeLogin { .. }) = self.dashboard.overlay() {
+                ModalType::ClaudeLogin
             } else if let Some(overlay) = self.dashboard.overlay() {
                 // Check for thread-scoped permission using overlay's thread_id
                 let thread_id = overlay.thread_id();
@@ -240,6 +242,11 @@ impl App {
             }
             ModalType::PlanApproval => {
                 if handlers::handle_plan_approval_command(self, &cmd) {
+                    return true;
+                }
+            }
+            ModalType::ClaudeLogin => {
+                if handlers::handle_claude_login_command(self, &cmd) {
                     return true;
                 }
             }
