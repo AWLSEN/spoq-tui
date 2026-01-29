@@ -40,11 +40,12 @@
 //! app.credential_keychain_poller = Some(keychain_poller);
 //! ```
 
-// Submodules - will be implemented in subsequent phases
+// Submodules
 mod coordinator;
 mod debouncer;
 mod file_watcher;
 mod keychain_poller;
+mod keychain_provider;
 mod state;
 mod types;
 
@@ -54,6 +55,10 @@ pub use coordinator::{
 };
 pub use debouncer::Debouncer;
 pub use file_watcher::spawn_file_watcher;
-pub use keychain_poller::{get_current_hash, spawn_keychain_poller};
+pub use keychain_poller::{
+    compute_keychain_hash_with_provider, get_current_hash, get_current_hash_with_provider,
+    spawn_keychain_poller, spawn_keychain_poller_with_provider, POLL_INTERVAL_SECS,
+};
+pub use keychain_provider::{KeychainProvider, MockKeychain, RealKeychain};
 pub use state::{CredentialWatchState, ExponentialBackoff};
 pub use types::{CredentialChangeEvent, CredentialSource};

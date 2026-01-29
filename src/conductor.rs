@@ -223,24 +223,42 @@ pub struct ConductorClient {
     central_api_url: String,
 }
 
+/// Default keychain service name for Claude Code credentials.
+const DEFAULT_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
+
+/// Get the keychain service name to use.
+///
+/// Returns `SPOQ_TEST_KEYCHAIN_SERVICE` env var if set, otherwise the default.
+/// This allows testing keychain detection without touching real credentials.
+pub fn get_keychain_service() -> String {
+    std::env::var("SPOQ_TEST_KEYCHAIN_SERVICE")
+        .unwrap_or_else(|_| DEFAULT_KEYCHAIN_SERVICE.to_string())
+}
+
 /// Read Claude Code OAuth tokens from macOS Keychain.
 ///
 /// On macOS, Claude Code stores OAuth tokens in Keychain under "Claude Code-credentials".
 /// The account name is the current username.
 ///
+/// For testing, set `SPOQ_TEST_KEYCHAIN_SERVICE` to use a different keychain item.
+///
 /// This function is public so the credential_watcher module can use it for change detection.
 #[cfg(target_os = "macos")]
 pub fn read_claude_keychain_credentials() -> Option<String> {
-    // Claude Code stores credentials with service name "Claude Code-credentials"
-    // The account name is the current username
+    let service = get_keychain_service();
     let username = std::env::var("USER").unwrap_or_else(|_| "".to_string());
 
-    match get_generic_password("Claude Code-credentials", &username) {
+    tracing::debug!("Reading keychain: service='{}', account='{}'", service, username);
+
+    match get_generic_password(&service, &username) {
         Ok(password_bytes) => {
-            // Convert bytes to string - this is JSON containing OAuth tokens
+            tracing::debug!("Keychain read success: {} bytes", password_bytes.len());
             String::from_utf8(password_bytes.to_vec()).ok()
         }
-        Err(_) => None,
+        Err(e) => {
+            tracing::debug!("Keychain read failed: {:?}", e);
+            None
+        }
     }
 }
 
@@ -393,12 +411,41 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
     if sync_type == "claude_code" || sync_type == "all" {
         let mut claude_data = serde_json::Map::new();
 
-        // On macOS, read OAuth tokens from Keychain (this has the actual tokens)
+        // Try to read OAuth tokens from multiple sources in order of preference:
+        // 1. macOS Keychain (legacy/some setups)
+        // 2. ~/.claude/.credentials.json (current file-based storage)
+        let mut found_oauth_tokens = false;
+
+        // On macOS, try Keychain first
         if let Some(keychain_creds) = read_claude_keychain_credentials() {
+            tracing::debug!("Found OAuth tokens in Keychain");
             claude_data.insert(
                 "keychain_credentials".to_string(),
                 serde_json::Value::String(keychain_creds),
             );
+            found_oauth_tokens = true;
+        }
+
+        // Fall back to ~/.claude/.credentials.json (where Claude Code actually stores tokens)
+        if !found_oauth_tokens {
+            let credentials_path = PathBuf::from(&home).join(".claude").join(".credentials.json");
+            if credentials_path.exists() {
+                if let Ok(contents) = fs::read_to_string(&credentials_path) {
+                    // Verify it has OAuth tokens (not just empty or invalid JSON)
+                    if contents.contains("accessToken") || contents.contains("claudeAiOauth") {
+                        tracing::debug!("Found OAuth tokens in ~/.claude/.credentials.json");
+                        claude_data.insert(
+                            "keychain_credentials".to_string(),
+                            serde_json::Value::String(contents),
+                        );
+                        found_oauth_tokens = true;
+                    }
+                }
+            }
+        }
+
+        if !found_oauth_tokens {
+            tracing::warn!("No OAuth tokens found in Keychain or credentials file");
         }
 
         // Also read ~/.claude.json for account metadata

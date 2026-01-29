@@ -1247,6 +1247,20 @@ where
                                             continue;
                                         }
 
+                                        // Check for @ trigger for file picker (Conversation screen)
+                                        if char_to_insert == '@' && app.screen == Screen::Conversation {
+                                            let (row, col) = app.textarea.cursor();
+                                            let lines = app.textarea.lines();
+                                            let line_content = lines.get(row).map(|s| s.as_str()).unwrap_or("");
+
+                                            if app.is_file_picker_trigger(line_content, col) {
+                                                app.textarea.insert_char('@');
+                                                app.open_file_picker();
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                        }
+
                                         // Check for @ trigger for unified picker (repos, threads, folders)
                                         // Only trigger on CommandDeck and when it looks like a mention, not an email
                                         if char_to_insert == '@' && app.screen == Screen::CommandDeck {

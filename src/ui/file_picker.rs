@@ -13,40 +13,22 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, Clear, Paragraph},
     Frame,
 };
 
 use crate::state::FilePickerState;
 
-use super::theme::{COLOR_ACCENT, COLOR_BORDER, COLOR_DIALOG_BG, COLOR_DIM, COLOR_HEADER};
+use super::theme::{COLOR_ACCENT, COLOR_DIALOG_BG, COLOR_DIM, COLOR_HEADER};
 
-/// Calculate dialog height based on content
+/// Calculate dialog height based on content (borderless)
 fn calculate_dialog_height(content_lines: usize, area_height: u16) -> u16 {
-    // Height: 2 (borders) + content_lines + 2 (footer lines)
-    let content_height = (content_lines as u16) + 4;
+    // Height: content_lines only (no borders, hint is part of content)
+    let content_height = content_lines as u16;
 
     // Cap at reasonable max based on terminal height
-    let max_height = area_height.saturating_sub(6);
-    content_height.min(max_height).max(6)
-}
-
-/// Truncate a path string to fit within max_len characters
-fn truncate_path(path: &str, max_len: usize) -> String {
-    if path.chars().count() <= max_len {
-        return path.to_string();
-    }
-
-    if max_len < 5 {
-        return "...".to_string();
-    }
-
-    // Show end of path with ellipsis
-    let end_len = max_len.saturating_sub(3);
-    let char_count = path.chars().count();
-    let skip = char_count.saturating_sub(end_len);
-
-    format!("...{}", path.chars().skip(skip).collect::<String>())
+    let max_height = area_height.saturating_sub(4);
+    content_height.min(max_height).max(3)
 }
 
 /// Format file size for display
@@ -83,9 +65,19 @@ pub fn render_file_picker(frame: &mut Frame, state: &FilePickerState, input_area
     let line_count = content_lines.len().max(1);
     let dialog_height = calculate_dialog_height(line_count, area.height);
 
-    // Position: horizontally aligned with input area, bottom-anchored (above input area)
+    // Position: BELOW input (Claude Code style)
+    // Anchor is now at bottom of input, so render starting from anchor Y
     let x = input_area.x;
-    let y = input_area.y.saturating_sub(dialog_height);
+
+    // Check if there's room below, otherwise render above
+    let space_below = area.height.saturating_sub(input_area.y);
+    let y = if space_below >= dialog_height {
+        // Render below anchor (preferred - Claude Code style)
+        input_area.y
+    } else {
+        // Fallback: render above if not enough room below
+        input_area.y.saturating_sub(dialog_height)
+    };
 
     let dialog_area = Rect {
         x,
@@ -97,58 +89,21 @@ pub fn render_file_picker(frame: &mut Frame, state: &FilePickerState, input_area
     // Clear the background behind the dialog
     frame.render_widget(Clear, dialog_area);
 
-    // Create the dialog border with solid background
-    // Title shows @ + query + current path
-    let title = build_title(state, dialog_width as usize);
-
-    let block = Block::default()
-        .title(Span::styled(
-            title,
-            Style::default()
-                .fg(COLOR_HEADER)
-                .add_modifier(Modifier::BOLD),
-        ))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(COLOR_BORDER))
-        .style(Style::default().bg(COLOR_DIALOG_BG));
-
+    // Borderless block with just background (Claude Code style)
+    let block = Block::default().style(Style::default().bg(COLOR_DIALOG_BG));
     frame.render_widget(block, dialog_area);
 
-    // Inner area for content
+    // Minimal inner padding (no border to account for)
     let inner = Rect {
-        x: dialog_area.x + 2,
-        y: dialog_area.y + 1,
-        width: dialog_area.width.saturating_sub(4),
-        height: dialog_area.height.saturating_sub(2),
+        x: dialog_area.x + 1,
+        y: dialog_area.y,
+        width: dialog_area.width.saturating_sub(2),
+        height: dialog_area.height,
     };
 
     // Render content lines
     let content = Paragraph::new(content_lines).style(Style::default().bg(COLOR_DIALOG_BG));
     frame.render_widget(content, inner);
-}
-
-/// Build the dialog title
-fn build_title(state: &FilePickerState, max_width: usize) -> String {
-    let query_part = if state.query.is_empty() {
-        " @ ".to_string()
-    } else {
-        format!(" @{} ", state.query)
-    };
-
-    let path_str = state.current_path_str();
-
-    // Calculate how much space we have for the path
-    let query_len = query_part.chars().count();
-    let separator_len = 3; // " ─ "
-    let available = max_width.saturating_sub(query_len + separator_len + 4);
-
-    if available < 10 {
-        query_part
-    } else {
-        let truncated_path = truncate_path(&path_str, available);
-        format!("{}─ {}", query_part, truncated_path)
-    }
 }
 
 /// Build the display lines for the picker
@@ -370,23 +325,6 @@ fn build_hint_line(state: &FilePickerState) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_truncate_path_short() {
-        assert_eq!(truncate_path("/home/user", 20), "/home/user");
-    }
-
-    #[test]
-    fn test_truncate_path_long() {
-        let result = truncate_path("/very/long/path/to/some/directory", 15);
-        assert!(result.starts_with("..."));
-        assert!(result.len() <= 15);
-    }
-
-    #[test]
-    fn test_truncate_path_tiny() {
-        assert_eq!(truncate_path("/path", 3), "...");
-    }
 
     #[test]
     fn test_format_size_bytes() {
