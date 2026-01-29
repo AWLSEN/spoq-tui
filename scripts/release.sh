@@ -13,6 +13,12 @@
 
 set -e
 
+# Ensure rustup's toolchain is used (not Homebrew's) for cross-compilation
+RUSTUP_TOOLCHAIN="${HOME}/.rustup/toolchains/stable-aarch64-apple-darwin/bin"
+if [[ -d "$RUSTUP_TOOLCHAIN" ]]; then
+    export PATH="${RUSTUP_TOOLCHAIN}:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
