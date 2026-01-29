@@ -30,6 +30,7 @@ use ratatui::{
 
 use crate::models::dashboard::PlanSummary;
 use crate::state::dashboard::DashboardQuestionState;
+use crate::ui::dashboard::login_card;
 use crate::ui::dashboard::plan_card;
 use crate::ui::dashboard::question_card::{self, QuestionRenderConfig};
 use crate::ui::dashboard::{OverlayState, RenderContext};
@@ -176,6 +177,14 @@ pub fn render(
                 *scroll_offset,
             );
         }
+        OverlayState::ClaudeLogin {
+            request_id,
+            auth_url,
+            state,
+            ..
+        } => {
+            login_card::render(frame, inner_area, request_id, auth_url, state);
+        }
     }
 }
 
@@ -258,6 +267,14 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             // Plan card height based on phases
             let phase_rows = summary.phases.len().min(5) as u16;
             (*anchor_y, 6 + phase_rows + 2)
+        }
+        OverlayState::ClaudeLogin {
+            anchor_y, state, ..
+        } => {
+            // Login card height based on state
+            let height = login_card::calculate_height(state);
+            // Add borders (2) and some padding
+            (*anchor_y, height + 4)
         }
     }
 }

@@ -5,6 +5,7 @@
 
 pub mod footer;
 pub mod header;
+pub mod login_card;
 pub mod overlay;
 pub mod plan_card;
 pub mod question_card;
@@ -17,7 +18,7 @@ pub mod tooltip;
 // This allows existing code using `crate::ui::dashboard::*` to keep working
 pub use crate::models::ThreadMode;
 pub use crate::view_state::{
-    OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
+    ClaudeLoginState, OverlayState, Progress, RenderContext, SystemStats, Theme, ThreadView,
 };
 
 use ratatui::{
@@ -126,6 +127,10 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
             // Height based on plan content: title + phases + stats
             (4 + summary.phases.len() as u16 + 4).min(parent_area.height - 4)
         }
+        OverlayState::ClaudeLogin { state, .. } => {
+            // Height based on login state
+            login_card::calculate_height(state).min(parent_area.height - 4)
+        }
     };
 
     let x = parent_area.x + (parent_area.width.saturating_sub(overlay_width)) / 2;
@@ -135,6 +140,7 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
         OverlayState::Question { anchor_y, .. } => *anchor_y,
         OverlayState::FreeForm { anchor_y, .. } => *anchor_y,
         OverlayState::Plan { anchor_y, .. } => *anchor_y,
+        OverlayState::ClaudeLogin { anchor_y, .. } => *anchor_y,
     };
 
     // Try to position overlay so anchor_y is near the top

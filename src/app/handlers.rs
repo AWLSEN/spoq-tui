@@ -1638,13 +1638,26 @@ impl App {
                     "Claude CLI login required: request_id={}, auto_open={}",
                     request_id, auto_open
                 );
-                // TODO: Phase 8 - Show login dialog UI
-                // For now, just log and auto-open browser if requested
-                if auto_open {
-                    if let Err(e) = open::that(&auth_url) {
-                        tracing::warn!("Failed to open browser: {}", e);
+
+                // Auto-open browser if requested
+                let browser_opened = if auto_open {
+                    match open::that(&auth_url) {
+                        Ok(()) => {
+                            tracing::info!("Browser opened for auth URL");
+                            true
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to open browser: {}", e);
+                            false
+                        }
                     }
-                }
+                } else {
+                    false
+                };
+
+                // Show the Claude login overlay
+                self.dashboard
+                    .show_claude_login(request_id, auth_url, browser_opened);
             }
             AppMessage::ClaudeLoginVerificationResult {
                 request_id,
@@ -1652,11 +1665,31 @@ impl App {
                 account_email,
                 error,
             } => {
+                use crate::view_state::ClaudeLoginState;
+
                 tracing::info!(
                     "Claude CLI login verification: request_id={}, success={}, email={:?}, error={:?}",
                     request_id, success, account_email, error
                 );
-                // TODO: Phase 8 - Update login dialog state
+
+                // Only update if this is for the current login dialog
+                if self.dashboard.claude_login_request_id() == Some(&request_id) {
+                    if success {
+                        self.dashboard.update_claude_login_state(
+                            ClaudeLoginState::VerificationSuccess {
+                                email: account_email.unwrap_or_else(|| "Unknown".to_string()),
+                            },
+                        );
+                        // Schedule auto-close after 1.5 seconds
+                        // (The main loop can check for this state and close after delay)
+                    } else {
+                        self.dashboard.update_claude_login_state(
+                            ClaudeLoginState::VerificationFailed {
+                                error: error.unwrap_or_else(|| "Unknown error".to_string()),
+                            },
+                        );
+                    }
+                }
             }
         }
     }

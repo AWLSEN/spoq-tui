@@ -216,39 +216,67 @@ pub enum OverlayState {
         scroll_offset: usize,
         anchor_y: u16,
     },
+    /// Claude CLI login required dialog
+    ClaudeLogin {
+        request_id: String,
+        auth_url: String,
+        state: ClaudeLoginState,
+        anchor_y: u16,
+    },
+}
+
+/// State of the Claude login dialog
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClaudeLoginState {
+    /// Initial state - URL displayed, browser may have auto-opened
+    ShowingUrl { browser_opened: bool },
+    /// User pressed Done - waiting for backend verification
+    Verifying,
+    /// Backend confirmed successful authentication
+    VerificationSuccess { email: String },
+    /// Backend reported authentication failed
+    VerificationFailed { error: String },
 }
 
 impl OverlayState {
-    /// Get the thread ID associated with this overlay
+    /// Get the thread ID associated with this overlay (returns empty string for ClaudeLogin)
     pub fn thread_id(&self) -> &str {
         match self {
             OverlayState::Question { thread_id, .. } => thread_id,
             OverlayState::FreeForm { thread_id, .. } => thread_id,
             OverlayState::Plan { thread_id, .. } => thread_id,
+            OverlayState::ClaudeLogin { .. } => "",
         }
     }
 
-    /// Get the thread title associated with this overlay
+    /// Get the thread title associated with this overlay (returns empty string for ClaudeLogin)
     pub fn thread_title(&self) -> &str {
         match self {
             OverlayState::Question { thread_title, .. } => thread_title,
             OverlayState::FreeForm { thread_title, .. } => thread_title,
             OverlayState::Plan { thread_title, .. } => thread_title,
+            OverlayState::ClaudeLogin { .. } => "Claude Login",
         }
     }
 
-    /// Get the repository associated with this overlay
+    /// Get the repository associated with this overlay (returns empty string for ClaudeLogin)
     pub fn repository(&self) -> &str {
         match self {
             OverlayState::Question { repository, .. } => repository,
             OverlayState::FreeForm { repository, .. } => repository,
             OverlayState::Plan { repository, .. } => repository,
+            OverlayState::ClaudeLogin { .. } => "",
         }
     }
 
     /// Check if this is a plan approval overlay
     pub fn is_plan(&self) -> bool {
         matches!(self, OverlayState::Plan { .. })
+    }
+
+    /// Check if this is a Claude login overlay
+    pub fn is_claude_login(&self) -> bool {
+        matches!(self, OverlayState::ClaudeLogin { .. })
     }
 }
 

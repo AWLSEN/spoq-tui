@@ -871,6 +871,49 @@ impl DashboardState {
     }
 
     // ========================================================================
+    // Claude Login Overlay
+    // ========================================================================
+
+    /// Show the Claude login overlay
+    pub fn show_claude_login(&mut self, request_id: String, auth_url: String, auto_opened: bool) {
+        use crate::view_state::ClaudeLoginState;
+
+        self.overlay = Some(OverlayState::ClaudeLogin {
+            request_id,
+            auth_url,
+            state: ClaudeLoginState::ShowingUrl {
+                browser_opened: auto_opened,
+            },
+            anchor_y: 5, // Center-ish in the list area
+        });
+    }
+
+    /// Update the Claude login overlay state
+    pub fn update_claude_login_state(&mut self, new_state: crate::view_state::ClaudeLoginState) {
+        if let Some(OverlayState::ClaudeLogin { ref mut state, .. }) = self.overlay {
+            *state = new_state;
+        }
+    }
+
+    /// Get the current Claude login request ID if a login overlay is open
+    pub fn claude_login_request_id(&self) -> Option<&str> {
+        if let Some(OverlayState::ClaudeLogin { request_id, .. }) = &self.overlay {
+            Some(request_id)
+        } else {
+            None
+        }
+    }
+
+    /// Get the current Claude login auth URL if a login overlay is open
+    pub fn claude_login_auth_url(&self) -> Option<&str> {
+        if let Some(OverlayState::ClaudeLogin { auth_url, .. }) = &self.overlay {
+            Some(auth_url)
+        } else {
+            None
+        }
+    }
+
+    // ========================================================================
     // Question Navigation (for Question overlay)
     // ========================================================================
 
