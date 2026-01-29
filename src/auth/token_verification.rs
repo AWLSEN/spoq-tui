@@ -6,7 +6,6 @@ use super::token_migration::detect_tokens;
 /// Result of local token verification (before provisioning)
 #[derive(Debug, Clone)]
 pub struct LocalTokenVerification {
-    pub claude_code_present: bool,
     pub github_cli_present: bool,
     pub all_required_present: bool,
 }
@@ -14,7 +13,6 @@ pub struct LocalTokenVerification {
 /// Result of VPS token verification (after migration)
 #[derive(Debug, Clone)]
 pub struct VpsTokenVerification {
-    pub claude_code_works: bool,
     pub github_cli_works: bool,
     pub ssh_error: Option<String>,
 }
@@ -55,8 +53,8 @@ impl std::error::Error for TokenVerificationError {}
 
 /// Verify required tokens exist locally before provisioning
 ///
-/// This function checks if Claude Code and GitHub CLI tokens are present
-/// on the local machine. Both are required for provisioning to proceed.
+/// This function checks if GitHub CLI tokens are present on the local machine.
+/// Note: Claude CLI uses server-side OAuth and is not synced from the client.
 ///
 /// # Returns
 /// * `Ok(LocalTokenVerification)` - Token status with `all_required_present` flag
@@ -69,19 +67,18 @@ pub fn verify_local_tokens() -> Result<LocalTokenVerification, TokenVerification
         TokenVerificationError::DetectionFailed(format!("Failed to detect tokens: {}", e))
     })?;
 
-    // Check if all required tokens are present
-    let all_required_present = detection.claude_code && detection.github_cli;
+    // Check if all required tokens are present (only GitHub CLI now)
+    let all_required_present = detection.github_cli;
 
     let verification = LocalTokenVerification {
-        claude_code_present: detection.claude_code,
         github_cli_present: detection.github_cli,
         all_required_present,
     };
 
     if !verification.all_required_present {
         warn!(
-            "Missing required tokens - Claude Code: {}, GitHub CLI: {}",
-            verification.claude_code_present, verification.github_cli_present
+            "Missing required tokens - GitHub CLI: {}",
+            verification.github_cli_present
         );
     } else {
         info!("All required tokens present locally");
@@ -93,7 +90,9 @@ pub fn verify_local_tokens() -> Result<LocalTokenVerification, TokenVerification
 /// SSH to VPS and verify tokens work by running commands
 ///
 /// This function connects to the VPS via SSH and tests whether
-/// Claude Code and GitHub CLI are installed and authenticated.
+/// GitHub CLI is installed and authenticated.
+///
+/// Note: Claude CLI uses server-side OAuth and doesn't need pre-verification.
 ///
 /// # Arguments
 /// * `vps_ip` - IP address of the VPS
@@ -120,24 +119,6 @@ pub fn verify_vps_tokens(
         ));
     }
 
-    // Verify Claude Code
-    let claude_code_works = match run_ssh_command(
-        vps_ip,
-        ssh_username,
-        ssh_password,
-        "claude -p \"testing verification\"",
-    ) {
-        Ok(output) => {
-            debug!("Claude Code verification output: {}", output);
-            info!("Claude Code verified on VPS");
-            true
-        }
-        Err(e) => {
-            warn!("Claude Code verification failed: {}", e);
-            false
-        }
-    };
-
     // Verify GitHub CLI
     let github_cli_works =
         match run_ssh_command(vps_ip, ssh_username, ssh_password, "gh auth status") {
@@ -159,7 +140,6 @@ pub fn verify_vps_tokens(
         };
 
     Ok(VpsTokenVerification {
-        claude_code_works,
         github_cli_works,
         ssh_error: None,
     })
@@ -254,25 +234,15 @@ fn check_sshpass_available() -> bool {
 /// Shows which required tokens are missing and provides
 /// instructions for how to authenticate.
 pub fn display_missing_tokens_error(verification: &LocalTokenVerification) {
-    println!("\n⚠️  Required tokens missing:");
-
-    if !verification.claude_code_present {
-        println!("  ✗ Claude Code - not found");
-    }
     if !verification.github_cli_present {
+        println!("\n⚠️  Required tokens missing:");
         println!("  ✗ GitHub CLI - not found");
-    }
 
-    println!("\nTo continue, please login:");
+        println!("\nTo continue, please login:");
+        println!("  Run: gh auth login");
 
-    if !verification.claude_code_present {
-        println!("  1. Claude Code: Run 'claude', then type /login");
+        println!("\nAfter logging in, run this command again to provision your VPS.");
     }
-    if !verification.github_cli_present {
-        println!("  2. GitHub CLI: Run 'gh auth login'");
-    }
-
-    println!("\nAfter logging in, run this command again to provision your VPS.");
 }
 
 /// Display results of VPS token verification
@@ -280,39 +250,18 @@ pub fn display_missing_tokens_error(verification: &LocalTokenVerification) {
 /// Shows which tokens are working on the VPS and provides
 /// troubleshooting steps for any failures.
 pub fn display_vps_verification_results(verification: &VpsTokenVerification) {
-    if verification.claude_code_works && verification.github_cli_works {
+    if verification.github_cli_works {
         // All tokens verified successfully
-        println!("\n✓ Claude Code verified on VPS");
-        println!("✓ GitHub CLI verified on VPS");
+        println!("\n✓ GitHub CLI verified on VPS");
         println!("\nYour VPS is ready with working credentials!");
     } else {
-        // Some tokens failed verification
-        println!("\n⚠️  Warning: Could not verify all tokens on VPS\n");
-
-        if verification.claude_code_works {
-            println!("  ✓ Claude Code - verified successfully");
-        } else {
-            println!("  ✗ Claude Code - verification failed");
-        }
-
-        if verification.github_cli_works {
-            println!("  ✓ GitHub CLI - verified successfully");
-        } else {
-            println!("  ✗ GitHub CLI - verification failed");
-        }
+        // GitHub CLI failed verification
+        println!("\n⚠️  Warning: Could not verify GitHub CLI on VPS\n");
+        println!("  ✗ GitHub CLI - verification failed");
 
         println!("\nYour VPS is ready, but you may need to manually login:");
-
-        if !verification.claude_code_works {
-            println!("  1. SSH to VPS: ssh spoq@[VPS_IP]");
-            println!("  2. Run: claude, then type /login");
-            println!("  3. Verify: claude -p \"test\"");
-        }
-
-        if !verification.github_cli_works {
-            println!("  1. SSH to VPS: ssh spoq@[VPS_IP]");
-            println!("  2. Run: gh auth login");
-            println!("  3. Verify: gh auth status");
-        }
+        println!("  1. SSH to VPS: ssh spoq@[VPS_IP]");
+        println!("  2. Run: gh auth login");
+        println!("  3. Verify: gh auth status");
     }
 }

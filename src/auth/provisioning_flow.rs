@@ -104,9 +104,6 @@ fn sync_tokens_to_vps(
     match runtime.block_on(conductor.sync_tokens("all")) {
         Ok(result) => {
             let synced = result.synced.unwrap_or_default();
-            if synced.contains(&"claude_code".to_string()) {
-                println!("  ✓ Claude Code tokens synced");
-            }
             if synced.contains(&"github_cli".to_string()) {
                 println!("  ✓ GitHub CLI tokens synced");
             }
@@ -116,9 +113,6 @@ fn sync_tokens_to_vps(
 
             // Show verification results if available
             if let Some(verification) = result.verification {
-                if verification.claude_code_works == Some(true) {
-                    println!("  ✓ Claude Code verified on VPS");
-                }
                 if verification.github_cli_works == Some(true) {
                     println!("  ✓ GitHub CLI verified on VPS");
                 }
@@ -930,12 +924,6 @@ fn run_byovps_flow_with_retry(
                             match runtime.block_on(conductor.sync_tokens("all")) {
                                 Ok(sync_result) => {
                                     let synced = sync_result.synced.unwrap_or_default();
-                                    if synced.contains(&"claude_code".to_string()) {
-                                        cli_output::print_step_line(
-                                            icons::SUCCESS,
-                                            "Claude Code synced",
-                                        );
-                                    }
                                     if synced.contains(&"github_cli".to_string()) {
                                         cli_output::print_step_line(
                                             icons::SUCCESS,
@@ -951,18 +939,6 @@ fn run_byovps_flow_with_retry(
 
                                     // Show verification results from sync response
                                     if let Some(verification) = sync_result.verification {
-                                        if verification.claude_code_works == Some(true) {
-                                            cli_output::print_step_line(
-                                                icons::SUCCESS,
-                                                "Claude Code verified on VPS",
-                                            );
-                                        } else if synced.contains(&"claude_code".to_string()) {
-                                            has_warnings = true;
-                                            cli_output::print_step_line(
-                                                icons::WARNING,
-                                                "Claude Code synced but not verified",
-                                            );
-                                        }
                                         if verification.github_cli_works == Some(true) {
                                             cli_output::print_step_line(
                                                 icons::SUCCESS,
@@ -1316,9 +1292,6 @@ fn run_byovps_flow(
     match runtime.block_on(conductor.sync_tokens("all")) {
         Ok(sync_result) => {
             let synced = sync_result.synced.unwrap_or_default();
-            if synced.contains(&"claude_code".to_string()) {
-                cli_output::print_step_line(icons::SUCCESS, "Claude Code synced");
-            }
             if synced.contains(&"github_cli".to_string()) {
                 cli_output::print_step_line(icons::SUCCESS, "GitHub CLI synced");
             }
@@ -1329,12 +1302,6 @@ fn run_byovps_flow(
 
             // Show verification results from sync response
             if let Some(verification) = sync_result.verification {
-                if verification.claude_code_works == Some(true) {
-                    cli_output::print_step_line(icons::SUCCESS, "Claude Code verified on VPS");
-                } else if synced.contains(&"claude_code".to_string()) {
-                    has_warnings = true;
-                    cli_output::print_step_line(icons::WARNING, "Claude Code synced but not verified");
-                }
                 if verification.github_cli_works == Some(true) {
                     cli_output::print_step_line(icons::SUCCESS, "GitHub CLI verified on VPS");
                 } else if synced.contains(&"github_cli".to_string()) {
@@ -1348,8 +1315,7 @@ fn run_byovps_flow(
                             "1. SSH to VPS: ssh {}@{}",
                             byovps_creds.ssh_username, byovps_creds.vps_ip
                         ),
-                        "2. Run: claude, then type /login (if Claude failed)",
-                        "3. Run: gh auth login (if GitHub failed)",
+                        "2. Run: gh auth login (if GitHub failed)",
                     ]);
                 }
             }

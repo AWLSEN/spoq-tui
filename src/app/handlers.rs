@@ -1386,12 +1386,9 @@ impl App {
                             tracing::info!("Sync succeeded: {:?}", result.success);
 
                             // Extract verification results from sync response
-                            let (claude_code, github_cli) = if let Some(v) = result.verification {
+                            let github_cli = if let Some(v) = result.verification {
                                 tracing::info!("Using embedded verification from sync response");
-                                (
-                                    v.claude_code_works.unwrap_or(false),
-                                    v.github_cli_works.unwrap_or(false),
-                                )
+                                v.github_cli_works.unwrap_or(false)
                             } else {
                                 // Fallback: explicitly call verify_tokens()
                                 tracing::info!("No embedded verification, calling verify_tokens()...");
@@ -1401,23 +1398,18 @@ impl App {
 
                                 match client.verify_tokens().await {
                                     Ok(verify_result) => {
-                                        tracing::info!("Verify succeeded: claude={}, github={}",
-                                            verify_result.claude_code.authenticated,
+                                        tracing::info!("Verify succeeded: github={}",
                                             verify_result.github_cli.authenticated);
-                                        (
-                                            verify_result.claude_code.authenticated,
-                                            verify_result.github_cli.authenticated,
-                                        )
+                                        verify_result.github_cli.authenticated
                                     }
                                     Err(e) => {
                                         tracing::warn!("Verify failed, using sync success as fallback: {}", e);
-                                        (result.success, result.success)
+                                        result.success
                                     }
                                 }
                             };
 
                             let _ = tx.send(AppMessage::SyncComplete {
-                                claude_code,
                                 github_cli,
                             });
                         }
@@ -1478,13 +1470,11 @@ impl App {
                 );
             }
             AppMessage::SyncComplete {
-                claude_code,
                 github_cli,
             } => {
                 use crate::app::SyncStatus;
-                tracing::info!("SyncComplete received: claude_code={}, github_cli={}", claude_code, github_cli);
+                tracing::info!("SyncComplete received: github_cli={}", github_cli);
                 self.sync_status = SyncStatus::Complete {
-                    claude_code,
                     github_cli,
                 };
                 // Reset credential watcher backoff on success
@@ -1496,7 +1486,7 @@ impl App {
                     DebugEventKind::StateChange(StateChangeData::new(
                         StateType::SessionState,
                         "Sync complete",
-                        format!("claude_code: {}, github_cli: {}", claude_code, github_cli),
+                        format!("github_cli: {}", github_cli),
                     )),
                     None,
                 );
@@ -1608,14 +1598,6 @@ impl App {
                     &mut self.credential_debouncer,
                     &self.message_tx,
                     &format!("file: {}", path),
-                );
-            }
-            AppMessage::CredentialKeychainChanged => {
-                handle_credential_change(
-                    &mut self.credential_watch_state,
-                    &mut self.credential_debouncer,
-                    &self.message_tx,
-                    "Keychain",
                 );
             }
             AppMessage::CredentialDebounceExpired => {

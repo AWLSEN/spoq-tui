@@ -1,6 +1,6 @@
 use spoq::app::{start_websocket_with_config, App, AppMessage, BrowseListSelectAction, Focus, Screen, ScrollBoundary, UnifiedPickerAction};
 use spoq::cli::{parse_args, run_cli_command};
-use spoq::credential_watcher::{spawn_file_watcher, spawn_keychain_poller};
+use spoq::credential_watcher::spawn_file_watcher;
 use spoq::debug::{DebugEvent, DebugEventKind, StateChangeData, StateType};
 use spoq::input::translate_shifted_char;
 use spoq::models;
@@ -286,10 +286,6 @@ fn main() -> Result<()> {
             }
         }
 
-        // Start Keychain poller (30s interval)
-        let poller = spawn_keychain_poller(app.message_tx.clone());
-        app.set_credential_keychain_poller(poller);
-        tracing::info!("Keychain poller started");
     });
 
     // Main event loop

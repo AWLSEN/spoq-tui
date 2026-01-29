@@ -1,6 +1,7 @@
 //! Sync command for Spoq CLI.
 //!
 //! Handles token synchronization from local machine to VPS via HTTP API.
+//! Note: Claude CLI uses server-side OAuth and is not synced from the client.
 
 use color_eyre::Result;
 
@@ -34,12 +35,14 @@ fn fetch_vps_from_api(
 
 /// Handle the /sync or --sync command for token migration to VPS.
 ///
-/// This function syncs local tokens (Claude Code, GitHub CLI) to the VPS
+/// This function syncs local tokens (GitHub CLI) to the VPS
 /// via the Conductor HTTP API endpoint `/v1/tokens/sync`.
+///
+/// Note: Claude CLI uses server-side OAuth and is not synced from the client.
 ///
 /// # Process
 /// 1. Verify credentials are loaded and VPS exists (via API)
-/// 2. Read local tokens (from macOS Keychain for Claude Code, filesystem for GitHub CLI)
+/// 2. Read local tokens (from filesystem for GitHub CLI)
 /// 3. POST tokens to Conductor's `/v1/tokens/sync` endpoint
 /// 4. Verify sync was successful
 ///
@@ -108,14 +111,7 @@ pub fn handle_sync_command() -> Result<()> {
 
     // Display sync results
     let synced_items = sync_result.synced.unwrap_or_default();
-    let claude_synced = synced_items.iter().any(|s| s == "claude_code");
     let github_synced = synced_items.iter().any(|s| s == "github_cli");
-
-    if claude_synced {
-        println!("  ✓ Claude Code tokens synced");
-    } else {
-        println!("  ⚠ Claude Code tokens not found locally");
-    }
 
     if github_synced {
         println!("  ✓ GitHub CLI tokens synced");
@@ -126,12 +122,6 @@ pub fn handle_sync_command() -> Result<()> {
     // Show verification from sync response if available
     if let Some(verification) = &sync_result.verification {
         println!("\n[3/3] Verifying tokens on VPS...");
-
-        if verification.claude_code_works == Some(true) {
-            println!("  ✓ Claude Code tokens verified on VPS");
-        } else if claude_synced {
-            println!("  ⚠ Claude Code tokens synced but not yet verified");
-        }
 
         if verification.github_cli_works == Some(true) {
             println!("  ✓ GitHub CLI tokens verified on VPS");
@@ -144,12 +134,6 @@ pub fn handle_sync_command() -> Result<()> {
 
         match runtime.block_on(conductor.verify_tokens()) {
             Ok(verify_result) => {
-                if verify_result.claude_code.authenticated {
-                    println!("  ✓ Claude Code tokens verified on VPS");
-                } else {
-                    println!("  ⚠ Claude Code tokens not valid on VPS");
-                }
-
                 if verify_result.github_cli.authenticated {
                     println!("  ✓ GitHub CLI tokens verified on VPS");
                 } else {

@@ -221,21 +221,15 @@ fn render_sync_dialog(frame: &mut Frame, app: &App) {
             ]),
         ],
         SyncStatus::Complete {
-            claude_code,
             github_cli,
         } => {
-            let claude_status = if *claude_code { "✓" } else { "✗" };
             let github_status = if *github_cli { "✓" } else { "✗" };
-            let claude_color = if *claude_code { Color::Green } else { Color::Red };
             let github_color = if *github_cli { Color::Green } else { Color::Red };
 
             vec![
                 Line::from(vec![
-                    Span::styled(claude_status, Style::default().fg(claude_color)),
-                    Span::styled(" Claude Code", Style::default().fg(COLOR_DIM)),
-                    Span::raw("    "),
                     Span::styled(github_status, Style::default().fg(github_color)),
-                    Span::styled(" GitHub CLI", Style::default().fg(COLOR_DIM)),
+                    Span::styled(" GitHub CLI synced", Style::default().fg(COLOR_DIM)),
                 ]),
                 Line::from(""),
                 Line::from(vec![

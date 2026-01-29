@@ -1,11 +1,7 @@
 //! File-based credential change detection using the `notify` crate.
 //!
 //! Watches:
-//! - ~/.claude/.credentials.json (Claude Code OAuth tokens - primary source)
 //! - ~/.config/gh/hosts.yml (GitHub CLI credentials)
-//!
-//! Note: ~/.claude.json only contains metadata (not OAuth tokens).
-//! The keychain_poller.rs also watches macOS Keychain as a fallback source.
 //!
 //! Uses FSEvents on macOS for instant (~50ms) change detection.
 //! Uses content hashing to detect actual credential changes vs metadata-only updates.
@@ -33,16 +29,10 @@ fn compute_file_hash(path: &PathBuf) -> Option<u64> {
 /// Paths to watch for credential changes.
 ///
 /// Watches:
-/// - ~/.claude/.credentials.json (Claude Code OAuth tokens - primary)
 /// - ~/.config/gh/hosts.yml (GitHub CLI credentials)
-///
-/// Note: keychain_poller.rs also watches macOS Keychain as a fallback for older
-/// Claude Code setups that store credentials there instead of the file.
 fn get_watch_paths() -> Vec<PathBuf> {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
     vec![
-        // Claude Code OAuth tokens (including refresh_token for VPS auto-refresh)
-        PathBuf::from(&home).join(".claude/.credentials.json"),
         // GitHub CLI credentials
         PathBuf::from(&home).join(".config/gh/hosts.yml"),
     ]
@@ -210,14 +200,12 @@ mod tests {
     fn test_get_watch_paths_returns_expected_paths() {
         let paths = get_watch_paths();
 
-        // Should have 2 paths:
-        // - ~/.claude/.credentials.json (Claude Code OAuth tokens)
+        // Should have 1 path:
         // - ~/.config/gh/hosts.yml (GitHub CLI credentials)
-        assert_eq!(paths.len(), 2);
+        assert_eq!(paths.len(), 1);
 
         // Check path endings
         let path_strings: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
-        assert!(path_strings.iter().any(|p| p.ends_with(".credentials.json")));
         assert!(path_strings.iter().any(|p| p.ends_with("hosts.yml")));
     }
 

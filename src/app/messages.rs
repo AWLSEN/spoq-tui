@@ -230,8 +230,6 @@ pub enum AppMessage {
         /// Path of the changed file
         path: String,
     },
-    /// Keychain poller detected credential change
-    CredentialKeychainChanged,
     /// Debounce timer expired - time to sync
     CredentialDebounceExpired,
     // =========================================================================
@@ -261,7 +259,6 @@ pub enum AppMessage {
     SyncProgress { message: String },
     /// Sync completed successfully
     SyncComplete {
-        claude_code: bool,
         github_cli: bool,
     },
     /// Sync operation failed
