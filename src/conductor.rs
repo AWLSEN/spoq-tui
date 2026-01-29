@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
-// macOS Keychain access for Claude Code OAuth tokens
+// macOS Keychain access for GitHub CLI OAuth tokens
 #[cfg(target_os = "macos")]
 use security_framework::passwords::get_generic_password;
 
@@ -119,7 +119,6 @@ pub struct DebugInfo {
 /// Response from token verification endpoint
 #[derive(Debug, Clone, Deserialize)]
 pub struct TokensVerifyResponse {
-    pub claude_code: TokenStatus,
     pub github_cli: TokenStatus,
     /// Diagnostic info for debugging
     #[serde(default)]
@@ -129,8 +128,6 @@ pub struct TokensVerifyResponse {
 /// Post-sync verification results
 #[derive(Debug, Clone, Deserialize)]
 pub struct SyncVerification {
-    #[serde(default)]
-    pub claude_code_works: Option<bool>,
     #[serde(default)]
     pub github_cli_works: Option<bool>,
     pub home_dir_used: String,
@@ -221,53 +218,6 @@ pub struct ConductorClient {
     refresh_token: Option<String>,
     /// Central API URL for token refresh
     central_api_url: String,
-}
-
-/// Default keychain service name for Claude Code credentials.
-const DEFAULT_KEYCHAIN_SERVICE: &str = "Claude Code-credentials";
-
-/// Get the keychain service name to use.
-///
-/// Returns `SPOQ_TEST_KEYCHAIN_SERVICE` env var if set, otherwise the default.
-/// This allows testing keychain detection without touching real credentials.
-pub fn get_keychain_service() -> String {
-    std::env::var("SPOQ_TEST_KEYCHAIN_SERVICE")
-        .unwrap_or_else(|_| DEFAULT_KEYCHAIN_SERVICE.to_string())
-}
-
-/// Read Claude Code OAuth tokens from macOS Keychain.
-///
-/// On macOS, Claude Code stores OAuth tokens in Keychain under "Claude Code-credentials".
-/// The account name is the current username.
-///
-/// For testing, set `SPOQ_TEST_KEYCHAIN_SERVICE` to use a different keychain item.
-///
-/// This function is public so the credential_watcher module can use it for change detection.
-#[cfg(target_os = "macos")]
-pub fn read_claude_keychain_credentials() -> Option<String> {
-    let service = get_keychain_service();
-    let username = std::env::var("USER").unwrap_or_else(|_| "".to_string());
-
-    tracing::debug!("Reading keychain: service='{}', account='{}'", service, username);
-
-    match get_generic_password(&service, &username) {
-        Ok(password_bytes) => {
-            tracing::debug!("Keychain read success: {} bytes", password_bytes.len());
-            String::from_utf8(password_bytes.to_vec()).ok()
-        }
-        Err(e) => {
-            tracing::debug!("Keychain read failed: {:?}", e);
-            None
-        }
-    }
-}
-
-/// Stub for non-macOS platforms.
-///
-/// Returns None since Keychain is macOS-specific.
-#[cfg(not(target_os = "macos"))]
-pub fn read_claude_keychain_credentials() -> Option<String> {
-    None
 }
 
 /// Read GitHub CLI OAuth token using `gh auth token` command.
@@ -395,7 +345,7 @@ fn inject_oauth_token_into_hosts_yml(content: &str, token: &str) -> String {
 /// Read local token files for syncing to VPS
 ///
 /// # Arguments
-/// * `sync_type` - What to sync: "claude_code", "github_cli", or "all"
+/// * `sync_type` - What to sync: "github_cli" or "all"
 ///
 /// # Returns
 /// JSON object containing token data to send to Conductor
@@ -406,67 +356,6 @@ fn read_local_tokens(sync_type: &str) -> Result<serde_json::Value, ConductorErro
     })?;
 
     let mut data = serde_json::Map::new();
-
-    // Read Claude Code tokens
-    if sync_type == "claude_code" || sync_type == "all" {
-        let mut claude_data = serde_json::Map::new();
-
-        // Try to read OAuth tokens from multiple sources in order of preference:
-        // 1. macOS Keychain (legacy/some setups)
-        // 2. ~/.claude/.credentials.json (current file-based storage)
-        let mut found_oauth_tokens = false;
-
-        // On macOS, try Keychain first
-        if let Some(keychain_creds) = read_claude_keychain_credentials() {
-            tracing::debug!("Found OAuth tokens in Keychain");
-            claude_data.insert(
-                "keychain_credentials".to_string(),
-                serde_json::Value::String(keychain_creds),
-            );
-            found_oauth_tokens = true;
-        }
-
-        // Fall back to ~/.claude/.credentials.json (where Claude Code actually stores tokens)
-        if !found_oauth_tokens {
-            let credentials_path = PathBuf::from(&home).join(".claude").join(".credentials.json");
-            if credentials_path.exists() {
-                if let Ok(contents) = fs::read_to_string(&credentials_path) {
-                    // Verify it has OAuth tokens (not just empty or invalid JSON)
-                    if contents.contains("accessToken") || contents.contains("claudeAiOauth") {
-                        tracing::debug!("Found OAuth tokens in ~/.claude/.credentials.json");
-                        claude_data.insert(
-                            "keychain_credentials".to_string(),
-                            serde_json::Value::String(contents),
-                        );
-                        found_oauth_tokens = true;
-                    }
-                }
-            }
-        }
-
-        if !found_oauth_tokens {
-            tracing::warn!("No OAuth tokens found in Keychain or credentials file");
-        }
-
-        // Also read ~/.claude.json for account metadata
-        let claude_json_path = PathBuf::from(&home).join(".claude.json");
-        if claude_json_path.exists() {
-            if let Ok(contents) = fs::read_to_string(&claude_json_path) {
-                claude_data.insert(
-                    "claude_json".to_string(),
-                    serde_json::Value::String(contents),
-                );
-            }
-        }
-
-        // Only add if we have something to sync
-        if !claude_data.is_empty() {
-            data.insert(
-                "claude_code".to_string(),
-                serde_json::Value::Object(claude_data),
-            );
-        }
-    }
 
     // Read GitHub CLI tokens
     if sync_type == "github_cli" || sync_type == "all" {
@@ -934,8 +823,10 @@ impl ConductorClient {
     /// Reads local token files and transfers them to the VPS via Conductor.
     /// Automatically refreshes the access token if it expires (401).
     ///
+    /// Note: Claude CLI uses server-side OAuth and is not synced from the client.
+    ///
     /// # Arguments
-    /// * `sync_type` - What to sync: "claude_code", "github_cli", or "all"
+    /// * `sync_type` - What to sync: "github_cli" or "all"
     ///
     /// # Returns
     /// Full sync response including post-sync verification results
@@ -1110,19 +1001,40 @@ impl ConductorClient {
             url.push_str(&format!("&search={}", urlencoding::encode(s)));
         }
 
+        // Log request details for debugging 404 errors
+        tracing::info!(
+            "fetch_files - URL: {}, base_url: {}, path: {}",
+            url,
+            self.base_url,
+            path
+        );
+
         let builder = self.client.get(&url);
         let response = self.add_auth_header(builder).send().await?;
 
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
+        // Log response status
+        let status = response.status();
+        tracing::info!("fetch_files - Response status: {}", status);
+
+        if !status.is_success() {
+            let status_code = status.as_u16();
             let message = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            return Err(ConductorError::ServerError { status, message });
+            tracing::error!(
+                "fetch_files - Error: status={}, message={}",
+                status_code,
+                message
+            );
+            return Err(ConductorError::ServerError {
+                status: status_code,
+                message,
+            });
         }
 
         let files: Vec<crate::models::FileEntry> = response.json().await?;
+        tracing::info!("fetch_files - Success, got {} files", files.len());
         Ok(files)
     }
 

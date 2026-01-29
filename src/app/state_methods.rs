@@ -431,6 +431,21 @@ impl App {
                     .unwrap_or_else(|| "/".to_string())
             });
 
+        // Log file picker request details for debugging 404 errors
+        let has_working_dir = self
+            .active_thread_id
+            .as_ref()
+            .and_then(|id| self.cache.get_thread(id))
+            .and_then(|t| t.working_directory.as_ref())
+            .is_some();
+        tracing::info!(
+            "File picker opening - base_path: {}, thread_id: {:?}, has_working_dir: {}, base_url: {}",
+            base_path,
+            self.active_thread_id,
+            has_working_dir,
+            self.client.base_url
+        );
+
         self.file_picker.open(&base_path);
         // Trigger async load of files
         self.load_files(&base_path);
