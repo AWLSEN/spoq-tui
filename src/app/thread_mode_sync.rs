@@ -10,7 +10,7 @@ use crate::conductor::ConductorClient;
 use crate::models::PermissionMode;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex as StdMutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Default debounce duration for mode changes.
 const DEFAULT_DEBOUNCE_MS: u64 = 200;
@@ -20,8 +20,8 @@ const DEFAULT_DEBOUNCE_MS: u64 = 200;
 /// This struct maintains per-thread pending state and debounces rapid mode changes
 /// before syncing to the backend.
 pub struct ThreadModeSync {
-    /// Pending mode changes per thread: (permission_mode, request_time)
-    pending_modes: Arc<StdMutex<HashMap<String, (PermissionMode, Instant)>>>,
+    /// Pending mode changes per thread (last-intent-wins coalescing)
+    pending_modes: Arc<StdMutex<HashMap<String, PermissionMode>>>,
     /// Duration to wait before syncing a mode change
     debounce_duration: Duration,
     /// Conductor client for API calls
@@ -59,14 +59,12 @@ impl ThreadModeSync {
     /// * `thread_id` - The ID of the thread to update
     /// * `permission_mode` - The new permission mode for the thread
     pub fn request_mode_change(&self, thread_id: String, permission_mode: PermissionMode) {
-        let now = Instant::now();
-
         // Update pending state (coalesce: last-intent-wins)
         let should_spawn = {
             let mut pending = self.pending_modes.lock().unwrap();
             let mut running = self.debounce_task_running.lock().unwrap();
 
-            pending.insert(thread_id.clone(), (permission_mode, now));
+            pending.insert(thread_id.clone(), permission_mode);
 
             if !*running {
                 *running = true;
@@ -82,54 +80,51 @@ impl ThreadModeSync {
     }
 
     /// Spawn the background debounce task.
+    ///
+    /// Sleeps for the full debounce duration, then drains and syncs all pending
+    /// entries. If new entries arrived during the sync, loops again; otherwise exits.
     fn spawn_debounce_task(&self) {
         let pending_modes = Arc::clone(&self.pending_modes);
         let conductor = Arc::clone(&self.conductor);
         let debounce_duration = self.debounce_duration;
         let task_running = Arc::clone(&self.debounce_task_running);
 
+        // Guard: only spawn if a tokio runtime is available (avoids panics in sync tests)
+        let Ok(_handle) = tokio::runtime::Handle::try_current() else {
+            *task_running.lock().unwrap() = false;
+            return;
+        };
+
         tokio::spawn(async move {
-            let check_interval = Duration::from_millis(50);
-
             loop {
-                tokio::time::sleep(check_interval).await;
+                // Wait the full debounce window before draining
+                tokio::time::sleep(debounce_duration).await;
 
-                let now = Instant::now();
-                let mut ready_to_sync = Vec::new();
-
-                // Find entries that have exceeded debounce duration
-                {
+                // Drain all pending entries atomically
+                let to_sync: Vec<(String, PermissionMode)> = {
                     let mut pending = pending_modes.lock().unwrap();
-                    let mut to_remove = Vec::new();
+                    pending.drain().collect()
+                };
 
-                    for (thread_id, (permission_mode, request_time)) in pending.iter() {
-                        if now.duration_since(*request_time) >= debounce_duration {
-                            ready_to_sync.push((thread_id.clone(), *permission_mode));
-                            to_remove.push(thread_id.clone());
-                        }
-                    }
-
-                    // Remove synced entries from pending map
-                    for thread_id in to_remove {
-                        pending.remove(&thread_id);
-                    }
-
-                    // Exit if no more pending entries
-                    if pending.is_empty() {
-                        *task_running.lock().unwrap() = false;
-                        break;
-                    }
+                if to_sync.is_empty() {
+                    *task_running.lock().unwrap() = false;
+                    break;
                 }
 
-                // Sync ready entries to backend
-                for (thread_id, permission_mode) in ready_to_sync {
+                // Sync drained entries to backend
+                for (thread_id, permission_mode) in to_sync {
                     tracing::debug!(
                         thread_id = %thread_id,
                         permission_mode = ?permission_mode,
                         "Syncing thread mode after debounce"
                     );
-
                     let _ = backend_coordinator::sync_thread_mode(&conductor, &thread_id, permission_mode).await;
+                }
+
+                // If nothing new arrived during sync, we're done
+                if pending_modes.lock().unwrap().is_empty() {
+                    *task_running.lock().unwrap() = false;
+                    break;
                 }
             }
         });

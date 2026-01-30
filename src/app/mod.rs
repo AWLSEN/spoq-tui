@@ -1142,12 +1142,11 @@ mod tests {
         app.textarea.insert_char('d');
         app.submit_input(ThreadType::Conversation);
 
-        // Should NOT create a new thread or add messages
-        // Should set an error
+        // Steering is attempted but fails because no WebSocket is connected in tests
         assert!(app.stream_error.is_some());
-        assert!(app.stream_error.as_ref().unwrap().contains("wait"));
+        assert!(app.stream_error.as_ref().unwrap().contains("WebSocket"));
 
-        // Input should NOT be cleared (submission was rejected)
+        // Input should NOT be cleared (steering send failed)
         assert!(!app.textarea.is_empty());
         assert_eq!(app.textarea.content(), "Second");
 

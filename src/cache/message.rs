@@ -9,6 +9,11 @@ use crate::models::{Message, MessageRole};
 
 use super::ThreadCache;
 
+/// Sentinel message ID: user cancelled the stream (Ctrl+C).
+pub const MSG_ID_USER_CANCELLED: i64 = -1;
+/// Sentinel message ID: stream interrupted by steering.
+pub const MSG_ID_STEERING_INTERRUPTED: i64 = -2;
+
 impl ThreadCache {
     /// Get messages for a thread
     pub fn get_messages(&self, thread_id: &str) -> Option<&Vec<Message>> {
@@ -227,7 +232,7 @@ impl ThreadCache {
                 streaming_msg.is_streaming = false;
                 // Use a temporary ID for cancelled messages (negative to distinguish from real IDs)
                 if streaming_msg.id == 0 {
-                    streaming_msg.id = -1;
+                    streaming_msg.id = MSG_ID_USER_CANCELLED;
                 }
                 // Append cancellation indicator to content
                 if !streaming_msg.content.is_empty() {
@@ -254,7 +259,7 @@ impl ThreadCache {
                 }
                 msg.is_streaming = false;
                 if msg.id == 0 {
-                    msg.id = -2; // -2 = interrupted by steering (vs -1 = user cancelled)
+                    msg.id = MSG_ID_STEERING_INTERRUPTED;
                 }
                 if !msg.reasoning_content.is_empty() {
                     msg.reasoning_collapsed = true;

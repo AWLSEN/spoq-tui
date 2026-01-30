@@ -780,6 +780,20 @@ impl App {
         self.textarea.clear();
         self.textarea.clear_paste_tokens();
         self.mark_dirty();
+
+        // Spawn a timeout guard so a stuck steering doesn't block input forever
+        let timeout_tx = self.message_tx.clone();
+        let timeout_thread_id = thread_id.to_string();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(
+                crate::models::steering::STEERING_TIMEOUT_SECS,
+            ))
+            .await;
+            let _ = timeout_tx.send(crate::app::AppMessage::SteeringFailed {
+                thread_id: timeout_thread_id,
+                error: "Steering timed out".to_string(),
+            });
+        });
     }
 
     /// Promote a queued steering message to a visible user message

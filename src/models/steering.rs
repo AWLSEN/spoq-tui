@@ -2,6 +2,11 @@
 
 use chrono::{DateTime, Utc};
 
+/// Client-side timeout for steering operations (seconds).
+/// If no terminal state is received within this window, the steering
+/// is marked as failed to unblock further user input.
+pub const STEERING_TIMEOUT_SECS: u64 = 30;
+
 /// State of a queued steering message through its lifecycle
 #[derive(Debug, Clone, PartialEq)]
 pub enum SteeringMessageState {

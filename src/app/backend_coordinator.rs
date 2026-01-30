@@ -61,9 +61,11 @@ pub async fn sync_thread_mode(
 ) -> Result<(), BackendError> {
     let (thread_mode, permission_mode_str) = map_permission_mode(permission_mode);
 
-    // Try both API calls
-    let mode_result = try_update_with_retry(conductor, thread_id, thread_mode, true).await;
-    let perm_result = try_update_with_retry(conductor, thread_id, permission_mode_str, false).await;
+    // Try both API calls concurrently
+    let (mode_result, perm_result) = tokio::join!(
+        try_update_with_retry(conductor, thread_id, thread_mode, true),
+        try_update_with_retry(conductor, thread_id, permission_mode_str, false),
+    );
 
     // Log failures but don't propagate errors (fail-quietly)
     match (mode_result, perm_result) {
