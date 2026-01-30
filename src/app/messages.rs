@@ -21,6 +21,14 @@ pub enum AppMessage {
     StreamError { thread_id: String, error: String },
     /// Stream was cancelled by user request (Ctrl+C)
     StreamCancelled { thread_id: String, reason: String },
+    /// Rate limit hit - account is rate-limited
+    RateLimited {
+        thread_id: String,
+        message: String,
+        current_account_id: String,
+        next_account_id: Option<String>,
+        retry_after_secs: u64,
+    },
     /// Connection status changed
     ConnectionStatus(bool),
     /// Thread created on backend - reconcile pending ID with real ID

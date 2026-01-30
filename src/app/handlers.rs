@@ -199,6 +199,36 @@ impl App {
                     self.reset_scroll();
                 }
             }
+            AppMessage::RateLimited {
+                thread_id,
+                message,
+                current_account_id,
+                next_account_id,
+                retry_after_secs,
+            } => {
+                // Show rate limit modal for user confirmation
+                self.rate_limit_modal = Some(crate::app::RateLimitModalState {
+                    thread_id,
+                    message,
+                    current_account_id,
+                    next_account_id,
+                    retry_after_secs,
+                });
+
+                // Mark message as no longer streaming
+                self.cache.cancel_streaming_message(&self.rate_limit_modal.as_ref().unwrap().thread_id);
+
+                // Reset stream statistics
+                self.stream_start_time = None;
+                self.last_event_time = None;
+                self.cumulative_token_count = 0;
+
+                // Reset cancel state
+                self.reset_cancel_state();
+
+                // Clear tool tracker when stream is interrupted
+                self.tool_tracker.clear();
+            }
             AppMessage::ConnectionStatus(connected) => {
                 // Emit StateChange for connection status
                 emit_debug(

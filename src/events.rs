@@ -298,6 +298,22 @@ pub struct CancelledEvent {
     pub reason: String,
 }
 
+/// Rate limit hit event.
+///
+/// Sent when the current account hits rate limit and next account is available.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct RateLimitedEvent {
+    /// Error message from the rate limit
+    pub message: String,
+    /// Current account that was rate-limited
+    pub current_account_id: String,
+    /// Next available account ID (if any)
+    #[serde(default)]
+    pub next_account_id: Option<String>,
+    /// Cooldown duration in seconds
+    pub retry_after_secs: u64,
+}
+
 /// Wrapper enum for all possible SSE event types from Conductor.
 ///
 /// Use pattern matching to handle different event types during stream processing.
@@ -365,6 +381,8 @@ pub enum SseEvent {
     SystemInit(SystemInitEvent),
     /// Stream was cancelled by user request (Ctrl+C)
     Cancelled(CancelledEvent),
+    /// Rate limit hit - account is rate-limited
+    RateLimited(RateLimitedEvent),
 }
 
 /// Wraps an SSE event with its metadata.

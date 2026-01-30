@@ -715,6 +715,25 @@ impl App {
                             });
                             break; // Exit stream loop
                         }
+                        SseEvent::RateLimited(rate_limited_event) => {
+                            // Rate limit hit - ask user to continue with next account
+                            emit_debug(
+                                &debug_tx,
+                                DebugEventKind::StreamLifecycle(StreamLifecycleData::with_details(
+                                    StreamPhase::Disconnected,
+                                    format!("rate limit: {}", rate_limited_event.message),
+                                )),
+                                Some(thread_id),
+                            );
+                            let _ = message_tx.send(AppMessage::RateLimited {
+                                thread_id: thread_id.to_string(),
+                                message: rate_limited_event.message,
+                                current_account_id: rate_limited_event.current_account_id,
+                                next_account_id: rate_limited_event.next_account_id,
+                                retry_after_secs: rate_limited_event.retry_after_secs,
+                            });
+                            break; // Exit stream loop
+                        }
                     }
                 }
                 Err(e) => {

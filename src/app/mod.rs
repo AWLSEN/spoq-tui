@@ -345,6 +345,18 @@ pub struct App {
     pub(crate) credential_file_watcher: Option<RecommendedWatcher>,
     /// Auto-close timer for Claude login success dialog
     pub claude_login_auto_close: Option<std::time::Instant>,
+    /// Rate limit modal state (shown when account hits rate limit)
+    pub rate_limit_modal: Option<RateLimitModalState>,
+}
+
+/// State for rate limit confirmation modal
+#[derive(Debug, Clone)]
+pub struct RateLimitModalState {
+    pub thread_id: String,
+    pub message: String,
+    pub current_account_id: String,
+    pub next_account_id: Option<String>,
+    pub retry_after_secs: u64,
 }
 
 impl App {
@@ -541,6 +553,7 @@ impl App {
             credential_debouncer: Debouncer::new(),
             credential_file_watcher: None,
             claude_login_auto_close: None,
+            rate_limit_modal: None,
         })
     }
 

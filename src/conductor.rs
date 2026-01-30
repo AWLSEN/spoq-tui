@@ -1590,6 +1590,17 @@ fn convert_sse_event(event: crate::sse::SseEvent) -> SseEvent {
         crate::sse::SseEvent::Cancelled { reason } => {
             SseEvent::Cancelled(crate::events::CancelledEvent { reason })
         }
+        crate::sse::SseEvent::RateLimited {
+            message,
+            current_account_id,
+            next_account_id,
+            retry_after_secs,
+        } => SseEvent::RateLimited(crate::events::RateLimitedEvent {
+            message,
+            current_account_id,
+            next_account_id,
+            retry_after_secs,
+        }),
     }
 }
 
