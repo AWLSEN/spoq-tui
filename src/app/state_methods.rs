@@ -1681,6 +1681,49 @@ impl App {
         self.browse_list.error = Some(error);
         self.mark_dirty();
     }
+
+    /// Handle rate limit continue - send resume request with next account.
+    ///
+    /// Called when user confirms to continue with the next account after rate limit.
+    pub fn handle_rate_limit_continue(&mut self, modal_state: crate::app::RateLimitModalState) {
+        let thread_id = modal_state.thread_id;
+        let current_account_id = modal_state.current_account_id;
+
+        // Build resume request with use_next_account flag
+        let request = crate::models::StreamRequest::with_thread("continue".to_string(), thread_id.clone())
+            .with_use_next_account(true, current_account_id);
+
+        let client = Arc::clone(&self.client);
+        let message_tx = self.message_tx.clone();
+        let debug_tx = self.debug_tx.clone();
+        let thread_id_for_task = thread_id.clone();
+
+        // Spawn async task to send resume request
+        tokio::spawn(async move {
+            match client.stream(&request).await {
+                Ok(mut stream) => {
+                    // Update connection status
+                    let _ = message_tx.send(AppMessage::ConnectionStatus(true));
+                    App::process_stream(
+                        &mut stream,
+                        &message_tx,
+                        &thread_id_for_task,
+                        debug_tx,
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    // Send error message
+                    let _ = message_tx.send(AppMessage::StreamError {
+                        thread_id: thread_id_for_task,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+
+        self.mark_dirty();
+    }
 }
 
 /// Action to take after browse list selection.

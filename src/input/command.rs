@@ -237,6 +237,14 @@ pub enum Command {
     RejectPlan,
 
     // =========================================================================
+    // Rate Limit Commands
+    // =========================================================================
+    /// Continue with next account (Y/y when rate limit modal is showing)
+    ContinueWithNextAccount,
+    /// Cancel rate limit retry (N/n or Esc when rate limit modal is showing)
+    CancelRateLimitRetry,
+
+    // =========================================================================
     // Claude Login Commands
     // =========================================================================
     /// Open browser for Claude login (Enter)
@@ -383,6 +391,8 @@ impl Command {
             Command::PlanScrollDown => "Scroll plan down",
             Command::ApprovePlan => "Approve plan",
             Command::RejectPlan => "Reject plan",
+            Command::ContinueWithNextAccount => "Continue with next account",
+            Command::CancelRateLimitRetry => "Cancel rate limit retry",
             Command::ClaudeLoginOpenBrowser => "Open browser for Claude login",
             Command::ClaudeLoginDone => "Confirm Claude login done",
             Command::ClaudeLoginCancel => "Cancel Claude login",

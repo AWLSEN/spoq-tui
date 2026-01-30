@@ -42,6 +42,12 @@ pub struct StreamRequest {
     /// Plan mode flag - when true, conductor uses read-only tool registry
     #[serde(default)]
     pub plan_mode: bool,
+    /// Use next account after rate limit (waterfall failover)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_next_account: Option<bool>,
+    /// Current account ID that hit rate limit (used with use_next_account)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_account_id: Option<String>,
 }
 
 impl StreamRequest {
@@ -56,6 +62,8 @@ impl StreamRequest {
             permission_mode: None,
             working_directory: None,
             plan_mode: false,
+            use_next_account: None,
+            current_account_id: None,
         }
     }
 
@@ -70,6 +78,8 @@ impl StreamRequest {
             permission_mode: None,
             working_directory: None,
             plan_mode: false,
+            use_next_account: None,
+            current_account_id: None,
         }
     }
 
@@ -85,6 +95,8 @@ impl StreamRequest {
             permission_mode: None,
             working_directory: None,
             plan_mode: false,
+            use_next_account: None,
+            current_account_id: None,
         }
     }
 
@@ -109,6 +121,13 @@ impl StreamRequest {
     /// Set plan mode for this request (builder pattern)
     pub fn with_plan_mode(mut self, plan_mode: bool) -> Self {
         self.plan_mode = plan_mode;
+        self
+    }
+
+    /// Set use_next_account flag for rate limit failover (builder pattern)
+    pub fn with_use_next_account(mut self, use_next: bool, current_id: String) -> Self {
+        self.use_next_account = Some(use_next);
+        self.current_account_id = Some(current_id);
         self
     }
 }

@@ -273,6 +273,15 @@ impl CommandRegistry {
                 }
             }
 
+            ModalType::RateLimitConfirm => {
+                // Use modal-specific bindings from keybindings.rs (Y/N/Esc)
+                if let Some(cmd) = self.config.get_modal(ModalType::RateLimitConfirm, &combo) {
+                    return Some(cmd.clone());
+                }
+                // Ignore other keys
+                Some(Command::Noop)
+            }
+
             ModalType::None => {
                 // Should not reach here, but handle gracefully
                 None

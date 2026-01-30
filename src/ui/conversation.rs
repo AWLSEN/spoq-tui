@@ -211,6 +211,72 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
         // Render card content
         super::dashboard::accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref());
     }
+
+    // Render rate limit modal (screen-agnostic floating modal)
+    if let Some(ref modal_state) = app.rate_limit_modal {
+        let card_width = 60u16.min(size.width.saturating_sub(4));
+        let card_height = 10u16.min(size.height.saturating_sub(4));
+
+        // Center the card
+        let x = size.x + (size.width.saturating_sub(card_width)) / 2;
+        let y = size.y + (size.height.saturating_sub(card_height)) / 2;
+        let card_area = Rect::new(x, y, card_width, card_height);
+
+        // Clear background and draw border
+        frame.render_widget(Clear, card_area);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Yellow))
+            .title(" Rate Limit ")
+            .style(Style::default().bg(Color::Black));
+        let inner_area = block.inner(card_area);
+        frame.render_widget(block, card_area);
+
+        // Render modal content
+        use ratatui::text::{Line, Span};
+        use ratatui::widgets::Paragraph;
+        use ratatui::style::{Color, Style, Modifier};
+
+        let mut lines = vec![];
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            " ⚠️  Account rate-limited",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(""));
+
+        if let Some(ref next_id) = modal_state.next_account_id {
+            lines.push(Line::from(vec![
+                Span::raw("  Continue with "),
+                Span::styled(next_id, Style::default().fg(Color::Cyan)),
+                Span::raw("?"),
+            ]));
+        } else {
+            lines.push(Line::from(Span::styled(
+                "  No more accounts available",
+                Style::default().fg(Color::Red),
+            )));
+        }
+
+        lines.push(Line::from(""));
+        if modal_state.next_account_id.is_some() {
+            lines.push(Line::from(vec![
+                Span::styled("  [Y] ", Style::default().fg(Color::Green)),
+                Span::raw("Continue  "),
+                Span::styled("  [N] ", Style::default().fg(Color::Red)),
+                Span::raw("Cancel"),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("  [Esc] ", Style::default().fg(Color::Cyan)),
+                Span::raw("Close"),
+            ]));
+        }
+
+        let paragraph = Paragraph::new(lines);
+        frame.render_widget(paragraph, inner_area);
+    }
 }
 
 /// Render the mode indicator bar

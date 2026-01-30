@@ -754,6 +754,38 @@ pub fn handle_plan_approval_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles rate limit confirmation commands (Y/N/Esc when rate_limit_modal is showing).
+///
+/// Returns true if the command was handled.
+pub fn handle_rate_limit_command(app: &mut App, cmd: &Command) -> bool {
+    // Ensure rate limit modal is showing
+    if app.rate_limit_modal.is_none() {
+        return false;
+    }
+
+    match cmd {
+        Command::ContinueWithNextAccount => {
+            // User confirmed - continue with next account
+            if let Some(modal_state) = app.rate_limit_modal.take() {
+                if modal_state.next_account_id.is_some() {
+                    // Send resume request with next account
+                    app.handle_rate_limit_continue(modal_state);
+                }
+            }
+            true
+        }
+
+        Command::CancelRateLimitRetry => {
+            // User cancelled or no next account - just close modal
+            app.rate_limit_modal = None;
+            app.mark_dirty();
+            true
+        }
+
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
