@@ -17,12 +17,21 @@ impl App {
     /// Cycle through permission modes: Default -> Plan -> Execution -> Default
     pub fn cycle_permission_mode(&mut self) {
         use crate::models::PermissionMode;
+        // 1. Local update (existing behavior)
         self.permission_mode = match self.permission_mode {
             PermissionMode::Default => PermissionMode::Plan,
             PermissionMode::Plan => PermissionMode::Execution,
             PermissionMode::Execution => PermissionMode::Default,
         };
         self.mark_dirty();
+
+        // 2. Sync to backend if thread exists
+        if let Some(thread_id) = &self.active_thread_id.clone() {
+            self.thread_mode_sync.request_mode_change(
+                thread_id.clone(),
+                self.permission_mode,
+            );
+        }
     }
 
     /// Move selection up in the current focused panel
