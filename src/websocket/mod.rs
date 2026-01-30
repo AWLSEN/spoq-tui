@@ -13,4 +13,5 @@ pub use messages::{
     WsClaudeAuthTokenStored, WsClaudeLoginRequest, WsClaudeLoginResponse,
     WsClaudeLoginVerificationResult, WsCommandResponse, WsCommandResult, WsIncomingMessage,
     WsOutgoingMessage, WsPermissionData, WsPermissionRequest, WsPlanApprovalResponse,
+    WsSteering, WsSteeringQueued, WsSteeringInterrupting, WsSteeringResuming,
 };

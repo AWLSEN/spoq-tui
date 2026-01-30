@@ -376,6 +376,30 @@ fn route_ws_message(
         WsIncomingMessage::ParseError { error, raw } => message_tx
             .send(AppMessage::WsParseError { error, raw })
             .map_err(|e| format!("Failed to send WsParseError: {}", e)),
+        WsIncomingMessage::SteeringQueued(queued) => {
+            info!(
+                "Steering message queued for thread: {}",
+                queued.thread_id
+            );
+            // Could show toast/notification here
+            Ok(())
+        }
+        WsIncomingMessage::SteeringInterrupting(interrupting) => {
+            info!(
+                "Steering interrupt in progress for thread: {}",
+                interrupting.thread_id
+            );
+            // Could show "Interrupting..." indicator here
+            Ok(())
+        }
+        WsIncomingMessage::SteeringResuming(resuming) => {
+            info!(
+                "Steering resume started for thread: {}",
+                resuming.thread_id
+            );
+            // Could update UI to show steering applied here
+            Ok(())
+        }
     }
 }
 

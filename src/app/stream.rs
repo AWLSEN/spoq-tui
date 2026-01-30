@@ -142,11 +142,9 @@ impl App {
             // CONTINUING existing thread (we're on Conversation screen)
             // Check if there's already a streaming response in progress
             if self.cache.is_thread_streaming(existing_id) {
-                // Block rapid second message - still waiting for response to complete
-                self.stream_error = Some(
-                    "Please wait for the current response to complete before sending another message."
-                        .to_string(),
-                );
+                // Instead of blocking, queue as steering message
+                let existing_id_clone = existing_id.clone();
+                self.queue_steering_message(&existing_id_clone, content.clone());
                 return;
             }
 
@@ -736,6 +734,35 @@ impl App {
                     break;
                 }
             }
+        }
+    }
+
+    /// Queue a steering message to be injected during streaming
+    ///
+    /// This is called when the user submits input while a thread is already streaming.
+    /// The message is sent via WebSocket to the conductor for queuing and injection
+    /// at the next safe boundary.
+    pub fn queue_steering_message(&mut self, thread_id: &str, instruction: String) {
+        // Send via WebSocket
+        if let Some(ref sender) = self.ws_sender {
+            let msg = crate::websocket::WsOutgoingMessage::Steering(
+                crate::websocket::WsSteering::new(thread_id.to_string(), instruction.clone()),
+            );
+
+            if let Err(e) = sender.try_send(msg) {
+                self.stream_error = Some(format!("Failed to queue steering message: {}", e));
+                return;
+            }
+
+            // Show feedback in UI - set a steering_queued_feedback state
+            // This will be displayed in the UI
+            self.stream_error = Some(format!("⏳ Steering queued: {}", &instruction[..instruction.len().min(50)]));
+
+            // Clear input
+            self.textarea.clear();
+            self.mark_dirty();
+        } else {
+            self.stream_error = Some("WebSocket not connected - cannot queue steering message".to_string());
         }
     }
 }
