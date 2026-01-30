@@ -10,6 +10,11 @@ use sha2::{Sha256, Digest};
 /// Maximum image size in bytes (4 MB).
 const MAX_IMAGE_BYTES: usize = 4 * 1024 * 1024;
 
+/// Maximum dimension (width or height) for images sent to the backend.
+/// Claude processes images at max ~1568px, so anything larger wastes bandwidth.
+/// Retina screenshots can be 3000-5000+ px — downscaling saves significant payload.
+const MAX_IMAGE_DIMENSION: u32 = 1568;
+
 /// Maximum number of pending images per submission.
 pub const MAX_PENDING_IMAGES: usize = 3;
 
@@ -109,7 +114,12 @@ pub fn is_image_file_path(text: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Build an ImageAttachment from raw PNG bytes.
+///
+/// Downscales the image if either dimension exceeds `MAX_IMAGE_DIMENSION`
+/// to reduce payload size for the backend API.
 fn build_attachment(png_bytes: Vec<u8>) -> Result<ImageAttachment, ClipboardImageError> {
+    let png_bytes = downscale_if_needed(png_bytes)?;
+
     if png_bytes.len() > MAX_IMAGE_BYTES {
         return Err(ClipboardImageError::TooLarge(png_bytes.len()));
     }
@@ -123,6 +133,38 @@ fn build_attachment(png_bytes: Vec<u8>) -> Result<ImageAttachment, ClipboardImag
         base64_png,
         byte_size,
     })
+}
+
+/// Downscale a PNG image if either dimension exceeds `MAX_IMAGE_DIMENSION`.
+///
+/// Uses Lanczos3 filtering for high-quality downscaling. Returns the original
+/// bytes unchanged if the image is already within bounds or can't be decoded.
+fn downscale_if_needed(png_bytes: Vec<u8>) -> Result<Vec<u8>, ClipboardImageError> {
+    let img = match image::load_from_memory(&png_bytes) {
+        Ok(img) => img,
+        Err(_) => return Ok(png_bytes), // Can't decode — pass through unchanged
+    };
+
+    let (w, h) = (img.width(), img.height());
+    if w <= MAX_IMAGE_DIMENSION && h <= MAX_IMAGE_DIMENSION {
+        return Ok(png_bytes);
+    }
+
+    // Calculate new dimensions maintaining aspect ratio
+    let scale = (MAX_IMAGE_DIMENSION as f64 / w as f64)
+        .min(MAX_IMAGE_DIMENSION as f64 / h as f64);
+    let new_w = (w as f64 * scale).round() as u32;
+    let new_h = (h as f64 * scale).round() as u32;
+
+    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
+
+    let mut buf = Vec::new();
+    let mut cursor = std::io::Cursor::new(&mut buf);
+    resized
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .map_err(|e| ClipboardImageError::EncodeFailed(format!("Failed to encode resized: {}", e)))?;
+
+    Ok(buf)
 }
 
 /// Encode RGBA pixel data to PNG bytes.
@@ -218,5 +260,45 @@ mod tests {
         assert_eq!(attachment.hash.len(), 8);
         assert_eq!(attachment.byte_size, 100);
         assert!(!attachment.base64_png.is_empty());
+    }
+
+    #[test]
+    fn test_downscale_if_needed_small_image_unchanged() {
+        use image::{ImageBuffer, RgbaImage};
+        // Create a small 100x100 image — should not be downscaled
+        let img: RgbaImage = ImageBuffer::from_pixel(100, 100, image::Rgba([255, 0, 0, 255]));
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).unwrap();
+        let original_len = buf.len();
+
+        let result = downscale_if_needed(buf).unwrap();
+        assert_eq!(result.len(), original_len, "Small image should pass through unchanged");
+    }
+
+    #[test]
+    fn test_downscale_if_needed_large_image_shrinks() {
+        use image::{ImageBuffer, RgbaImage};
+        // Create a 3000x2000 image — exceeds MAX_IMAGE_DIMENSION, should be downscaled
+        let img: RgbaImage = ImageBuffer::from_pixel(3000, 2000, image::Rgba([0, 128, 255, 255]));
+        let mut buf = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png).unwrap();
+        let original_len = buf.len();
+
+        let result = downscale_if_needed(buf).unwrap();
+        // Downscaled image should be smaller
+        assert!(result.len() < original_len, "Downscaled image should be smaller");
+
+        // Verify dimensions of the result
+        let decoded = image::load_from_memory(&result).unwrap();
+        assert!(decoded.width() <= MAX_IMAGE_DIMENSION);
+        assert!(decoded.height() <= MAX_IMAGE_DIMENSION);
+    }
+
+    #[test]
+    fn test_downscale_if_needed_invalid_bytes_passthrough() {
+        // Invalid image data should pass through unchanged
+        let data = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        let result = downscale_if_needed(data.clone()).unwrap();
+        assert_eq!(result, data);
     }
 }

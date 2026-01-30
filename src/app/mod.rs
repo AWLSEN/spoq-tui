@@ -2338,7 +2338,7 @@ mod tests {
 
         // Add follow-up message
         app.cache
-            .add_streaming_message("real-thread-123", "Follow-up".to_string());
+            .add_streaming_message("real-thread-123", "Follow-up".to_string(), Vec::new());
 
         // Thread type should be preserved
         let thread = app.cache.get_thread("real-thread-123").unwrap();

@@ -336,6 +336,144 @@ if (smu->importance_score < HOT_THRESHOLD) {
 
 ---
 
+## Hybrid Architecture: 5-Layer Approach
+
+### Key Insight: Build on What Linux Already Provides
+
+Research into existing Linux primitives revealed that **~80% of the 500GB effective memory goal can be achieved with tools already in the kernel.** The custom kernel module's unique contribution is **semantic awareness** — the intelligence layer that existing tools lack.
+
+This changes the strategy from "build everything from scratch" to "stack existing primitives smartly, then add semantic awareness on top."
+
+### The 5 Layers
+
+```
+Layer 5: Custom Kernel Module — Semantic Awareness (THE NOVEL PART)
+         Knows what a "conversation" is, what's shared, what to evict first
+         ───────────────────────────────────────────────────────────────
+Layer 4: KSM — Automatic Page Deduplication (EXISTING, just enable it)
+         Scans memory pages, merges identical ones (40-55% savings)
+         ───────────────────────────────────────────────────────────────
+Layer 3: zswap — Compressed Swap Cache (EXISTING, kernel config)
+         Compresses pages before writing to swap (zstd = 3.37× ratio)
+         ───────────────────────────────────────────────────────────────
+Layer 2: mmap + Demand Paging — Bulk Storage (EXISTING, syscall)
+         mmap a 500GB sparse file; kernel pages in/out automatically
+         ───────────────────────────────────────────────────────────────
+Layer 1: memfd_create — Shared Immutable Data (EXISTING, syscall)
+         Zero-copy sharing of system prompts and tool defs across agents
+```
+
+### Layer 1: memfd_create + File Sealing
+
+**What it does:** Creates anonymous in-memory files that can be shared between processes with zero-copy semantics. File sealing prevents modification after creation, enabling safe sharing.
+
+**Why it matters for us:**
+- System prompts (50MB) and tool definitions (100MB) are **identical** across all agents
+- One process creates the memfd, seals it, passes the fd to all agents
+- All agents map the same physical pages — **no duplication at all**
+
+```c
+// Agent coordinator creates shared prompt once
+int fd = memfd_create("system_prompt", MFD_ALLOW_SEALING);
+write(fd, prompt_data, prompt_size);
+fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE | F_SEAL_SHRINK);
+// Pass fd to all agent processes via Unix socket
+// Result: 100 agents, 1 copy in RAM
+```
+
+**Savings:** System prompts 5,000MB → 50MB, Tool defs 10,000MB → 100MB (same as kernel module approach, but with zero custom code)
+
+### Layer 2: mmap + Demand Paging
+
+**What it does:** Memory-map a large sparse file on SSD. The kernel automatically pages data in when accessed and pages it out under memory pressure. No custom eviction logic needed.
+
+**Why it matters for us:**
+- Create a 500GB sparse file (uses zero disk space initially)
+- Each agent's conversation data lives in a region of this file
+- Kernel's existing page cache handles hot/cold data automatically
+- When RAM is full, kernel evicts cold pages to SSD transparently
+
+```c
+// Create 500GB sparse file (takes zero disk space)
+int fd = open("/mnt/nvme/agent_store", O_RDWR | O_CREAT);
+ftruncate(fd, 500ULL * 1024 * 1024 * 1024);
+
+// Each agent gets a region
+void *agent_mem = mmap(NULL, agent_region_size,
+                       PROT_READ | PROT_WRITE, MAP_SHARED,
+                       fd, agent_offset);
+// Kernel handles paging automatically — "500GB memory" on 8GB RAM
+```
+
+**This is the "laziest correct answer"** — it gives us virtual 500GB with zero custom kernel code.
+
+### Layer 3: zswap (Compressed Swap)
+
+**What it does:** Intercepts pages being swapped out and compresses them in RAM first. Only writes to actual SSD swap if the compressed pool is full.
+
+**Why it matters for us:**
+- Conversation JSON compresses at ~3.37× with zstd
+- Pages that would go to SSD stay in RAM (compressed)
+- Dramatically reduces SSD I/O and extends SSD lifetime
+- Just needs kernel boot parameters — zero code
+
+```bash
+# Enable zswap with zstd compression
+echo zstd > /sys/module/zswap/parameters/compressor
+echo z3fold > /sys/module/zswap/parameters/zpool
+echo 50 > /sys/module/zswap/parameters/max_pool_percent
+echo 1 > /sys/module/zswap/parameters/enabled
+```
+
+**Savings:** 8GB RAM effectively becomes ~27GB for text-heavy agent data
+
+### Layer 4: KSM (Kernel Samepage Merging)
+
+**What it does:** Background kernel thread scans memory pages, finds identical ones, and merges them into shared copy-on-write pages.
+
+**Why it matters for us:**
+- Catches duplication that memfd_create doesn't cover (runtime data, partial overlaps)
+- Works automatically on any mmap'd region marked with `madvise(MADV_MERGEABLE)`
+- 40-55% additional savings on agent workloads
+
+```bash
+# Enable and tune KSM
+echo 1 > /sys/kernel/mm/ksm/run
+echo 20 > /sys/kernel/mm/ksm/sleep_millisecs  # Scan frequency
+echo 1000 > /sys/kernel/mm/ksm/pages_to_scan  # Pages per scan cycle
+```
+
+**Trade-off:** Uses CPU for scanning. On 8GB system, expect 2-5% CPU overhead for meaningful dedup.
+
+### Layer 5: Custom Kernel Module — Semantic Awareness (The Novel Contribution)
+
+**What it does:** This is what no existing tool provides. The kernel module adds intelligence on top of the raw memory primitives:
+
+1. **Semantic eviction** — When memory is tight, evict idle agent conversations before active ones. Standard LRU doesn't know which pages belong to which agent or whether that agent is busy.
+
+2. **Content-addressed dedup** — KSM finds identical pages by byte-comparison. Our module finds semantically identical data (same conversation across agents) even if the byte layout differs slightly.
+
+3. **Coordinated compression** — zswap compresses random pages. Our module compresses entire conversations as units (better compression ratio than page-level).
+
+4. **Agent lifecycle management** — Track agent spawn/pause/resume/kill, pre-fault pages for agents about to become active, proactively evict pages for agents being paused.
+
+**This is the 20% that makes the system intelligent, not just big.**
+
+### What This Means: Before vs After SSD
+
+**Before SSD arrives (Layers 1, 3, 4 — RAM only):**
+- memfd_create: Shared prompts/tools eliminate 15GB of duplication
+- zswap: 8GB RAM → ~27GB effective (3.37× compression on text)
+- KSM: Additional 40-55% savings on runtime data
+- **Result: ~50-80 agents on 8GB RAM with no SSD needed**
+
+**After SSD arrives (Add Layers 2, 5):**
+- mmap: 500GB sparse file = virtually unlimited agent storage
+- Kernel module: Semantic awareness makes eviction intelligent
+- **Result: 500-1000 agents, 500GB effective memory on 8GB RAM + 256GB NVMe**
+
+---
+
 ## Implementation Roadmap
 
 ### Phase 1: Proof of Concept (Months 1-2)
@@ -519,40 +657,64 @@ If successful, this work would:
 
 ## Alternative Approaches Considered
 
-### 1. Userspace-Only Solution
+### 1. Userspace-Only Solution (memfd_create + mmap)
 
-**Approach:** Implement dedup + compression in userspace (no kernel changes).
-
-**Pros:**
-- Easier to deploy
-- No kernel development needed
-- Faster iteration
-
-**Cons:**
-- Can't share memory between processes efficiently
-- No transparent compression
-- Higher overhead (context switches)
-- Limited to single-machine
-
-**Verdict:** Not sufficient for 100+ agents. Need kernel support.
-
-### 2. Virtual Memory Tricks
-
-**Approach:** Use mmap + madvise to hint kernel about memory usage.
+**Approach:** Use existing Linux syscalls (memfd_create, mmap, madvise) for sharing and paging.
 
 **Pros:**
-- Works with existing kernels
-- Some dedup via KSM (Kernel Samepage Merging)
+- Works on stock kernels, no module needed
+- memfd_create gives true zero-copy sharing between processes
+- mmap + demand paging provides virtual 500GB on SSD-backed files
+- Fast iteration, easy to deploy
 
 **Cons:**
-- KSM scans all memory (slow, CPU-intensive)
-- No semantic awareness
-- No automatic compression
-- Not designed for this workload
+- No semantic awareness (kernel treats all pages equally)
+- Eviction is LRU-based, not agent-aware
+- No coordinated compression of semantic units
+- Can't distinguish idle agents from active ones
 
-**Verdict:** Partial solution but doesn't address root cause.
+**Verdict:** Forms Layers 1-2 of the hybrid architecture. Handles bulk storage and sharing, but needs kernel module (Layer 5) for intelligent management.
 
-### 3. Distributed Memory (Network)
+### 2. Kernel Memory Primitives (KSM + zswap)
+
+**Approach:** Enable existing kernel features for page dedup and compressed swap.
+
+**Pros:**
+- KSM: 40-55% memory savings via automatic page merging
+- zswap: 3.37× compression ratio with zstd, reduces SSD I/O
+- Just kernel config — zero code to write
+- UKSM variant offers 5.9-7.4× faster scanning (not mainlined)
+
+**Cons:**
+- KSM: CPU overhead (2-5%), scans all memory not just agent data
+- zswap: Page-level compression (less efficient than semantic-unit-level)
+- No awareness of agent lifecycle or conversation boundaries
+- KSM scanning is wasted on non-duplicate data
+
+**Verdict:** Forms Layers 3-4 of the hybrid architecture. Significant savings with minimal effort, but semantic awareness from Layer 5 can direct these tools more efficiently.
+
+### 3. Industry Approaches (vLLM, Prefix Caching, Triton)
+
+**Approach:** Use production-grade LLM serving systems that already solve similar problems.
+
+**Key findings from research:**
+- **PagedAttention (vLLM):** OS-inspired KV cache management, eliminates 60-80% of memory waste
+- **Prefix caching (Anthropic/OpenAI/Google):** Token-level KV cache dedup, up to 90% cost savings
+- **KVFlow/Marconi:** Workflow-aware prefix caching specifically for agent workloads
+- **AIOS (Rutgers University):** First AI-aware OS with agent scheduling/memory management
+
+**Pros:**
+- Proven at massive scale in production
+- Sophisticated caching and dedup strategies
+
+**Cons:**
+- Designed for GPU memory (KV caches), not general agent RAM
+- Tied to specific inference frameworks
+- Don't solve the local development use case (commodity hardware)
+
+**Verdict:** Validates the core thesis — semantic awareness over memory dramatically improves multi-agent efficiency. Our approach applies the same principle at the OS level for general-purpose agent memory, not just KV caches.
+
+### 4. Distributed Memory (Network)
 
 **Approach:** Store agent memory on remote servers, fetch on demand.
 
@@ -562,11 +724,10 @@ If successful, this work would:
 
 **Cons:**
 - Network latency (milliseconds vs nanoseconds)
-- Requires infrastructure (not local development)
+- Requires infrastructure (not for local development)
 - Complexity of distributed systems
-- Single point of failure
 
-**Verdict:** Good for production clusters, not for local development.
+**Verdict:** Good for production clusters, not for the commodity-hardware target.
 
 ---
 
@@ -614,6 +775,10 @@ This is a **fundamental research problem** that requires collaboration across:
 ### Academic Papers
 - [The Case for Learned Index Structures (Kraska et al., 2018)](https://arxiv.org/abs/1712.01208) - ML-aware data structures
 - [LegoOS: A Disseminated, Distributed OS for Hardware Resource Disaggregation (Shan et al., 2018)](https://www.usenix.org/conference/osdi18/presentation/shan) - OS for disaggregated memory
+- [PagedAttention / vLLM (Kwon et al., 2023)](https://arxiv.org/abs/2309.06180) - OS-inspired virtual memory for KV caches
+- [AIOS: LLM Agent Operating System (Mei et al., Rutgers, 2023)](https://arxiv.org/abs/2403.16971) - First AI-aware OS with agent scheduling
+- [KVFlow (2024)](https://arxiv.org/abs/2410.07765) - Workflow-aware prefix caching for multi-agent systems
+- [Marconi (2024)](https://arxiv.org/abs/2407.00005) - Prefix caching for LLM agent workloads
 
 ### Technologies
 - [CXL (Compute Express Link)](https://www.computeexpresslink.org/) - Memory expansion standard
@@ -623,6 +788,9 @@ This is a **fundamental research problem** that requires collaboration across:
 ### Existing Kernel Features
 - [zswap](https://www.kernel.org/doc/html/latest/admin-guide/mm/zswap.html) - Compressed swap cache
 - [KSM](https://www.kernel.org/doc/html/latest/admin-guide/mm/ksm.html) - Kernel samepage merging
+- [UKSM](https://github.com/dolohow/uksm) - Ultra KSM (5.9-7.4× faster scanning, not mainlined)
+- [memfd_create](https://man7.org/linux/man-pages/man2/memfd_create.2.html) - Anonymous in-memory files with sealing
+- [userfaultfd](https://man7.org/linux/man-pages/man2/userfaultfd.2.html) - Userspace page fault handling
 - [NUMA](https://www.kernel.org/doc/html/latest/mm/numa.html) - Non-uniform memory access
 
 ### Related Projects

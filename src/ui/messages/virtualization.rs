@@ -106,6 +106,11 @@ pub fn estimate_message_height_fast(message: &Message, viewport_width: usize) ->
         }
     }
 
+    // Add 1 line for image attachment chips if present
+    if message.role == MessageRole::User && !message.image_hashes.is_empty() {
+        estimated_lines += 1;
+    }
+
     let char_count = content.chars().count();
     let logical_lines = if char_count == 0 {
         1

@@ -5,7 +5,7 @@
 
 mod folder_chip;
 mod height;
-mod image_chip;
+pub(crate) mod image_chip;
 mod keybinds;
 mod permission;
 

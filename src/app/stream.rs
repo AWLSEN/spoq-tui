@@ -123,13 +123,17 @@ impl App {
         // Extract working directory from selected folder (if any)
         let working_directory = self.selected_folder.as_ref().map(|f| f.path.clone());
 
+        // Extract image hashes upfront (before drain) so all branches can use them
+        let image_hashes: Vec<String> = self.pending_images.iter().map(|img| img.hash.clone()).collect();
+
         // Determine thread_id based on screen
         let (thread_id, is_new_thread) = if is_command_deck {
             // NEW thread - create pending, will reconcile when backend responds
-            let pending_id = self.cache.create_pending_thread(
+            let pending_id = self.cache.create_pending_thread_with_images(
                 content.clone(),
                 new_thread_type,
                 working_directory.clone(),
+                image_hashes.clone(),
             );
             self.active_thread_id = Some(pending_id.clone());
             self.screen = Screen::Conversation;
@@ -150,7 +154,7 @@ impl App {
 
             if !self
                 .cache
-                .add_streaming_message(existing_id, content.clone())
+                .add_streaming_message(existing_id, content.clone(), image_hashes.clone())
             {
                 // Thread doesn't exist in cache - might have been deleted
                 self.stream_error = Some("Thread no longer exists.".to_string());
@@ -160,10 +164,11 @@ impl App {
         } else {
             // Edge case: on Conversation screen but no active_thread_id (shouldn't happen)
             // Fall back to creating new thread
-            let pending_id = self.cache.create_pending_thread(
+            let pending_id = self.cache.create_pending_thread_with_images(
                 content.clone(),
                 new_thread_type,
                 working_directory.clone(),
+                image_hashes.clone(),
             );
             self.active_thread_id = Some(pending_id.clone());
             self.reset_scroll();
@@ -840,6 +845,7 @@ impl App {
             reasoning_collapsed: true,
             segments: vec![MessageSegment::Text(qs.instruction.clone())],
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         self.cache.add_message(user_message);
 
@@ -856,6 +862,7 @@ impl App {
             reasoning_collapsed: false, // Show reasoning while streaming
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         self.cache.add_message(assistant_message);
 

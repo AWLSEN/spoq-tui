@@ -384,6 +384,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         assert_eq!(message.id, 1);
@@ -417,6 +418,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
@@ -439,6 +441,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.append_token("Hello");
@@ -465,6 +468,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // append_token should add to both partial_content AND segments
@@ -502,6 +506,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         assert!(message.is_streaming);
@@ -529,6 +534,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.finalize();
@@ -553,6 +559,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // Simulate streaming tokens
@@ -587,6 +594,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
@@ -751,6 +759,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.append_reasoning_token("Let me think...");
@@ -774,6 +783,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // "Let me analyze this step by step" = 7 words
@@ -797,6 +807,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         assert!(!message.reasoning_collapsed);
@@ -820,6 +831,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // Reasoning should not be collapsed while streaming
@@ -847,6 +859,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.finalize();
@@ -870,6 +883,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         let json = serde_json::to_string(&message).expect("Failed to serialize");
@@ -1149,6 +1163,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.start_tool_event("tool-333".to_string(), "Read".to_string());
@@ -1177,6 +1192,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.start_tool_event("tool-444".to_string(), "Bash".to_string());
@@ -1205,6 +1221,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.start_tool_event("tool-555".to_string(), "Write".to_string());
@@ -1232,6 +1249,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.start_tool_event("tool-666".to_string(), "Grep".to_string());
@@ -1258,6 +1276,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         assert!(!message.has_running_tools());
@@ -1283,6 +1302,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.start_tool_event("tool-1".to_string(), "Read".to_string());
@@ -1314,6 +1334,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.add_text_segment("Hello".to_string());
@@ -1341,6 +1362,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.add_text_segment("Let me check that file...".to_string());
@@ -1369,6 +1391,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // Start a tool event
@@ -1406,6 +1429,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // Start multiple tool events
@@ -1445,6 +1469,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         message.start_tool_event("tool-123".to_string(), "Read".to_string());
@@ -1473,6 +1498,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // Simulate a realistic interleaved streaming scenario
@@ -1530,6 +1556,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // Build up content with interleaved text and tools

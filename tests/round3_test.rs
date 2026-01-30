@@ -89,6 +89,7 @@ fn test_reasoning_token_count() {
         reasoning_collapsed: false,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
 
     // "Let me think about this step by step carefully" = 9 words
@@ -105,7 +106,7 @@ fn test_find_last_reasoning_message() {
     cache.finalize_message(&thread_id, 100);
 
     // Second message with reasoning
-    cache.add_streaming_message(&thread_id, "Second question".to_string());
+    cache.add_streaming_message(&thread_id, "Second question".to_string(), Vec::new());
     cache.append_reasoning_to_message(&thread_id, "Reasoning 2");
     cache.finalize_message(&thread_id, 101);
 
@@ -388,7 +389,7 @@ fn test_multiple_messages_with_reasoning() {
     cache.finalize_message(&thread_id, 100);
 
     // Second exchange with reasoning
-    cache.add_streaming_message(&thread_id, "Second question".to_string());
+    cache.add_streaming_message(&thread_id, "Second question".to_string(), Vec::new());
     cache.append_reasoning_to_message(&thread_id, "Analyzing second question");
     cache.append_to_message(&thread_id, "Second answer");
     cache.finalize_message(&thread_id, 101);
