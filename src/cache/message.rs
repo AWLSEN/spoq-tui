@@ -241,6 +241,29 @@ impl ThreadCache {
         }
     }
 
+    /// Mark the current streaming message as interrupted by steering.
+    /// Preserves accumulated content and clears the streaming flag so
+    /// is_thread_streaming() won't permanently block new messages.
+    pub fn interrupt_streaming_for_steering(&mut self, thread_id: &str) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            if let Some(msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                // Preserve content accumulated so far
+                if msg.content.is_empty() && !msg.partial_content.is_empty() {
+                    msg.content = std::mem::take(&mut msg.partial_content);
+                }
+                msg.is_streaming = false;
+                if msg.id == 0 {
+                    msg.id = -2; // -2 = interrupted by steering (vs -1 = user cancelled)
+                }
+                if !msg.reasoning_content.is_empty() {
+                    msg.reasoning_collapsed = true;
+                }
+                msg.render_version += 1;
+            }
+        }
+    }
+
     /// Toggle reasoning collapsed state for a specific message in a thread
     /// Used by 't' key handler to expand/collapse thinking blocks
     pub fn toggle_message_reasoning(&mut self, thread_id: &str, message_index: usize) -> bool {

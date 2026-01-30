@@ -30,6 +30,7 @@ mod layout;
 pub mod messages;
 pub mod prepare;
 mod slash_autocomplete;
+mod steering;
 mod theme;
 mod thread_switcher;
 mod unified_picker;

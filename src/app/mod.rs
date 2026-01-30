@@ -36,7 +36,7 @@ use crate::credential_watcher::{CredentialWatchState, Debouncer};
 use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
-use crate::models::{Folder, GitHubRepo, PermissionMode};
+use crate::models::{Folder, GitHubRepo, PermissionMode, QueuedSteeringMessage};
 use crate::state::{
     AskUserQuestionState, DashboardState, FilePickerState, SessionState, SubagentTracker, Task,
     Thread, Todo, ToolTracker, UnifiedPickerState,
@@ -200,8 +200,8 @@ pub struct App {
     pub connection_status: bool,
     /// Last stream error for display
     pub stream_error: Option<String>,
-    /// Steering feedback message (queued, interrupting, etc.)
-    pub steering_feedback: Option<String>,
+    /// Currently queued steering message awaiting promotion
+    pub queued_steering: Option<QueuedSteeringMessage>,
     /// Current sync operation status (for /sync dialog display)
     pub sync_status: SyncStatus,
     /// Thread mode synchronization coordinator (debounces and syncs mode changes)
@@ -471,7 +471,7 @@ impl App {
             message_tx,
             connection_status: false,
             stream_error: None,
-            steering_feedback: None,
+            queued_steering: None,
             sync_status: SyncStatus::default(),
             client: client.clone(),
             thread_mode_sync: ThreadModeSync::new(client),

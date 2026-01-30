@@ -317,6 +317,19 @@ pub enum AppMessage {
     BrowseListCloneFailed {
         error: String,
     },
+    // =========================================================================
+    // Steering Messages (soft-interrupt flow)
+    // =========================================================================
+    /// Steering message acknowledged by backend (steering_queued received)
+    SteeringQueued { thread_id: String },
+    /// Steering interrupt in progress (steering_interrupting received)
+    SteeringInterrupting { thread_id: String },
+    /// Steering resume in progress (steering_resuming received)
+    SteeringResuming { thread_id: String },
+    /// Steering completed successfully - promote to visible message
+    SteeringCompleted { thread_id: String, duration_ms: u64 },
+    /// Steering failed with error
+    SteeringFailed { thread_id: String, error: String },
 }
 
 #[cfg(test)]

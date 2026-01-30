@@ -62,6 +62,12 @@ pub enum WsIncomingMessage {
     /// Steering resume started
     #[serde(rename = "steering_resuming")]
     SteeringResuming(WsSteeringResuming),
+    /// Steering completed successfully
+    #[serde(rename = "steering_completed")]
+    SteeringCompleted(WsSteeringCompleted),
+    /// Steering failed
+    #[serde(rename = "steering_failed")]
+    SteeringFailed(WsSteeringFailed),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -411,6 +417,28 @@ pub struct WsSteeringResuming {
     pub thread_id: String,
     /// Instruction being applied (may be truncated)
     pub instruction: String,
+    /// When this notification was generated (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Steering completed successfully notification
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsSteeringCompleted {
+    /// Thread ID for which steering completed
+    pub thread_id: String,
+    /// Duration of the steering operation in milliseconds
+    pub duration_ms: u64,
+    /// When this notification was generated (Unix milliseconds)
+    pub timestamp: u64,
+}
+
+/// Steering failed notification
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsSteeringFailed {
+    /// Thread ID for which steering failed
+    pub thread_id: String,
+    /// Error message describing why steering failed
+    pub error: String,
     /// When this notification was generated (Unix milliseconds)
     pub timestamp: u64,
 }
