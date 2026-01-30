@@ -1249,8 +1249,8 @@ where
                                             c
                                         };
 
-                                        // Check for / trigger for slash command autocomplete (works on both CommandDeck and Conversation)
-                                        if char_to_insert == '/' {
+                                        // Check for / trigger for slash command autocomplete (only at very start of empty input)
+                                        if char_to_insert == '/' && app.is_slash_autocomplete_trigger() {
                                             app.textarea.insert_char('/');
                                             app.slash_autocomplete_visible = true;
                                             app.slash_autocomplete_query.clear();
