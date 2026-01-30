@@ -1697,9 +1697,11 @@ where
                             continue;
                         }
                         Event::FocusGained => {
+                            app.focus_supported = true;
                             app.is_focused = true;
                         }
                         Event::FocusLost => {
+                            app.focus_supported = true;
                             app.is_focused = false;
                         }
                         _ => {}
