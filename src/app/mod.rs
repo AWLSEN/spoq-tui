@@ -291,6 +291,8 @@ pub struct App {
     pub folders_error: Option<String>,
     /// Currently selected folder (displayed as chip in input)
     pub selected_folder: Option<Folder>,
+    /// Pending image attachments from clipboard paste or drag-drop (cleared on submit)
+    pub pending_images: Vec<crate::clipboard::ImageAttachment>,
     /// Cached GitHub repos from API for empty state
     pub repos: Vec<GitHubRepo>,
     /// True while fetching repos from API
@@ -515,6 +517,7 @@ impl App {
             folders_loading: false,
             folders_error: None,
             selected_folder: None,
+            pending_images: Vec::new(),
             repos: Vec::new(),
             repos_loading: false,
             repos_error: None,

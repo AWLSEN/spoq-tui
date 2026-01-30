@@ -626,8 +626,9 @@ where
                                                     continue;
                                                 }
                                                 KeyCode::Char('n') | KeyCode::Char('N') => {
-                                                    // Only capture 'N' when textarea is empty
-                                                    if app.textarea.is_empty() {
+                                                    // Conversation: textarea is hidden, so always capture
+                                                    // CommandDeck: only capture when textarea is empty
+                                                    if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                         let permission_id = app.dashboard.pending_permissions_iter()
                                                             .find(|(_, p)| p.tool_name == "AskUserQuestion")
                                                             .map(|(_, p)| p.permission_id.clone());
@@ -639,8 +640,9 @@ where
                                                     // Fall through to type 'n' in textarea
                                                 }
                                                 KeyCode::Char('a') | KeyCode::Char('A') => {
-                                                    // Only open dialog when textarea is empty
-                                                    if app.textarea.is_empty() {
+                                                    // Conversation: textarea is hidden, so always capture
+                                                    // CommandDeck: only capture when textarea is empty
+                                                    if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                         if app.open_ask_user_question_dialog() {
                                                             tracing::debug!("Opened AskUserQuestion dialog via 'A' key");
                                                             continue;
@@ -654,9 +656,10 @@ where
                                             }
                                         } else {
                                             // Standard permission prompt (y/a/n)
-                                            // Only capture Y/N/A keys when textarea is empty
+                                            // Conversation: textarea is hidden, so always capture
+                                            // CommandDeck: only capture when textarea is empty
                                             if let KeyCode::Char(c) = key.code {
-                                                if app.textarea.is_empty() {
+                                                if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                     // Debug: emit key press to debug system
                                                     app.emit_debug_state_change(
                                                         "permission_key",
@@ -712,9 +715,10 @@ where
                                     }
 
                                     WaitingFor::PlanApproval { ref request_id } => {
-                                        // Plan approval handles Y/N/A keys only when textarea is empty
+                                        // Conversation: textarea is hidden, so always capture
+                                        // CommandDeck: only capture when textarea is empty
                                         if let KeyCode::Char(c) = key.code {
-                                            if app.textarea.is_empty() {
+                                            if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                 app.emit_debug_state_change(
                                                     "plan_approval_key",
                                                     "Key pressed during plan approval",

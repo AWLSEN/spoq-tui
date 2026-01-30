@@ -356,13 +356,22 @@ if (smu->importance_score < HOT_THRESHOLD) {
 - **Claude Code SDK** for easy integration
 - **Goal:** Drop-in replacement for malloc()
 
-### Phase 4: Testing & Optimization (Months 7-8)
+### Phase 4: SPDK Integration — User-Space NVMe I/O (Months 7-8)
+- **SPDK user-space NVMe driver** for direct SSD access (bypass kernel block layer)
+- **Poll-mode eviction path** — Semantic LRU writes evicted SMUs to NVMe via SPDK with microsecond-level latency
+- **Lockless I/O pipeline** — message-passing architecture for eviction/restore operations (no locks in I/O path)
+- **Dedicated NVMe partition** — SPDK takes exclusive device ownership; boot drive remains on SD/separate NVMe
+- **Benchmark eviction throughput** — compare kernel I/O path (~100μs+) vs SPDK direct path (~10-20μs)
+- **Note:** Primarily x86 target; ARM64 (Pi 5/Jetson) support is less mature
+- **Goal:** Sub-100μs cold-storage eviction and restore for agent conversations
+
+### Phase 5: Testing & Optimization (Months 9-10)
 - **Benchmark with 100 real Claude Code instances**
 - **NUMA tuning** for multi-socket systems
 - **Performance profiling** and optimization
 - **Goal:** Sub-microsecond overhead for allocations
 
-### Phase 5: Upstream Contribution (Months 9-12)
+### Phase 6: Upstream Contribution (Months 11-14)
 - **RFC patches** to Linux Kernel Mailing List (LKML)
 - **Review process** with kernel maintainers
 - **Iterate on feedback** from memory management experts
