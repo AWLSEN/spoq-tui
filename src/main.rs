@@ -1696,9 +1696,13 @@ where
                             app.mark_dirty();
                             continue;
                         }
-                        _ => {
-                            // Ignore other events (focus, etc.)
+                        Event::FocusGained => {
+                            app.is_focused = true;
                         }
+                        Event::FocusLost => {
+                            app.is_focused = false;
+                        }
+                        _ => {}
                     }
                 }
             }

@@ -178,6 +178,8 @@ pub struct App {
     pub tasks: Vec<Task>,
     /// Flag to track if the app should quit
     pub should_quit: bool,
+    /// Whether the terminal window is currently focused (for notification gating)
+    pub is_focused: bool,
     /// Current screen being displayed
     pub screen: Screen,
     /// ID of the active thread when in Conversation screen
@@ -462,6 +464,7 @@ impl App {
             threads: Vec::new(),
             tasks: Vec::new(),
             should_quit: false,
+            is_focused: true,
             screen: Screen::CommandDeck,
             active_thread_id: None,
             focus: Focus::default(),
