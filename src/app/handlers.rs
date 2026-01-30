@@ -133,6 +133,12 @@ impl App {
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
                     self.reset_scroll();
                 }
+
+                // Fire native OS notification when the TUI is not focused
+                if !self.is_focused {
+                    let title = self.cache.get_thread(&thread_id).map(|t| t.title.as_str());
+                    crate::notifications::notify_task_complete(title);
+                }
             }
             AppMessage::StreamError {
                 thread_id,
