@@ -754,9 +754,13 @@ impl App {
                 return;
             }
 
-            // Show feedback in UI - set a steering_queued_feedback state
-            // This will be displayed in the UI
-            self.stream_error = Some(format!("⏳ Steering queued: {}", &instruction[..instruction.len().min(50)]));
+            // Show steering feedback in UI
+            let preview = if instruction.len() > 50 {
+                format!("{}...", &instruction[..50])
+            } else {
+                instruction.clone()
+            };
+            self.steering_feedback = Some(format!("⏳ Steering queued: {}", preview));
 
             // Clear input
             self.textarea.clear();

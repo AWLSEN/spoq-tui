@@ -197,6 +197,8 @@ pub struct App {
     pub connection_status: bool,
     /// Last stream error for display
     pub stream_error: Option<String>,
+    /// Steering feedback message (queued, interrupting, etc.)
+    pub steering_feedback: Option<String>,
     /// Current sync operation status (for /sync dialog display)
     pub sync_status: SyncStatus,
     /// Conductor API client (shared across async tasks)
@@ -464,6 +466,7 @@ impl App {
             message_tx,
             connection_status: false,
             stream_error: None,
+            steering_feedback: None,
             sync_status: SyncStatus::default(),
             client,
             tick_count: 0,
