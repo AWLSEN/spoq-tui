@@ -218,7 +218,7 @@ pub fn build_input_section_with_cursor(
                     .add_modifier(Modifier::BOLD),
             )]));
         }
-        PermissionMode::BypassPermissions => {
+        PermissionMode::Execution => {
             lines.push(Line::from(vec![Span::styled(
                 "  [EXECUTE]",
                 Style::default()
@@ -385,7 +385,7 @@ mod tests {
     #[test]
     fn test_build_input_section_execute_mode_indicator() {
         let app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
@@ -398,13 +398,13 @@ mod tests {
         let mode_line = &lines[0];
         assert!(
             !mode_line.spans.is_empty(),
-            "BypassPermissions mode should show mode indicator"
+            "Execution mode should show mode indicator"
         );
 
         let mode_text: String = mode_line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(
             mode_text.contains("[EXECUTE]"),
-            "BypassPermissions mode should display '[EXECUTE]'"
+            "Execution mode should display '[EXECUTE]'"
         );
 
         // Verify orange color styling (RGB 255, 140, 0)

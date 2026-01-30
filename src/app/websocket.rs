@@ -376,6 +376,63 @@ fn route_ws_message(
         WsIncomingMessage::ParseError { error, raw } => message_tx
             .send(AppMessage::WsParseError { error, raw })
             .map_err(|e| format!("Failed to send WsParseError: {}", e)),
+        WsIncomingMessage::SteeringQueued(queued) => {
+            info!(
+                "Steering message queued for thread: {}",
+                queued.thread_id
+            );
+            message_tx
+                .send(AppMessage::SteeringQueued {
+                    thread_id: queued.thread_id,
+                })
+                .map_err(|e| format!("Failed to send SteeringQueued: {}", e))
+        }
+        WsIncomingMessage::SteeringInterrupting(interrupting) => {
+            info!(
+                "Steering interrupt in progress for thread: {}",
+                interrupting.thread_id
+            );
+            message_tx
+                .send(AppMessage::SteeringInterrupting {
+                    thread_id: interrupting.thread_id,
+                })
+                .map_err(|e| format!("Failed to send SteeringInterrupting: {}", e))
+        }
+        WsIncomingMessage::SteeringResuming(resuming) => {
+            info!(
+                "Steering resume started for thread: {}",
+                resuming.thread_id
+            );
+            message_tx
+                .send(AppMessage::SteeringResuming {
+                    thread_id: resuming.thread_id,
+                })
+                .map_err(|e| format!("Failed to send SteeringResuming: {}", e))
+        }
+        WsIncomingMessage::SteeringCompleted(completed) => {
+            info!(
+                "Steering completed for thread {} in {}ms",
+                completed.thread_id, completed.duration_ms
+            );
+            message_tx
+                .send(AppMessage::SteeringCompleted {
+                    thread_id: completed.thread_id,
+                    duration_ms: completed.duration_ms,
+                })
+                .map_err(|e| format!("Failed to send SteeringCompleted: {}", e))
+        }
+        WsIncomingMessage::SteeringFailed(failed) => {
+            error!(
+                "Steering failed for thread {}: {}",
+                failed.thread_id, failed.error
+            );
+            message_tx
+                .send(AppMessage::SteeringFailed {
+                    thread_id: failed.thread_id,
+                    error: failed.error,
+                })
+                .map_err(|e| format!("Failed to send SteeringFailed: {}", e))
+        }
     }
 }
 

@@ -55,8 +55,8 @@ pub fn handle_editing_command(app: &mut App, cmd: &Command) -> bool {
                 }
             }
 
-            // Check for / trigger for slash command autocomplete (only on CommandDeck)
-            if *c == '/' && app.screen == Screen::CommandDeck {
+            // Check for / trigger for slash command autocomplete (only at very start of empty input)
+            if *c == '/' && app.is_slash_autocomplete_trigger() {
                 app.textarea.insert_char('/');
                 app.slash_autocomplete_visible = true;
                 app.slash_autocomplete_query.clear();

@@ -135,9 +135,16 @@ impl App {
                 }
             }
             AppMessage::StreamError {
-                thread_id: _,
+                thread_id,
                 error,
             } => {
+                // Clear queued steering on stream error
+                if let Some(ref qs) = self.queued_steering {
+                    if qs.thread_id == thread_id {
+                        self.queued_steering = None;
+                    }
+                }
+
                 // Reset stream statistics on error
                 self.stream_start_time = None;
                 self.last_event_time = None;
@@ -155,6 +162,13 @@ impl App {
                 self.stream_error = Some(error);
             }
             AppMessage::StreamCancelled { thread_id, reason } => {
+                // Clear queued steering on cancel
+                if let Some(ref qs) = self.queued_steering {
+                    if qs.thread_id == thread_id {
+                        self.queued_steering = None;
+                    }
+                }
+
                 // Mark message as no longer streaming
                 self.cache.cancel_streaming_message(&thread_id);
 
@@ -1818,6 +1832,55 @@ impl App {
                         "Claude CLI auth token storage failed: request_id={}, error={:?}",
                         request_id, error
                     );
+                }
+            }
+            // =========================================================================
+            // Steering Messages (soft-interrupt flow)
+            // =========================================================================
+            AppMessage::SteeringQueued { thread_id } => {
+                if let Some(ref mut qs) = self.queued_steering {
+                    if qs.thread_id == thread_id {
+                        qs.transition_to(crate::models::SteeringMessageState::Sent);
+                        self.mark_dirty();
+                    }
+                }
+            }
+            AppMessage::SteeringInterrupting { thread_id } => {
+                if let Some(ref mut qs) = self.queued_steering {
+                    if qs.thread_id == thread_id {
+                        qs.transition_to(crate::models::SteeringMessageState::Interrupting);
+                        self.mark_dirty();
+                    }
+                }
+            }
+            AppMessage::SteeringResuming { thread_id } => {
+                if let Some(ref mut qs) = self.queued_steering {
+                    if qs.thread_id == thread_id {
+                        qs.transition_to(crate::models::SteeringMessageState::Resuming);
+                        self.mark_dirty();
+                    }
+                }
+            }
+            AppMessage::SteeringCompleted {
+                thread_id,
+                duration_ms: _,
+            } => {
+                if let Some(qs) = self.queued_steering.take() {
+                    if qs.thread_id == thread_id {
+                        // Promote the queued steering to a visible message
+                        self.promote_steering_to_message(&qs);
+                    } else {
+                        // Put it back if thread_id doesn't match
+                        self.queued_steering = Some(qs);
+                    }
+                }
+            }
+            AppMessage::SteeringFailed { thread_id, error } => {
+                if let Some(ref mut qs) = self.queued_steering {
+                    if qs.thread_id == thread_id {
+                        qs.transition_to(crate::models::SteeringMessageState::Failed(error));
+                        self.mark_dirty();
+                    }
                 }
             }
         }

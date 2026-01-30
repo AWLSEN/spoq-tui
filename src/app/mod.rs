@@ -7,6 +7,7 @@
 //! - [`AppMessage`] - Messages for async communication
 
 mod actions;
+pub mod backend_coordinator;
 mod cancel;
 pub mod cursor_blink;
 mod handlers;
@@ -19,6 +20,7 @@ mod types;
 mod utils;
 mod view;
 mod websocket;
+pub mod thread_mode_sync;
 
 pub use messages::AppMessage;
 pub use state_methods::{BrowseListSelectAction, UnifiedPickerAction};
@@ -34,7 +36,7 @@ use crate::credential_watcher::{CredentialWatchState, Debouncer};
 use crate::debug::DebugEventSender;
 use crate::input_history::InputHistory;
 use crate::markdown::MarkdownCache;
-use crate::models::{Folder, GitHubRepo, PermissionMode};
+use crate::models::{Folder, GitHubRepo, PermissionMode, QueuedSteeringMessage};
 use crate::state::{
     AskUserQuestionState, DashboardState, FilePickerState, SessionState, SubagentTracker, Task,
     Thread, Todo, ToolTracker, UnifiedPickerState,
@@ -49,6 +51,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use cursor_blink::CursorBlinkState;
+use thread_mode_sync::ThreadModeSync;
 
 /// Cached message height data for incremental updates.
 /// Stores precomputed heights with cumulative offsets to avoid recalculating
@@ -197,8 +200,12 @@ pub struct App {
     pub connection_status: bool,
     /// Last stream error for display
     pub stream_error: Option<String>,
+    /// Currently queued steering message awaiting promotion
+    pub queued_steering: Option<QueuedSteeringMessage>,
     /// Current sync operation status (for /sync dialog display)
     pub sync_status: SyncStatus,
+    /// Thread mode synchronization coordinator (debounces and syncs mode changes)
+    pub thread_mode_sync: ThreadModeSync,
     /// Conductor API client (shared across async tasks)
     pub client: Arc<ConductorClient>,
     /// Tick counter for animations (blinking cursor, etc.)
@@ -464,8 +471,10 @@ impl App {
             message_tx,
             connection_status: false,
             stream_error: None,
+            queued_steering: None,
             sync_status: SyncStatus::default(),
-            client,
+            client: client.clone(),
+            thread_mode_sync: ThreadModeSync::new(client),
             tick_count: 0,
             max_scroll: 0,
             unified_scroll: 0,
@@ -1133,12 +1142,11 @@ mod tests {
         app.textarea.insert_char('d');
         app.submit_input(ThreadType::Conversation);
 
-        // Should NOT create a new thread or add messages
-        // Should set an error
+        // Steering is attempted but fails because no WebSocket is connected in tests
         assert!(app.stream_error.is_some());
-        assert!(app.stream_error.as_ref().unwrap().contains("wait"));
+        assert!(app.stream_error.as_ref().unwrap().contains("WebSocket"));
 
-        // Input should NOT be cleared (submission was rejected)
+        // Input should NOT be cleared (steering send failed)
         assert!(!app.textarea.is_empty());
         assert_eq!(app.textarea.content(), "Second");
 
@@ -1653,12 +1661,12 @@ mod tests {
     fn test_permission_mode_equality() {
         assert_eq!(PermissionMode::Plan, PermissionMode::Plan);
         assert_eq!(
-            PermissionMode::BypassPermissions,
-            PermissionMode::BypassPermissions
+            PermissionMode::Execution,
+            PermissionMode::Execution
         );
         assert_eq!(PermissionMode::Default, PermissionMode::Default);
         assert_ne!(PermissionMode::Plan, PermissionMode::Default);
-        assert_ne!(PermissionMode::BypassPermissions, PermissionMode::Plan);
+        assert_ne!(PermissionMode::Execution, PermissionMode::Plan);
     }
 
     #[test]
@@ -1693,13 +1701,13 @@ mod tests {
 
         app.cycle_permission_mode();
 
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
     }
 
     #[test]
     fn test_cycle_permission_mode_from_bypass_to_default() {
         let mut app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
@@ -1719,11 +1727,11 @@ mod tests {
         app.cycle_permission_mode();
         assert_eq!(app.permission_mode, PermissionMode::Plan);
 
-        // Cycle: Plan → BypassPermissions
+        // Cycle: Plan → Execution
         app.cycle_permission_mode();
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
 
-        // Cycle: BypassPermissions → Default
+        // Cycle: Execution → Default
         app.cycle_permission_mode();
         assert_eq!(app.permission_mode, PermissionMode::Default);
 
@@ -1741,10 +1749,10 @@ mod tests {
             app.cycle_permission_mode(); // Default → Plan
             assert_eq!(app.permission_mode, PermissionMode::Plan);
 
-            app.cycle_permission_mode(); // Plan → BypassPermissions
-            assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+            app.cycle_permission_mode(); // Plan → Execution
+            assert_eq!(app.permission_mode, PermissionMode::Execution);
 
-            app.cycle_permission_mode(); // BypassPermissions → Default
+            app.cycle_permission_mode(); // Execution → Default
             assert_eq!(app.permission_mode, PermissionMode::Default);
         }
     }
@@ -2280,7 +2288,7 @@ mod tests {
     #[test]
     fn test_permission_mode_persists_after_navigate_to_command_deck() {
         let mut app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
@@ -2288,7 +2296,7 @@ mod tests {
         app.navigate_to_command_deck();
 
         // Mode should persist (it's app-level, not thread-level)
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
     }
 
     // ============= Thread Type with Add Streaming Message Tests =============
@@ -3361,7 +3369,7 @@ mod tests {
     async fn test_submit_input_preserves_permission_mode_in_continuing_thread() {
         use crate::models::{PermissionMode, ThreadType};
         let mut app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
@@ -3405,7 +3413,7 @@ mod tests {
         app.submit_input(ThreadType::Conversation);
 
         // Verify the permission mode is preserved
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
         assert_eq!(app.active_thread_id.as_ref().unwrap(), &existing_id);
     }
 

@@ -142,11 +142,9 @@ impl App {
             // CONTINUING existing thread (we're on Conversation screen)
             // Check if there's already a streaming response in progress
             if self.cache.is_thread_streaming(existing_id) {
-                // Block rapid second message - still waiting for response to complete
-                self.stream_error = Some(
-                    "Please wait for the current response to complete before sending another message."
-                        .to_string(),
-                );
+                // Instead of blocking, queue as steering message
+                let existing_id_clone = existing_id.clone();
+                self.queue_steering_message(&existing_id_clone, content.clone());
                 return;
             }
 
@@ -737,6 +735,127 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Queue a steering message to interrupt the current stream
+    ///
+    /// Creates a QueuedSteeringMessage and sends it to the backend.
+    /// The message will be promoted to a visible user message when
+    /// SteeringCompleted is received.
+    pub fn queue_steering_message(&mut self, thread_id: &str, instruction: String) {
+        // Don't queue if there's already a pending steering message
+        if let Some(ref existing) = self.queued_steering {
+            if existing.state.is_active() {
+                self.stream_error = Some(format!(
+                    "Steering already in progress: {}",
+                    existing.preview(30)
+                ));
+                return;
+            }
+        }
+
+        let Some(ref sender) = self.ws_sender else {
+            self.stream_error = Some("WebSocket not connected".to_string());
+            return;
+        };
+
+        // Create queued message in initial state
+        let queued = crate::models::QueuedSteeringMessage::new(
+            thread_id.to_string(),
+            instruction.clone(),
+        );
+
+        // Send to backend
+        let ws_msg = crate::websocket::WsOutgoingMessage::Steering(
+            crate::websocket::WsSteering::new(thread_id.to_string(), instruction),
+        );
+
+        if let Err(e) = sender.try_send(ws_msg) {
+            self.stream_error = Some(format!("Failed to send steering: {}", e));
+            return;
+        }
+
+        // Store queued message and clear input
+        self.queued_steering = Some(queued);
+        self.textarea.clear();
+        self.textarea.clear_paste_tokens();
+        self.mark_dirty();
+
+        // Spawn a timeout guard so a stuck steering doesn't block input forever
+        let timeout_tx = self.message_tx.clone();
+        let timeout_thread_id = thread_id.to_string();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(
+                crate::models::steering::STEERING_TIMEOUT_SECS,
+            ))
+            .await;
+            let _ = timeout_tx.send(crate::app::AppMessage::SteeringFailed {
+                thread_id: timeout_thread_id,
+                error: "Steering timed out".to_string(),
+            });
+        });
+    }
+
+    /// Promote a queued steering message to a visible user message
+    ///
+    /// Called when SteeringCompleted is received. This:
+    /// 1. Adds the steering instruction as a user message
+    /// 2. Creates a streaming assistant placeholder for the resumed response
+    pub fn promote_steering_to_message(&mut self, qs: &crate::models::QueuedSteeringMessage) {
+        let thread_id = &qs.thread_id;
+
+        // Finalize the original streaming message before creating the new placeholder.
+        // Without this, is_thread_streaming() returns true forever, blocking new messages.
+        self.cache.interrupt_streaming_for_steering(thread_id);
+
+        // Get next message ID
+        let next_id = self
+            .cache
+            .get_messages(thread_id)
+            .map(|m| m.len() as i64 + 1)
+            .unwrap_or(1);
+
+        // Create user message for the steering instruction
+        use crate::models::{Message, MessageRole, MessageSegment};
+        let user_message = Message {
+            id: next_id,
+            thread_id: thread_id.clone(),
+            role: MessageRole::User,
+            content: qs.instruction.clone(),
+            created_at: qs.queued_at,
+            is_streaming: false,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: true,
+            segments: vec![MessageSegment::Text(qs.instruction.clone())],
+            render_version: 0,
+        };
+        self.cache.add_message(user_message);
+
+        // Create streaming assistant placeholder for the resumed response
+        let assistant_message = Message {
+            id: 0, // Backend will assign real ID
+            thread_id: thread_id.clone(),
+            role: MessageRole::Assistant,
+            content: String::new(),
+            created_at: chrono::Utc::now(),
+            is_streaming: true,
+            partial_content: String::new(),
+            reasoning_content: String::new(),
+            reasoning_collapsed: false, // Show reasoning while streaming
+            segments: Vec::new(),
+            render_version: 0,
+        };
+        self.cache.add_message(assistant_message);
+
+        // Update thread preview
+        if let Some(thread) = self.cache.threads.get_mut(thread_id) {
+            thread.preview = qs.instruction.clone();
+            thread.updated_at = chrono::Utc::now();
+        }
+
+        self.mark_dirty();
+        self.reset_scroll();
     }
 }
 

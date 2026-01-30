@@ -43,6 +43,7 @@ use crate::models::{Message, MessageRole};
 
 use super::helpers::inner_rect;
 use super::layout::LayoutContext;
+use super::steering::build_steering_lines;
 use super::theme::{COLOR_ACCENT, COLOR_DIM, COLOR_HUMAN_BG};
 
 /// Extract @path file references from message content.
@@ -455,6 +456,10 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
             }
         }
 
+        // === UNIFIED SCROLL: Append steering section (if active) ===
+        let steering_lines = build_steering_lines(app, viewport_width);
+        lines.extend(steering_lines);
+
         // === UNIFIED SCROLL: Append input section (if no pending permission) ===
         if should_show_input_section(app) {
             app.input_section_start = lines.len();
@@ -531,6 +536,10 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         // Thread is actively planning and no permission prompt pending
         lines.extend(plan_events::render_planning_indicator(app.tick_count));
     }
+
+    // Append steering section (if active)
+    let steering_lines = build_steering_lines(app, viewport_width);
+    lines.extend(steering_lines);
 
     // Append input section (if no pending permission)
     if should_show_input_section(app) {

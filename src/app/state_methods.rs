@@ -428,6 +428,33 @@ impl App {
         }
     }
 
+    /// Check if a `/` character should trigger slash command autocomplete.
+    ///
+    /// Slash autocomplete is ONLY triggered when:
+    /// - The textarea is completely empty (no prior content)
+    /// - The cursor is at position (0, 0) - first line, first column
+    ///
+    /// This is stricter than file/folder pickers - no whitespace allowed,
+    /// must be the absolute very start of input. Applies to both Conversation
+    /// and CommandDeck screens for consistency.
+    ///
+    /// # Returns
+    /// `true` if `/` should trigger slash autocomplete, `false` otherwise
+    pub fn is_slash_autocomplete_trigger(&self) -> bool {
+        // Textarea must be completely empty
+        if !self.textarea.is_empty() {
+            return false;
+        }
+
+        // Cursor must be at the very start (row 0, col 0)
+        let (row, col) = self.textarea.cursor();
+        if row != 0 || col != 0 {
+            return false;
+        }
+
+        true
+    }
+
     /// Open the file picker overlay for the current thread.
     ///
     /// Uses the thread's working_directory as the base path.
@@ -2322,5 +2349,72 @@ mod tests {
 
         // Should still be visible (within blinkwait window)
         assert!(app.cursor_blink.is_visible(), "Should remain visible during blinkwait");
+    }
+
+    // =========================================================================
+    // is_slash_autocomplete_trigger tests
+    // =========================================================================
+
+    #[test]
+    fn test_slash_autocomplete_trigger_at_very_start() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::Conversation;
+        // Empty textarea, cursor at (0, 0)
+        assert!(app.is_slash_autocomplete_trigger());
+    }
+
+    #[test]
+    fn test_slash_autocomplete_trigger_command_deck_at_start() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::CommandDeck;
+        // Empty textarea, cursor at (0, 0)
+        assert!(app.is_slash_autocomplete_trigger());
+    }
+
+    #[test]
+    fn test_slash_autocomplete_no_trigger_with_content() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::Conversation;
+        app.textarea.set_content("hello");
+        assert!(!app.is_slash_autocomplete_trigger());
+    }
+
+    #[test]
+    fn test_slash_autocomplete_no_trigger_with_whitespace() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::Conversation;
+        app.textarea.set_content("  ");
+        // Whitespace is content - should NOT trigger
+        assert!(!app.is_slash_autocomplete_trigger());
+    }
+
+    #[test]
+    fn test_slash_autocomplete_no_trigger_cursor_not_at_start() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::Conversation;
+        app.textarea.set_content("hello");
+        // Move cursor to end, but content exists
+        assert!(!app.is_slash_autocomplete_trigger());
+    }
+
+    #[test]
+    fn test_slash_autocomplete_no_trigger_second_line() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::Conversation;
+        // Simulate multi-line with cursor on second line
+        app.textarea.insert_newline();
+        // Cursor now at (1, 0) - should NOT trigger
+        assert!(!app.is_slash_autocomplete_trigger());
+    }
+
+    #[test]
+    fn test_slash_autocomplete_trigger_after_clear() {
+        let mut app = create_test_app();
+        app.screen = super::super::Screen::Conversation;
+        // Type something, then clear
+        app.textarea.set_content("hello");
+        app.textarea.clear();
+        // After clear, should trigger again
+        assert!(app.is_slash_autocomplete_trigger());
     }
 }

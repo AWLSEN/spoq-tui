@@ -9,6 +9,11 @@ use crate::models::{Message, MessageRole};
 
 use super::ThreadCache;
 
+/// Sentinel message ID: user cancelled the stream (Ctrl+C).
+pub const MSG_ID_USER_CANCELLED: i64 = -1;
+/// Sentinel message ID: stream interrupted by steering.
+pub const MSG_ID_STEERING_INTERRUPTED: i64 = -2;
+
 impl ThreadCache {
     /// Get messages for a thread
     pub fn get_messages(&self, thread_id: &str) -> Option<&Vec<Message>> {
@@ -227,7 +232,7 @@ impl ThreadCache {
                 streaming_msg.is_streaming = false;
                 // Use a temporary ID for cancelled messages (negative to distinguish from real IDs)
                 if streaming_msg.id == 0 {
-                    streaming_msg.id = -1;
+                    streaming_msg.id = MSG_ID_USER_CANCELLED;
                 }
                 // Append cancellation indicator to content
                 if !streaming_msg.content.is_empty() {
@@ -237,6 +242,29 @@ impl ThreadCache {
                 }
                 // Bump render version to invalidate caches
                 streaming_msg.render_version += 1;
+            }
+        }
+    }
+
+    /// Mark the current streaming message as interrupted by steering.
+    /// Preserves accumulated content and clears the streaming flag so
+    /// is_thread_streaming() won't permanently block new messages.
+    pub fn interrupt_streaming_for_steering(&mut self, thread_id: &str) {
+        let resolved_id = self.resolve_thread_id(thread_id).to_string();
+        if let Some(messages) = self.messages.get_mut(&resolved_id) {
+            if let Some(msg) = messages.iter_mut().rev().find(|m| m.is_streaming) {
+                // Preserve content accumulated so far
+                if msg.content.is_empty() && !msg.partial_content.is_empty() {
+                    msg.content = std::mem::take(&mut msg.partial_content);
+                }
+                msg.is_streaming = false;
+                if msg.id == 0 {
+                    msg.id = MSG_ID_STEERING_INTERRUPTED;
+                }
+                if !msg.reasoning_content.is_empty() {
+                    msg.reasoning_collapsed = true;
+                }
+                msg.render_version += 1;
             }
         }
     }
