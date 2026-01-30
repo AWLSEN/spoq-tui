@@ -10,7 +10,7 @@
 /// the event loop. Errors are logged and silently discarded.
 pub fn notify_task_complete(thread_title: Option<&str>) {
     let body = match thread_title {
-        Some(title) if !title.is_empty() => format!("Task complete — {}", title),
+        Some(title) if !title.is_empty() => title.to_string(),
         _ => "Agent response finished".to_string(),
     };
 
@@ -18,23 +18,24 @@ pub fn notify_task_complete(thread_title: Option<&str>) {
 
     tokio::spawn(async move {
         let _ = tokio::task::spawn_blocking(move || {
-            send_notification("spoq", &body);
+            send_notification("spoq", "Task Complete", &body);
         })
         .await;
     });
 }
 
 #[cfg(target_os = "macos")]
-fn send_notification(title: &str, body: &str) {
+fn send_notification(title: &str, subtitle: &str, body: &str) {
     use std::process::Command;
 
     // Escape double quotes and backslashes for AppleScript string literals
-    let escaped_title = title.replace('\\', "\\\\").replace('"', "\\\"");
-    let escaped_body = body.replace('\\', "\\\\").replace('"', "\\\"");
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
 
     let script = format!(
-        "display notification \"{}\" with title \"{}\" sound name \"Glass\"",
-        escaped_body, escaped_title
+        "display notification \"{}\" with title \"{}\" subtitle \"{}\" sound name \"Glass\"",
+        esc(body),
+        esc(title),
+        esc(subtitle),
     );
 
     match Command::new("osascript").arg("-e").arg(&script).output() {
@@ -52,6 +53,6 @@ fn send_notification(title: &str, body: &str) {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn send_notification(_title: &str, _body: &str) {
+fn send_notification(_title: &str, _subtitle: &str, _body: &str) {
     // No-op on non-macOS platforms for now
 }
