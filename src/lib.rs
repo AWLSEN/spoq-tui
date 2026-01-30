@@ -156,3 +156,7 @@ pub mod websocket;
 /// Credential change detection and auto-sync system
 #[doc(hidden)]
 pub mod credential_watcher;
+
+/// Native OS notifications for task completion
+#[doc(hidden)]
+pub mod notifications;
