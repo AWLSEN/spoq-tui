@@ -34,6 +34,8 @@ pub enum ModalType {
     DashboardQuestionOverlayOther,
     /// Claude login dialog is active
     ClaudeLogin,
+    /// Claude accounts management overlay is active
+    ClaudeAccounts,
 }
 
 /// Context information for input handling.

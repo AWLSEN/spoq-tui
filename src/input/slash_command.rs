@@ -41,6 +41,11 @@ pub enum SlashCommand {
     /// Primary: /threads
     /// Aliases: /sessions, /resume
     Threads,
+
+    /// Manage Claude Code accounts
+    /// Primary: /claude
+    /// Aliases: /accounts
+    Claude,
 }
 
 impl SlashCommand {
@@ -54,6 +59,7 @@ impl SlashCommand {
             SlashCommand::Help,
             SlashCommand::Settings,
             SlashCommand::Threads,
+            SlashCommand::Claude,
         ]
     }
 
@@ -83,6 +89,7 @@ impl SlashCommand {
             "help" => Some(SlashCommand::Help),
             "settings" | "config" => Some(SlashCommand::Settings),
             "threads" | "sessions" | "resume" => Some(SlashCommand::Threads),
+            "claude" | "accounts" => Some(SlashCommand::Claude),
             _ => None,
         }
     }
@@ -99,6 +106,7 @@ impl SlashCommand {
             SlashCommand::Help => "/help",
             SlashCommand::Settings => "/settings",
             SlashCommand::Threads => "/threads",
+            SlashCommand::Claude => "/claude",
         }
     }
 
@@ -115,6 +123,7 @@ impl SlashCommand {
             SlashCommand::Help => vec!["/help"],
             SlashCommand::Settings => vec!["/settings", "/config"],
             SlashCommand::Threads => vec!["/threads", "/sessions", "/resume"],
+            SlashCommand::Claude => vec!["/claude", "/accounts"],
         }
     }
 
@@ -128,6 +137,7 @@ impl SlashCommand {
             SlashCommand::Help => "Show help and documentation",
             SlashCommand::Settings => "Open settings panel",
             SlashCommand::Threads => "View and manage threads",
+            SlashCommand::Claude => "Manage Claude Code accounts",
         }
     }
 

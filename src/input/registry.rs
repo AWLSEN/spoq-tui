@@ -262,6 +262,17 @@ impl CommandRegistry {
                 }
             }
 
+            ModalType::ClaudeAccounts => {
+                match key.code {
+                    KeyCode::Char('a') | KeyCode::Char('A') => Some(Command::ClaudeAccountsAdd),
+                    KeyCode::Char('r') | KeyCode::Char('R') => Some(Command::ClaudeAccountsRemove),
+                    KeyCode::Up => Some(Command::ClaudeAccountsMoveUp),
+                    KeyCode::Down => Some(Command::ClaudeAccountsMoveDown),
+                    KeyCode::Esc => Some(Command::ClaudeAccountsClose),
+                    _ => Some(Command::Noop),
+                }
+            }
+
             ModalType::None => {
                 // Should not reach here, but handle gracefully
                 None

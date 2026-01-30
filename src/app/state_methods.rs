@@ -920,6 +920,10 @@ impl App {
                 // Open full-screen threads browser
                 self.open_browse_list(crate::app::BrowseListMode::Threads);
             }
+            SlashCommand::Claude => {
+                // Open Claude accounts overlay and request accounts list
+                let _ = self.message_tx.send(crate::app::AppMessage::OpenClaudeAccounts);
+            }
         }
         self.mark_dirty();
     }

@@ -571,6 +571,96 @@ where
                                 }
                             }
 
+                            // =========================================================
+                            // Claude Accounts Overlay Key Handling (screen-agnostic)
+                            // Captures ALL keys when overlay is open
+                            // =========================================================
+                            if let Some(spoq::view_state::OverlayState::ClaudeAccounts { .. }) = app.dashboard.overlay() {
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        app.dashboard.collapse_overlay();
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Char('a') | KeyCode::Char('A') => {
+                                        // Block if already adding
+                                        let is_adding = if let Some(spoq::view_state::OverlayState::ClaudeAccounts { adding, .. }) = app.dashboard.overlay() {
+                                            *adding
+                                        } else {
+                                            false
+                                        };
+                                        if is_adding {
+                                            continue; // Already adding, ignore duplicate press
+                                        }
+                                        // Set adding state + status message
+                                        let request_id = uuid::Uuid::new_v4().to_string();
+                                        if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                            ref mut adding,
+                                            ref mut add_request_id,
+                                            ref mut status_message,
+                                            ..
+                                        }) = app.dashboard.overlay_mut() {
+                                            *adding = true;
+                                            *add_request_id = Some(request_id.clone());
+                                            *status_message = Some("Authenticating... (complete in browser)".to_string());
+                                        }
+                                        app.mark_dirty();
+                                        // Request add account from backend
+                                        if let Some(ref sender) = app.ws_sender {
+                                            let msg = spoq::websocket::WsOutgoingMessage::ClaudeAccountAddRequest(
+                                                spoq::websocket::messages::WsClaudeAccountAddRequest::new(
+                                                    request_id,
+                                                ),
+                                            );
+                                            let _ = sender.try_send(msg);
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                                        // Remove selected account
+                                        let account_id = if let Some(spoq::view_state::OverlayState::ClaudeAccounts { ref accounts, selected_index, .. }) = app.dashboard.overlay() {
+                                            accounts.get(*selected_index).map(|a| a.id.clone())
+                                        } else {
+                                            None
+                                        };
+                                        if let Some(account_id) = account_id {
+                                            if let Some(ref sender) = app.ws_sender {
+                                                let msg = spoq::websocket::WsOutgoingMessage::ClaudeAccountRemoveRequest(
+                                                    spoq::websocket::messages::WsClaudeAccountRemoveRequest::new(
+                                                        uuid::Uuid::new_v4().to_string(),
+                                                        account_id,
+                                                    ),
+                                                );
+                                                let _ = sender.try_send(msg);
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Up => {
+                                        if let Some(spoq::view_state::OverlayState::ClaudeAccounts { ref mut selected_index, .. }) = app.dashboard.overlay_mut() {
+                                            if *selected_index > 0 {
+                                                *selected_index -= 1;
+                                            }
+                                        }
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Down => {
+                                        if let Some(spoq::view_state::OverlayState::ClaudeAccounts { ref accounts, ref mut selected_index, .. }) = app.dashboard.overlay_mut() {
+                                            if *selected_index + 1 < accounts.len() {
+                                                *selected_index += 1;
+                                            }
+                                        }
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    _ => {
+                                        // Swallow all other keys while overlay is open
+                                        continue;
+                                    }
+                                }
+                            }
+
                             // Handle input routing based on the top needs-action thread type
                             // This takes priority over all other key handling
                             if let Some((thread_id, waiting_for)) = app.dashboard.get_top_needs_action_thread() {

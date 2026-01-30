@@ -68,6 +68,12 @@ pub enum WsIncomingMessage {
     /// Steering failed
     #[serde(rename = "steering_failed")]
     SteeringFailed(WsSteeringFailed),
+    /// Claude accounts list response
+    #[serde(rename = "claude_accounts_list")]
+    ClaudeAccountsList(WsClaudeAccountsList),
+    /// Claude account status update (real-time)
+    #[serde(rename = "claude_account_status_update")]
+    ClaudeAccountStatusUpdate(WsClaudeAccountStatusUpdate),
     /// Raw message received (for debugging - not deserialized from JSON)
     #[serde(skip)]
     RawMessage(String),
@@ -493,6 +499,9 @@ pub struct WsClaudeAuthTokenResponse {
     pub request_id: String,
     /// The captured OAuth token (sk-ant-oat01-...)
     pub token: String,
+    /// Email address of the authenticated account (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 impl WsClaudeAuthTokenResponse {
@@ -501,6 +510,104 @@ impl WsClaudeAuthTokenResponse {
             type_: "claude_auth_token".to_string(),
             request_id,
             token,
+            email: None,
+        }
+    }
+
+    pub fn new_with_email(request_id: String, token: String, email: Option<String>) -> Self {
+        Self {
+            type_: "claude_auth_token".to_string(),
+            request_id,
+            token,
+            email,
+        }
+    }
+}
+
+/// Claude accounts list response from backend
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeAccountsList {
+    pub request_id: String,
+    pub accounts: Vec<WsClaudeAccountInfo>,
+    pub timestamp: u64,
+}
+
+/// Individual Claude account info
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeAccountInfo {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
+    pub priority: i64,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cooldown_until: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<i64>,
+}
+
+/// Claude account status update (real-time push)
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WsClaudeAccountStatusUpdate {
+    pub account_id: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cooldown_until: Option<i64>,
+    pub timestamp: u64,
+}
+
+/// Request list of Claude accounts (sent to server)
+#[derive(Debug, Clone, Serialize)]
+pub struct WsClaudeAccountsListRequest {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub request_id: String,
+}
+
+impl WsClaudeAccountsListRequest {
+    pub fn new(request_id: String) -> Self {
+        Self {
+            type_: "claude_accounts_list".to_string(),
+            request_id,
+        }
+    }
+}
+
+/// Request to add a new Claude account (sent to server)
+#[derive(Debug, Clone, Serialize)]
+pub struct WsClaudeAccountAddRequest {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub request_id: String,
+}
+
+impl WsClaudeAccountAddRequest {
+    pub fn new(request_id: String) -> Self {
+        Self {
+            type_: "claude_account_add".to_string(),
+            request_id,
+        }
+    }
+}
+
+/// Request to remove a Claude account (sent to server)
+#[derive(Debug, Clone, Serialize)]
+pub struct WsClaudeAccountRemoveRequest {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub request_id: String,
+    pub account_id: String,
+}
+
+impl WsClaudeAccountRemoveRequest {
+    pub fn new(request_id: String, account_id: String) -> Self {
+        Self {
+            type_: "claude_account_remove".to_string(),
+            request_id,
+            account_id,
         }
     }
 }
@@ -539,6 +646,9 @@ pub enum WsOutgoingMessage {
     ClaudeLoginResponse(WsClaudeLoginResponse),
     ClaudeAuthTokenResponse(WsClaudeAuthTokenResponse),
     Steering(WsSteering),
+    ClaudeAccountsListRequest(WsClaudeAccountsListRequest),
+    ClaudeAccountAddRequest(WsClaudeAccountAddRequest),
+    ClaudeAccountRemoveRequest(WsClaudeAccountRemoveRequest),
 }
 
 #[cfg(test)]

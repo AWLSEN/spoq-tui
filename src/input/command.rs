@@ -249,6 +249,20 @@ pub enum Command {
     ClaudeLoginRetry,
 
     // =========================================================================
+    // Claude Accounts Commands
+    // =========================================================================
+    /// Add new Claude account (A/a)
+    ClaudeAccountsAdd,
+    /// Remove selected account (R/r)
+    ClaudeAccountsRemove,
+    /// Close Claude accounts overlay (Escape)
+    ClaudeAccountsClose,
+    /// Move selection up
+    ClaudeAccountsMoveUp,
+    /// Move selection down
+    ClaudeAccountsMoveDown,
+
+    // =========================================================================
     // Conversation Screen Commands
     // =========================================================================
     /// Dismiss focused error (d key)
@@ -373,6 +387,11 @@ impl Command {
             Command::ClaudeLoginDone => "Confirm Claude login done",
             Command::ClaudeLoginCancel => "Cancel Claude login",
             Command::ClaudeLoginRetry => "Retry Claude login",
+            Command::ClaudeAccountsAdd => "Add new Claude account",
+            Command::ClaudeAccountsRemove => "Remove selected account",
+            Command::ClaudeAccountsClose => "Close Claude accounts",
+            Command::ClaudeAccountsMoveUp => "Move selection up",
+            Command::ClaudeAccountsMoveDown => "Move selection down",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

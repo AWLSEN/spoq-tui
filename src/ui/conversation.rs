@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -177,6 +177,39 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
             };
             render_file_picker(frame, &app.file_picker, input_anchor_area);
         }
+    }
+
+    // Render ClaudeAccounts overlay (screen-agnostic floating modal)
+    if let Some(crate::view_state::dashboard_view::OverlayState::ClaudeAccounts {
+        ref accounts,
+        selected_index,
+        adding,
+        ref status_message,
+        ..
+    }) = app.dashboard.overlay()
+    {
+        let card_width = 50u16.min(size.width.saturating_sub(4));
+        let card_height = super::dashboard::accounts_card::calculate_height(accounts.len(), status_message.is_some())
+            .saturating_add(2) // borders
+            .min(size.height.saturating_sub(4));
+
+        // Center the card
+        let x = size.x + (size.width.saturating_sub(card_width)) / 2;
+        let y = size.y + (size.height.saturating_sub(card_height)) / 2;
+        let card_area = Rect::new(x, y, card_width, card_height);
+
+        // Clear background and draw border
+        frame.render_widget(Clear, card_area);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Cyan))
+            .style(Style::default().bg(Color::Black));
+        let inner_area = block.inner(card_area);
+        frame.render_widget(block, card_area);
+
+        // Render card content
+        super::dashboard::accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref());
     }
 }
 

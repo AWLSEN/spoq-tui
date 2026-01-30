@@ -110,6 +110,9 @@ impl App {
             ModalType::SlashAutocomplete
         } else if self.thread_switcher.visible {
             ModalType::ThreadSwitcher
+        } else if let Some(OverlayState::ClaudeAccounts { .. }) = self.dashboard.overlay() {
+            // ClaudeAccounts overlay is screen-agnostic (works from Conversation or CommandDeck)
+            ModalType::ClaudeAccounts
         } else if self.screen == Screen::CommandDeck {
             // On CommandDeck, check for dashboard overlay FIRST (takes priority)
             if let Some(OverlayState::Question { .. }) = self.dashboard.overlay() {
@@ -247,6 +250,11 @@ impl App {
             }
             ModalType::ClaudeLogin => {
                 if handlers::handle_claude_login_command(self, &cmd) {
+                    return true;
+                }
+            }
+            ModalType::ClaudeAccounts => {
+                if handlers::handle_claude_accounts_command(self, &cmd) {
                     return true;
                 }
             }

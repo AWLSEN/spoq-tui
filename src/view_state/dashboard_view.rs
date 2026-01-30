@@ -223,6 +223,30 @@ pub enum OverlayState {
         state: ClaudeLoginState,
         anchor_y: u16,
     },
+    /// Claude accounts management overlay
+    ClaudeAccounts {
+        accounts: Vec<ClaudeAccountInfo>,
+        selected_index: usize,
+        anchor_y: u16,
+        /// True when an Add Account flow is in progress (blocks duplicate presses)
+        adding: bool,
+        /// Request ID for the in-progress add flow
+        add_request_id: Option<String>,
+        /// Status message shown at bottom (e.g., "Authenticating...", "Added!", error)
+        status_message: Option<String>,
+    },
+}
+
+/// Info about a Claude account for display in the overlay
+#[derive(Debug, Clone)]
+pub struct ClaudeAccountInfo {
+    pub id: String,
+    pub label: String,
+    pub email: Option<String>,
+    pub priority: i64,
+    pub status: String,
+    pub cooldown_until: Option<i64>,
+    pub last_error: Option<String>,
 }
 
 /// State of the Claude login dialog
@@ -248,26 +272,29 @@ impl OverlayState {
             OverlayState::FreeForm { thread_id, .. } => thread_id,
             OverlayState::Plan { thread_id, .. } => thread_id,
             OverlayState::ClaudeLogin { .. } => "",
+            OverlayState::ClaudeAccounts { .. } => "",
         }
     }
 
-    /// Get the thread title associated with this overlay (returns empty string for ClaudeLogin)
+    /// Get the thread title associated with this overlay
     pub fn thread_title(&self) -> &str {
         match self {
             OverlayState::Question { thread_title, .. } => thread_title,
             OverlayState::FreeForm { thread_title, .. } => thread_title,
             OverlayState::Plan { thread_title, .. } => thread_title,
             OverlayState::ClaudeLogin { .. } => "Claude Login",
+            OverlayState::ClaudeAccounts { .. } => "Claude Accounts",
         }
     }
 
-    /// Get the repository associated with this overlay (returns empty string for ClaudeLogin)
+    /// Get the repository associated with this overlay
     pub fn repository(&self) -> &str {
         match self {
             OverlayState::Question { repository, .. } => repository,
             OverlayState::FreeForm { repository, .. } => repository,
             OverlayState::Plan { repository, .. } => repository,
             OverlayState::ClaudeLogin { .. } => "",
+            OverlayState::ClaudeAccounts { .. } => "",
         }
     }
 

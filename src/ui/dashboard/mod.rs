@@ -3,6 +3,7 @@
 //! Provides the multi-thread dashboard view components for managing
 //! multiple concurrent agent threads.
 
+pub mod accounts_card;
 pub mod footer;
 pub mod header;
 pub mod login_card;
@@ -131,6 +132,9 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
             // Height based on login state
             login_card::calculate_height(state).min(parent_area.height - 4)
         }
+        OverlayState::ClaudeAccounts { accounts, ref status_message, .. } => {
+            accounts_card::calculate_height(accounts.len(), status_message.is_some()).min(parent_area.height - 4)
+        }
     };
 
     let x = parent_area.x + (parent_area.width.saturating_sub(overlay_width)) / 2;
@@ -141,6 +145,7 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
         OverlayState::FreeForm { anchor_y, .. } => *anchor_y,
         OverlayState::Plan { anchor_y, .. } => *anchor_y,
         OverlayState::ClaudeLogin { anchor_y, .. } => *anchor_y,
+        OverlayState::ClaudeAccounts { anchor_y, .. } => *anchor_y,
     };
 
     // Try to position overlay so anchor_y is near the top
