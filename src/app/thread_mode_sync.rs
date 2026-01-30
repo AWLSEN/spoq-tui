@@ -9,9 +9,8 @@ use super::backend_coordinator;
 use crate::conductor::ConductorClient;
 use crate::models::PermissionMode;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
 
 /// Default debounce duration for mode changes.
 const DEFAULT_DEBOUNCE_MS: u64 = 200;
@@ -22,23 +21,23 @@ const DEFAULT_DEBOUNCE_MS: u64 = 200;
 /// before syncing to the backend.
 pub struct ThreadModeSync {
     /// Pending mode changes per thread: (permission_mode, request_time)
-    pending_modes: Arc<Mutex<HashMap<String, (PermissionMode, Instant)>>>,
+    pending_modes: Arc<StdMutex<HashMap<String, (PermissionMode, Instant)>>>,
     /// Duration to wait before syncing a mode change
     debounce_duration: Duration,
     /// Conductor client for API calls
     conductor: Arc<ConductorClient>,
     /// Whether a debounce task is currently running
-    debounce_task_running: Arc<Mutex<bool>>,
+    debounce_task_running: Arc<StdMutex<bool>>,
 }
 
 impl ThreadModeSync {
     /// Create a new ThreadModeSync with the given conductor client.
     pub fn new(conductor: Arc<ConductorClient>) -> Self {
         Self {
-            pending_modes: Arc::new(Mutex::new(HashMap::new())),
+            pending_modes: Arc::new(StdMutex::new(HashMap::new())),
             debounce_duration: Duration::from_millis(DEFAULT_DEBOUNCE_MS),
             conductor,
-            debounce_task_running: Arc::new(Mutex::new(false)),
+            debounce_task_running: Arc::new(StdMutex::new(false)),
         }
     }
 
@@ -53,6 +52,9 @@ impl ThreadModeSync {
     /// This method coalesces rapid requests for the same thread (last-intent-wins)
     /// and triggers debounced sync to the backend.
     ///
+    /// Note: This is a fire-and-forget method. It returns immediately after
+    /// queueing the mode change; actual sync happens in the background.
+    ///
     /// # Arguments
     /// * `thread_id` - The ID of the thread to update
     /// * `permission_mode` - The new permission mode for the thread
@@ -60,14 +62,12 @@ impl ThreadModeSync {
         let now = Instant::now();
 
         // Update pending state (coalesce: last-intent-wins)
-        {
-            let mut pending = self.pending_modes.blocking_lock();
-            pending.insert(thread_id.clone(), (permission_mode, now));
-        }
-
-        // Spawn debounce task if not already running
         let should_spawn = {
-            let mut running = self.debounce_task_running.blocking_lock();
+            let mut pending = self.pending_modes.lock().unwrap();
+            let mut running = self.debounce_task_running.lock().unwrap();
+
+            pending.insert(thread_id.clone(), (permission_mode, now));
+
             if !*running {
                 *running = true;
                 true
@@ -99,7 +99,7 @@ impl ThreadModeSync {
 
                 // Find entries that have exceeded debounce duration
                 {
-                    let mut pending = pending_modes.lock().await;
+                    let mut pending = pending_modes.lock().unwrap();
                     let mut to_remove = Vec::new();
 
                     for (thread_id, (permission_mode, request_time)) in pending.iter() {
@@ -116,7 +116,7 @@ impl ThreadModeSync {
 
                     // Exit if no more pending entries
                     if pending.is_empty() {
-                        *task_running.lock().await = false;
+                        *task_running.lock().unwrap() = false;
                         break;
                     }
                 }
@@ -137,14 +137,14 @@ impl ThreadModeSync {
 
     /// Get the number of pending mode changes.
     #[cfg(test)]
-    pub async fn pending_count(&self) -> usize {
-        self.pending_modes.lock().await.len()
+    pub fn pending_count(&self) -> usize {
+        self.pending_modes.lock().unwrap().len()
     }
 
     /// Check if a debounce task is currently running.
     #[cfg(test)]
-    pub async fn is_task_running(&self) -> bool {
-        *self.debounce_task_running.lock().await
+    pub fn is_task_running(&self) -> bool {
+        *self.debounce_task_running.lock().unwrap()
     }
 }
 
@@ -162,21 +162,8 @@ mod tests {
 
     #[test]
     fn test_debounce_duration_custom() {
-        // We can't easily test this without a ConductorClient mock
-        // but we verify the builder pattern compiles
+        // We verify the builder pattern compiles correctly
         let duration = Duration::from_millis(300);
         assert_eq!(duration.as_millis(), 300);
-    }
-
-    #[tokio::test]
-    async fn test_pending_modes_coalescing() {
-        // Test that repeated requests to same thread coalesce (last-intent-wins)
-        // This would require a mock ConductorClient for full testing
-    }
-
-    #[tokio::test]
-    async fn test_debounce_task_exits_when_empty() {
-        // Test that debounce task exits when no more pending entries
-        // This would require a mock ConductorClient for full testing
     }
 }
