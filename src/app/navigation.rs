@@ -98,6 +98,7 @@ impl App {
         self.screen = Screen::CommandDeck;
         self.active_thread_id = None; // Clear so next submit creates new thread
         self.textarea.clear(); // Clear any partial input
+        self.pending_images.clear(); // Clear attached images
         self.mark_dirty();
     }
 

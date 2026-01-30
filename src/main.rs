@@ -404,9 +404,10 @@ where
                                         continue;
                                     }
 
-                                    // Priority 2: If textarea has text, clear it
-                                    if !app.textarea.is_empty() {
+                                    // Priority 2: If textarea has text or images, clear them
+                                    if !app.textarea.is_empty() || !app.pending_images.is_empty() {
                                         app.textarea.clear();
+                                        app.pending_images.clear();
                                         app.last_ctrl_c_time = None; // Reset exit timer
                                         app.mark_dirty();
                                         continue;
@@ -1244,31 +1245,39 @@ where
                                         if app.focus != Focus::Input {
                                             app.focus = Focus::Input;
                                         }
-                                        match spoq::clipboard::try_read_clipboard_image() {
+                                        // Attempt image read first
+                                        let got_image = match spoq::clipboard::try_read_clipboard_image() {
                                             Ok(attachment) => {
                                                 if app.pending_images.len() < spoq::clipboard::MAX_PENDING_IMAGES {
                                                     app.pending_images.push(attachment);
+                                                    true
+                                                } else {
+                                                    false
                                                 }
                                             }
-                                            Err(spoq::clipboard::ClipboardImageError::NoImage) => {
-                                                // No image in clipboard — fall back to text paste
-                                                if let Ok(mut clipboard) = arboard::Clipboard::new() {
-                                                    if let Ok(text) = clipboard.get_text() {
-                                                        if !text.is_empty() {
-                                                            if app.should_summarize_paste(&text) {
-                                                                app.textarea.insert_paste_token(text);
-                                                            } else {
-                                                                for ch in text.chars() {
-                                                                    app.textarea.insert_char(ch);
-                                                                }
+                                            Err(spoq::clipboard::ClipboardImageError::TooLarge(size)) => {
+                                                tracing::warn!("Clipboard image too large ({} bytes), skipping", size);
+                                                false
+                                            }
+                                            Err(_) => false,
+                                        };
+                                        // Also paste text from clipboard (handles text+image and text-only)
+                                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                            if let Ok(text) = clipboard.get_text() {
+                                                if !text.is_empty() {
+                                                    // Skip text paste if it looks like an image path
+                                                    // we just attached (avoid duplicating drag-drop paths)
+                                                    if !(got_image && spoq::clipboard::is_image_file_path(&text)) {
+                                                        if app.should_summarize_paste(&text) {
+                                                            app.textarea.insert_paste_token(text);
+                                                        } else {
+                                                            for ch in text.chars() {
+                                                                app.textarea.insert_char(ch);
                                                             }
-                                                            app.reset_cursor_blink();
                                                         }
+                                                        app.reset_cursor_blink();
                                                     }
                                                 }
-                                            }
-                                            Err(_) => {
-                                                // Clipboard access error — silently ignore
                                             }
                                         }
                                         app.mark_dirty();

@@ -111,7 +111,7 @@ impl App {
     /// is a NEW conversation. It's ignored when continuing an existing thread.
     pub fn submit_input(&mut self, new_thread_type: ThreadType) {
         let content = self.textarea.content_expanded();
-        if content.trim().is_empty() {
+        if content.trim().is_empty() && self.pending_images.is_empty() {
             return;
         }
 
