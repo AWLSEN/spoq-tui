@@ -5,6 +5,7 @@
 
 mod folder_chip;
 mod height;
+mod image_chip;
 mod keybinds;
 mod permission;
 
@@ -13,7 +14,14 @@ pub use folder_chip::{
     calculate_chip_width, format_chip_folder_name, render_folder_chip, COLOR_CHIP_BG,
     COLOR_CHIP_TEXT, MAX_CHIP_FOLDER_NAME_LEN,
 };
-pub use height::{calculate_input_area_height, calculate_input_box_height, MAX_INPUT_LINES};
+pub use height::{
+    calculate_input_area_height, calculate_input_area_height_with_images,
+    calculate_input_box_height, MAX_INPUT_LINES,
+};
+pub use image_chip::{
+    calculate_image_chips_width, format_image_chip_text, render_image_chips,
+    COLOR_IMAGE_CHIP_BG, COLOR_IMAGE_CHIP_TEXT,
+};
 pub use keybinds::{build_contextual_keybinds, build_responsive_keybinds};
 pub use permission::{
     get_permission_preview, parse_ask_user_question, DEFAULT_PERMISSION_BOX_HEIGHT,
@@ -99,12 +107,13 @@ pub fn render_input_area_with_blink(
         ])
         .split(inner);
 
-    // Render the folder chip + input widget using our custom composite widget
+    // Render the folder chip + image chips + input widget using our custom composite widget
     let input_with_chip = InputWithChipWidget {
         textarea_input: &mut app.textarea,
         focused: input_focused,
         cursor_visible,
         selected_folder: app.selected_folder.as_ref(),
+        pending_images: &app.pending_images,
     };
     frame.render_widget(input_with_chip, input_chunks[0]);
 
@@ -137,6 +146,8 @@ struct InputWithChipWidget<'a, 'b> {
     /// Whether the cursor should be visible (for blinking support)
     cursor_visible: bool,
     selected_folder: Option<&'b crate::models::Folder>,
+    /// Pending image attachments to render as chips
+    pending_images: &'b [crate::clipboard::ImageAttachment],
 }
 
 impl Widget for InputWithChipWidget<'_, '_> {
@@ -154,12 +165,20 @@ impl Widget for InputWithChipWidget<'_, '_> {
         block.render(area, buf);
 
         // If a folder is selected, render the chip at the start of the input
+        // If images are pending, render image chips on the same row (after folder chip)
+        let has_images = !self.pending_images.is_empty();
         let textarea_area = if let Some(folder) = self.selected_folder {
             let chip_width = calculate_chip_width(&folder.name);
             let spacing = 1u16; // Space after chip
 
-            // Render the chip at the start of the inner area (top-left)
+            // Render the folder chip at the start of the inner area (top-left)
             render_folder_chip(buf, inner_area.x, inner_area.y, &folder.name);
+
+            // Render image chips after the folder chip
+            if has_images {
+                let image_x = inner_area.x + chip_width + spacing;
+                render_image_chips(buf, image_x.saturating_sub(2), inner_area.y, self.pending_images);
+            }
 
             // Calculate remaining area for textarea
             let chip_total_width = chip_width + spacing;
@@ -171,6 +190,18 @@ impl Widget for InputWithChipWidget<'_, '_> {
                 y: inner_area.y,
                 width: textarea_width,
                 height: inner_area.height,
+            }
+        } else if has_images {
+            // No folder, but images — render image chips at the start
+            render_image_chips(buf, inner_area.x, inner_area.y, self.pending_images);
+
+            // Image chips take the first row; textarea starts on the next row
+            let img_height = 1u16;
+            Rect {
+                x: inner_area.x,
+                y: inner_area.y + img_height,
+                width: inner_area.width,
+                height: inner_area.height.saturating_sub(img_height),
             }
         } else {
             inner_area
@@ -227,6 +258,24 @@ pub fn build_input_section_with_cursor(
             )]));
         }
     };
+
+    // 1.5. Image attachment chips (between mode indicator and top border)
+    if !app.pending_images.is_empty() {
+        let mut spans = vec![Span::raw("  ")];
+        for (i, img) in app.pending_images.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw(" "));
+            }
+            let chip_text = format_image_chip_text(i, &img.hash);
+            spans.push(Span::styled(
+                chip_text,
+                Style::default()
+                    .fg(COLOR_IMAGE_CHIP_TEXT)
+                    .bg(COLOR_IMAGE_CHIP_BG),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
 
     // 2. Input top border (full-width horizontal line)
     lines.push(Line::from(Span::styled(

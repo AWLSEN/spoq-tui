@@ -14,7 +14,7 @@ use crate::app::App;
 use crate::ui::dashboard::{render_dashboard, Theme};
 
 use super::conversation::{create_mode_indicator_line, render_mode_indicator};
-use super::input::{calculate_input_area_height, render_input_area};
+use super::input::{calculate_input_area_height_with_images, render_input_area};
 use super::layout::LayoutContext;
 use super::slash_autocomplete::render_slash_autocomplete;
 use super::unified_picker::render_unified_picker;
@@ -50,7 +50,8 @@ pub fn render_command_deck(frame: &mut Frame, app: &mut App) {
 
     // Input height is dynamic based on line count (hard wrap inserts actual newlines)
     let line_count = app.textarea.line_count();
-    let input_height = calculate_input_area_height(line_count);
+    let has_images = !app.pending_images.is_empty();
+    let input_height = calculate_input_area_height_with_images(line_count, has_images);
 
     // Check if we need to show mode indicator or Ctrl+C warning
     let mode_indicator_line = create_mode_indicator_line(app.permission_mode);

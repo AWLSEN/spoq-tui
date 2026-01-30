@@ -30,6 +30,8 @@ async fn test_stream_request_construction() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
     assert_eq!(request.prompt, "Hello, world!");
     assert!(!request.session_id.is_empty());
@@ -45,6 +47,8 @@ async fn test_stream_request_construction() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
     assert_eq!(
         request_with_thread.thread_id,
@@ -60,6 +64,8 @@ async fn test_stream_request_construction() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
     assert_eq!(request_with_reply.reply_to, Some(456));
 }
@@ -79,6 +85,8 @@ async fn test_conductor_error_handling() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
     let result = client.stream(&request).await;
 
@@ -109,6 +117,8 @@ async fn test_conductor_client_methods_exist() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
 
     // Verify stream method exists (will fail to connect but that's expected)
@@ -143,6 +153,8 @@ async fn test_stream_request_with_different_configurations() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
     // Validate request structure
     assert_eq!(request1.prompt, "Hello");
@@ -157,6 +169,8 @@ async fn test_stream_request_with_different_configurations() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
     assert_eq!(request2.thread_id, Some("thread-123".to_string()));
 
@@ -169,6 +183,8 @@ async fn test_stream_request_with_different_configurations() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
     assert_eq!(request3.session_id, "session-789");
     assert_eq!(request3.reply_to, Some(456));
@@ -381,6 +397,8 @@ async fn test_stream_request_with_working_directory() {
         thread_type: None,
         permission_mode: None,
         working_directory: Some("/Users/dev/my-project".to_string()),
+        plan_mode: false,
+        images: Vec::new(),
     };
 
     assert_eq!(
@@ -400,6 +418,8 @@ async fn test_stream_request_without_working_directory() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
 
     assert!(request.working_directory.is_none());
@@ -416,6 +436,8 @@ fn test_stream_request_working_directory_serialization() {
         thread_type: None,
         permission_mode: None,
         working_directory: Some("/home/user/workspace".to_string()),
+        plan_mode: false,
+        images: Vec::new(),
     };
 
     let json = serde_json::to_string(&request).expect("Failed to serialize");
@@ -440,6 +462,8 @@ fn test_stream_request_working_directory_omitted_when_none() {
         thread_type: None,
         permission_mode: None,
         working_directory: None,
+        plan_mode: false,
+        images: Vec::new(),
     };
 
     let json = serde_json::to_string(&request).expect("Failed to serialize");
@@ -465,6 +489,8 @@ fn test_stream_request_working_directory_with_various_paths() {
             thread_type: None,
             permission_mode: None,
             working_directory: Some(path.to_string()),
+            plan_mode: false,
+            images: Vec::new(),
         };
 
         assert_eq!(request.working_directory, Some(path.to_string()));

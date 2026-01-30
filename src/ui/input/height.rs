@@ -24,8 +24,16 @@ pub fn calculate_input_box_height(line_count: usize) -> u16 {
 }
 
 /// Calculate the total input area height (input box + keybinds + padding).
+///
+/// When `has_images` is true, adds 1 row for the image chip line above the input box.
 pub fn calculate_input_area_height(line_count: usize) -> u16 {
     calculate_input_box_height(line_count) + 1 + 2 // +1 keybinds, +2 for top/bottom padding
+}
+
+/// Calculate the total input area height with optional image chip row.
+pub fn calculate_input_area_height_with_images(line_count: usize, has_images: bool) -> u16 {
+    let base = calculate_input_area_height(line_count);
+    if has_images { base + 1 } else { base }
 }
 
 #[cfg(test)]

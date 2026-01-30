@@ -658,6 +658,7 @@ mod tests {
             permission_mode: Some(PermissionMode::Plan),
             working_directory: None,
             plan_mode: false,
+            images: Vec::new(),
         };
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
