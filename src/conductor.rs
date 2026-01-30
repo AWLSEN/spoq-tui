@@ -1227,6 +1227,43 @@ impl ConductorClient {
         Ok(())
     }
 
+    /// Update the permission mode of a thread.
+    ///
+    /// Calls `PUT /v1/threads/{thread_id}/permission` to update the thread's permission mode.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The ID of the thread to update
+    /// * `permission_mode` - The new permission mode for the thread ("default" | "plan" | "execution")
+    ///
+    /// # Returns
+    /// - `Ok(())` on success
+    /// - `Err(ConductorError::ServerError)` if the server returns an error (404, 400, etc.)
+    pub async fn update_thread_permission(
+        &self,
+        thread_id: &str,
+        permission_mode: &str,
+    ) -> Result<(), ConductorError> {
+        let url = format!("{}/v1/threads/{}/permission", self.base_url, thread_id);
+
+        let body = serde_json::json!({
+            "mode": permission_mode
+        });
+
+        let builder = self.client.put(&url).json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError { status, message });
+        }
+
+        Ok(())
+    }
+
     // ==================== Unified Picker Search API ====================
 
     /// Search folders by name.
