@@ -1653,12 +1653,12 @@ mod tests {
     fn test_permission_mode_equality() {
         assert_eq!(PermissionMode::Plan, PermissionMode::Plan);
         assert_eq!(
-            PermissionMode::BypassPermissions,
-            PermissionMode::BypassPermissions
+            PermissionMode::Execution,
+            PermissionMode::Execution
         );
         assert_eq!(PermissionMode::Default, PermissionMode::Default);
         assert_ne!(PermissionMode::Plan, PermissionMode::Default);
-        assert_ne!(PermissionMode::BypassPermissions, PermissionMode::Plan);
+        assert_ne!(PermissionMode::Execution, PermissionMode::Plan);
     }
 
     #[test]
@@ -1693,13 +1693,13 @@ mod tests {
 
         app.cycle_permission_mode();
 
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
     }
 
     #[test]
     fn test_cycle_permission_mode_from_bypass_to_default() {
         let mut app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
@@ -1719,11 +1719,11 @@ mod tests {
         app.cycle_permission_mode();
         assert_eq!(app.permission_mode, PermissionMode::Plan);
 
-        // Cycle: Plan → BypassPermissions
+        // Cycle: Plan → Execution
         app.cycle_permission_mode();
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
 
-        // Cycle: BypassPermissions → Default
+        // Cycle: Execution → Default
         app.cycle_permission_mode();
         assert_eq!(app.permission_mode, PermissionMode::Default);
 
@@ -1741,10 +1741,10 @@ mod tests {
             app.cycle_permission_mode(); // Default → Plan
             assert_eq!(app.permission_mode, PermissionMode::Plan);
 
-            app.cycle_permission_mode(); // Plan → BypassPermissions
-            assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+            app.cycle_permission_mode(); // Plan → Execution
+            assert_eq!(app.permission_mode, PermissionMode::Execution);
 
-            app.cycle_permission_mode(); // BypassPermissions → Default
+            app.cycle_permission_mode(); // Execution → Default
             assert_eq!(app.permission_mode, PermissionMode::Default);
         }
     }
@@ -2280,7 +2280,7 @@ mod tests {
     #[test]
     fn test_permission_mode_persists_after_navigate_to_command_deck() {
         let mut app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
@@ -2288,7 +2288,7 @@ mod tests {
         app.navigate_to_command_deck();
 
         // Mode should persist (it's app-level, not thread-level)
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
     }
 
     // ============= Thread Type with Add Streaming Message Tests =============
@@ -3361,7 +3361,7 @@ mod tests {
     async fn test_submit_input_preserves_permission_mode_in_continuing_thread() {
         use crate::models::{PermissionMode, ThreadType};
         let mut app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
@@ -3405,7 +3405,7 @@ mod tests {
         app.submit_input(ThreadType::Conversation);
 
         // Verify the permission mode is preserved
-        assert_eq!(app.permission_mode, PermissionMode::BypassPermissions);
+        assert_eq!(app.permission_mode, PermissionMode::Execution);
         assert_eq!(app.active_thread_id.as_ref().unwrap(), &existing_id);
     }
 

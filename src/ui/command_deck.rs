@@ -224,11 +224,11 @@ mod tests {
         use crate::models::PermissionMode;
 
         let app = App {
-            permission_mode: PermissionMode::BypassPermissions,
+            permission_mode: PermissionMode::Execution,
             ..Default::default()
         };
 
-        // create_mode_indicator_line should return Some for BypassPermissions mode
+        // create_mode_indicator_line should return Some for Execution mode
         let indicator = create_mode_indicator_line(app.permission_mode);
         assert!(indicator.is_some());
 

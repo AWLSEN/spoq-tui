@@ -13,7 +13,8 @@ pub enum PermissionMode {
     /// Claude proposes changes but doesn't execute
     Plan,
     /// Auto-approve all tool calls
-    BypassPermissions,
+    #[serde(rename = "execution", alias = "bypassPermissions")]
+    Execution,
 }
 
 /// Request structure for streaming API calls
@@ -159,14 +160,14 @@ mod tests {
     fn test_permission_mode_variants() {
         let default = PermissionMode::Default;
         let plan = PermissionMode::Plan;
-        let bypass = PermissionMode::BypassPermissions;
+        let execution = PermissionMode::Execution;
 
         assert_eq!(default, PermissionMode::Default);
         assert_eq!(plan, PermissionMode::Plan);
-        assert_eq!(bypass, PermissionMode::BypassPermissions);
+        assert_eq!(execution, PermissionMode::Execution);
         assert_ne!(default, plan);
-        assert_ne!(plan, bypass);
-        assert_ne!(bypass, default);
+        assert_ne!(plan, execution);
+        assert_ne!(execution, default);
     }
 
     #[test]
@@ -178,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_permission_mode_clone() {
-        let original = PermissionMode::BypassPermissions;
+        let original = PermissionMode::Execution;
         let cloned = original;
         assert_eq!(original, cloned);
     }
@@ -188,8 +189,8 @@ mod tests {
         assert_eq!(format!("{:?}", PermissionMode::Default), "Default");
         assert_eq!(format!("{:?}", PermissionMode::Plan), "Plan");
         assert_eq!(
-            format!("{:?}", PermissionMode::BypassPermissions),
-            "BypassPermissions"
+            format!("{:?}", PermissionMode::Execution),
+            "Execution"
         );
     }
 
@@ -216,10 +217,10 @@ mod tests {
     }
 
     #[test]
-    fn test_permission_mode_serialization_bypass() {
-        let mode = PermissionMode::BypassPermissions;
+    fn test_permission_mode_serialization_execution() {
+        let mode = PermissionMode::Execution;
         let json = serde_json::to_string(&mode).expect("Failed to serialize");
-        assert_eq!(json, "\"bypassPermissions\"");
+        assert_eq!(json, "\"execution\"");
 
         let deserialized: PermissionMode =
             serde_json::from_str(&json).expect("Failed to deserialize");
@@ -227,10 +228,17 @@ mod tests {
     }
 
     #[test]
-    fn test_permission_mode_deserialization_camel_case() {
+    fn test_permission_mode_deserialization_execution() {
+        let json = "\"execution\"";
+        let mode: PermissionMode = serde_json::from_str(json).expect("Failed to deserialize");
+        assert_eq!(mode, PermissionMode::Execution);
+    }
+
+    #[test]
+    fn test_permission_mode_deserialization_bypass_permissions_alias() {
         let json = "\"bypassPermissions\"";
         let mode: PermissionMode = serde_json::from_str(json).expect("Failed to deserialize");
-        assert_eq!(mode, PermissionMode::BypassPermissions);
+        assert_eq!(mode, PermissionMode::Execution);
     }
 
     // ============= StreamRequest Tests =============
@@ -247,7 +255,7 @@ mod tests {
     #[test]
     fn test_stream_request_with_permission_mode_serialization() {
         let request = StreamRequest::new("Test".to_string())
-            .with_permission_mode(PermissionMode::BypassPermissions);
+            .with_permission_mode(PermissionMode::Execution);
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
         let deserialized: StreamRequest =
@@ -256,7 +264,7 @@ mod tests {
         assert_eq!(request.permission_mode, deserialized.permission_mode);
         assert_eq!(
             deserialized.permission_mode,
-            Some(PermissionMode::BypassPermissions)
+            Some(PermissionMode::Execution)
         );
     }
 

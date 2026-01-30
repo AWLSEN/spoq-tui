@@ -14,13 +14,13 @@ impl App {
         self.mark_dirty();
     }
 
-    /// Cycle through permission modes: Default -> Plan -> BypassPermissions -> Default
+    /// Cycle through permission modes: Default -> Plan -> Execution -> Default
     pub fn cycle_permission_mode(&mut self) {
         use crate::models::PermissionMode;
         self.permission_mode = match self.permission_mode {
             PermissionMode::Default => PermissionMode::Plan,
-            PermissionMode::Plan => PermissionMode::BypassPermissions,
-            PermissionMode::BypassPermissions => PermissionMode::Default,
+            PermissionMode::Plan => PermissionMode::Execution,
+            PermissionMode::Execution => PermissionMode::Default,
         };
         self.mark_dirty();
     }

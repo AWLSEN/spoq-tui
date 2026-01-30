@@ -911,7 +911,7 @@ mod tests {
 
     #[test]
     fn test_create_mode_indicator_line_bypass() {
-        let line = create_mode_indicator_line(PermissionMode::BypassPermissions);
+        let line = create_mode_indicator_line(PermissionMode::Execution);
         assert!(line.is_some());
         let line = line.unwrap();
         // Check that the line contains "[EXECUTE]"
@@ -1038,7 +1038,7 @@ mod tests {
             verified_at: None,
         });
         app.active_thread_id = Some("prog-thread".to_string());
-        app.permission_mode = PermissionMode::BypassPermissions;
+        app.permission_mode = PermissionMode::Execution;
 
         terminal
             .draw(|f| {
@@ -1051,7 +1051,7 @@ mod tests {
 
         assert!(
             buffer_str.contains("[EXECUTE]"),
-            "Mode indicator should show '[EXECUTE]' in BypassPermissions mode"
+            "Mode indicator should show '[EXECUTE]' in Execution mode"
         );
     }
 

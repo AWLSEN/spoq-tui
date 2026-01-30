@@ -34,7 +34,7 @@ pub fn create_mode_indicator_line(mode: PermissionMode) -> Option<Line<'static>>
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         )])),
-        PermissionMode::BypassPermissions => Some(Line::from(vec![Span::styled(
+        PermissionMode::Execution => Some(Line::from(vec![Span::styled(
             " [EXECUTE]",
             Style::default()
                 .fg(Color::Rgb(255, 140, 0))
