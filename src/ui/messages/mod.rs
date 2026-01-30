@@ -19,14 +19,14 @@ pub mod virtualization;
 pub use permission_inline::build_permission_lines;
 #[allow(unused_imports)]
 pub use subagent_events::{render_subagent_event, render_subagent_events_block, TreeConnector};
-pub use text_wrapping::estimate_wrapped_line_count;
+pub use text_wrapping::{apply_background_to_line, estimate_wrapped_line_count, wrap_line_with_prefix};
 #[allow(unused_imports)]
 pub use tool_events::{render_tool_event, truncate_preview};
 
 // Used by this module's main functions
 use errors::render_inline_error_banners;
 use segments::render_message_segments;
-use text_wrapping::{apply_background_to_line, wrap_lines_with_prefix};
+use text_wrapping::wrap_lines_with_prefix;
 use thinking::render_thinking_block;
 use virtualization::{estimate_message_height_fast, MessageHeight};
 
