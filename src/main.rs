@@ -1238,6 +1238,42 @@ where
                                         app.reset_cursor_blink();
                                         continue;
                                     }
+                                    // Ctrl+V = clipboard paste with image detection
+                                    // Checks clipboard for image first, then falls back to text paste
+                                    KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        if app.focus != Focus::Input {
+                                            app.focus = Focus::Input;
+                                        }
+                                        match spoq::clipboard::try_read_clipboard_image() {
+                                            Ok(attachment) => {
+                                                if app.pending_images.len() < spoq::clipboard::MAX_PENDING_IMAGES {
+                                                    app.pending_images.push(attachment);
+                                                }
+                                            }
+                                            Err(spoq::clipboard::ClipboardImageError::NoImage) => {
+                                                // No image in clipboard — fall back to text paste
+                                                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                                    if let Ok(text) = clipboard.get_text() {
+                                                        if !text.is_empty() {
+                                                            if app.should_summarize_paste(&text) {
+                                                                app.textarea.insert_paste_token(text);
+                                                            } else {
+                                                                for ch in text.chars() {
+                                                                    app.textarea.insert_char(ch);
+                                                                }
+                                                            }
+                                                            app.reset_cursor_blink();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err(_) => {
+                                                // Clipboard access error — silently ignore
+                                            }
+                                        }
+                                        app.mark_dirty();
+                                        continue;
+                                    }
                                     // Plain characters (no modifiers or only SHIFT)
                                     KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
                                         // Reset scroll to show input when typing (unified scroll)
@@ -1612,16 +1648,40 @@ where
                                 app.focus = Focus::Input;
                             }
 
-                            if app.should_summarize_paste(&text) {
-                                // Insert as atomic token
-                                app.textarea.insert_paste_token(text);
-                                app.reset_cursor_blink();
-                            } else {
-                                // Insert normally character by character
-                                for ch in text.chars() {
-                                    app.textarea.insert_char(ch);
+                            // Check if clipboard also has an image (some terminals
+                            // send Event::Paste for Ctrl+V even when image is present)
+                            if app.pending_images.len() < spoq::clipboard::MAX_PENDING_IMAGES {
+                                if let Ok(attachment) = spoq::clipboard::try_read_clipboard_image() {
+                                    app.pending_images.push(attachment);
+                                    // Still process text below in case both are present
                                 }
-                                app.reset_cursor_blink();
+                            }
+
+                            // Check if pasted text is a drag-and-dropped image file path
+                            if spoq::clipboard::is_image_file_path(&text) {
+                                if app.pending_images.len() < spoq::clipboard::MAX_PENDING_IMAGES {
+                                    if let Ok(attachment) = spoq::clipboard::try_read_image_file(&text) {
+                                        app.pending_images.push(attachment);
+                                        app.mark_dirty();
+                                        continue; // Don't paste the file path as text
+                                    }
+                                }
+                                // Fall through to paste the path as text if file read failed
+                            }
+
+                            // Process text content (existing logic)
+                            if !text.is_empty() {
+                                if app.should_summarize_paste(&text) {
+                                    // Insert as atomic token
+                                    app.textarea.insert_paste_token(text);
+                                    app.reset_cursor_blink();
+                                } else {
+                                    // Insert normally character by character
+                                    for ch in text.chars() {
+                                        app.textarea.insert_char(ch);
+                                    }
+                                    app.reset_cursor_blink();
+                                }
                             }
 
                             app.mark_dirty();
