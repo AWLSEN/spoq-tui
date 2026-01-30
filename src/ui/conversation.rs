@@ -246,10 +246,10 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
         )));
         lines.push(Line::from(""));
 
-        if let Some(ref next_id) = modal_state.next_account_id {
+        if modal_state.next_account_id.is_some() {
             lines.push(Line::from(vec![
                 Span::raw("  Continue with "),
-                Span::styled(next_id, Style::default().fg(Color::Cyan)),
+                Span::styled("next account", Style::default().fg(Color::Cyan)),
                 Span::raw("?"),
             ]));
         } else {

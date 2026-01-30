@@ -1237,6 +1237,33 @@ where
                                 }
                             }
 
+                            // Rate Limit Modal Key Handling (when active)
+                            // =========================================================
+                            if app.rate_limit_modal.is_some() {
+                                match key.code {
+                                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                        // User confirmed - continue with next account
+                                        if let Some(modal_state) = app.rate_limit_modal.take() {
+                                            if modal_state.next_account_id.is_some() {
+                                                app.handle_rate_limit_continue(modal_state);
+                                            }
+                                        }
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                                        // User cancelled - just close modal
+                                        app.rate_limit_modal = None;
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    _ => {
+                                        // Ignore other keys while modal is open
+                                        continue;
+                                    }
+                                }
+                            }
+
                             // Auto-focus to Input when user starts typing
                             // (printable characters only, not Ctrl combinations)
                             if let KeyCode::Char(_) = key.code {

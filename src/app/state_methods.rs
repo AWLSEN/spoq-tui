@@ -1689,6 +1689,18 @@ impl App {
         let thread_id = modal_state.thread_id;
         let current_account_id = modal_state.current_account_id;
 
+        // Set up UI state for streaming (same as submit_input)
+        self.active_thread_id = Some(thread_id.clone());
+        self.screen = crate::app::Screen::Conversation;
+        self.reset_scroll();
+
+        // Add streaming message to cache so UI shows the incoming response
+        if !self.cache.add_streaming_message(&thread_id, "continue".to_string()) {
+            // Thread doesn't exist in cache
+            self.stream_error = Some("Thread no longer exists.".to_string());
+            return;
+        }
+
         // Build resume request with use_next_account flag
         let request = crate::models::StreamRequest::with_thread("continue".to_string(), thread_id.clone())
             .with_use_next_account(true, current_account_id);
