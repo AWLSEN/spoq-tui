@@ -7,6 +7,7 @@
 //! - [`AppMessage`] - Messages for async communication
 
 mod actions;
+pub mod backend_coordinator;
 mod cancel;
 pub mod cursor_blink;
 mod handlers;
@@ -19,6 +20,7 @@ mod types;
 mod utils;
 mod view;
 mod websocket;
+pub mod thread_mode_sync;
 
 pub use messages::AppMessage;
 pub use state_methods::{BrowseListSelectAction, UnifiedPickerAction};
@@ -49,6 +51,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use cursor_blink::CursorBlinkState;
+use thread_mode_sync::ThreadModeSync;
 
 /// Cached message height data for incremental updates.
 /// Stores precomputed heights with cumulative offsets to avoid recalculating
@@ -201,6 +204,8 @@ pub struct App {
     pub steering_feedback: Option<String>,
     /// Current sync operation status (for /sync dialog display)
     pub sync_status: SyncStatus,
+    /// Thread mode synchronization coordinator (debounces and syncs mode changes)
+    pub thread_mode_sync: ThreadModeSync,
     /// Conductor API client (shared across async tasks)
     pub client: Arc<ConductorClient>,
     /// Tick counter for animations (blinking cursor, etc.)
@@ -468,7 +473,8 @@ impl App {
             stream_error: None,
             steering_feedback: None,
             sync_status: SyncStatus::default(),
-            client,
+            client: client.clone(),
+            thread_mode_sync: ThreadModeSync::new(client),
             tick_count: 0,
             max_scroll: 0,
             unified_scroll: 0,
