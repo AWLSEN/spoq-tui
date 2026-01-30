@@ -199,6 +199,16 @@ impl App {
         let thread_id_for_task = thread_id.clone();
         let debug_tx = self.debug_tx.clone();
 
+        // Drain pending images into payloads for the request
+        let image_payloads: Vec<crate::models::ImageAttachmentPayload> = self
+            .pending_images
+            .drain(..)
+            .map(|img| crate::models::ImageAttachmentPayload {
+                hash: img.hash,
+                data: img.base64_png,
+            })
+            .collect();
+
         // Build unified StreamRequest with thread_type
         // Always send thread_id - for new threads, we generate a UUID upfront
         // The backend will use our client-generated UUID as the canonical thread_id
@@ -207,7 +217,8 @@ impl App {
             .with_type(new_thread_type)
             .with_permission_mode(self.permission_mode)
             .with_working_directory(working_directory)
-            .with_plan_mode(is_plan_mode);
+            .with_plan_mode(is_plan_mode)
+            .with_images(image_payloads);
 
         // Emit debug event with full StreamRequest JSON
         if let Ok(json_string) = serde_json::to_string_pretty(&request) {

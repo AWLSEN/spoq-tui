@@ -20,7 +20,7 @@ pub use repository::{GitHubRepo, PrimaryLanguage};
 pub use message::*;
 pub use picker::*;
 pub use request::PermissionMode;
-pub use request::{CancelRequest, CancelResponse, StreamRequest};
+pub use request::{CancelRequest, CancelResponse, ImageAttachmentPayload, StreamRequest};
 pub use steering::{QueuedSteeringMessage, SteeringMessageState};
 pub use text_utils::strip_thread_prefix;
 pub use thread::*;
