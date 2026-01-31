@@ -6,6 +6,7 @@ use crate::credential_watcher::{
 use crate::debug::{DebugEventKind, ErrorData, ErrorSource, StateChangeData, StateType};
 use crate::models::ThreadMode;
 use crate::state::dashboard::PhaseProgressData;
+use crate::state::session::AskUserQuestionData;
 use tracing::info;
 
 use super::{emit_debug, log_thread_update, truncate_for_debug, App, AppMessage};
@@ -153,6 +154,7 @@ impl App {
             AppMessage::StreamError {
                 thread_id,
                 error,
+                error_code,
             } => {
                 // Clear queued steering on stream error
                 if let Some(ref qs) = self.queued_steering {
@@ -168,6 +170,16 @@ impl App {
 
                 // Reset cancel state
                 self.reset_cancel_state();
+
+                // Cancel the streaming message so spinner stops
+                self.cache.cancel_streaming_message(&thread_id);
+
+                // Add error as inline content in the thread's cache
+                self.cache.add_error_simple(
+                    &thread_id,
+                    error_code.as_deref().unwrap_or("error").to_string(),
+                    error.clone(),
+                );
 
                 // Emit Error debug event
                 emit_debug(
@@ -222,9 +234,21 @@ impl App {
                 next_account_id,
                 retry_after_secs,
             } => {
+                // Add inline error so it's visible in the conversation even if modal is dismissed
+                let display_msg = if next_account_id.is_some() {
+                    "Rate limited. Switching to next account...".to_string()
+                } else {
+                    "Rate limited. No more accounts available.".to_string()
+                };
+                self.cache.add_error_simple(
+                    &thread_id,
+                    "rate_limited".to_string(),
+                    display_msg,
+                );
+
                 // Show rate limit modal for user confirmation
                 self.rate_limit_modal = Some(crate::app::RateLimitModalState {
-                    thread_id,
+                    thread_id: thread_id.clone(),
                     message,
                     current_account_id,
                     next_account_id,
@@ -232,7 +256,7 @@ impl App {
                 });
 
                 // Mark message as no longer streaming
-                self.cache.cancel_streaming_message(&self.rate_limit_modal.as_ref().unwrap().thread_id);
+                self.cache.cancel_streaming_message(&thread_id);
 
                 // Reset stream statistics
                 self.stream_start_time = None;
@@ -441,23 +465,46 @@ impl App {
                         },
                     );
 
-                    // Set thread waiting state to ensure it shows as needs_action
-                    self.dashboard.update_thread_status(
-                        &effective_thread_id,
-                        crate::models::dashboard::ThreadStatus::Waiting,
-                        Some(crate::models::dashboard::WaitingFor::Permission {
-                            request_id: permission_id.clone(),
-                            tool_name: tool_name.clone(),
-                        }),
-                    );
+                    // Set thread waiting state based on permission type
+                    // AskUserQuestion uses UserInput (shows [a] Answer)
+                    // Other permissions use Permission (shows Y/N/A)
+                    if tool_name == "AskUserQuestion" {
+                        // AskUserQuestion: set UserInput waiting type and parse question data
+                        self.dashboard.update_thread_status(
+                            &effective_thread_id,
+                            crate::models::dashboard::ThreadStatus::Waiting,
+                            Some(crate::models::dashboard::WaitingFor::UserInput),
+                        );
+
+                        // Parse and store question data for the overlay
+                        if let Some(ref perm) = self.dashboard.get_pending_permission(&effective_thread_id) {
+                            if let Some(ref input) = perm.tool_input {
+                                if let Ok(question_data) = serde_json::from_value::<AskUserQuestionData>(input.clone()) {
+                                    self.dashboard.set_pending_question(
+                                        &effective_thread_id,
+                                        permission_id.clone(),
+                                        question_data,
+                                    );
+                                }
+                            }
+                        }
+
+                        // Initialize question state for navigation
+                        self.init_question_state();
+                    } else {
+                        // Regular permissions: set Permission waiting type
+                        self.dashboard.update_thread_status(
+                            &effective_thread_id,
+                            crate::models::dashboard::ThreadStatus::Waiting,
+                            Some(crate::models::dashboard::WaitingFor::Permission {
+                                request_id: permission_id.clone(),
+                                tool_name: tool_name.clone(),
+                            }),
+                        );
+                    }
 
                     // Compute thread views to ensure needs_action is set
                     self.dashboard.compute_thread_views();
-
-                    // AskUserQuestion requires auto-initialization of question state
-                    if tool_name == "AskUserQuestion" {
-                        self.init_question_state();
-                    }
 
                     // Emit StateChange for pending permission
                     emit_debug(
