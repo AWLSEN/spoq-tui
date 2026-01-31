@@ -143,6 +143,8 @@ impl App {
                     } else {
                         ModalType::Permission
                     }
+                } else if self.dashboard.get_plan_request(thread_id).is_some() {
+                    ModalType::PlanApproval
                 } else {
                     ModalType::None
                 }
