@@ -282,6 +282,149 @@ impl Default for VpsConfigMode {
     }
 }
 
+// ============================================================================
+// Enhanced VPS Config Types
+// ============================================================================
+
+/// Per-field validation errors for VPS config dialog
+#[derive(Debug, Clone, Default)]
+pub struct FieldErrors {
+    /// Error message for IP field
+    pub ip: Option<String>,
+    /// Error message for password field
+    pub password: Option<String>,
+}
+
+impl FieldErrors {
+    /// Create new empty field errors
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Check if there are any errors
+    pub fn has_errors(&self) -> bool {
+        self.ip.is_some() || self.password.is_some()
+    }
+
+    /// Clear all errors
+    pub fn clear(&mut self) {
+        self.ip = None;
+        self.password = None;
+    }
+}
+
+/// Provisioning phases for progress tracking
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProvisioningPhase {
+    /// Initial connection phase
+    Connecting,
+    /// Replacing VPS (SSH + script execution)
+    ReplacingVps,
+    /// Waiting for health check
+    WaitingForHealth {
+        /// Progress percentage (0-100)
+        progress: u8,
+        /// Current status message
+        message: String,
+    },
+    /// Finalizing setup
+    Finalizing,
+}
+
+impl ProvisioningPhase {
+    /// Get display message for this phase
+    pub fn display_message(&self) -> String {
+        match self {
+            Self::Connecting => "Connecting...".to_string(),
+            Self::ReplacingVps => "Replacing VPS...".to_string(),
+            Self::WaitingForHealth { progress, message } => {
+                format!("{}% - {}", progress, message)
+            }
+            Self::Finalizing => "Finalizing...".to_string(),
+        }
+    }
+
+    /// Get progress percentage (0-100)
+    pub fn progress_percent(&self) -> u8 {
+        match self {
+            Self::Connecting => 10,
+            Self::ReplacingVps => 30,
+            Self::WaitingForHealth { progress, .. } => *progress,
+            Self::Finalizing => 95,
+        }
+    }
+}
+
+/// VPS configuration errors with actionable categorization
+#[derive(Debug, Clone)]
+pub enum VpsError {
+    /// Network connectivity issues
+    Network(String),
+    /// Authentication expired (401)
+    AuthExpired,
+    /// No active subscription (403)
+    NoSubscription,
+    /// VPS already exists for user (409)
+    Conflict,
+    /// Rate limited (429)
+    RateLimited {
+        /// Seconds to wait before retry
+        retry_after: u32,
+    },
+    /// SSH connection failed
+    SshFailed(String),
+    /// Operation timed out
+    Timeout,
+    /// Server error (5xx)
+    Server {
+        /// HTTP status code
+        status: u16,
+        /// Error message
+        message: String,
+    },
+    /// Unknown/generic error
+    Unknown(String),
+}
+
+impl VpsError {
+    /// Get a user-friendly error message
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::Network(msg) => format!("Network error: {}", msg),
+            Self::AuthExpired => "Session expired.".to_string(),
+            Self::NoSubscription => "Subscription required.".to_string(),
+            Self::Conflict => "VPS already exists.".to_string(),
+            Self::RateLimited { retry_after } => {
+                format!("Too many requests. Wait {}s.", retry_after)
+            }
+            Self::SshFailed(msg) => format!("SSH failed: {}", msg),
+            Self::Timeout => "Operation timed out.".to_string(),
+            Self::Server { status, message } => format!("Server error ({}): {}", status, message),
+            Self::Unknown(msg) => msg.clone(),
+        }
+    }
+
+    /// Get the error header for display
+    pub fn header(&self) -> &'static str {
+        match self {
+            Self::AuthExpired => "Session Expired",
+            Self::NoSubscription => "Subscription Required",
+            Self::RateLimited { .. } => "Rate Limited",
+            _ => "Failed to replace VPS",
+        }
+    }
+
+    /// Check if this is an auth error (show Login instead of Retry)
+    pub fn is_auth_error(&self) -> bool {
+        matches!(self, Self::AuthExpired)
+    }
+
+    /// Check if this error is retriable
+    pub fn is_retriable(&self) -> bool {
+        !matches!(self, Self::NoSubscription)
+    }
+}
+
 /// State of the VPS configuration dialog (/vps command)
 #[derive(Debug, Clone)]
 pub enum VpsConfigState {
