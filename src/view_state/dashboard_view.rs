@@ -289,9 +289,8 @@ pub enum VpsConfigState {
     InputFields {
         mode: VpsConfigMode,
         ip: String,
-        username: String,
         password: String,
-        /// Which field is focused: 0=mode, 1=IP, 2=username, 3=password
+        /// Which field is focused: 0=mode, 1=IP, 2=password
         field_focus: u8,
         /// Validation error message (shown below password field)
         error: Option<String>,

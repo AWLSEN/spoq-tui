@@ -857,7 +857,7 @@ pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
 
         Command::VpsConfigSubmit => {
             match state {
-                VpsConfigState::InputFields { ref mode, ref ip, ref username, ref password, .. } => {
+                VpsConfigState::InputFields { ref mode, ref ip, ref password, .. } => {
                     use crate::view_state::VpsConfigMode;
                     match mode {
                         VpsConfigMode::Remote => {
@@ -873,8 +873,8 @@ pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
                                 return true;
                             }
 
-                            // Start the VPS replacement process
-                            app.start_vps_replace(ip.clone(), username.clone(), password.clone());
+                            // Start the VPS replacement process (username is always "root")
+                            app.start_vps_replace(ip.clone(), password.clone());
                             app.mark_dirty();
                         }
                         VpsConfigMode::Local => {

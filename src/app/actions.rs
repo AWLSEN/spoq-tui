@@ -347,14 +347,14 @@ impl App {
     /// This method transitions the VPS config overlay to "Provisioning" state
     /// and spawns an async task to:
     /// 1. Call the backend replace_byovps endpoint
-    /// 2. Wait for the new conductor to be healthy
-    /// 3. Sync credentials to the new conductor
+    /// 2. Poll operation status until completion
+    /// 3. Backend auto-confirms VPS when healthy
     /// 4. Send success/failure messages back to the UI
-    pub fn start_vps_replace(&mut self, ip: String, username: String, password: String) {
+    pub fn start_vps_replace(&mut self, ip: String, password: String) {
         use crate::view_state::VpsConfigState;
 
-        // Store credentials for retry after re-auth
-        self.dashboard.set_vps_pending_credentials(ip.clone(), username.clone(), password.clone());
+        // Store credentials for retry after re-auth (username is always "root")
+        self.dashboard.set_vps_pending_credentials(ip.clone(), password.clone());
 
         // Update overlay to Provisioning state
         self.dashboard.update_vps_config_state(VpsConfigState::Provisioning {
@@ -397,83 +397,25 @@ impl App {
                 api = api.with_refresh_token(&token);
             }
 
-            // Call the replace_byovps endpoint
-            match api.replace_byovps(&ip, &username, &password).await {
-                Ok(response) => {
-                    // The response contains hostname, ip_address, jwt_secret, ssh_password, message
-                    let hostname = response.hostname.clone();
-                    let vps_url = format!("https://{}", hostname);
+            // Call the replace_byovps endpoint (username is always "root")
+            // This now returns immediately with an operation_id
+            tracing::info!(
+                "Calling replace_byovps: ip={}, ssh_username=root, password_len={}",
+                ip, password.len()
+            );
 
-                    // Send progress: waiting for conductor
-                    let _ = tx.send(AppMessage::VpsConfigProgress {
-                        phase: "Waiting for conductor...".to_string(),
-                    });
-
-                    // Poll health endpoint until ready (timeout: 120s)
-                    let health_url = format!("{}/health", vps_url);
-                    let start = std::time::Instant::now();
-                    let timeout = std::time::Duration::from_secs(120);
-                    let interval = std::time::Duration::from_secs(3);
-
-                    loop {
-                        if start.elapsed() > timeout {
-                            let _ = tx.send(AppMessage::VpsConfigFailed {
-                                error: "Timeout waiting for conductor to start".to_string(),
-                                is_auth_error: false,
-                            });
-                            return;
-                        }
-
-                        // Check health
-                        if let Ok(resp) = reqwest::get(&health_url).await {
-                            if resp.status().is_success() {
-                                break;
-                            }
-                        }
-
-                        tokio::time::sleep(interval).await;
-                    }
-
-                    // Confirm VPS record in backend DB (creates user_vps row)
-                    let _ = tx.send(AppMessage::VpsConfigProgress {
-                        phase: "Confirming VPS record...".to_string(),
-                    });
-
-                    let confirm_request = crate::auth::central_api::ConfirmVpsRequest {
-                        hostname: response.hostname.clone(),
-                        ip_address: response.ip_address.clone(),
-                        provider_instance_id: 0,
-                        provider_order_id: None,
-                        provider: "byovps".to_string(),
-                        plan_id: "byovps".to_string(),
-                        template_id: 0,
-                        data_center_id: 0,
-                        jwt_secret: response.jwt_secret.clone(),
-                        ssh_password: response.ssh_password.clone(),
-                    };
-
-                    match api.confirm_vps(confirm_request).await {
-                        Ok(_status) => {
-                            tracing::info!("VPS record confirmed in backend DB");
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to confirm VPS record: {}", e);
-                            // Non-fatal: VPS works, just won't persist. Restart will re-provision.
-                        }
-                    }
-
-                    // Send success
-                    let _ = tx.send(AppMessage::VpsConfigSuccess {
-                        vps_url,
-                        hostname,
-                    });
-                }
+            let async_response = match api.replace_byovps(&ip, "root", &password).await {
+                Ok(response) => response,
                 Err(e) => {
+                    tracing::error!("replace_byovps failed: {:?}", e);
                     let (error_msg, is_auth_error) = match &e {
-                        crate::auth::central_api::CentralApiError::ServerError { status, .. }
-                            if *status == 401 =>
-                        {
-                            ("Session expired. Press [L] to log in again.".to_string(), true)
+                        crate::auth::central_api::CentralApiError::ServerError { status, message } => {
+                            tracing::error!("Server error {}: {}", status, message);
+                            if *status == 401 {
+                                ("Session expired. Press [L] to log in again.".to_string(), true)
+                            } else {
+                                (format!("{}", e), false)
+                            }
                         }
                         crate::auth::central_api::CentralApiError::Http(_) => {
                             ("Network error. Check your connection and retry.".to_string(), false)
@@ -484,7 +426,89 @@ impl App {
                         error: error_msg,
                         is_auth_error,
                     });
+                    return;
                 }
+            };
+
+            let operation_id = async_response.operation_id.clone();
+            let hostname = async_response.hostname.clone();
+            tracing::info!(
+                "VPS replace queued: operation_id={}, hostname={}",
+                operation_id, hostname
+            );
+
+            // Poll operation status until completed or failed
+            let poll_interval = std::time::Duration::from_secs(3);
+            let timeout = std::time::Duration::from_secs(600); // 10 minutes max
+            let start = std::time::Instant::now();
+
+            loop {
+                if start.elapsed() > timeout {
+                    let _ = tx.send(AppMessage::VpsConfigFailed {
+                        error: "Timeout waiting for VPS provisioning to complete".to_string(),
+                        is_auth_error: false,
+                    });
+                    return;
+                }
+
+                match api.poll_operation(&operation_id).await {
+                    Ok(status) => {
+                        // Send progress update with current phase
+                        let phase = format!("{}% - {}", status.progress, status.message);
+                        let _ = tx.send(AppMessage::VpsConfigProgress { phase });
+
+                        match status.status.as_str() {
+                            "completed" => {
+                                // Success! Backend has auto-confirmed the VPS
+                                if let Some(result) = status.result {
+                                    let vps_url = format!("https://{}", result.hostname);
+                                    tracing::info!(
+                                        "VPS provisioning completed: hostname={}, vps_id={:?}",
+                                        result.hostname, result.vps_id
+                                    );
+                                    let _ = tx.send(AppMessage::VpsConfigSuccess {
+                                        vps_url,
+                                        hostname: result.hostname,
+                                    });
+                                } else {
+                                    // Shouldn't happen, but handle gracefully
+                                    let vps_url = format!("https://{}", hostname);
+                                    let _ = tx.send(AppMessage::VpsConfigSuccess {
+                                        vps_url,
+                                        hostname,
+                                    });
+                                }
+                                return;
+                            }
+                            "failed" => {
+                                let error = status.error.unwrap_or_else(|| "Unknown error".to_string());
+                                tracing::error!("VPS provisioning failed: {}", error);
+                                let _ = tx.send(AppMessage::VpsConfigFailed {
+                                    error,
+                                    is_auth_error: false,
+                                });
+                                return;
+                            }
+                            _ => {
+                                // Still running, continue polling
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to poll operation status: {:?}", e);
+                        // Don't fail immediately on poll error, might be transient
+                        // But do fail if it's an auth error
+                        if let crate::auth::central_api::CentralApiError::ServerError { status: 401, .. } = &e {
+                            let _ = tx.send(AppMessage::VpsConfigFailed {
+                                error: "Session expired. Press [L] to log in again.".to_string(),
+                                is_auth_error: true,
+                            });
+                            return;
+                        }
+                    }
+                }
+
+                tokio::time::sleep(poll_interval).await;
             }
         });
     }
@@ -676,13 +700,57 @@ impl App {
     /// This should be called after a successful VPS swap to establish
     /// a connection to the new conductor.
     pub fn reconnect_websocket(&mut self) {
+        use crate::websocket::{WsClientConfig};
+
         // Drop the old sender to disconnect
         self.ws_sender = None;
         self.ws_connection_state = WsConnectionState::Disconnected;
-
-        // WebSocket reconnection will be handled by the main event loop
-        // when it detects ws_sender is None and vps_url is Some
         info!("WebSocket disconnected, ready for reconnection to new VPS");
+
+        // Spawn a new WebSocket connection to the current vps_url
+        let vps_url = match &self.vps_url {
+            Some(url) => url.clone(),
+            None => {
+                info!("No VPS URL set, skipping WebSocket reconnection");
+                return;
+            }
+        };
+
+        let auth_token = self.credentials.access_token.clone();
+        let tx = self.message_tx.clone();
+
+        tokio::spawn(async move {
+            // Build config from the current VPS URL
+            let mut ws_config = WsClientConfig::default();
+
+            let (host, use_tls) = if vps_url.starts_with("https://") {
+                (vps_url.strip_prefix("https://").unwrap(), true)
+            } else if vps_url.starts_with("http://") {
+                (vps_url.strip_prefix("http://").unwrap(), false)
+            } else {
+                let is_ip = vps_url.split(':').next().map_or(false, |h| {
+                    h.parse::<std::net::Ipv4Addr>().is_ok()
+                        || h.parse::<std::net::Ipv6Addr>().is_ok()
+                });
+                (vps_url.as_str(), !is_ip)
+            };
+            ws_config = ws_config.with_host(host).with_tls(use_tls);
+
+            if let Some(ref token) = auth_token {
+                ws_config = ws_config.with_auth(token);
+            }
+
+            info!("Reconnecting WebSocket to {} (tls={})", host, use_tls);
+
+            match crate::app::start_websocket_with_config(tx.clone(), ws_config).await {
+                Ok(sender) => {
+                    let _ = tx.send(crate::app::AppMessage::WsReconnected { sender });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to reconnect WebSocket: {}", e);
+                }
+            }
+        });
     }
 }
 

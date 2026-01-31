@@ -304,6 +304,46 @@ pub struct ByovpsPendingResponse {
     pub message: String,
 }
 
+/// Response from async BYOVPS replace endpoint (POST /api/byovps/replace).
+/// The new async endpoint returns an operation_id for polling.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ByovpsAsyncResponse {
+    pub operation_id: String,
+    pub hostname: String,
+    pub ip_address: String,
+    pub message: String,
+}
+
+/// Operation status from GET /api/byovps/operations/{id}
+#[derive(Debug, Clone, Deserialize)]
+pub struct OperationStatus {
+    pub id: String,
+    pub operation_type: String,
+    pub status: String, // "pending", "running", "completed", "failed"
+    pub progress: u8,
+    pub steps: Vec<OperationStep>,
+    pub message: String,
+    pub result: Option<OperationResult>,
+    pub error: Option<String>,
+}
+
+/// Individual step in an operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct OperationStep {
+    pub name: String,
+    pub completed: bool,
+}
+
+/// Result data from a completed operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct OperationResult {
+    pub hostname: String,
+    pub ip_address: String,
+    pub jwt_secret: String,
+    pub ssh_password: String,
+    pub vps_id: Option<String>,
+}
+
 /// Response from BYOVPS provision endpoint (POST /api/byovps/provision).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ByovpsProvisionResponse {
@@ -1575,14 +1615,14 @@ impl CentralApiClient {
     /// * `ssh_password` - SSH password for connecting to the VPS
     ///
     /// # Returns
-    /// * `Ok(ByovpsPendingResponse)` - Replacement initiated successfully
+    /// * `Ok(ByovpsAsyncResponse)` - Replacement queued, poll for status
     /// * `Err(CentralApiError)` - Replacement failed
     pub async fn replace_byovps(
         &mut self,
         vps_ip: &str,
         ssh_username: &str,
         ssh_password: &str,
-    ) -> Result<ByovpsPendingResponse, CentralApiError> {
+    ) -> Result<ByovpsAsyncResponse, CentralApiError> {
         let url = format!("{}/api/byovps/replace", self.base_url);
 
         let body = ByovpsProvisionRequest {
@@ -1650,7 +1690,65 @@ impl CentralApiClient {
             return Err(parse_error_response(status, &body));
         }
 
-        let data: ByovpsPendingResponse = response.json().await?;
+        let data: ByovpsAsyncResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Poll the status of an async BYOVPS operation.
+    ///
+    /// GET /api/byovps/operations/{id}
+    ///
+    /// Returns the current status of an async provisioning operation.
+    /// Poll until status is "completed" or "failed".
+    pub async fn poll_operation(
+        &mut self,
+        operation_id: &str,
+    ) -> Result<OperationStatus, CentralApiError> {
+        let url = format!("{}/api/byovps/operations/{}", self.base_url, operation_id);
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Handle 401 with token refresh
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                tracing::info!("Token expired (401) during poll, attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+                        let builder = self.client.get(&url);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(e) => {
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Token refresh failed: {}", e),
+                        });
+                    }
+                }
+            } else {
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: OperationStatus = response.json().await?;
         Ok(data)
     }
 

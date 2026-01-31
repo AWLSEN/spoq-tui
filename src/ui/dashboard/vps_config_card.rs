@@ -23,8 +23,8 @@ pub fn calculate_height(state: &VpsConfigState) -> u16 {
         VpsConfigState::InputFields { mode, error, .. } => {
             match mode {
                 VpsConfigMode::Remote => {
-                    // Title(1) + blank(1) + mode(1) + blank(1) + 3 fields * 2 rows + error?(1) + blank(1) + help(1)
-                    if error.is_some() { 14 } else { 13 }
+                    // Title(1) + blank(1) + mode(1) + blank(1) + IP(2) + username_static(1) + password(2) + error?(1) + blank(1) + help(1)
+                    if error.is_some() { 12 } else { 11 }
                 }
                 VpsConfigMode::Local => {
                     // Title(1) + blank(1) + mode(1) + blank(1) + info(2) + blank(1) + help(1)
@@ -55,12 +55,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &VpsConfigState) {
         VpsConfigState::InputFields {
             mode,
             ip,
-            username,
             password,
             field_focus,
             error,
         } => {
-            render_input_fields(frame, area, mode, ip, username, password, *field_focus, error.as_deref());
+            render_input_fields(frame, area, mode, ip, password, *field_focus, error.as_deref());
         }
         VpsConfigState::Provisioning { phase } => {
             render_provisioning(frame, area, phase);
@@ -83,13 +82,12 @@ fn render_input_fields(
     area: Rect,
     mode: &VpsConfigMode,
     ip: &str,
-    username: &str,
     password: &str,
     field_focus: u8,
     error: Option<&str>,
 ) {
     match mode {
-        VpsConfigMode::Remote => render_remote_fields(frame, area, ip, username, password, field_focus, error),
+        VpsConfigMode::Remote => render_remote_fields(frame, area, ip, password, field_focus, error),
         VpsConfigMode::Local => render_local_fields(frame, area, field_focus),
     }
 }
@@ -133,7 +131,6 @@ fn render_remote_fields(
     frame: &mut Frame,
     area: Rect,
     ip: &str,
-    username: &str,
     password: &str,
     field_focus: u8,
     error: Option<&str>,
@@ -145,8 +142,7 @@ fn render_remote_fields(
         Constraint::Length(1), // Blank
         Constraint::Length(1), // IP label
         Constraint::Length(1), // IP input
-        Constraint::Length(1), // Username label
-        Constraint::Length(1), // Username input
+        Constraint::Length(1), // Username (static)
         Constraint::Length(1), // Password label
         Constraint::Length(1), // Password input
     ];
@@ -177,11 +173,15 @@ fn render_remote_fields(
     // IP Address field
     render_field(frame, chunks[4], chunks[5], "VPS IP Address", ip, field_focus == 1, false);
 
-    // Username field
-    render_field(frame, chunks[6], chunks[7], "SSH Username", username, field_focus == 2, false);
+    // Username (static, non-editable)
+    let username_line = Line::from(vec![
+        Span::styled("  SSH Username: ", Style::default().fg(COLOR_DIM)),
+        Span::styled("root", Style::default().fg(Color::White)),
+    ]);
+    frame.render_widget(Paragraph::new(username_line), chunks[6]);
 
     // Password field
-    render_field(frame, chunks[8], chunks[9], "SSH Password", password, field_focus == 3, true);
+    render_field(frame, chunks[7], chunks[8], "SSH Password", password, field_focus == 2, true);
 
     // Error message
     let help_idx = if error.is_some() {
@@ -189,10 +189,10 @@ fn render_remote_fields(
             error.unwrap_or(""),
             Style::default().fg(Color::Red),
         ));
-        frame.render_widget(Paragraph::new(error_line).alignment(Alignment::Center), chunks[10]);
-        12
-    } else {
+        frame.render_widget(Paragraph::new(error_line).alignment(Alignment::Center), chunks[9]);
         11
+    } else {
+        10
     };
 
     // Help line

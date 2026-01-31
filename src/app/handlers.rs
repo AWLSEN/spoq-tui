@@ -839,6 +839,59 @@ impl App {
                     None,
                 );
             }
+            AppMessage::WsReconnected { sender } => {
+                use crate::websocket::WsConnectionState;
+                tracing::info!("WebSocket reconnected to new VPS");
+                self.ws_sender = Some(sender);
+                self.ws_connection_state = WsConnectionState::Connected;
+
+                // Clear stale dashboard data from old conductor
+                self.dashboard
+                    .set_threads(vec![], &std::collections::HashMap::new());
+                self.dashboard.compute_thread_views();
+                self.cache.clear();
+                tracing::info!("Cleared stale dashboard data after VPS swap");
+
+                // Re-fetch threads from new conductor
+                let client = self.client.clone();
+                let tx = self.message_tx.clone();
+                tokio::spawn(async move {
+                    match client.fetch_threads().await {
+                        Ok(threads) => {
+                            let _ = tx.send(AppMessage::DashboardDataRefreshed { threads });
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to fetch threads from new conductor: {:?}",
+                                e
+                            );
+                        }
+                    }
+                });
+
+                self.mark_dirty();
+            }
+            AppMessage::DashboardDataRefreshed { threads } => {
+                let total = threads.len();
+                let threads: Vec<_> = threads
+                    .into_iter()
+                    .take(crate::app::MAX_DASHBOARD_THREADS)
+                    .collect();
+                tracing::info!(
+                    "Dashboard refreshed: {} threads (limited to {})",
+                    total,
+                    threads.len()
+                );
+                self.dashboard
+                    .set_threads(threads.clone(), &std::collections::HashMap::new());
+                self.dashboard.compute_thread_views();
+                for thread in threads.into_iter().rev() {
+                    self.cache.upsert_thread(thread);
+                }
+                self.connection_status = true;
+                self.system_stats.connected = true;
+                self.mark_dirty();
+            }
             AppMessage::WsDisconnected => {
                 use crate::websocket::WsConnectionState;
                 tracing::info!("WebSocket disconnected");
@@ -2061,6 +2114,7 @@ impl App {
                 self.mark_dirty();
             }
             AppMessage::VpsConfigFailed { error, is_auth_error } => {
+                tracing::error!("VPS config failed: {} (auth_error={})", error, is_auth_error);
                 use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
                 if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
                     *state = VpsConfigState::Error { error, is_auth_error };
@@ -2107,8 +2161,8 @@ impl App {
                 }
                 self.central_api = Some(std::sync::Arc::new(new_central));
                 // Auto-retry VPS replace with stored credentials
-                if let Some((ip, username, password)) = self.dashboard.take_vps_pending_credentials() {
-                    self.start_vps_replace(ip, username, password);
+                if let Some((ip, _username, password)) = self.dashboard.take_vps_pending_credentials() {
+                    self.start_vps_replace(ip, password);
                 }
                 self.mark_dirty();
             }

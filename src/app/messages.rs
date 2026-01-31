@@ -125,6 +125,14 @@ pub enum AppMessage {
     WsDisconnected,
     /// WebSocket reconnecting
     WsReconnecting { attempt: u8 },
+    /// WebSocket reconnected with new sender (after VPS swap)
+    WsReconnected {
+        sender: tokio::sync::mpsc::Sender<crate::websocket::WsOutgoingMessage>,
+    },
+    /// Dashboard data refreshed from new conductor (after VPS swap)
+    DashboardDataRefreshed {
+        threads: Vec<Thread>,
+    },
     /// WebSocket raw message received (for debugging)
     WsRawMessage { message: String },
     /// WebSocket message parse error (for debugging)

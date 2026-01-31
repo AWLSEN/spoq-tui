@@ -695,7 +695,7 @@ where
                                     }
                                     KeyCode::Enter => {
                                         match state_clone {
-                                            VpsConfigState::InputFields { ref mode, ref ip, ref username, ref password, .. } => {
+                                            VpsConfigState::InputFields { ref mode, ref ip, ref password, .. } => {
                                                 use spoq::view_state::VpsConfigMode;
                                                 match mode {
                                                     VpsConfigMode::Remote => {
@@ -710,8 +710,8 @@ where
                                                             app.mark_dirty();
                                                             continue;
                                                         }
-                                                        // Start VPS replacement
-                                                        app.start_vps_replace(ip.clone(), username.clone(), password.clone());
+                                                        // Start VPS replacement (username is always "root")
+                                                        app.start_vps_replace(ip.clone(), password.clone());
                                                     }
                                                     VpsConfigMode::Local => {
                                                         app.start_local_conductor();
