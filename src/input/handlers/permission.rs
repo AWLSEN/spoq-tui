@@ -686,6 +686,27 @@ pub fn handle_claude_accounts_command(app: &mut App, cmd: &Command) -> bool {
             }
             true
         }
+        Command::ClaudeAccountsSelect => {
+            // Select highlighted account as primary
+            let account_id = match app.dashboard.overlay() {
+                Some(OverlayState::ClaudeAccounts { accounts, selected_index, .. }) => {
+                    accounts.get(*selected_index).map(|a| a.id.clone())
+                }
+                _ => None,
+            };
+            if let Some(account_id) = account_id {
+                if let Some(ref sender) = app.ws_sender {
+                    let msg = crate::websocket::messages::WsOutgoingMessage::ClaudeAccountSelectRequest(
+                        crate::websocket::messages::WsClaudeAccountSelectRequest::new(
+                            uuid::Uuid::new_v4().to_string(),
+                            account_id,
+                        ),
+                    );
+                    let _ = sender.try_send(msg);
+                }
+            }
+            true
+        }
         _ => false,
     }
 }

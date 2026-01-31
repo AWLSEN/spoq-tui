@@ -612,6 +612,25 @@ impl WsClaudeAccountRemoveRequest {
     }
 }
 
+/// Request to select a Claude account as primary (sent to server)
+#[derive(Debug, Clone, Serialize)]
+pub struct WsClaudeAccountSelectRequest {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub request_id: String,
+    pub account_id: String,
+}
+
+impl WsClaudeAccountSelectRequest {
+    pub fn new(request_id: String, account_id: String) -> Self {
+        Self {
+            type_: "claude_account_select".to_string(),
+            request_id,
+            account_id,
+        }
+    }
+}
+
 /// Steering message to inject during streaming
 ///
 /// Allows users to send additional instructions while Claude is streaming.
@@ -649,6 +668,7 @@ pub enum WsOutgoingMessage {
     ClaudeAccountsListRequest(WsClaudeAccountsListRequest),
     ClaudeAccountAddRequest(WsClaudeAccountAddRequest),
     ClaudeAccountRemoveRequest(WsClaudeAccountRemoveRequest),
+    ClaudeAccountSelectRequest(WsClaudeAccountSelectRequest),
 }
 
 #[cfg(test)]

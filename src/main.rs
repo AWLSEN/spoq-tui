@@ -253,7 +253,15 @@ fn main() -> Result<()> {
                         ),
                     )));
                 }
-                app.ws_sender = Some(sender);
+                app.ws_sender = Some(sender.clone());
+
+                // Request accounts list on connect to populate header badge
+                let msg = spoq::websocket::WsOutgoingMessage::ClaudeAccountsListRequest(
+                    spoq::websocket::messages::WsClaudeAccountsListRequest::new(
+                        uuid::Uuid::new_v4().to_string(),
+                    ),
+                );
+                let _ = sender.try_send(msg);
             }
             Err(e) => {
                 if let Some(ref tx) = app.debug_tx {
@@ -653,6 +661,51 @@ where
                                             }
                                         }
                                         app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        // Select highlighted account as primary
+                                        let account_id = if let Some(spoq::view_state::OverlayState::ClaudeAccounts { ref accounts, selected_index, .. }) = app.dashboard.overlay() {
+                                            accounts.get(*selected_index).map(|a| a.id.clone())
+                                        } else {
+                                            None
+                                        };
+                                        if let Some(account_id) = account_id {
+                                            if let Some(ref sender) = app.ws_sender {
+                                                let msg = spoq::websocket::WsOutgoingMessage::ClaudeAccountSelectRequest(
+                                                    spoq::websocket::messages::WsClaudeAccountSelectRequest::new(
+                                                        uuid::Uuid::new_v4().to_string(),
+                                                        account_id,
+                                                    ),
+                                                );
+                                                let _ = sender.try_send(msg);
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Char('1'..='9') => {
+                                        // Quick select by number (1=first, 2=second, etc.)
+                                        let index = if let KeyCode::Char(c) = key.code {
+                                            c.to_digit(10).unwrap_or(0) as usize - 1
+                                        } else {
+                                            0
+                                        };
+                                        let account_id = if let Some(spoq::view_state::OverlayState::ClaudeAccounts { ref accounts, .. }) = app.dashboard.overlay() {
+                                            accounts.get(index).map(|a| a.id.clone())
+                                        } else {
+                                            None
+                                        };
+                                        if let Some(account_id) = account_id {
+                                            if let Some(ref sender) = app.ws_sender {
+                                                let msg = spoq::websocket::WsOutgoingMessage::ClaudeAccountSelectRequest(
+                                                    spoq::websocket::messages::WsClaudeAccountSelectRequest::new(
+                                                        uuid::Uuid::new_v4().to_string(),
+                                                        account_id,
+                                                    ),
+                                                );
+                                                let _ = sender.try_send(msg);
+                                            }
+                                        }
                                         continue;
                                     }
                                     _ => {

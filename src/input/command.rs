@@ -269,6 +269,8 @@ pub enum Command {
     ClaudeAccountsMoveUp,
     /// Move selection down
     ClaudeAccountsMoveDown,
+    /// Select the highlighted account as primary (Enter/1-9)
+    ClaudeAccountsSelect,
 
     // =========================================================================
     // VPS Config Commands (/vps overlay)
@@ -427,6 +429,7 @@ impl Command {
             Command::VpsConfigSubmit => "Submit VPS config",
             Command::VpsConfigToggleMode => "Toggle VPS config mode",
             Command::VpsConfigClose => "Close VPS config",
+            Command::ClaudeAccountsSelect => "Select account as primary",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

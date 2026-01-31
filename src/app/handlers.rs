@@ -2045,6 +2045,13 @@ impl App {
             }
             AppMessage::ClaudeAccountsListReceived { accounts } => {
                 use crate::view_state::dashboard_view::OverlayState;
+
+                // Update current account in session state (priority 0 = current)
+                let current = accounts.iter()
+                    .find(|a| a.priority == 0)
+                    .map(|a| a.email.clone().unwrap_or_else(|| a.label.clone()));
+                self.session_state.set_current_account(current);
+
                 if let Some(OverlayState::ClaudeAccounts {
                     accounts: ref mut accts,
                     ref mut adding,

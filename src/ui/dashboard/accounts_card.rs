@@ -44,6 +44,7 @@ pub fn render(
     } else {
         for (i, account) in accounts.iter().enumerate() {
             let is_selected = i == selected_index;
+            let is_current = account.priority == 0; // Priority 0 = current/primary account
             let pointer = if is_selected { " > " } else { "   " };
 
             let status_indicator = match account.status.as_str() {
@@ -73,7 +74,7 @@ pub fn render(
             // Use email as display name if available, otherwise label
             let display_name = account.email.as_deref().unwrap_or(&account.label);
 
-            let spans = vec![
+            let mut spans = vec![
                 Span::raw(pointer),
                 Span::styled(
                     format!("{}. ", i + 1),
@@ -87,6 +88,14 @@ pub fn render(
                     Style::default().fg(Color::DarkGray),
                 ),
             ];
+
+            // Show "current" indicator for primary account (priority 0)
+            if is_current {
+                spans.push(Span::styled(
+                    " ← current",
+                    Style::default().fg(Color::Cyan),
+                ));
+            }
 
             lines.push(Line::from(spans));
         }
@@ -114,6 +123,9 @@ pub fn render(
     let add_key_color = if adding { Color::DarkGray } else { Color::Cyan };
     let add_label_color = if adding { Color::DarkGray } else { Color::Gray };
     lines.push(Line::from(vec![
+        Span::styled(" [Enter/1-9] ", Style::default().fg(Color::Cyan)),
+        Span::styled("Select", Style::default().fg(Color::Gray)),
+        Span::raw("  "),
         Span::styled(" [A] ", Style::default().fg(add_key_color)),
         Span::styled(if adding { "Adding..." } else { "Add" }, Style::default().fg(add_label_color)),
         Span::raw("  "),
