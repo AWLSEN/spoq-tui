@@ -311,6 +311,10 @@ pub enum AppMessage {
         verification_url: String,
         user_code: String,
     },
+    /// Local conductor process started — store handle for cleanup
+    LocalConductorStarted {
+        child: std::sync::Arc<tokio::sync::Mutex<Option<tokio::process::Child>>>,
+    },
     // =========================================================================
     // Sync Messages
     // =========================================================================

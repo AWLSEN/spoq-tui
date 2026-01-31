@@ -331,6 +331,8 @@ pub struct App {
     pub credentials: Credentials,
     /// VPS URL for the current session (fetched from API at startup)
     pub vps_url: Option<String>,
+    /// Handle to local conductor process (killed on drop via kill_on_drop)
+    pub local_conductor: Option<tokio::process::Child>,
     /// System statistics (CPU, RAM) for dashboard header
     pub system_stats: SystemStats,
     /// Timestamp of last Ctrl+C press (for double-press exit detection)
@@ -559,6 +561,7 @@ impl App {
             credentials_manager,
             credentials,
             vps_url,
+            local_conductor: None,
             system_stats: SystemStats::default(),
             last_ctrl_c_time: None,
             cursor_blink: CursorBlinkState::default(),

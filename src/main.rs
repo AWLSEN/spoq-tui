@@ -684,22 +684,39 @@ where
                                         app.mark_dirty();
                                         continue;
                                     }
+                                    KeyCode::Left | KeyCode::Right => {
+                                        if let VpsConfigState::InputFields { field_focus, .. } = state_clone {
+                                            if field_focus == 0 {
+                                                app.dashboard.vps_config_toggle_mode();
+                                                app.mark_dirty();
+                                            }
+                                        }
+                                        continue;
+                                    }
                                     KeyCode::Enter => {
                                         match state_clone {
-                                            VpsConfigState::InputFields { ip, username, password, .. } => {
-                                                // Validate inputs
-                                                if ip.is_empty() {
-                                                    app.dashboard.vps_config_set_error("IP address is required".to_string());
-                                                    app.mark_dirty();
-                                                    continue;
+                                            VpsConfigState::InputFields { ref mode, ref ip, ref username, ref password, .. } => {
+                                                use spoq::view_state::VpsConfigMode;
+                                                match mode {
+                                                    VpsConfigMode::Remote => {
+                                                        // Validate inputs
+                                                        if ip.is_empty() {
+                                                            app.dashboard.vps_config_set_error("IP address is required".to_string());
+                                                            app.mark_dirty();
+                                                            continue;
+                                                        }
+                                                        if password.len() < 8 {
+                                                            app.dashboard.vps_config_set_error("Password must be at least 8 characters".to_string());
+                                                            app.mark_dirty();
+                                                            continue;
+                                                        }
+                                                        // Start VPS replacement
+                                                        app.start_vps_replace(ip.clone(), username.clone(), password.clone());
+                                                    }
+                                                    VpsConfigMode::Local => {
+                                                        app.start_local_conductor();
+                                                    }
                                                 }
-                                                if password.len() < 8 {
-                                                    app.dashboard.vps_config_set_error("Password must be at least 8 characters".to_string());
-                                                    app.mark_dirty();
-                                                    continue;
-                                                }
-                                                // Start VPS replacement
-                                                app.start_vps_replace(ip, username, password);
                                                 app.mark_dirty();
                                             }
                                             VpsConfigState::Success { .. } => {

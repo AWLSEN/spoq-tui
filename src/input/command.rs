@@ -283,6 +283,8 @@ pub enum Command {
     VpsConfigBackspace,
     /// Submit the form (Enter)
     VpsConfigSubmit,
+    /// Toggle VPS config mode (Left/Right arrow on mode field)
+    VpsConfigToggleMode,
     /// Close the VPS config overlay (Escape)
     VpsConfigClose,
 
@@ -423,6 +425,7 @@ impl Command {
             Command::VpsConfigTypeChar(_) => "Type in VPS config field",
             Command::VpsConfigBackspace => "Backspace in VPS config field",
             Command::VpsConfigSubmit => "Submit VPS config",
+            Command::VpsConfigToggleMode => "Toggle VPS config mode",
             Command::VpsConfigClose => "Close VPS config",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",

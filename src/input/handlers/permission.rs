@@ -847,24 +847,41 @@ pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
             true
         }
 
+        Command::VpsConfigToggleMode => {
+            if matches!(state, VpsConfigState::InputFields { field_focus: 0, .. }) {
+                app.dashboard.vps_config_toggle_mode();
+                app.mark_dirty();
+            }
+            true
+        }
+
         Command::VpsConfigSubmit => {
             match state {
-                VpsConfigState::InputFields { ip, username, password, .. } => {
-                    // Validate inputs
-                    if ip.is_empty() {
-                        app.dashboard.vps_config_set_error("IP address is required".to_string());
-                        app.mark_dirty();
-                        return true;
-                    }
-                    if password.len() < 8 {
-                        app.dashboard.vps_config_set_error("Password must be at least 8 characters".to_string());
-                        app.mark_dirty();
-                        return true;
-                    }
+                VpsConfigState::InputFields { ref mode, ref ip, ref username, ref password, .. } => {
+                    use crate::view_state::VpsConfigMode;
+                    match mode {
+                        VpsConfigMode::Remote => {
+                            // Validate inputs
+                            if ip.is_empty() {
+                                app.dashboard.vps_config_set_error("IP address is required".to_string());
+                                app.mark_dirty();
+                                return true;
+                            }
+                            if password.len() < 8 {
+                                app.dashboard.vps_config_set_error("Password must be at least 8 characters".to_string());
+                                app.mark_dirty();
+                                return true;
+                            }
 
-                    // Start the VPS replacement process
-                    app.start_vps_replace(ip, username, password);
-                    app.mark_dirty();
+                            // Start the VPS replacement process
+                            app.start_vps_replace(ip.clone(), username.clone(), password.clone());
+                            app.mark_dirty();
+                        }
+                        VpsConfigMode::Local => {
+                            app.start_local_conductor();
+                            app.mark_dirty();
+                        }
+                    }
                 }
                 VpsConfigState::Success { .. } => {
                     // Dismiss the overlay and reconnect WebSocket

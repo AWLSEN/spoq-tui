@@ -589,6 +589,88 @@ impl App {
         });
     }
 
+    /// Start local conductor: download binary if needed, start process, wait for health.
+    /// Full implementation in Phase 6 (conductor/local module).
+    pub fn start_local_conductor(&mut self) {
+        use crate::view_state::VpsConfigState;
+
+        self.dashboard.update_vps_config_state(VpsConfigState::Provisioning {
+            phase: "Checking conductor binary...".to_string(),
+        });
+
+        let tx = self.message_tx.clone();
+        let owner_id = self.credentials.user_id.clone().unwrap_or_else(|| "local-user".to_string());
+
+        tokio::spawn(async move {
+            use crate::app::AppMessage;
+            use crate::conductor::local;
+
+            let port = local::default_port();
+
+            // Step 1: Check if already running
+            if local::is_running(port).await {
+                let vps_url = format!("http://127.0.0.1:{}", port);
+                let _ = tx.send(AppMessage::VpsConfigSuccess {
+                    vps_url,
+                    hostname: "localhost".to_string(),
+                });
+                return;
+            }
+
+            // Step 2: Download if binary not present
+            if !local::conductor_exists() {
+                let _ = tx.send(AppMessage::VpsConfigProgress {
+                    phase: "Downloading conductor...".to_string(),
+                });
+                if let Err(e) = local::download_conductor().await {
+                    let _ = tx.send(AppMessage::VpsConfigFailed {
+                        error: format!("Download failed: {}", e),
+                        is_auth_error: false,
+                    });
+                    return;
+                }
+            }
+
+            // Step 3: Start conductor process
+            let _ = tx.send(AppMessage::VpsConfigProgress {
+                phase: "Starting local conductor...".to_string(),
+            });
+            match local::start_conductor(port, &owner_id).await {
+                Ok(child) => {
+                    let _ = tx.send(AppMessage::LocalConductorStarted {
+                        child: std::sync::Arc::new(tokio::sync::Mutex::new(Some(child))),
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(AppMessage::VpsConfigFailed {
+                        error: format!("Failed to start: {}", e),
+                        is_auth_error: false,
+                    });
+                    return;
+                }
+            }
+
+            // Step 4: Wait for health
+            let _ = tx.send(AppMessage::VpsConfigProgress {
+                phase: "Waiting for conductor...".to_string(),
+            });
+            if let Err(e) = local::wait_for_health(port, 30).await {
+                let _ = tx.send(AppMessage::VpsConfigFailed {
+                    error: e,
+                    is_auth_error: false,
+                });
+                return;
+            }
+
+            // Step 5: Success
+            let vps_url = format!("http://127.0.0.1:{}", port);
+            let _ = tx.send(AppMessage::VpsConfigSuccess {
+                vps_url,
+                hostname: "localhost".to_string(),
+            });
+        });
+    }
+
     /// Reconnect the WebSocket to the current VPS URL.
     ///
     /// This should be called after a successful VPS swap to establish

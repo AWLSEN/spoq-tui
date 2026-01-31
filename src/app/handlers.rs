@@ -2059,6 +2059,11 @@ impl App {
                 }
                 self.mark_dirty();
             }
+            AppMessage::LocalConductorStarted { child } => {
+                if let Ok(mut guard) = child.try_lock() {
+                    self.local_conductor = guard.take();
+                }
+            }
             AppMessage::VpsAuthComplete { access_token, refresh_token, expires_in, user_id } => {
                 // Update credentials
                 self.credentials.access_token = Some(access_token.clone());
