@@ -812,8 +812,9 @@ pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
         }
 
         Command::VpsConfigTypeChar(c) => {
-            // In Error state, check for 'r'/'R' to retry
-            if let VpsConfigState::Error { is_auth_error, .. } = state {
+            // In Error state, check for 'r'/'R' to retry or 'l'/'L' to login
+            if let VpsConfigState::Error { ref error, .. } = state {
+                let is_auth_error = error.is_auth_error();
                 if is_auth_error && (*c == 'l' || *c == 'L') {
                     app.start_vps_reauth();
                     app.mark_dirty();
@@ -861,14 +862,21 @@ pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
                     use crate::view_state::VpsConfigMode;
                     match mode {
                         VpsConfigMode::Remote => {
-                            // Validate inputs
-                            if ip.is_empty() {
-                                app.dashboard.vps_config_set_error("IP address is required".to_string());
-                                app.mark_dirty();
-                                return true;
-                            }
-                            if password.len() < 8 {
-                                app.dashboard.vps_config_set_error("Password must be at least 8 characters".to_string());
+                            // Validate inputs - collect all errors
+                            let ip_error = if ip.is_empty() {
+                                Some("IP address is required".to_string())
+                            } else {
+                                None
+                            };
+                            let password_error = if password.len() < 8 {
+                                Some("Password must be at least 8 characters".to_string())
+                            } else {
+                                None
+                            };
+
+                            // If any errors, set them and return
+                            if ip_error.is_some() || password_error.is_some() {
+                                app.dashboard.vps_config_set_field_errors(ip_error, password_error);
                                 app.mark_dirty();
                                 return true;
                             }

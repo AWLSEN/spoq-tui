@@ -940,7 +940,7 @@ impl DashboardState {
 
     /// Show the VPS config overlay
     pub fn show_vps_config(&mut self) {
-        use crate::view_state::{VpsConfigMode, VpsConfigState};
+        use crate::view_state::{FieldErrors, VpsConfigMode, VpsConfigState};
 
         self.overlay = Some(OverlayState::VpsConfig {
             state: VpsConfigState::InputFields {
@@ -948,7 +948,7 @@ impl DashboardState {
                 ip: String::new(),
                 password: String::new(),
                 field_focus: 0,
-                error: None,
+                errors: FieldErrors::default(),
             },
             anchor_y: 5,
         });
@@ -1011,9 +1011,9 @@ impl DashboardState {
         use crate::view_state::VpsConfigState;
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            if let VpsConfigState::InputFields { ref mut ip, ref mut password, field_focus, ref mut error, .. } = state {
-                // Clear any validation error when user types
-                *error = None;
+            if let VpsConfigState::InputFields { ref mut ip, ref mut password, field_focus, ref mut errors, .. } = state {
+                // Clear validation errors when user types
+                errors.clear();
                 match field_focus {
                     0 => {} // Mode selector — no typed chars
                     1 => ip.push(c),
@@ -1029,9 +1029,9 @@ impl DashboardState {
         use crate::view_state::VpsConfigState;
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            if let VpsConfigState::InputFields { ref mut ip, ref mut password, field_focus, ref mut error, .. } = state {
-                // Clear any validation error when user types
-                *error = None;
+            if let VpsConfigState::InputFields { ref mut ip, ref mut password, field_focus, ref mut errors, .. } = state {
+                // Clear validation errors when user types
+                errors.clear();
                 match field_focus {
                     0 => {} // Mode selector — no backspace
                     1 => { ip.pop(); }
@@ -1042,13 +1042,40 @@ impl DashboardState {
         }
     }
 
-    /// Set a validation error on the VPS config overlay
-    pub fn vps_config_set_error(&mut self, error_msg: String) {
+    /// Set a validation error on the VPS config IP field
+    pub fn vps_config_set_ip_error(&mut self, error_msg: String) {
         use crate::view_state::VpsConfigState;
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            if let VpsConfigState::InputFields { ref mut error, .. } = state {
-                *error = Some(error_msg);
+            if let VpsConfigState::InputFields { ref mut errors, .. } = state {
+                errors.ip = Some(error_msg);
+            }
+        }
+    }
+
+    /// Set a validation error on the VPS config password field
+    pub fn vps_config_set_password_error(&mut self, error_msg: String) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut errors, .. } = state {
+                errors.password = Some(error_msg);
+            }
+        }
+    }
+
+    /// Set field-specific validation errors on the VPS config overlay
+    pub fn vps_config_set_field_errors(
+        &mut self,
+        ip_error: Option<String>,
+        password_error: Option<String>,
+    ) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut errors, .. } = state {
+                errors.ip = ip_error;
+                errors.password = password_error;
             }
         }
     }
@@ -1063,19 +1090,22 @@ impl DashboardState {
         self.vps_pending_credentials.take()
     }
 
-    /// Retry from error state - reset to InputFields keeping values
+    /// Retry from error state - reset to InputFields with preserved input
     pub fn vps_config_retry(&mut self) {
-        use crate::view_state::{VpsConfigMode, VpsConfigState};
+        use crate::view_state::{FieldErrors, VpsConfigMode, VpsConfigState};
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            // Preserve the InputFields state if we're in Error
-            if matches!(state, VpsConfigState::Error { .. }) {
+            // Extract saved_input from Error state if present
+            if let VpsConfigState::Error { saved_input, .. } = state {
+                let (ip, password) = saved_input
+                    .take()
+                    .unwrap_or_else(|| (String::new(), String::new()));
                 *state = VpsConfigState::InputFields {
                     mode: VpsConfigMode::Remote,
-                    ip: String::new(),
-                    password: String::new(),
-                    field_focus: 0,
-                    error: None,
+                    ip,
+                    password,
+                    field_focus: 1, // Focus on IP field for editing
+                    errors: FieldErrors::default(),
                 };
             }
         }

@@ -351,14 +351,15 @@ impl App {
     /// 3. Backend auto-confirms VPS when healthy
     /// 4. Send success/failure messages back to the UI
     pub fn start_vps_replace(&mut self, ip: String, password: String) {
-        use crate::view_state::VpsConfigState;
+        use crate::view_state::{ProvisioningPhase, VpsConfigState};
 
         // Store credentials for retry after re-auth (username is always "root")
         self.dashboard.set_vps_pending_credentials(ip.clone(), password.clone());
 
         // Update overlay to Provisioning state
         self.dashboard.update_vps_config_state(VpsConfigState::Provisioning {
-            phase: "Connecting to central API...".to_string(),
+            phase: ProvisioningPhase::Connecting,
+            spinner_frame: 0,
         });
 
         // Clone necessary data for the async task
@@ -517,10 +518,11 @@ impl App {
     /// Triggers the OAuth device flow, updates the UI with verification URL/code,
     /// and on success sends new credentials back to the app.
     pub fn start_vps_reauth(&mut self) {
-        use crate::view_state::VpsConfigState;
+        use crate::view_state::{ProvisioningPhase, VpsConfigState};
 
         self.dashboard.update_vps_config_state(VpsConfigState::Provisioning {
-            phase: "Starting authentication...".to_string(),
+            phase: ProvisioningPhase::Connecting,
+            spinner_frame: 0,
         });
 
         let tx = self.message_tx.clone();
@@ -616,10 +618,11 @@ impl App {
     /// Start local conductor: download binary if needed, start process, wait for health.
     /// Full implementation in Phase 6 (conductor/local module).
     pub fn start_local_conductor(&mut self) {
-        use crate::view_state::VpsConfigState;
+        use crate::view_state::{ProvisioningPhase, VpsConfigState};
 
         self.dashboard.update_vps_config_state(VpsConfigState::Provisioning {
-            phase: "Checking conductor binary...".to_string(),
+            phase: ProvisioningPhase::Connecting,
+            spinner_frame: 0,
         });
 
         let tx = self.message_tx.clone();

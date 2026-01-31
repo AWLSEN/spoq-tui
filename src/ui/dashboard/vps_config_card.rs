@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use crate::ui::theme::{COLOR_DIM, COLOR_DIALOG_BG, COLOR_INPUT_BG, COLOR_TOOL_SUCCESS};
-use crate::view_state::{VpsConfigMode, VpsConfigState};
+use crate::view_state::{FieldErrors, ProvisioningPhase, VpsConfigMode, VpsConfigState, VpsError};
 
 /// Calculate the height needed for the VPS config card based on state.
 ///
@@ -23,7 +23,7 @@ use crate::view_state::{VpsConfigMode, VpsConfigState};
 /// Input fields with borders need 3 rows (top border + content + bottom border).
 pub fn calculate_height(state: &VpsConfigState) -> u16 {
     match state {
-        VpsConfigState::InputFields { mode, error, .. } => {
+        VpsConfigState::InputFields { mode, errors, .. } => {
             match mode {
                 VpsConfigMode::Remote => {
                     // Dynamic height calculation:
@@ -33,17 +33,20 @@ pub fn calculate_height(state: &VpsConfigState) -> u16 {
                     // - Blank: 1
                     // - IP label: 1
                     // - IP input box (with border): 3
+                    // - IP error (optional): 1
                     // - Blank: 1
                     // - Username (static): 1
                     // - Blank: 1
                     // - Password label: 1
                     // - Password input box (with border): 3
-                    // - Error (optional): 1
+                    // - Password error (optional): 1
                     // - Blank: 1
                     // - Help: 1
-                    // Total without error: 17
-                    // Total with error: 18
-                    if error.is_some() { 18 } else { 17 }
+                    // Base: 17
+                    let mut height = 17u16;
+                    if errors.ip.is_some() { height += 1; }
+                    if errors.password.is_some() { height += 1; }
+                    height
                 }
                 VpsConfigMode::Local => {
                     // - Title: 1
@@ -121,21 +124,21 @@ pub fn render(frame: &mut Frame, area: Rect, state: &VpsConfigState) {
             ip,
             password,
             field_focus,
-            error,
+            errors,
         } => {
-            render_input_fields(frame, area, mode, ip, password, *field_focus, error.as_deref());
+            render_input_fields(frame, area, mode, ip, password, *field_focus, errors);
         }
-        VpsConfigState::Provisioning { phase } => {
-            render_provisioning(frame, area, phase);
+        VpsConfigState::Provisioning { phase, spinner_frame } => {
+            render_provisioning(frame, area, phase, *spinner_frame);
         }
         VpsConfigState::Success { hostname } => {
             render_success(frame, area, hostname);
         }
-        VpsConfigState::Error { error, is_auth_error } => {
-            render_error(frame, area, error, *is_auth_error);
+        VpsConfigState::Error { error, .. } => {
+            render_error(frame, area, error);
         }
-        VpsConfigState::Authenticating { verification_url, user_code } => {
-            render_authenticating(frame, area, verification_url, user_code);
+        VpsConfigState::Authenticating { verification_url, user_code, spinner_frame } => {
+            render_authenticating(frame, area, verification_url, user_code, *spinner_frame);
         }
     }
 }
@@ -148,10 +151,10 @@ fn render_input_fields(
     ip: &str,
     password: &str,
     field_focus: u8,
-    error: Option<&str>,
+    errors: &FieldErrors,
 ) {
     match mode {
-        VpsConfigMode::Remote => render_remote_fields(frame, area, ip, password, field_focus, error),
+        VpsConfigMode::Remote => render_remote_fields(frame, area, ip, password, field_focus, errors),
         VpsConfigMode::Local => render_local_fields(frame, area, field_focus),
     }
 }
@@ -197,7 +200,7 @@ fn render_remote_fields(
     ip: &str,
     password: &str,
     field_focus: u8,
-    error: Option<&str>,
+    errors: &FieldErrors,
 ) {
     // Build constraints dynamically based on error presence
     // CRITICAL: Input boxes with borders need 3 rows (top + content + bottom)
@@ -208,30 +211,44 @@ fn render_remote_fields(
         Constraint::Length(1), // 3: Blank
         Constraint::Length(1), // 4: IP label
         Constraint::Length(3), // 5: IP input box (with border)
-        Constraint::Length(1), // 6: Blank
-        Constraint::Length(1), // 7: Username (static)
-        Constraint::Length(1), // 8: Blank
-        Constraint::Length(1), // 9: Password label
-        Constraint::Length(3), // 10: Password input box (with border)
     ];
 
-    // Track indices for dynamic elements
-    let error_idx: Option<usize>;
-    let help_idx: usize;
+    // Track dynamic indices
+    let mut next_idx = 6;
 
-    if error.is_some() {
-        constraints.push(Constraint::Length(1)); // 11: Error
-        error_idx = Some(11);
-        constraints.push(Constraint::Length(1)); // 12: Blank
-        constraints.push(Constraint::Length(1)); // 13: Help
-        help_idx = 13;
+    // IP error (optional)
+    let ip_error_idx = if errors.ip.is_some() {
+        constraints.push(Constraint::Length(1));
+        let idx = next_idx;
+        next_idx += 1;
+        Some(idx)
     } else {
-        error_idx = None;
-        constraints.push(Constraint::Length(1)); // 11: Blank
-        constraints.push(Constraint::Length(1)); // 12: Help
-        help_idx = 12;
-    }
+        None
+    };
 
+    constraints.push(Constraint::Length(1)); // Blank
+    let username_idx = next_idx + 1;
+    constraints.push(Constraint::Length(1)); // Username (static)
+    constraints.push(Constraint::Length(1)); // Blank
+    let password_label_idx = next_idx + 3;
+    constraints.push(Constraint::Length(1)); // Password label
+    let password_input_idx = next_idx + 4;
+    constraints.push(Constraint::Length(3)); // Password input box (with border)
+    next_idx += 5;
+
+    // Password error (optional)
+    let password_error_idx = if errors.password.is_some() {
+        constraints.push(Constraint::Length(1));
+        let idx = next_idx;
+        next_idx += 1;
+        Some(idx)
+    } else {
+        None
+    };
+
+    constraints.push(Constraint::Length(1)); // Blank
+    let help_idx = next_idx + 1;
+    constraints.push(Constraint::Length(1)); // Help
     constraints.push(Constraint::Min(0)); // Flexible remaining space
 
     let chunks = Layout::default()
@@ -252,26 +269,44 @@ fn render_remote_fields(
     // IP Address field (label at index 4, input at index 5)
     render_input_box(frame, chunks[4], chunks[5], "VPS IP Address", ip, field_focus == 1, false);
 
+    // IP error (if present)
+    if let Some(idx) = ip_error_idx {
+        if let Some(ref err) = errors.ip {
+            let error_line = Line::from(vec![
+                Span::styled("  \u{2717} ", Style::default().fg(Color::Red)),
+                Span::styled(err.clone(), Style::default().fg(Color::Red)),
+            ]);
+            frame.render_widget(Paragraph::new(error_line), chunks[idx]);
+        }
+    }
+
     // Username (static, non-editable)
     let username_line = Line::from(vec![
         Span::styled("  SSH Username: ", Style::default().fg(COLOR_DIM)),
         Span::styled("root", Style::default().fg(Color::White)),
     ]);
-    frame.render_widget(Paragraph::new(username_line), chunks[7]);
+    frame.render_widget(Paragraph::new(username_line), chunks[username_idx]);
 
-    // Password field (label at index 9, input at index 10)
-    render_input_box(frame, chunks[9], chunks[10], "SSH Password", password, field_focus == 2, true);
+    // Password field
+    render_input_box(
+        frame,
+        chunks[password_label_idx],
+        chunks[password_input_idx],
+        "SSH Password",
+        password,
+        field_focus == 2,
+        true,
+    );
 
-    // Error message (if present)
-    if let Some(idx) = error_idx {
-        let error_line = Line::from(vec![
-            Span::styled("\u{2717} ", Style::default().fg(Color::Red)), // X mark
-            Span::styled(
-                error.unwrap_or(""),
-                Style::default().fg(Color::Red),
-            ),
-        ]);
-        frame.render_widget(Paragraph::new(error_line).alignment(Alignment::Center), chunks[idx]);
+    // Password error (if present)
+    if let Some(idx) = password_error_idx {
+        if let Some(ref err) = errors.password {
+            let error_line = Line::from(vec![
+                Span::styled("  \u{2717} ", Style::default().fg(Color::Red)),
+                Span::styled(err.clone(), Style::default().fg(Color::Red)),
+            ]);
+            frame.render_widget(Paragraph::new(error_line), chunks[idx]);
+        }
     }
 
     // Help line
@@ -407,17 +442,20 @@ fn render_input_box(
     frame.render_widget(input_widget, bordered_area);
 }
 
+/// Spinner animation frames
+const SPINNER_FRAMES: [char; 4] = ['◐', '◓', '◑', '◒'];
+
 /// Render the provisioning state
-fn render_provisioning(frame: &mut Frame, area: Rect, phase: &str) {
+fn render_provisioning(frame: &mut Frame, area: Rect, phase: &ProvisioningPhase, spinner_frame: usize) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // Title
             Constraint::Length(1), // Blank
             Constraint::Length(1), // Blank
-            Constraint::Length(1), // Phase text
+            Constraint::Length(1), // Spinner + message
             Constraint::Length(1), // Blank
-            Constraint::Length(1), // Secondary text
+            Constraint::Length(1), // Progress/secondary text
             Constraint::Min(0),
         ])
         .split(area);
@@ -432,11 +470,27 @@ fn render_provisioning(frame: &mut Frame, area: Rect, phase: &str) {
         chunks[0],
     );
 
-    // Phase text - yellow + bold
-    let phase_line = Line::from(Span::styled(
-        phase,
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-    ));
+    // Spinner + phase message
+    let spinner_char = SPINNER_FRAMES[spinner_frame % SPINNER_FRAMES.len()];
+    let phase_message = match phase {
+        ProvisioningPhase::Connecting => "Connecting...".to_string(),
+        ProvisioningPhase::ReplacingVps => "Replacing VPS...".to_string(),
+        ProvisioningPhase::WaitingForHealth { progress, message } => {
+            format!("{}% - {}", progress, message)
+        }
+        ProvisioningPhase::Finalizing => "Finalizing...".to_string(),
+    };
+
+    let phase_line = Line::from(vec![
+        Span::styled(
+            format!("{} ", spinner_char),
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::styled(
+            phase_message,
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+    ]);
     frame.render_widget(
         Paragraph::new(phase_line).alignment(Alignment::Center),
         chunks[3],
@@ -514,7 +568,7 @@ fn render_success(frame: &mut Frame, area: Rect, hostname: &str) {
 }
 
 /// Render the error state
-fn render_error(frame: &mut Frame, area: Rect, error: &str, is_auth_error: bool) {
+fn render_error(frame: &mut Frame, area: Rect, error: &VpsError) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -543,7 +597,7 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str, is_auth_error: bool)
     let error_header = Line::from(vec![
         Span::styled("\u{2717} ", Style::default().fg(Color::Red)), // X mark
         Span::styled(
-            if is_auth_error { "Session expired" } else { "Failed to replace VPS" },
+            error.header(),
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ),
     ]);
@@ -553,10 +607,11 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str, is_auth_error: bool)
     );
 
     // Error details (truncated to 60 chars)
-    let display_error = if error.len() > 60 {
-        format!("{}...", &error[..57])
+    let error_message = error.user_message();
+    let display_error = if error_message.len() > 60 {
+        format!("{}...", &error_message[..57])
     } else {
-        error.to_string()
+        error_message
     };
     let error_details = Line::from(Span::styled(
         display_error,
@@ -568,6 +623,7 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str, is_auth_error: bool)
     );
 
     // Help line - different options for auth errors
+    let is_auth_error = error.is_auth_error();
     let help = if is_auth_error {
         Line::from(vec![
             Span::styled("[L]", Style::default().fg(Color::Green)),
@@ -590,7 +646,13 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str, is_auth_error: bool)
 }
 
 /// Render the authenticating state (device flow)
-fn render_authenticating(frame: &mut Frame, area: Rect, verification_url: &str, user_code: &str) {
+fn render_authenticating(
+    frame: &mut Frame,
+    area: Rect,
+    verification_url: &str,
+    user_code: &str,
+    spinner_frame: usize,
+) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -602,7 +664,7 @@ fn render_authenticating(frame: &mut Frame, area: Rect, verification_url: &str, 
             Constraint::Length(1), // Blank
             Constraint::Length(1), // Code
             Constraint::Length(1), // Blank
-            Constraint::Length(1), // Status
+            Constraint::Length(1), // Status with spinner
             Constraint::Min(0),
         ])
         .split(area);
@@ -650,11 +712,18 @@ fn render_authenticating(frame: &mut Frame, area: Rect, verification_url: &str, 
         chunks[6],
     );
 
-    // Status
-    let status = Line::from(Span::styled(
-        "Waiting for authorization...",
-        Style::default().fg(Color::Yellow),
-    ));
+    // Status with spinner
+    let spinner_char = SPINNER_FRAMES[spinner_frame % SPINNER_FRAMES.len()];
+    let status = Line::from(vec![
+        Span::styled(
+            format!("{} ", spinner_char),
+            Style::default().fg(Color::Yellow),
+        ),
+        Span::styled(
+            "Waiting for authorization...",
+            Style::default().fg(Color::Yellow),
+        ),
+    ]);
     frame.render_widget(
         Paragraph::new(status).alignment(Alignment::Center),
         chunks[8],

@@ -430,18 +430,23 @@ impl VpsError {
 pub enum VpsConfigState {
     /// Input form for VPS credentials
     InputFields {
+        /// Current mode (Remote or Local)
         mode: VpsConfigMode,
+        /// VPS IP address
         ip: String,
+        /// SSH password
         password: String,
         /// Which field is focused: 0=mode, 1=IP, 2=password
         field_focus: u8,
-        /// Validation error message (shown below password field)
-        error: Option<String>,
+        /// Per-field validation errors
+        errors: FieldErrors,
     },
     /// Provisioning in progress
     Provisioning {
-        /// Current phase description (e.g., "Replacing VPS...", "Waiting for conductor...")
-        phase: String,
+        /// Current provisioning phase with progress
+        phase: ProvisioningPhase,
+        /// Spinner animation frame (0-3)
+        spinner_frame: usize,
     },
     /// VPS replacement succeeded
     Success {
@@ -450,10 +455,10 @@ pub enum VpsConfigState {
     },
     /// VPS replacement failed
     Error {
-        /// Error message
-        error: String,
-        /// Whether this is an auth error (show Login option instead of Retry)
-        is_auth_error: bool,
+        /// Categorized error with actions
+        error: VpsError,
+        /// Saved input for retry (ip, password)
+        saved_input: Option<(String, String)>,
     },
     /// Re-authenticating via device flow
     Authenticating {
@@ -461,6 +466,8 @@ pub enum VpsConfigState {
         verification_url: String,
         /// User code to display
         user_code: String,
+        /// Spinner animation frame (0-3)
+        spinner_frame: usize,
     },
 }
 

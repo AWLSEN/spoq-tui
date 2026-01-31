@@ -2076,9 +2076,33 @@ impl App {
             }
             // VpsConfig message handlers (Phase 7 implementation)
             AppMessage::VpsConfigProgress { phase } => {
-                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                use crate::view_state::dashboard_view::{OverlayState, ProvisioningPhase, VpsConfigState};
                 if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
-                    *state = VpsConfigState::Provisioning { phase };
+                    // Parse progress from phase string (e.g., "45% - Executing script")
+                    let provisioning_phase = if let Some(pct_idx) = phase.find('%') {
+                        if let Ok(pct) = phase[..pct_idx].trim().parse::<u8>() {
+                            let message = phase.get(pct_idx + 1..)
+                                .map(|s| s.trim_start_matches([' ', '-'].as_ref()).to_string())
+                                .unwrap_or_default();
+                            ProvisioningPhase::WaitingForHealth { progress: pct, message }
+                        } else {
+                            ProvisioningPhase::ReplacingVps
+                        }
+                    } else if phase.contains("Connecting") || phase.contains("Starting") {
+                        ProvisioningPhase::Connecting
+                    } else if phase.contains("Finalizing") {
+                        ProvisioningPhase::Finalizing
+                    } else {
+                        ProvisioningPhase::ReplacingVps
+                    };
+
+                    // Preserve spinner_frame if already in Provisioning state
+                    let spinner_frame = if let VpsConfigState::Provisioning { spinner_frame, .. } = state {
+                        *spinner_frame
+                    } else {
+                        0
+                    };
+                    *state = VpsConfigState::Provisioning { phase: provisioning_phase, spinner_frame };
                 }
                 self.mark_dirty();
             }
@@ -2115,16 +2139,38 @@ impl App {
             }
             AppMessage::VpsConfigFailed { error, is_auth_error } => {
                 tracing::error!("VPS config failed: {} (auth_error={})", error, is_auth_error);
-                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState, VpsError};
+
+                // Convert error string and flag to VpsError
+                let vps_error = if is_auth_error {
+                    VpsError::AuthExpired
+                } else if error.contains("Network") || error.contains("connection") {
+                    VpsError::Network(error.clone())
+                } else if error.contains("SSH") {
+                    VpsError::SshFailed(error.clone())
+                } else if error.contains("Timeout") || error.contains("timeout") {
+                    VpsError::Timeout
+                } else {
+                    VpsError::Unknown(error.clone())
+                };
+
+                // Get saved input from pending credentials
+                let saved_input = self.dashboard.take_vps_pending_credentials()
+                    .map(|(ip, _user, password)| (ip, password));
+
                 if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
-                    *state = VpsConfigState::Error { error, is_auth_error };
+                    *state = VpsConfigState::Error { error: vps_error, saved_input };
                 }
                 self.mark_dirty();
             }
             AppMessage::VpsAuthStarted { verification_url, user_code } => {
                 use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
                 if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
-                    *state = VpsConfigState::Authenticating { verification_url, user_code };
+                    *state = VpsConfigState::Authenticating {
+                        verification_url,
+                        user_code,
+                        spinner_frame: 0,
+                    };
                 }
                 self.mark_dirty();
             }

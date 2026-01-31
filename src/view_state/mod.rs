@@ -48,8 +48,8 @@ mod system_stats;
 // Re-export all public types
 pub use app_view::AppViewState;
 pub use dashboard_view::{
-    ClaudeLoginState, DashboardViewState, OverlayState, Progress, RenderContext, Theme, ThreadView,
-    VpsConfigMode, VpsConfigState,
+    ClaudeLoginState, DashboardViewState, FieldErrors, OverlayState, Progress, ProvisioningPhase,
+    RenderContext, Theme, ThreadView, VpsConfigMode, VpsConfigState, VpsError,
 };
 pub use scroll_state::ScrollState;
 pub use session_view::SessionViewState;
