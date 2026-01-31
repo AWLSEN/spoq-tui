@@ -124,6 +124,67 @@ pub fn run_preflight_checks(
     println!("Checking authentication...");
     let mut credentials = validate_credentials(runtime, &manager)?;
 
+    // Check if local conductor mode is configured
+    let spoq_config = crate::startup::config::SpoqConfig::load();
+    if spoq_config.is_local() {
+        use crate::conductor::local;
+
+        let port = local::default_port();
+        let conductor_url = spoq_config
+            .conductor_url
+            .clone()
+            .unwrap_or_else(|| format!("http://127.0.0.1:{}", port));
+
+        println!("Local conductor mode");
+
+        // Check if already running
+        let already_running = runtime.block_on(local::is_running(port));
+
+        if !already_running {
+            // Ensure binary exists
+            if !local::conductor_exists() {
+                return Err(PreflightError::HealthCheck(
+                    "Conductor binary not found. Run /vps to set up again.".to_string(),
+                ));
+            }
+
+            println!("   Starting conductor...");
+            let owner_id = credentials
+                .user_id
+                .clone()
+                .unwrap_or_else(|| "local-user".to_string());
+
+            let _child = runtime
+                .block_on(local::start_conductor(port, &owner_id))
+                .map_err(|e| PreflightError::HealthCheck(e))?;
+
+            runtime
+                .block_on(local::wait_for_health(port, 30))
+                .map_err(|e| PreflightError::HealthCheck(e))?;
+        }
+
+        println!("   Conductor ready at {}", conductor_url);
+
+        // Start debug system
+        let (debug_tx, debug_handle, debug_snapshot) = if config.enable_debug {
+            let debug_result = runtime.block_on(start_debug_system(config.debug_port));
+            (
+                debug_result.tx,
+                debug_result.server_handle,
+                debug_result.state_snapshot,
+            )
+        } else {
+            (None, None, None)
+        };
+
+        let result = StartupResult::new(credentials)
+            .with_vps_url(Some(conductor_url))
+            .with_debug(debug_tx, debug_handle, debug_snapshot);
+
+        println!("Starting SPOQ...\n");
+        return Ok(result);
+    }
+
     // Step 2: VPS verification (unless skipped)
     let (vps_state, vps_url) = if config.skip_vps_check {
         (None, None)
