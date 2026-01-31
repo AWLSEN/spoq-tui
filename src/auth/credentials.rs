@@ -8,6 +8,9 @@ use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 /// The credentials directory name.
 const CREDENTIALS_DIR: &str = ".spoq";
 
@@ -118,12 +121,21 @@ impl CredentialsManager {
     /// Save credentials to the credentials file.
     ///
     /// Creates the parent directory if it doesn't exist.
+    /// Sets secure file permissions (0o600 on file, 0o700 on directory) on Unix.
     /// Returns `true` if successful, `false` otherwise.
     pub fn save(&self, credentials: &Credentials) -> bool {
-        // Ensure the parent directory exists
+        // Ensure the parent directory exists with secure permissions
         if let Some(parent) = self.credentials_path.parent() {
-            if !parent.exists() && fs::create_dir_all(parent).is_err() {
-                return false;
+            if !parent.exists() {
+                if fs::create_dir_all(parent).is_err() {
+                    return false;
+                }
+                // Set directory permissions to 700 (owner only) on Unix
+                #[cfg(unix)]
+                if fs::set_permissions(parent, fs::Permissions::from_mode(0o700)).is_err() {
+                    // Log but don't fail - directory was created
+                    tracing::warn!("Failed to set permissions on credentials directory");
+                }
             }
         }
 
@@ -131,6 +143,13 @@ impl CredentialsManager {
             Ok(f) => f,
             Err(_) => return false,
         };
+
+        // Set file permissions to 600 (owner read/write only) on Unix
+        #[cfg(unix)]
+        if fs::set_permissions(&self.credentials_path, fs::Permissions::from_mode(0o600)).is_err() {
+            // Log but don't fail - file was created
+            tracing::warn!("Failed to set permissions on credentials file");
+        }
 
         let mut writer = BufWriter::new(file);
         if serde_json::to_writer_pretty(&mut writer, credentials).is_err() {
@@ -352,5 +371,35 @@ mod tests {
         assert_eq!(creds.expires_at, Some(9999999999));
         assert_eq!(creds.user_id, Some("old-user".to_string()));
         // Extra fields are ignored
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_credentials_manager_sets_secure_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = TempDir::new().unwrap();
+        let manager = create_test_manager(&temp_dir);
+
+        let creds = Credentials {
+            access_token: Some("test-token".to_string()),
+            ..Default::default()
+        };
+
+        assert!(manager.save(&creds));
+
+        // Check directory permissions (should be 700)
+        let dir_perms = fs::metadata(manager.credentials_path.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(dir_perms & 0o777, 0o700, "Directory should have mode 700");
+
+        // Check file permissions (should be 600)
+        let file_perms = fs::metadata(&manager.credentials_path)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(file_perms & 0o777, 0o600, "File should have mode 600");
     }
 }
