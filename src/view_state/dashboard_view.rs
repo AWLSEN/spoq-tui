@@ -269,15 +269,29 @@ pub enum ClaudeLoginState {
     BrowserOpenFailed { auth_url: String, error: String },
 }
 
+/// Mode selector for VPS configuration dialog
+#[derive(Debug, Clone, PartialEq)]
+pub enum VpsConfigMode {
+    Remote,
+    Local,
+}
+
+impl Default for VpsConfigMode {
+    fn default() -> Self {
+        Self::Remote
+    }
+}
+
 /// State of the VPS configuration dialog (/vps command)
 #[derive(Debug, Clone)]
 pub enum VpsConfigState {
     /// Input form for VPS credentials
     InputFields {
+        mode: VpsConfigMode,
         ip: String,
         username: String,
         password: String,
-        /// Which field is focused: 0=IP, 1=username, 2=password
+        /// Which field is focused: 0=mode, 1=IP, 2=username, 3=password
         field_focus: u8,
         /// Validation error message (shown below password field)
         error: Option<String>,
@@ -296,6 +310,15 @@ pub enum VpsConfigState {
     Error {
         /// Error message
         error: String,
+        /// Whether this is an auth error (show Login option instead of Retry)
+        is_auth_error: bool,
+    },
+    /// Re-authenticating via device flow
+    Authenticating {
+        /// Verification URL to show the user
+        verification_url: String,
+        /// User code to display
+        user_code: String,
     },
 }
 

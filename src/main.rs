@@ -672,8 +672,8 @@ where
 
                                 match key.code {
                                     KeyCode::Esc => {
-                                        // Can't close during provisioning
-                                        if matches!(state_clone, VpsConfigState::Provisioning { .. }) {
+                                        // Can't close during provisioning or authenticating
+                                        if matches!(state_clone, VpsConfigState::Provisioning { .. } | VpsConfigState::Authenticating { .. }) {
                                             continue;
                                         }
                                         // Close and reconnect WS if success
@@ -741,9 +741,13 @@ where
                                                 app.dashboard.vps_config_type_char(c);
                                                 app.mark_dirty();
                                             }
-                                            VpsConfigState::Error { .. } => {
-                                                // 'r'/'R' to retry
-                                                if c == 'r' || c == 'R' {
+                                            VpsConfigState::Error { is_auth_error, .. } => {
+                                                if is_auth_error && (c == 'l' || c == 'L') {
+                                                    // Start device flow re-authentication
+                                                    app.start_vps_reauth();
+                                                    app.mark_dirty();
+                                                } else if !is_auth_error && (c == 'r' || c == 'R') {
+                                                    // Retry VPS replace
                                                     app.dashboard.vps_config_retry();
                                                     app.mark_dirty();
                                                 }

@@ -813,14 +813,16 @@ pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
 
         Command::VpsConfigTypeChar(c) => {
             // In Error state, check for 'r'/'R' to retry
-            if let VpsConfigState::Error { .. } = state {
-                if *c == 'r' || *c == 'R' {
-                    // Reset to InputFields state, keeping the previous values
+            if let VpsConfigState::Error { is_auth_error, .. } = state {
+                if is_auth_error && (*c == 'l' || *c == 'L') {
+                    app.start_vps_reauth();
+                    app.mark_dirty();
+                    return true;
+                } else if !is_auth_error && (*c == 'r' || *c == 'R') {
                     app.dashboard.vps_config_retry();
                     app.mark_dirty();
                     return true;
                 }
-                // Ignore other chars in Error state
                 return true;
             }
 

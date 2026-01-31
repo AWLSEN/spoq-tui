@@ -296,6 +296,20 @@ pub enum AppMessage {
     /// VPS replacement failed
     VpsConfigFailed {
         error: String,
+        #[allow(dead_code)]
+        is_auth_error: bool,
+    },
+    /// Device flow auth completed (re-authentication from VPS dialog)
+    VpsAuthComplete {
+        access_token: String,
+        refresh_token: Option<String>,
+        expires_in: Option<u32>,
+        user_id: Option<String>,
+    },
+    /// Device flow started - show verification UI
+    VpsAuthStarted {
+        verification_url: String,
+        user_code: String,
     },
     // =========================================================================
     // Sync Messages

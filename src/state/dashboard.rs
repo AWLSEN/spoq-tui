@@ -292,6 +292,9 @@ pub struct DashboardState {
     /// Cached aggregate statistics
     aggregate: Aggregate,
 
+    /// Last-submitted VPS credentials (for retry after re-auth)
+    vps_pending_credentials: Option<(String, String, String)>,
+
     /// Cached computed thread views (sorted: needs_action first, then by updated_at)
     thread_views: Vec<ThreadView>,
     /// True when threads/waiting_for changed and views need recomputation
@@ -317,6 +320,7 @@ impl DashboardState {
             pending_questions: HashMap::new(),
             pending_permissions: HashMap::new(),
             planning_threads: HashSet::new(),
+            vps_pending_credentials: None,
             overlay: None,
             question_state: None,
             aggregate: Aggregate::new(),
@@ -936,10 +940,11 @@ impl DashboardState {
 
     /// Show the VPS config overlay
     pub fn show_vps_config(&mut self) {
-        use crate::view_state::VpsConfigState;
+        use crate::view_state::{VpsConfigMode, VpsConfigState};
 
         self.overlay = Some(OverlayState::VpsConfig {
             state: VpsConfigState::InputFields {
+                mode: VpsConfigMode::Remote,
                 ip: String::new(),
                 username: "root".to_string(),
                 password: String::new(),
@@ -959,22 +964,45 @@ impl DashboardState {
 
     /// Move to the next field in VPS config
     pub fn vps_config_next_field(&mut self) {
-        use crate::view_state::VpsConfigState;
+        use crate::view_state::{VpsConfigMode, VpsConfigState};
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            if let VpsConfigState::InputFields { ref mut field_focus, .. } = state {
-                *field_focus = (*field_focus + 1) % 3;
+            if let VpsConfigState::InputFields { ref mode, ref mut field_focus, .. } = state {
+                let max = match mode {
+                    VpsConfigMode::Remote => 3,
+                    VpsConfigMode::Local => 0,
+                };
+                *field_focus = if *field_focus >= max { 0 } else { *field_focus + 1 };
             }
         }
     }
 
     /// Move to the previous field in VPS config
     pub fn vps_config_prev_field(&mut self) {
-        use crate::view_state::VpsConfigState;
+        use crate::view_state::{VpsConfigMode, VpsConfigState};
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            if let VpsConfigState::InputFields { ref mut field_focus, .. } = state {
-                *field_focus = if *field_focus == 0 { 2 } else { *field_focus - 1 };
+            if let VpsConfigState::InputFields { ref mode, ref mut field_focus, .. } = state {
+                let max = match mode {
+                    VpsConfigMode::Remote => 3,
+                    VpsConfigMode::Local => 0,
+                };
+                *field_focus = if *field_focus == 0 { max } else { *field_focus - 1 };
+            }
+        }
+    }
+
+    /// Toggle VPS config mode between Remote and Local
+    pub fn vps_config_toggle_mode(&mut self) {
+        use crate::view_state::{VpsConfigMode, VpsConfigState};
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut mode, ref mut field_focus, .. } = state {
+                *mode = match mode {
+                    VpsConfigMode::Remote => VpsConfigMode::Local,
+                    VpsConfigMode::Local => VpsConfigMode::Remote,
+                };
+                *field_focus = 0;
             }
         }
     }
@@ -984,13 +1012,14 @@ impl DashboardState {
         use crate::view_state::VpsConfigState;
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            if let VpsConfigState::InputFields { ref mut ip, ref mut username, ref mut password, field_focus, ref mut error } = state {
+            if let VpsConfigState::InputFields { ref mut ip, ref mut username, ref mut password, field_focus, ref mut error, .. } = state {
                 // Clear any validation error when user types
                 *error = None;
                 match field_focus {
-                    0 => ip.push(c),
-                    1 => username.push(c),
-                    2 => password.push(c),
+                    0 => {} // Mode selector — no typed chars
+                    1 => ip.push(c),
+                    2 => username.push(c),
+                    3 => password.push(c),
                     _ => {}
                 }
             }
@@ -1002,13 +1031,14 @@ impl DashboardState {
         use crate::view_state::VpsConfigState;
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
-            if let VpsConfigState::InputFields { ref mut ip, ref mut username, ref mut password, field_focus, ref mut error } = state {
+            if let VpsConfigState::InputFields { ref mut ip, ref mut username, ref mut password, field_focus, ref mut error, .. } = state {
                 // Clear any validation error when user types
                 *error = None;
                 match field_focus {
-                    0 => { ip.pop(); }
-                    1 => { username.pop(); }
-                    2 => { password.pop(); }
+                    0 => {} // Mode selector — no backspace
+                    1 => { ip.pop(); }
+                    2 => { username.pop(); }
+                    3 => { password.pop(); }
                     _ => {}
                 }
             }
@@ -1026,14 +1056,25 @@ impl DashboardState {
         }
     }
 
+    /// Store VPS credentials for retry after re-auth
+    pub fn set_vps_pending_credentials(&mut self, ip: String, username: String, password: String) {
+        self.vps_pending_credentials = Some((ip, username, password));
+    }
+
+    /// Take the pending VPS credentials (clears them)
+    pub fn take_vps_pending_credentials(&mut self) -> Option<(String, String, String)> {
+        self.vps_pending_credentials.take()
+    }
+
     /// Retry from error state - reset to InputFields keeping values
     pub fn vps_config_retry(&mut self) {
-        use crate::view_state::VpsConfigState;
+        use crate::view_state::{VpsConfigMode, VpsConfigState};
 
         if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
             // Preserve the InputFields state if we're in Error
             if matches!(state, VpsConfigState::Error { .. }) {
                 *state = VpsConfigState::InputFields {
+                    mode: VpsConfigMode::Remote,
                     ip: String::new(),
                     username: "root".to_string(),
                     password: String::new(),

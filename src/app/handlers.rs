@@ -2035,13 +2035,60 @@ impl App {
                 if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
                     *state = VpsConfigState::Success { hostname: hostname.clone() };
                 }
-                // TODO: Rebuild ConductorClient, clear cache, reconnect WS (Phase 7)
+                // Update vps_url so reconnect_websocket() targets the new VPS
+                self.vps_url = Some(vps_url.clone());
+                // Rebuild ConductorClient to point at the new VPS
+                if let Some(ref token) = self.credentials.access_token {
+                    self.client = std::sync::Arc::new(
+                        crate::conductor::ConductorClient::with_url(&vps_url).with_auth(token),
+                    );
+                }
                 self.mark_dirty();
             }
-            AppMessage::VpsConfigFailed { error } => {
+            AppMessage::VpsConfigFailed { error, is_auth_error } => {
                 use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
                 if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
-                    *state = VpsConfigState::Error { error };
+                    *state = VpsConfigState::Error { error, is_auth_error };
+                }
+                self.mark_dirty();
+            }
+            AppMessage::VpsAuthStarted { verification_url, user_code } => {
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    *state = VpsConfigState::Authenticating { verification_url, user_code };
+                }
+                self.mark_dirty();
+            }
+            AppMessage::VpsAuthComplete { access_token, refresh_token, expires_in, user_id } => {
+                // Update credentials
+                self.credentials.access_token = Some(access_token.clone());
+                if let Some(rt) = refresh_token {
+                    self.credentials.refresh_token = Some(rt);
+                }
+                // Compute and store expiration so startup doesn't consider token expired
+                let expires_secs = expires_in
+                    .or_else(|| crate::auth::central_api::get_jwt_expires_in(&access_token))
+                    .unwrap_or(900);
+                self.credentials.expires_at = Some(
+                    chrono::Utc::now().timestamp() + i64::from(expires_secs),
+                );
+                if let Some(uid) = user_id {
+                    self.credentials.user_id = Some(uid);
+                }
+                // Save to disk
+                if let Some(ref manager) = self.credentials_manager {
+                    let _ = manager.save(&self.credentials);
+                }
+                // Recreate CentralApiClient with new tokens
+                let mut new_central = crate::auth::central_api::CentralApiClient::new()
+                    .with_auth(&access_token);
+                if let Some(ref rt) = self.credentials.refresh_token {
+                    new_central = new_central.with_refresh_token(rt);
+                }
+                self.central_api = Some(std::sync::Arc::new(new_central));
+                // Auto-retry VPS replace with stored credentials
+                if let Some((ip, username, password)) = self.dashboard.take_vps_pending_credentials() {
+                    self.start_vps_replace(ip, username, password);
                 }
                 self.mark_dirty();
             }

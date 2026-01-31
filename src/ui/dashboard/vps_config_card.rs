@@ -15,7 +15,7 @@ use ratatui::{
 };
 
 use crate::ui::theme::{COLOR_DIM, COLOR_DIALOG_BG, COLOR_INPUT_BG, COLOR_TOOL_SUCCESS};
-use crate::view_state::VpsConfigState;
+use crate::view_state::{VpsConfigMode, VpsConfigState};
 
 /// Calculate the height needed for the VPS config card based on state.
 pub fn calculate_height(state: &VpsConfigState) -> u16 {
@@ -27,6 +27,7 @@ pub fn calculate_height(state: &VpsConfigState) -> u16 {
         VpsConfigState::Provisioning { .. } => 8,
         VpsConfigState::Success { .. } => 8,
         VpsConfigState::Error { .. } => 8,
+        VpsConfigState::Authenticating { .. } => 10,
     }
 }
 
@@ -44,13 +45,14 @@ pub fn render(frame: &mut Frame, area: Rect, state: &VpsConfigState) {
 
     match state {
         VpsConfigState::InputFields {
+            mode,
             ip,
             username,
             password,
             field_focus,
             error,
         } => {
-            render_input_fields(frame, area, ip, username, password, *field_focus, error.as_deref());
+            render_input_fields(frame, area, mode, ip, username, password, *field_focus, error.as_deref());
         }
         VpsConfigState::Provisioning { phase } => {
             render_provisioning(frame, area, phase);
@@ -58,8 +60,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &VpsConfigState) {
         VpsConfigState::Success { hostname } => {
             render_success(frame, area, hostname);
         }
-        VpsConfigState::Error { error } => {
-            render_error(frame, area, error);
+        VpsConfigState::Error { error, is_auth_error } => {
+            render_error(frame, area, error, *is_auth_error);
+        }
+        VpsConfigState::Authenticating { verification_url, user_code } => {
+            render_authenticating(frame, area, verification_url, user_code);
         }
     }
 }
@@ -68,6 +73,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &VpsConfigState) {
 fn render_input_fields(
     frame: &mut Frame,
     area: Rect,
+    mode: &VpsConfigMode,
     ip: &str,
     username: &str,
     password: &str,
@@ -323,7 +329,7 @@ fn render_success(frame: &mut Frame, area: Rect, hostname: &str) {
 }
 
 /// Render the error state
-fn render_error(frame: &mut Frame, area: Rect, error: &str) {
+fn render_error(frame: &mut Frame, area: Rect, error: &str, is_auth_error: bool) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -352,7 +358,7 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str) {
     let error_header = Line::from(vec![
         Span::styled("\u{2717} ", Style::default().fg(Color::Red)), // X mark
         Span::styled(
-            "Failed to replace VPS",
+            if is_auth_error { "Session expired" } else { "Failed to replace VPS" },
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
         ),
     ]);
@@ -361,9 +367,9 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str) {
         chunks[3],
     );
 
-    // Error details (truncated to 50 chars)
-    let display_error = if error.len() > 50 {
-        format!("{}...", &error[..47])
+    // Error details (truncated to 60 chars)
+    let display_error = if error.len() > 60 {
+        format!("{}...", &error[..57])
     } else {
         error.to_string()
     };
@@ -376,15 +382,96 @@ fn render_error(frame: &mut Frame, area: Rect, error: &str) {
         chunks[4],
     );
 
-    // Help line
-    let help = Line::from(vec![
-        Span::styled("[R]", Style::default().fg(Color::Green)),
-        Span::raw(" Retry   "),
-        Span::styled("[Esc]", Style::default().fg(Color::Red)),
-        Span::raw(" Cancel"),
-    ]);
+    // Help line - different options for auth errors
+    let help = if is_auth_error {
+        Line::from(vec![
+            Span::styled("[L]", Style::default().fg(Color::Green)),
+            Span::raw(" Login   "),
+            Span::styled("[Esc]", Style::default().fg(Color::Red)),
+            Span::raw(" Cancel"),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("[R]", Style::default().fg(Color::Green)),
+            Span::raw(" Retry   "),
+            Span::styled("[Esc]", Style::default().fg(Color::Red)),
+            Span::raw(" Cancel"),
+        ])
+    };
     frame.render_widget(
         Paragraph::new(help).alignment(Alignment::Center),
         chunks[6],
+    );
+}
+
+/// Render the authenticating state (device flow)
+fn render_authenticating(frame: &mut Frame, area: Rect, verification_url: &str, user_code: &str) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Title
+            Constraint::Length(1), // Blank
+            Constraint::Length(1), // Instruction
+            Constraint::Length(1), // Blank
+            Constraint::Length(1), // URL
+            Constraint::Length(1), // Blank
+            Constraint::Length(1), // Code
+            Constraint::Length(1), // Blank
+            Constraint::Length(1), // Status
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    // Title
+    let title = Line::from(Span::styled(
+        "Change VPS",
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    ));
+    frame.render_widget(
+        Paragraph::new(title).alignment(Alignment::Center),
+        chunks[0],
+    );
+
+    // Instruction
+    let instruction = Line::from(Span::styled(
+        "Open this URL in your browser:",
+        Style::default().fg(Color::White),
+    ));
+    frame.render_widget(
+        Paragraph::new(instruction).alignment(Alignment::Center),
+        chunks[2],
+    );
+
+    // URL
+    let url_line = Line::from(Span::styled(
+        verification_url,
+        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+    ));
+    frame.render_widget(
+        Paragraph::new(url_line).alignment(Alignment::Center),
+        chunks[4],
+    );
+
+    // Code
+    let code_line = Line::from(vec![
+        Span::styled("Code: ", Style::default().fg(COLOR_DIM)),
+        Span::styled(
+            user_code,
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    frame.render_widget(
+        Paragraph::new(code_line).alignment(Alignment::Center),
+        chunks[6],
+    );
+
+    // Status
+    let status = Line::from(Span::styled(
+        "Waiting for authorization...",
+        Style::default().fg(Color::Yellow),
+    ));
+    frame.render_widget(
+        Paragraph::new(status).alignment(Alignment::Center),
+        chunks[8],
     );
 }

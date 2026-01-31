@@ -308,6 +308,7 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
                 VpsConfigState::Provisioning { .. } => 10,
                 VpsConfigState::Success { .. } => 10,
                 VpsConfigState::Error { .. } => 10,
+                VpsConfigState::Authenticating { .. } => 12,
             };
             (*anchor_y, height)
         }
