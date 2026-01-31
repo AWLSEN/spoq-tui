@@ -135,7 +135,7 @@ fn sync_tokens_to_vps(
 /// # Returns
 /// * `Ok(())` - Valid IP address
 /// * `Err(String)` - Error message describing the validation failure
-fn validate_ip_address(input: &str) -> Result<(), String> {
+pub fn validate_ip_address(input: &str) -> Result<(), String> {
     let trimmed = input.trim();
 
     if trimmed.is_empty() {
@@ -2783,4 +2783,51 @@ mod tests {
     }
 
     // NOTE: TokenMigrationResult tests removed - SSH-based sync was replaced with HTTP sync
+
+    // =========================================================================
+    // IP Address Validation Tests
+    // =========================================================================
+
+    #[test]
+    fn test_validate_ip_address_ipv4_valid() {
+        assert!(validate_ip_address("192.168.1.1").is_ok());
+        assert!(validate_ip_address("10.0.0.1").is_ok());
+        assert!(validate_ip_address("255.255.255.255").is_ok());
+        assert!(validate_ip_address("0.0.0.0").is_ok());
+        assert!(validate_ip_address("  192.168.1.1  ").is_ok()); // whitespace trimmed
+    }
+
+    #[test]
+    fn test_validate_ip_address_ipv6_valid() {
+        assert!(validate_ip_address("::1").is_ok());
+        assert!(validate_ip_address("2001:db8::1").is_ok());
+        assert!(validate_ip_address("fe80::1").is_ok());
+    }
+
+    #[test]
+    fn test_validate_ip_address_invalid_format() {
+        assert!(validate_ip_address("").is_err());
+        assert!(validate_ip_address("   ").is_err()); // whitespace only
+        assert!(validate_ip_address("not-an-ip").is_err());
+        assert!(validate_ip_address("192.168.1.999").is_err()); // octet > 255
+        assert!(validate_ip_address("192.168.1").is_err()); // incomplete
+        assert!(validate_ip_address("192.168.1.1.1").is_err()); // too many octets
+    }
+
+    #[test]
+    fn test_validate_ip_address_rejects_hostnames() {
+        // Security: ensure hostnames are NOT accepted
+        assert!(validate_ip_address("example.com").is_err());
+        assert!(validate_ip_address("localhost").is_err());
+        assert!(validate_ip_address("my-vps.example.com").is_err());
+    }
+
+    #[test]
+    fn test_validate_ip_address_rejects_injection_attempts() {
+        // Security: ensure shell metacharacters are rejected
+        assert!(validate_ip_address("192.168.1.1; rm -rf /").is_err());
+        assert!(validate_ip_address("$(whoami)").is_err());
+        assert!(validate_ip_address("192.168.1.1`id`").is_err());
+        assert!(validate_ip_address("192.168.1.1 && echo pwned").is_err());
+    }
 }

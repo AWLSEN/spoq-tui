@@ -694,48 +694,7 @@ where
                                         continue;
                                     }
                                     KeyCode::Enter => {
-                                        match state_clone {
-                                            VpsConfigState::InputFields { ref mode, ref ip, ref password, .. } => {
-                                                use spoq::view_state::VpsConfigMode;
-                                                match mode {
-                                                    VpsConfigMode::Remote => {
-                                                        // Validate inputs - collect all errors
-                                                        let ip_error = if ip.is_empty() {
-                                                            Some("IP address is required".to_string())
-                                                        } else {
-                                                            None
-                                                        };
-                                                        let password_error = if password.len() < 8 {
-                                                            Some("Password must be at least 8 characters".to_string())
-                                                        } else {
-                                                            None
-                                                        };
-
-                                                        // If any errors, set them and return
-                                                        if ip_error.is_some() || password_error.is_some() {
-                                                            app.dashboard.vps_config_set_field_errors(ip_error, password_error);
-                                                            app.mark_dirty();
-                                                            continue;
-                                                        }
-                                                        // Start VPS replacement (username is always "root")
-                                                        app.start_vps_replace(ip.clone(), password.clone());
-                                                    }
-                                                    VpsConfigMode::Local => {
-                                                        app.start_local_conductor();
-                                                    }
-                                                }
-                                                app.mark_dirty();
-                                            }
-                                            VpsConfigState::Success { .. } => {
-                                                // Dismiss and reconnect WS
-                                                app.dashboard.collapse_overlay();
-                                                app.reconnect_websocket();
-                                                app.mark_dirty();
-                                            }
-                                            _ => {
-                                                // Ignore in Provisioning/Error states
-                                            }
-                                        }
+                                        spoq::input::handlers::handle_vps_config_submit(app);
                                         continue;
                                     }
                                     KeyCode::Tab | KeyCode::Down => {
