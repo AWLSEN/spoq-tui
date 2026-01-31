@@ -1561,6 +1561,99 @@ impl CentralApiClient {
         Ok(data)
     }
 
+    /// Replace an existing BYOVPS with a new one.
+    ///
+    /// POST /api/byovps/replace
+    ///
+    /// Requires authentication. Atomically terminates any existing VPS and
+    /// provisions a new one. Unlike /provision which returns 409 if user has
+    /// an active VPS, /replace handles the termination automatically.
+    ///
+    /// # Arguments
+    /// * `vps_ip` - The IP address of the new VPS (IPv4 or IPv6)
+    /// * `ssh_username` - SSH username for connecting to the VPS
+    /// * `ssh_password` - SSH password for connecting to the VPS
+    ///
+    /// # Returns
+    /// * `Ok(ByovpsPendingResponse)` - Replacement initiated successfully
+    /// * `Err(CentralApiError)` - Replacement failed
+    pub async fn replace_byovps(
+        &mut self,
+        vps_ip: &str,
+        ssh_username: &str,
+        ssh_password: &str,
+    ) -> Result<ByovpsPendingResponse, CentralApiError> {
+        let url = format!("{}/api/byovps/replace", self.base_url);
+
+        let body = ByovpsProvisionRequest {
+            vps_ip: vps_ip.to_string(),
+            ssh_username: ssh_username.to_string(),
+            ssh_password: ssh_password.to_string(),
+        };
+
+        // First attempt
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                tracing::info!("Token expired (401), attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+                        tracing::info!("Token refresh successful");
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&body);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(e) => {
+                        tracing::error!("Token refresh failed: {:?}", e);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!(
+                                "Token refresh failed: {}. Please re-authenticate.",
+                                e
+                            ),
+                        });
+                    }
+                }
+            } else {
+                tracing::warn!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: ByovpsPendingResponse = response.json().await?;
+        Ok(data)
+    }
+
     /// Create a Stripe checkout session for VPS subscription.
     ///
     /// POST /api/payments/create-checkout-session
