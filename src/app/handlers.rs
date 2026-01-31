@@ -2043,6 +2043,21 @@ impl App {
                         crate::conductor::ConductorClient::with_url(&vps_url).with_auth(token),
                     );
                 }
+                // Persist conductor mode to ~/.spoq/config.json
+                let spoq_config = if vps_url.contains("localhost") || vps_url.contains("127.0.0.1") {
+                    crate::startup::config::SpoqConfig {
+                        conductor_mode: "local".to_string(),
+                        conductor_url: Some(vps_url.clone()),
+                    }
+                } else {
+                    crate::startup::config::SpoqConfig {
+                        conductor_mode: "remote".to_string(),
+                        conductor_url: None,
+                    }
+                };
+                if let Err(e) = spoq_config.save() {
+                    tracing::warn!("Failed to save conductor config: {}", e);
+                }
                 self.mark_dirty();
             }
             AppMessage::VpsConfigFailed { error, is_auth_error } => {

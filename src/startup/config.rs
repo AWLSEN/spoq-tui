@@ -185,6 +185,62 @@ impl StartupResult {
     }
 }
 
+/// Persistent user configuration stored at ~/.spoq/config.json.
+/// Survives restarts. Separate from StartupConfig (runtime-only).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SpoqConfig {
+    /// "remote" (default) or "local"
+    #[serde(default = "default_conductor_mode")]
+    pub conductor_mode: String,
+    /// Conductor URL override (used for local mode)
+    #[serde(default)]
+    pub conductor_url: Option<String>,
+}
+
+fn default_conductor_mode() -> String {
+    "remote".to_string()
+}
+
+impl Default for SpoqConfig {
+    fn default() -> Self {
+        Self {
+            conductor_mode: default_conductor_mode(),
+            conductor_url: None,
+        }
+    }
+}
+
+impl SpoqConfig {
+    pub fn config_path() -> Result<std::path::PathBuf, std::io::Error> {
+        let home = dirs::home_dir().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::NotFound, "Home dir not found")
+        })?;
+        Ok(home.join(".spoq").join("config.json"))
+    }
+
+    pub fn load() -> Self {
+        Self::config_path()
+            .ok()
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self) -> Result<(), std::io::Error> {
+        let path = Self::config_path()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        std::fs::write(path, json)
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.conductor_mode == "local"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
