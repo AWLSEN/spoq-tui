@@ -920,6 +920,10 @@ impl App {
                 // Open full-screen threads browser
                 self.open_browse_list(crate::app::BrowseListMode::Threads);
             }
+            SlashCommand::Claude => {
+                // Open Claude accounts overlay and request accounts list
+                let _ = self.message_tx.send(crate::app::AppMessage::OpenClaudeAccounts);
+            }
         }
         self.mark_dirty();
     }
@@ -1675,6 +1679,61 @@ impl App {
         self.browse_list.cloning = false;
         self.browse_list.clone_message = None;
         self.browse_list.error = Some(error);
+        self.mark_dirty();
+    }
+
+    /// Handle rate limit continue - send resume request with next account.
+    ///
+    /// Called when user confirms to continue with the next account after rate limit.
+    pub fn handle_rate_limit_continue(&mut self, modal_state: crate::app::RateLimitModalState) {
+        let thread_id = modal_state.thread_id;
+        let current_account_id = modal_state.current_account_id;
+
+        // Set up UI state for streaming (same as submit_input)
+        self.active_thread_id = Some(thread_id.clone());
+        self.screen = crate::app::Screen::Conversation;
+        self.reset_scroll();
+
+        // Add streaming message to cache so UI shows the incoming response
+        if !self.cache.add_streaming_message(&thread_id, "continue".to_string(), Vec::new()) {
+            // Thread doesn't exist in cache
+            self.stream_error = Some("Thread no longer exists.".to_string());
+            return;
+        }
+
+        // Build resume request with use_next_account flag
+        let request = crate::models::StreamRequest::with_thread("continue".to_string(), thread_id.clone())
+            .with_use_next_account(true, current_account_id);
+
+        let client = Arc::clone(&self.client);
+        let message_tx = self.message_tx.clone();
+        let debug_tx = self.debug_tx.clone();
+        let thread_id_for_task = thread_id.clone();
+
+        // Spawn async task to send resume request
+        tokio::spawn(async move {
+            match client.stream(&request).await {
+                Ok(mut stream) => {
+                    // Update connection status
+                    let _ = message_tx.send(AppMessage::ConnectionStatus(true));
+                    App::process_stream(
+                        &mut stream,
+                        &message_tx,
+                        &thread_id_for_task,
+                        debug_tx,
+                    )
+                    .await;
+                }
+                Err(e) => {
+                    // Send error message
+                    let _ = message_tx.send(AppMessage::StreamError {
+                        thread_id: thread_id_for_task,
+                        error: e.to_string(),
+                    });
+                }
+            }
+        });
+
         self.mark_dirty();
     }
 }

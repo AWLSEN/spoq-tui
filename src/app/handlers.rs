@@ -215,6 +215,36 @@ impl App {
                     self.reset_scroll();
                 }
             }
+            AppMessage::RateLimited {
+                thread_id,
+                message,
+                current_account_id,
+                next_account_id,
+                retry_after_secs,
+            } => {
+                // Show rate limit modal for user confirmation
+                self.rate_limit_modal = Some(crate::app::RateLimitModalState {
+                    thread_id,
+                    message,
+                    current_account_id,
+                    next_account_id,
+                    retry_after_secs,
+                });
+
+                // Mark message as no longer streaming
+                self.cache.cancel_streaming_message(&self.rate_limit_modal.as_ref().unwrap().thread_id);
+
+                // Reset stream statistics
+                self.stream_start_time = None;
+                self.last_event_time = None;
+                self.cumulative_token_count = 0;
+
+                // Reset cancel state
+                self.reset_cancel_state();
+
+                // Clear tool tracker when stream is interrupted
+                self.tool_tracker.clear();
+            }
             AppMessage::ConnectionStatus(connected) => {
                 // Emit StateChange for connection status
                 emit_debug(
@@ -1751,10 +1781,11 @@ impl App {
                                         return;
                                     }
 
-                                    tracing::info!("Claude setup-token succeeded: token_length={}", token.len());
+                                    tracing::info!("Claude setup-token succeeded: token_length={}, email={:?}", token.len(), result.email);
                                     let _ = tx.send(AppMessage::ClaudeAuthTokenCaptured {
                                         request_id: req_id,
                                         token,
+                                        email: result.email,
                                     });
                                 } else {
                                     tracing::error!("Claude setup-token succeeded but no token captured");
@@ -1794,15 +1825,16 @@ impl App {
             AppMessage::ClaudeAuthTokenCaptured {
                 request_id,
                 token,
+                email,
             } => {
                 tracing::info!(
-                    "Claude CLI auth token captured: request_id={}, token_length={}",
-                    request_id, token.len()
+                    "Claude CLI auth token captured: request_id={}, token_length={}, email={:?}",
+                    request_id, token.len(), email
                 );
 
                 // Send token to backend via WebSocket
                 use crate::websocket::{WsClaudeAuthTokenResponse, WsOutgoingMessage};
-                let response = WsClaudeAuthTokenResponse::new(request_id.clone(), token);
+                let response = WsClaudeAuthTokenResponse::new_with_email(request_id.clone(), token, email);
                 if let Some(ref sender) = self.ws_sender {
                     if let Err(e) = sender.try_send(WsOutgoingMessage::ClaudeAuthTokenResponse(response)) {
                         tracing::error!("Failed to send Claude auth token: {}", e);
@@ -1831,23 +1863,65 @@ impl App {
                     "Claude CLI auth token capture failed: request_id={}, error={}",
                     request_id, error
                 );
-                // TODO: Could show an error notification to the user
+                use crate::view_state::dashboard_view::OverlayState;
+                if let Some(OverlayState::ClaudeAccounts {
+                    ref mut adding,
+                    ref mut status_message,
+                    ..
+                }) = self.dashboard.overlay_mut() {
+                    *adding = false;
+                    *status_message = Some(format!("Auth failed: {}", error));
+                }
+                self.mark_dirty();
             }
             AppMessage::ClaudeAuthTokenStored {
                 request_id,
                 success,
                 error,
             } => {
+                use crate::view_state::dashboard_view::OverlayState;
                 if success {
                     tracing::info!(
                         "Claude CLI auth token stored successfully: request_id={}",
                         request_id
                     );
+                    // Update overlay: clear adding, show success, then auto-refresh list
+                    if let Some(OverlayState::ClaudeAccounts {
+                        ref mut adding,
+                        ref mut status_message,
+                        ..
+                    }) = self.dashboard.overlay_mut() {
+                        *adding = false;
+                        *status_message = Some("Account added successfully!".to_string());
+                    }
+                    self.mark_dirty();
+                    // Auto-refresh accounts list
+                    if let Some(ref sender) = self.ws_sender {
+                        let msg = crate::websocket::messages::WsOutgoingMessage::ClaudeAccountsListRequest(
+                            crate::websocket::messages::WsClaudeAccountsListRequest::new(
+                                uuid::Uuid::new_v4().to_string(),
+                            ),
+                        );
+                        let _ = sender.try_send(msg);
+                    }
                 } else {
                     tracing::error!(
                         "Claude CLI auth token storage failed: request_id={}, error={:?}",
                         request_id, error
                     );
+                    // Update overlay: clear adding, show error
+                    if let Some(OverlayState::ClaudeAccounts {
+                        ref mut adding,
+                        ref mut status_message,
+                        ..
+                    }) = self.dashboard.overlay_mut() {
+                        *adding = false;
+                        *status_message = Some(format!(
+                            "Failed: {}",
+                            error.as_deref().unwrap_or("Unknown error")
+                        ));
+                    }
+                    self.mark_dirty();
                 }
             }
             // =========================================================================
@@ -1898,6 +1972,54 @@ impl App {
                         self.mark_dirty();
                     }
                 }
+            }
+
+            // === Claude Accounts ===
+            AppMessage::OpenClaudeAccounts => {
+                // Show overlay with empty accounts (loading)
+                self.dashboard.show_claude_accounts();
+                self.mark_dirty();
+
+                // Request accounts list from backend
+                if let Some(ref sender) = self.ws_sender {
+                    let msg = crate::websocket::messages::WsOutgoingMessage::ClaudeAccountsListRequest(
+                        crate::websocket::messages::WsClaudeAccountsListRequest::new(
+                            uuid::Uuid::new_v4().to_string(),
+                        ),
+                    );
+                    let _ = sender.try_send(msg);
+                }
+            }
+            AppMessage::ClaudeAccountsListReceived { accounts } => {
+                use crate::view_state::dashboard_view::OverlayState;
+                if let Some(OverlayState::ClaudeAccounts {
+                    accounts: ref mut accts,
+                    ref mut adding,
+                    ref mut add_request_id,
+                    ref mut status_message,
+                    ..
+                }) = self.dashboard.overlay_mut() {
+                    *accts = accounts;
+                    // Clear adding state when list refreshes (add flow completed)
+                    *adding = false;
+                    *add_request_id = None;
+                    // Keep success/error message visible briefly, but clear it on next list refresh
+                    // (the success message was set by ClaudeAuthTokenStored, list refresh arrives after)
+                    // Clear status message only if it's not a success/error message
+                    // Actually, clear it so the refreshed list is clean
+                    *status_message = None;
+                }
+                self.mark_dirty();
+            }
+            AppMessage::ClaudeAccountStatusChanged { account_id, status, cooldown_until } => {
+                use crate::view_state::dashboard_view::OverlayState;
+                if let Some(OverlayState::ClaudeAccounts { accounts: ref mut accts, .. }) = self.dashboard.overlay_mut() {
+                    if let Some(acct) = accts.iter_mut().find(|a| a.id == account_id) {
+                        acct.status = status;
+                        acct.cooldown_until = cooldown_until;
+                    }
+                }
+                self.mark_dirty();
             }
         }
     }

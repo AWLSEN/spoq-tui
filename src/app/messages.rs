@@ -21,6 +21,14 @@ pub enum AppMessage {
     StreamError { thread_id: String, error: String },
     /// Stream was cancelled by user request (Ctrl+C)
     StreamCancelled { thread_id: String, reason: String },
+    /// Rate limit hit - account is rate-limited
+    RateLimited {
+        thread_id: String,
+        message: String,
+        current_account_id: String,
+        next_account_id: Option<String>,
+        retry_after_secs: u64,
+    },
     /// Connection status changed
     ConnectionStatus(bool),
     /// Thread created on backend - reconcile pending ID with real ID
@@ -260,6 +268,7 @@ pub enum AppMessage {
     ClaudeAuthTokenCaptured {
         request_id: String,
         token: String,
+        email: Option<String>,
     },
     /// Claude CLI auth token capture failed
     ClaudeAuthTokenFailed {
@@ -330,6 +339,21 @@ pub enum AppMessage {
     SteeringCompleted { thread_id: String, duration_ms: u64 },
     /// Steering failed with error
     SteeringFailed { thread_id: String, error: String },
+    // =========================================================================
+    // Claude Accounts Management Messages
+    // =========================================================================
+    /// Open Claude accounts overlay
+    OpenClaudeAccounts,
+    /// Claude accounts list received from backend
+    ClaudeAccountsListReceived {
+        accounts: Vec<crate::view_state::dashboard_view::ClaudeAccountInfo>,
+    },
+    /// Claude account status changed (real-time)
+    ClaudeAccountStatusChanged {
+        account_id: String,
+        status: String,
+        cooldown_until: Option<i64>,
+    },
 }
 
 #[cfg(test)]

@@ -55,15 +55,20 @@ pub struct ClaudeAuthResult {
     pub success: bool,
     /// The captured OAuth token (sk-ant-oat01-...)
     pub token: Option<String>,
+    /// Email address of the authenticated account (if available)
+    pub email: Option<String>,
     /// Error message if failed
     pub error: Option<String>,
 }
 
 impl ClaudeAuthResult {
     pub fn success(token: String) -> Self {
+        // Try to read email from ~/.claude.json after successful auth
+        let email = read_claude_email();
         Self {
             success: true,
             token: Some(token),
+            email,
             error: None,
         }
     }
@@ -72,9 +77,26 @@ impl ClaudeAuthResult {
         Self {
             success: false,
             token: None,
+            email: None,
             error: Some(error.into()),
         }
     }
+}
+
+/// Read the authenticated email from ~/.claude.json
+///
+/// After `claude setup-token` completes, the local Claude config is updated
+/// with the OAuth account info including `oauthAccount.emailAddress`.
+fn read_claude_email() -> Option<String> {
+    let home = dirs::home_dir()?;
+    let config_path = home.join(".claude.json");
+    let contents = std::fs::read_to_string(&config_path).ok()?;
+    let config: serde_json::Value = serde_json::from_str(&contents).ok()?;
+    config
+        .get("oauthAccount")
+        .and_then(|acct| acct.get("emailAddress"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 /// Check if Claude CLI is installed

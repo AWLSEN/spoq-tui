@@ -133,6 +133,13 @@ pub enum SseEvent {
         /// Reason for cancellation (e.g., "user_requested")
         reason: String,
     },
+    /// Rate limit hit - account is rate-limited
+    RateLimited {
+        message: String,
+        current_account_id: String,
+        next_account_id: Option<String>,
+        retry_after_secs: u64,
+    },
 }
 
 impl SseEvent {
@@ -162,6 +169,7 @@ impl SseEvent {
             SseEvent::Usage { .. } => "usage",
             SseEvent::SystemInit { .. } => "system_init",
             SseEvent::Cancelled { .. } => "cancelled",
+            SseEvent::RateLimited { .. } => "rate_limited",
         }
     }
 }

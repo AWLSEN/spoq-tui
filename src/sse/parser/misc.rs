@@ -2,8 +2,8 @@
 
 use crate::sse::events::{SseEvent, SseParseError};
 use crate::sse::payloads::{
-    ContextCompactedPayload, ErrorPayload, OAuthConsentRequiredPayload, SkillsInjectedPayload,
-    SystemInitPayload, UsagePayload,
+    ContextCompactedPayload, ErrorPayload, OAuthConsentRequiredPayload, RateLimitedPayload,
+    SkillsInjectedPayload, SystemInitPayload, UsagePayload,
 };
 
 /// Parse skills_injected event
@@ -133,6 +133,24 @@ pub(super) fn parse_cancelled_event(
         })?;
     Ok(SseEvent::Cancelled {
         reason: payload.reason,
+    })
+}
+
+/// Parse rate_limited event
+pub(super) fn parse_rate_limited_event(
+    event_type: &str,
+    data: &str,
+) -> Result<SseEvent, SseParseError> {
+    let payload: RateLimitedPayload =
+        serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
+            event_type: event_type.to_string(),
+            source: e.to_string(),
+        })?;
+    Ok(SseEvent::RateLimited {
+        message: payload.message,
+        current_account_id: payload.current_account_id,
+        next_account_id: payload.next_account_id,
+        retry_after_secs: payload.retry_after_secs,
     })
 }
 

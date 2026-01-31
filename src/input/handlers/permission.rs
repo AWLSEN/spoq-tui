@@ -619,6 +619,77 @@ pub fn handle_claude_login_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles Claude accounts overlay commands.
+///
+/// Returns `true` if the command was handled.
+pub fn handle_claude_accounts_command(app: &mut App, cmd: &Command) -> bool {
+    use crate::view_state::OverlayState;
+
+    let (_accounts_len, _selected_index) = match app.dashboard.overlay() {
+        Some(OverlayState::ClaudeAccounts { accounts, selected_index, .. }) => {
+            (accounts.len(), *selected_index)
+        }
+        _ => return false,
+    };
+
+    match cmd {
+        Command::ClaudeAccountsClose => {
+            app.dashboard.collapse_overlay();
+            true
+        }
+        Command::ClaudeAccountsMoveUp => {
+            if let Some(OverlayState::ClaudeAccounts { selected_index: ref mut idx, .. }) = app.dashboard.overlay_mut() {
+                if *idx > 0 {
+                    *idx -= 1;
+                }
+            }
+            app.mark_dirty();
+            true
+        }
+        Command::ClaudeAccountsMoveDown => {
+            if let Some(OverlayState::ClaudeAccounts { selected_index: ref mut idx, accounts, .. }) = app.dashboard.overlay_mut() {
+                if *idx + 1 < accounts.len() {
+                    *idx += 1;
+                }
+            }
+            app.mark_dirty();
+            true
+        }
+        Command::ClaudeAccountsAdd => {
+            // Request a new account add from backend (triggers setup-token flow)
+            if let Some(ref sender) = app.ws_sender {
+                let msg = crate::websocket::messages::WsOutgoingMessage::ClaudeAccountAddRequest(
+                    crate::websocket::messages::WsClaudeAccountAddRequest::new(uuid::Uuid::new_v4().to_string()),
+                );
+                let _ = sender.try_send(msg);
+            }
+            true
+        }
+        Command::ClaudeAccountsRemove => {
+            // Remove selected account
+            let account_id = match app.dashboard.overlay() {
+                Some(OverlayState::ClaudeAccounts { accounts, selected_index, .. }) => {
+                    accounts.get(*selected_index).map(|a| a.id.clone())
+                }
+                _ => None,
+            };
+            if let Some(account_id) = account_id {
+                if let Some(ref sender) = app.ws_sender {
+                    let msg = crate::websocket::messages::WsOutgoingMessage::ClaudeAccountRemoveRequest(
+                        crate::websocket::messages::WsClaudeAccountRemoveRequest::new(
+                            uuid::Uuid::new_v4().to_string(),
+                            account_id,
+                        ),
+                    );
+                    let _ = sender.try_send(msg);
+                }
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Handles plan approval-related commands (scroll, approve, reject).
 ///
 /// Returns `true` if the command was handled successfully.
@@ -677,6 +748,38 @@ pub fn handle_plan_approval_command(app: &mut App, cmd: &Command) -> bool {
             // Reject plan using existing permission key handler
             // It will check for plan approval after finding no pending permission
             app.handle_permission_key('n')
+        }
+
+        _ => false,
+    }
+}
+
+/// Handles rate limit confirmation commands (Y/N/Esc when rate_limit_modal is showing).
+///
+/// Returns true if the command was handled.
+pub fn handle_rate_limit_command(app: &mut App, cmd: &Command) -> bool {
+    // Ensure rate limit modal is showing
+    if app.rate_limit_modal.is_none() {
+        return false;
+    }
+
+    match cmd {
+        Command::ContinueWithNextAccount => {
+            // User confirmed - continue with next account
+            if let Some(modal_state) = app.rate_limit_modal.take() {
+                if modal_state.next_account_id.is_some() {
+                    // Send resume request with next account
+                    app.handle_rate_limit_continue(modal_state);
+                }
+            }
+            true
+        }
+
+        Command::CancelRateLimitRetry => {
+            // User cancelled or no next account - just close modal
+            app.rate_limit_modal = None;
+            app.mark_dirty();
+            true
         }
 
         _ => false,

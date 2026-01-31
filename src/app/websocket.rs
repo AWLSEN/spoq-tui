@@ -433,6 +433,39 @@ fn route_ws_message(
                 })
                 .map_err(|e| format!("Failed to send SteeringFailed: {}", e))
         }
+        WsIncomingMessage::ClaudeAccountsList(list) => {
+            info!(
+                "Received claude_accounts_list: {} accounts",
+                list.accounts.len()
+            );
+            let accounts = list.accounts.into_iter().map(|a| {
+                crate::view_state::dashboard_view::ClaudeAccountInfo {
+                    id: a.id,
+                    label: a.label,
+                    email: a.email,
+                    priority: a.priority,
+                    status: a.status,
+                    cooldown_until: a.cooldown_until,
+                    last_error: a.last_error,
+                }
+            }).collect();
+            message_tx
+                .send(AppMessage::ClaudeAccountsListReceived { accounts })
+                .map_err(|e| format!("Failed to send ClaudeAccountsListReceived: {}", e))
+        }
+        WsIncomingMessage::ClaudeAccountStatusUpdate(update) => {
+            info!(
+                "Claude account {} status: {}",
+                update.account_id, update.status
+            );
+            message_tx
+                .send(AppMessage::ClaudeAccountStatusChanged {
+                    account_id: update.account_id,
+                    status: update.status,
+                    cooldown_until: update.cooldown_until,
+                })
+                .map_err(|e| format!("Failed to send ClaudeAccountStatusChanged: {}", e))
+        }
     }
 }
 

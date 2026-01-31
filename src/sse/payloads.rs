@@ -127,6 +127,16 @@ pub(crate) struct SystemInitPayload {
     pub tool_count: usize,
 }
 
+/// Rate limited payload
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct RateLimitedPayload {
+    pub message: String,
+    pub current_account_id: String,
+    #[serde(default)]
+    pub next_account_id: Option<String>,
+    pub retry_after_secs: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

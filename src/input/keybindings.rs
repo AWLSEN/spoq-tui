@@ -277,6 +277,15 @@ impl KeybindingConfig {
         plan_approval.insert(KeyCombo::plain(KeyCode::Char('n')), Command::RejectPlan);
         plan_approval.insert(KeyCombo::plain(KeyCode::Char('N')), Command::RejectPlan);
         self.modal.insert(ModalType::PlanApproval, plan_approval);
+
+        // Rate limit confirmation bindings
+        let mut rate_limit_confirm = HashMap::new();
+        rate_limit_confirm.insert(KeyCombo::plain(KeyCode::Char('y')), Command::ContinueWithNextAccount);
+        rate_limit_confirm.insert(KeyCombo::plain(KeyCode::Char('Y')), Command::ContinueWithNextAccount);
+        rate_limit_confirm.insert(KeyCombo::plain(KeyCode::Char('n')), Command::CancelRateLimitRetry);
+        rate_limit_confirm.insert(KeyCombo::plain(KeyCode::Char('N')), Command::CancelRateLimitRetry);
+        rate_limit_confirm.insert(KeyCombo::plain(KeyCode::Esc), Command::CancelRateLimitRetry);
+        self.modal.insert(ModalType::RateLimitConfirm, rate_limit_confirm);
     }
 
     /// Sets up screen-specific keybindings.

@@ -798,6 +798,23 @@ impl DashboardState {
         self.overlay.as_ref()
     }
 
+    /// Get mutable reference to current overlay state
+    pub fn overlay_mut(&mut self) -> Option<&mut OverlayState> {
+        self.overlay.as_mut()
+    }
+
+    /// Show the Claude accounts management overlay
+    pub fn show_claude_accounts(&mut self) {
+        self.overlay = Some(OverlayState::ClaudeAccounts {
+            accounts: Vec::new(),
+            selected_index: 0,
+            anchor_y: 10,
+            adding: false,
+            add_request_id: None,
+            status_message: None,
+        });
+    }
+
     /// Switch from Question overlay to FreeForm input
     pub fn show_free_form(&mut self, thread_id: &str) {
         if let Some(OverlayState::Question {

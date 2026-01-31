@@ -56,6 +56,12 @@ pub struct StreamRequest {
     /// Image attachments as base64-encoded PNGs
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub images: Vec<ImageAttachmentPayload>,
+    /// Use next account after rate limit (waterfall failover)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub use_next_account: Option<bool>,
+    /// Current account ID that hit rate limit (used with use_next_account)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_account_id: Option<String>,
 }
 
 impl StreamRequest {
@@ -71,6 +77,8 @@ impl StreamRequest {
             working_directory: None,
             plan_mode: false,
             images: Vec::new(),
+            use_next_account: None,
+            current_account_id: None,
         }
     }
 
@@ -86,6 +94,8 @@ impl StreamRequest {
             working_directory: None,
             plan_mode: false,
             images: Vec::new(),
+            use_next_account: None,
+            current_account_id: None,
         }
     }
 
@@ -102,6 +112,8 @@ impl StreamRequest {
             working_directory: None,
             plan_mode: false,
             images: Vec::new(),
+            use_next_account: None,
+            current_account_id: None,
         }
     }
 
@@ -132,6 +144,13 @@ impl StreamRequest {
     /// Set image attachments for this request (builder pattern)
     pub fn with_images(mut self, images: Vec<ImageAttachmentPayload>) -> Self {
         self.images = images;
+        self
+    }
+
+    /// Set use_next_account flag for rate limit failover (builder pattern)
+    pub fn with_use_next_account(mut self, use_next: bool, current_id: String) -> Self {
+        self.use_next_account = Some(use_next);
+        self.current_account_id = Some(current_id);
         self
     }
 }
