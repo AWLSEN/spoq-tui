@@ -77,6 +77,8 @@ pub fn render_plan_approval(
     summary: &PlanSummary,
     ctx: &LayoutContext,
     markdown_cache: &mut MarkdownCache,
+    feedback_active: bool,
+    feedback_text: &str,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -187,10 +189,31 @@ pub fn render_plan_approval(
     lines.push(Line::from(vec![
         Span::raw("│   "),
         Span::styled("[y]", Style::default().fg(Color::Green)),
-        Span::raw(" approve and continue    "),
+        Span::raw(" approve    "),
         Span::styled("[n]", Style::default().fg(Color::Red)),
-        Span::raw(" reject"),
+        Span::raw(" reject    "),
+        Span::styled("[f]", Style::default().fg(Color::Yellow)),
+        Span::raw(" feedback"),
     ]));
+
+    // Feedback text input (when active)
+    if feedback_active {
+        lines.push(Line::raw("│"));
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::styled("> ", Style::default().fg(Color::Yellow)),
+            Span::raw(feedback_text.to_string()),
+            Span::styled("\u{2588}", Style::default().fg(Color::Yellow)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::styled(
+                "Enter submit  Esc cancel",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+    }
+
     lines.push(Line::raw("│"));
 
     lines
@@ -233,7 +256,7 @@ mod tests {
         );
         let ctx = LayoutContext::new(100, 40);
         let mut cache = MarkdownCache::new();
-        let lines = render_plan_approval(&summary, &ctx, &mut cache);
+        let lines = render_plan_approval(&summary, &ctx, &mut cache, false, "");
 
         // Should have header, separators, content, file path, actions
         assert!(lines.len() >= 8);
@@ -261,7 +284,7 @@ mod tests {
         );
         let ctx = LayoutContext::new(100, 40);
         let mut cache = MarkdownCache::new();
-        let lines = render_plan_approval(&summary, &ctx, &mut cache);
+        let lines = render_plan_approval(&summary, &ctx, &mut cache, false, "");
 
         let full_text: String = lines.iter().map(|l| l.to_string()).collect();
 
@@ -283,7 +306,7 @@ mod tests {
         );
         let ctx = LayoutContext::new(100, 40);
         let mut cache = MarkdownCache::new();
-        let lines = render_plan_approval(&summary, &ctx, &mut cache);
+        let lines = render_plan_approval(&summary, &ctx, &mut cache, false, "");
 
         let full_text: String = lines.iter().map(|l| l.to_string()).collect();
         assert!(full_text.contains("[y]"));

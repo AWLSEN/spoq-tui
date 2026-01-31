@@ -334,11 +334,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
     let viewport_height = inner.height as usize;
     let viewport_width = inner.width as usize;
 
-    // Collect header lines (error banners, stream errors)
+    // Collect header lines (stream errors only - error banners are shown at bottom)
     let mut header_lines: Vec<Line> = Vec::new();
-
-    // Show inline error banners for the thread
-    header_lines.extend(render_inline_error_banners(app, ctx));
 
     // Show stream error banner if there's a stream error (legacy, for non-thread errors)
     if let Some(error) = &app.stream_error {
@@ -462,6 +459,9 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         ]));
         lines.push(Line::from(""));
 
+        // Show inline error banners for the thread (at bottom where user is looking)
+        lines.extend(render_inline_error_banners(app, ctx));
+
         // Add permission lines if pending for this thread
         if let Some(thread_id) = current_thread_id.as_ref() {
             if let Some(perm) = app.dashboard.get_pending_permission(thread_id) {
@@ -476,6 +476,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     &plan_request.summary,
                     ctx,
                     &mut app.markdown_cache,
+                    app.plan_feedback_active,
+                    &app.plan_feedback_text,
                 ));
             } else if app.dashboard.is_thread_planning(thread_id)
                 && app.dashboard.get_pending_permission(thread_id).is_none()
@@ -543,6 +545,9 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         }
     }
 
+    // Show inline error banners for the thread (at bottom where user is looking)
+    lines.extend(render_inline_error_banners(app, ctx));
+
     // Add permission lines if pending for this thread
     if let Some(perm) = app.dashboard.get_pending_permission(&thread_id) {
         let perm_lines = build_permission_lines(perm, &app.question_state, ctx, app.tick_count);
@@ -557,6 +562,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
             &plan_request.summary,
             ctx,
             &mut app.markdown_cache,
+            app.plan_feedback_active,
+            &app.plan_feedback_text,
         ));
     } else if app.dashboard.is_thread_planning(&thread_id)
         && app.dashboard.get_pending_permission(&thread_id).is_none()
