@@ -473,6 +473,23 @@ pub fn render_conversation_header(frame: &mut Frame, area: Rect, app: &App, ctx:
         }
     }
 
+    // Current account badge - abbreviated on narrow terminals, hidden on extra small
+    if let Some(ref account) = app.session_state.current_account {
+        if !is_extra_small {
+            let account_badge = if is_narrow {
+                // Truncate account name on narrow terminals
+                let short_account = truncate_string(account, 10);
+                format!("@{} ", short_account)
+            } else {
+                format!("@{} ", account)
+            };
+            badges.push(Span::styled(
+                account_badge,
+                Style::default().fg(Color::Yellow),
+            ));
+        }
+    }
+
     // Connection status badge (always shown)
     let (status_icon, status_color) = if app.connection_status {
         ("\u{25CF}", Color::LightGreen)

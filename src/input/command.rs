@@ -269,6 +269,8 @@ pub enum Command {
     ClaudeAccountsMoveUp,
     /// Move selection down
     ClaudeAccountsMoveDown,
+    /// Select the highlighted account as primary (Enter/1-9)
+    ClaudeAccountsSelect,
 
     // =========================================================================
     // Conversation Screen Commands
@@ -402,6 +404,7 @@ impl Command {
             Command::ClaudeAccountsClose => "Close Claude accounts",
             Command::ClaudeAccountsMoveUp => "Move selection up",
             Command::ClaudeAccountsMoveDown => "Move selection down",
+            Command::ClaudeAccountsSelect => "Select account as primary",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

@@ -67,6 +67,11 @@ pub struct SessionState {
     /// When a user presses 'a' on a permission prompt, the tool is added here
     #[serde(default)]
     pub allowed_tools: HashSet<String>,
+
+    /// Current Claude account (email or label of priority 0 account)
+    /// Updated when accounts list is received
+    #[serde(default)]
+    pub current_account: Option<String>,
 }
 
 impl SessionState {
@@ -142,6 +147,11 @@ impl SessionState {
         self.allowed_tools.remove(tool_name);
     }
 
+    /// Set the current Claude account (email or label)
+    pub fn set_current_account(&mut self, account: Option<String>) {
+        self.current_account = account;
+    }
+
     /// Reset all session state (for new session)
     pub fn reset(&mut self) {
         self.skills.clear();
@@ -150,6 +160,7 @@ impl SessionState {
         self.oauth_required = None;
         self.oauth_url = None;
         self.allowed_tools.clear();
+        self.current_account = None;
     }
 }
 
