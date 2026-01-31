@@ -904,6 +904,9 @@ mod tests {
             WsOutgoingMessage::ClaudeLoginResponse(_) => panic!("Expected CommandResponse"),
             WsOutgoingMessage::ClaudeAuthTokenResponse(_) => panic!("Expected CommandResponse"),
             WsOutgoingMessage::Steering(_) => panic!("Expected CommandResponse"),
+            WsOutgoingMessage::ClaudeAccountsListRequest(_) => panic!("Expected CommandResponse"),
+            WsOutgoingMessage::ClaudeAccountAddRequest(_) => panic!("Expected CommandResponse"),
+            WsOutgoingMessage::ClaudeAccountRemoveRequest(_) => panic!("Expected CommandResponse"),
         }
     }
 

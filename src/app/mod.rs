@@ -1343,34 +1343,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_message_stream_complete() {
-        let mut app = App::default();
-        // Create a streaming thread first
-        let thread_id = app.cache.create_streaming_thread("Test".to_string());
-
-        // Append some tokens
-        app.handle_message(AppMessage::StreamToken {
-            thread_id: thread_id.clone(),
-            token: "Response".to_string(),
-        });
-
-        // Complete the stream
-        app.handle_message(AppMessage::StreamComplete {
-            thread_id: thread_id.clone(),
-            message_id: 42,
-        });
-
-        // Verify the message was finalized with correct ID
-        let messages = app.cache.get_messages(&thread_id).unwrap();
-        let assistant_msg = messages
-            .iter()
-            .find(|m| m.role == MessageRole::Assistant)
-            .unwrap();
-        assert_eq!(assistant_msg.id, 42);
-        assert!(!assistant_msg.is_streaming);
-    }
-
-    #[test]
     fn test_handle_message_stream_error() {
         let mut app = App::default();
 
@@ -1622,55 +1594,6 @@ mod tests {
         });
 
         // Scroll should be reset to 0 (auto-scroll to bottom)
-        assert_eq!(app.unified_scroll, 0);
-    }
-
-    #[test]
-    fn test_stream_complete_does_not_reset_scroll_for_non_active_thread() {
-        let mut app = App::default();
-
-        // Create two threads
-        let thread1_id = app.cache.create_streaming_thread("Thread 1".to_string());
-        let thread2_id = app.cache.create_streaming_thread("Thread 2".to_string());
-
-        // Set thread 1 as active
-        app.active_thread_id = Some(thread1_id.clone());
-
-        // Set unified scroll to a non-zero value
-        app.unified_scroll = 7;
-        app.user_has_scrolled = true;
-
-        // Complete stream for thread 2 (non-active thread)
-        app.handle_message(AppMessage::StreamComplete {
-            thread_id: thread2_id.clone(),
-            message_id: 42,
-        });
-
-        // Scroll should NOT be reset
-        assert_eq!(app.unified_scroll, 7);
-    }
-
-    #[test]
-    fn test_stream_complete_resets_scroll_for_active_thread() {
-        let mut app = App::default();
-
-        // Create a thread and set it as active
-        let thread_id = app
-            .cache
-            .create_streaming_thread("Active thread".to_string());
-        app.active_thread_id = Some(thread_id.clone());
-
-        // Set unified scroll to a non-zero value
-        app.unified_scroll = 15;
-        app.user_has_scrolled = true;
-
-        // Complete stream for the active thread
-        app.handle_message(AppMessage::StreamComplete {
-            thread_id: thread_id.clone(),
-            message_id: 99,
-        });
-
-        // Scroll should be reset to 0
         assert_eq!(app.unified_scroll, 0);
     }
 

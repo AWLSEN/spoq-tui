@@ -667,6 +667,8 @@ mod tests {
             working_directory: None,
             plan_mode: false,
             images: Vec::new(),
+            use_next_account: None,
+            current_account_id: None,
         };
 
         let json = serde_json::to_string(&request).expect("Failed to serialize");
