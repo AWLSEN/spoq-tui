@@ -23,6 +23,7 @@ use crate::setup::gh_auth::{ensure_gh_authenticated, is_gh_authenticated, GhAuth
 pub enum VpsType {
     Managed,
     Byovps,
+    Local,
 }
 
 /// BYOVPS credentials collected from user input.
@@ -241,11 +242,12 @@ fn choose_vps_type(interrupted: &Arc<AtomicBool>) -> Result<VpsType, CentralApiE
     println!("\nChoose VPS type:");
     println!("  [1] Managed VPS");
     println!("  [2] BYOVPS (Bring Your Own VPS)");
+    println!("  [3] Local (run conductor on this machine)");
 
     loop {
         check_interrupt(interrupted);
 
-        print!("\nEnter your choice (1-2): ");
+        print!("\nEnter your choice (1-3): ");
         io::stdout()
             .flush()
             .map_err(|e| CentralApiError::ServerError {
@@ -267,7 +269,8 @@ fn choose_vps_type(interrupted: &Arc<AtomicBool>) -> Result<VpsType, CentralApiE
         match trimmed {
             "1" => return Ok(VpsType::Managed),
             "2" => return Ok(VpsType::Byovps),
-            _ => println!("Please enter either 1 or 2."),
+            "3" => return Ok(VpsType::Local),
+            _ => println!("Please enter 1, 2, or 3."),
         }
     }
 }
@@ -343,6 +346,9 @@ pub fn run_provisioning_flow(
 
             // Run BYOVPS provisioning flow with retry logic
             run_byovps_flow_with_retry(runtime, credentials, &mut byovps_creds, &interrupted)
+        }
+        VpsType::Local => {
+            run_local_conductor_flow(runtime, &interrupted)
         }
     }
 }
@@ -1750,6 +1756,80 @@ pub fn start_stopped_vps(
     poll_vps_until_ready(runtime, &mut client)
 }
 
+/// Run the local conductor provisioning flow.
+///
+/// Downloads conductor binary if needed, starts it on localhost:8000,
+/// waits for health, and saves config.
+fn run_local_conductor_flow(
+    runtime: &tokio::runtime::Runtime,
+    interrupted: &Arc<AtomicBool>,
+) -> Result<(), CentralApiError> {
+    use crate::conductor::local;
+
+    println!("\nSetting up local conductor...\n");
+
+    // Step 1: Download if needed
+    if !local::conductor_exists() {
+        println!("  Downloading conductor binary...");
+        check_interrupt(interrupted);
+        runtime.block_on(local::download_conductor()).map_err(|e| {
+            CentralApiError::ServerError {
+                status: 0,
+                message: format!("Download failed: {}", e),
+            }
+        })?;
+        println!("  Conductor downloaded");
+    } else {
+        println!("  Conductor binary found");
+    }
+
+    let port = local::default_port();
+
+    // Step 2: Check if already running
+    let already_running = runtime.block_on(local::is_running(port));
+
+    if !already_running {
+        // Step 3: Start conductor
+        println!("  Starting conductor on port {}...", port);
+        check_interrupt(interrupted);
+        // Use "local-user" as owner_id — conductor skips JWT for localhost anyway
+        let _child = runtime
+            .block_on(local::start_conductor(port, "local-user"))
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: e,
+            })?;
+        // Note: _child is dropped here but conductor process continues running.
+        // On TUI launch, preflight will detect local mode and manage the process.
+
+        // Step 4: Health check
+        println!("  Waiting for conductor...");
+        check_interrupt(interrupted);
+        runtime
+            .block_on(local::wait_for_health(port, 30))
+            .map_err(|e| CentralApiError::ServerError {
+                status: 0,
+                message: e,
+            })?;
+    } else {
+        println!("  Conductor already running on port {}", port);
+    }
+
+    println!("  Conductor is healthy");
+
+    // Step 5: Save config
+    let config = crate::startup::config::SpoqConfig {
+        conductor_mode: "local".to_string(),
+        conductor_url: Some(format!("http://127.0.0.1:{}", port)),
+    };
+    config.save().map_err(|e| CentralApiError::ServerError {
+        status: 0,
+        message: format!("Failed to save config: {}", e),
+    })?;
+
+    println!("\n  Local conductor ready!\n");
+    Ok(())
+}
 
 #[cfg(test)]
 mod tests {
@@ -1817,14 +1897,18 @@ mod tests {
         // Test VpsType enum variants
         let managed = VpsType::Managed;
         let byovps = VpsType::Byovps;
+        let local = VpsType::Local;
 
         assert_eq!(managed, VpsType::Managed);
         assert_eq!(byovps, VpsType::Byovps);
+        assert_eq!(local, VpsType::Local);
         assert_ne!(managed, byovps);
+        assert_ne!(managed, local);
 
         // Test Debug trait
         assert_eq!(format!("{:?}", managed), "Managed");
         assert_eq!(format!("{:?}", byovps), "Byovps");
+        assert_eq!(format!("{:?}", local), "Local");
 
         // Test Clone trait
         let managed_clone = managed.clone();
