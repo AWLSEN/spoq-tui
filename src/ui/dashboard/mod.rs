@@ -14,6 +14,7 @@ pub mod states;
 pub mod thread_list;
 pub mod thread_row;
 pub mod tooltip;
+pub mod vps_config_card;
 
 // Re-export types from view_state for backward compatibility
 // This allows existing code using `crate::ui::dashboard::*` to keep working

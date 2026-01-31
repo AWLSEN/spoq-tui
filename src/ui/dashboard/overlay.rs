@@ -34,6 +34,7 @@ use crate::ui::dashboard::accounts_card;
 use crate::ui::dashboard::login_card;
 use crate::ui::dashboard::plan_card;
 use crate::ui::dashboard::question_card::{self, QuestionRenderConfig};
+use crate::ui::dashboard::vps_config_card;
 use crate::ui::dashboard::{OverlayState, RenderContext};
 
 /// Maximum height for question card as percentage of list area
@@ -196,15 +197,7 @@ pub fn render(
             accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref());
         }
         OverlayState::VpsConfig { ref state, .. } => {
-            // TODO: Implement vps_config_card::render (Phase 9)
-            // For now, just render a placeholder
-            use ratatui::widgets::{Paragraph, Block, Borders};
-            use ratatui::style::{Style, Color};
-            let text = format!("VPS Config: {:?}", state);
-            let paragraph = Paragraph::new(text)
-                .block(Block::default().borders(Borders::NONE))
-                .style(Style::default().fg(Color::White));
-            frame.render_widget(paragraph, inner_area);
+            vps_config_card::render(frame, inner_area, state);
         }
     }
 }
