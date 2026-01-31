@@ -404,9 +404,10 @@ where
                                         continue;
                                     }
 
-                                    // Priority 2: If textarea has text, clear it
-                                    if !app.textarea.is_empty() {
+                                    // Priority 2: If textarea has text or images, clear them
+                                    if !app.textarea.is_empty() || !app.pending_images.is_empty() {
                                         app.textarea.clear();
+                                        app.pending_images.clear();
                                         app.last_ctrl_c_time = None; // Reset exit timer
                                         app.mark_dirty();
                                         continue;
@@ -716,8 +717,9 @@ where
                                                     continue;
                                                 }
                                                 KeyCode::Char('n') | KeyCode::Char('N') => {
-                                                    // Only capture 'N' when textarea is empty
-                                                    if app.textarea.is_empty() {
+                                                    // Conversation: textarea is hidden, so always capture
+                                                    // CommandDeck: only capture when textarea is empty
+                                                    if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                         let permission_id = app.dashboard.pending_permissions_iter()
                                                             .find(|(_, p)| p.tool_name == "AskUserQuestion")
                                                             .map(|(_, p)| p.permission_id.clone());
@@ -729,8 +731,9 @@ where
                                                     // Fall through to type 'n' in textarea
                                                 }
                                                 KeyCode::Char('a') | KeyCode::Char('A') => {
-                                                    // Only open dialog when textarea is empty
-                                                    if app.textarea.is_empty() {
+                                                    // Conversation: textarea is hidden, so always capture
+                                                    // CommandDeck: only capture when textarea is empty
+                                                    if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                         if app.open_ask_user_question_dialog() {
                                                             tracing::debug!("Opened AskUserQuestion dialog via 'A' key");
                                                             continue;
@@ -744,9 +747,10 @@ where
                                             }
                                         } else {
                                             // Standard permission prompt (y/a/n)
-                                            // Only capture Y/N/A keys when textarea is empty
+                                            // Conversation: textarea is hidden, so always capture
+                                            // CommandDeck: only capture when textarea is empty
                                             if let KeyCode::Char(c) = key.code {
-                                                if app.textarea.is_empty() {
+                                                if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                     // Debug: emit key press to debug system
                                                     app.emit_debug_state_change(
                                                         "permission_key",
@@ -802,9 +806,10 @@ where
                                     }
 
                                     WaitingFor::PlanApproval { ref request_id } => {
-                                        // Plan approval handles Y/N/A keys only when textarea is empty
+                                        // Conversation: textarea is hidden, so always capture
+                                        // CommandDeck: only capture when textarea is empty
                                         if let KeyCode::Char(c) = key.code {
-                                            if app.textarea.is_empty() {
+                                            if app.screen == Screen::Conversation || app.textarea.is_empty() {
                                                 app.emit_debug_state_change(
                                                     "plan_approval_key",
                                                     "Key pressed during plan approval",
@@ -1351,6 +1356,50 @@ where
                                         app.reset_cursor_blink();
                                         continue;
                                     }
+                                    // Ctrl+V = clipboard paste with image detection
+                                    // Checks clipboard for image first, then falls back to text paste
+                                    KeyCode::Char('v') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        if app.focus != Focus::Input {
+                                            app.focus = Focus::Input;
+                                        }
+                                        // Attempt image read first
+                                        let got_image = match spoq::clipboard::try_read_clipboard_image() {
+                                            Ok(attachment) => {
+                                                if app.pending_images.len() < spoq::clipboard::MAX_PENDING_IMAGES {
+                                                    app.pending_images.push(attachment);
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            }
+                                            Err(spoq::clipboard::ClipboardImageError::TooLarge(size)) => {
+                                                tracing::warn!("Clipboard image too large ({} bytes), skipping", size);
+                                                false
+                                            }
+                                            Err(_) => false,
+                                        };
+                                        // Also paste text from clipboard (handles text+image and text-only)
+                                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                            if let Ok(text) = clipboard.get_text() {
+                                                if !text.is_empty() {
+                                                    // Skip text paste if it looks like an image path
+                                                    // we just attached (avoid duplicating drag-drop paths)
+                                                    if !(got_image && spoq::clipboard::is_image_file_path(&text)) {
+                                                        if app.should_summarize_paste(&text) {
+                                                            app.textarea.insert_paste_token(text);
+                                                        } else {
+                                                            for ch in text.chars() {
+                                                                app.textarea.insert_char(ch);
+                                                            }
+                                                        }
+                                                        app.reset_cursor_blink();
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        app.mark_dirty();
+                                        continue;
+                                    }
                                     // Plain characters (no modifiers or only SHIFT)
                                     KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) => {
                                         // Reset scroll to show input when typing (unified scroll)
@@ -1725,24 +1774,54 @@ where
                                 app.focus = Focus::Input;
                             }
 
-                            if app.should_summarize_paste(&text) {
-                                // Insert as atomic token
-                                app.textarea.insert_paste_token(text);
-                                app.reset_cursor_blink();
-                            } else {
-                                // Insert normally character by character
-                                for ch in text.chars() {
-                                    app.textarea.insert_char(ch);
+                            // Check if clipboard also has an image (some terminals
+                            // send Event::Paste for Ctrl+V even when image is present)
+                            if app.pending_images.len() < spoq::clipboard::MAX_PENDING_IMAGES {
+                                if let Ok(attachment) = spoq::clipboard::try_read_clipboard_image() {
+                                    app.pending_images.push(attachment);
+                                    // Still process text below in case both are present
                                 }
-                                app.reset_cursor_blink();
+                            }
+
+                            // Check if pasted text is a drag-and-dropped image file path
+                            if spoq::clipboard::is_image_file_path(&text) {
+                                if app.pending_images.len() < spoq::clipboard::MAX_PENDING_IMAGES {
+                                    if let Ok(attachment) = spoq::clipboard::try_read_image_file(&text) {
+                                        app.pending_images.push(attachment);
+                                        app.mark_dirty();
+                                        continue; // Don't paste the file path as text
+                                    }
+                                }
+                                // Fall through to paste the path as text if file read failed
+                            }
+
+                            // Process text content (existing logic)
+                            if !text.is_empty() {
+                                if app.should_summarize_paste(&text) {
+                                    // Insert as atomic token
+                                    app.textarea.insert_paste_token(text);
+                                    app.reset_cursor_blink();
+                                } else {
+                                    // Insert normally character by character
+                                    for ch in text.chars() {
+                                        app.textarea.insert_char(ch);
+                                    }
+                                    app.reset_cursor_blink();
+                                }
                             }
 
                             app.mark_dirty();
                             continue;
                         }
-                        _ => {
-                            // Ignore other events (focus, etc.)
+                        Event::FocusGained => {
+                            app.focus_supported = true;
+                            app.is_focused = true;
                         }
+                        Event::FocusLost => {
+                            app.focus_supported = true;
+                            app.is_focused = false;
+                        }
+                        _ => {}
                     }
                 }
             }

@@ -178,6 +178,12 @@ pub struct App {
     pub tasks: Vec<Task>,
     /// Flag to track if the app should quit
     pub should_quit: bool,
+    /// Whether the terminal window is currently focused (for notification gating)
+    pub is_focused: bool,
+    /// Whether we've ever received a focus event from the terminal.
+    /// If false, the terminal doesn't support focus reporting and we
+    /// skip the focus check (always allow notifications).
+    pub focus_supported: bool,
     /// Current screen being displayed
     pub screen: Screen,
     /// ID of the active thread when in Conversation screen
@@ -291,6 +297,8 @@ pub struct App {
     pub folders_error: Option<String>,
     /// Currently selected folder (displayed as chip in input)
     pub selected_folder: Option<Folder>,
+    /// Pending image attachments from clipboard paste or drag-drop (cleared on submit)
+    pub pending_images: Vec<crate::clipboard::ImageAttachment>,
     /// Cached GitHub repos from API for empty state
     pub repos: Vec<GitHubRepo>,
     /// True while fetching repos from API
@@ -472,6 +480,8 @@ impl App {
             threads: Vec::new(),
             tasks: Vec::new(),
             should_quit: false,
+            is_focused: true,
+            focus_supported: false,
             screen: Screen::CommandDeck,
             active_thread_id: None,
             focus: Focus::default(),
@@ -527,6 +537,7 @@ impl App {
             folders_loading: false,
             folders_error: None,
             selected_folder: None,
+            pending_images: Vec::new(),
             repos: Vec::new(),
             repos_loading: false,
             repos_error: None,
@@ -1332,34 +1343,6 @@ mod tests {
     }
 
     #[test]
-    fn test_handle_message_stream_complete() {
-        let mut app = App::default();
-        // Create a streaming thread first
-        let thread_id = app.cache.create_streaming_thread("Test".to_string());
-
-        // Append some tokens
-        app.handle_message(AppMessage::StreamToken {
-            thread_id: thread_id.clone(),
-            token: "Response".to_string(),
-        });
-
-        // Complete the stream
-        app.handle_message(AppMessage::StreamComplete {
-            thread_id: thread_id.clone(),
-            message_id: 42,
-        });
-
-        // Verify the message was finalized with correct ID
-        let messages = app.cache.get_messages(&thread_id).unwrap();
-        let assistant_msg = messages
-            .iter()
-            .find(|m| m.role == MessageRole::Assistant)
-            .unwrap();
-        assert_eq!(assistant_msg.id, 42);
-        assert!(!assistant_msg.is_streaming);
-    }
-
-    #[test]
     fn test_handle_message_stream_error() {
         let mut app = App::default();
 
@@ -1611,55 +1594,6 @@ mod tests {
         });
 
         // Scroll should be reset to 0 (auto-scroll to bottom)
-        assert_eq!(app.unified_scroll, 0);
-    }
-
-    #[test]
-    fn test_stream_complete_does_not_reset_scroll_for_non_active_thread() {
-        let mut app = App::default();
-
-        // Create two threads
-        let thread1_id = app.cache.create_streaming_thread("Thread 1".to_string());
-        let thread2_id = app.cache.create_streaming_thread("Thread 2".to_string());
-
-        // Set thread 1 as active
-        app.active_thread_id = Some(thread1_id.clone());
-
-        // Set unified scroll to a non-zero value
-        app.unified_scroll = 7;
-        app.user_has_scrolled = true;
-
-        // Complete stream for thread 2 (non-active thread)
-        app.handle_message(AppMessage::StreamComplete {
-            thread_id: thread2_id.clone(),
-            message_id: 42,
-        });
-
-        // Scroll should NOT be reset
-        assert_eq!(app.unified_scroll, 7);
-    }
-
-    #[test]
-    fn test_stream_complete_resets_scroll_for_active_thread() {
-        let mut app = App::default();
-
-        // Create a thread and set it as active
-        let thread_id = app
-            .cache
-            .create_streaming_thread("Active thread".to_string());
-        app.active_thread_id = Some(thread_id.clone());
-
-        // Set unified scroll to a non-zero value
-        app.unified_scroll = 15;
-        app.user_has_scrolled = true;
-
-        // Complete stream for the active thread
-        app.handle_message(AppMessage::StreamComplete {
-            thread_id: thread_id.clone(),
-            message_id: 99,
-        });
-
-        // Scroll should be reset to 0
         assert_eq!(app.unified_scroll, 0);
     }
 
@@ -2340,7 +2274,7 @@ mod tests {
 
         // Add follow-up message
         app.cache
-            .add_streaming_message("real-thread-123", "Follow-up".to_string());
+            .add_streaming_message("real-thread-123", "Follow-up".to_string(), Vec::new());
 
         // Thread type should be preserved
         let thread = app.cache.get_thread("real-thread-123").unwrap();

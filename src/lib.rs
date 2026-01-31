@@ -65,6 +65,10 @@ pub mod prelude;
 // These are marked #[doc(hidden)] to exclude from documentation while
 // remaining accessible to the binary crate.
 
+/// Clipboard image reading and file-based image ingestion
+#[doc(hidden)]
+pub mod clipboard;
+
 /// Authentication and credential management
 #[doc(hidden)]
 pub mod auth;
@@ -152,3 +156,7 @@ pub mod websocket;
 /// Credential change detection and auto-sync system
 #[doc(hidden)]
 pub mod credential_watcher;
+
+/// Native OS notifications for task completion
+#[doc(hidden)]
+pub mod notifications;

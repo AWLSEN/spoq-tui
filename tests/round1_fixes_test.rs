@@ -327,6 +327,7 @@ fn test_set_messages_preserves_streaming_messages() {
         reasoning_collapsed: false,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     cache.add_message(streaming_msg);
 
@@ -343,6 +344,7 @@ fn test_set_messages_preserves_streaming_messages() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     let backend_msg2 = Message {
         id: 2,
@@ -356,6 +358,7 @@ fn test_set_messages_preserves_streaming_messages() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
 
     cache.set_messages(thread_id.clone(), vec![backend_msg1, backend_msg2]);
@@ -392,6 +395,7 @@ fn test_set_messages_preserves_temporary_id_messages() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     cache.add_message(temp_msg);
 
@@ -408,6 +412,7 @@ fn test_set_messages_preserves_temporary_id_messages() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
 
     cache.set_messages(thread_id.clone(), vec![backend_msg]);
@@ -440,6 +445,7 @@ fn test_set_messages_preserves_higher_id_messages() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     cache.add_message(existing_msg);
 
@@ -457,6 +463,7 @@ fn test_set_messages_preserves_higher_id_messages() {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+        image_hashes: Vec::new(),
         },
         Message {
             id: 3,
@@ -470,6 +477,7 @@ fn test_set_messages_preserves_higher_id_messages() {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+        image_hashes: Vec::new(),
         },
     ];
 
@@ -506,6 +514,7 @@ fn test_set_messages_replaces_all_when_no_local_messages() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     cache.add_message(msg1);
 
@@ -523,6 +532,7 @@ fn test_set_messages_replaces_all_when_no_local_messages() {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+        image_hashes: Vec::new(),
         },
         Message {
             id: 2,
@@ -536,6 +546,7 @@ fn test_set_messages_replaces_all_when_no_local_messages() {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+        image_hashes: Vec::new(),
         },
     ];
 
@@ -568,6 +579,7 @@ fn test_set_messages_merge_order_backend_then_local() {
         reasoning_collapsed: false,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     let temp_msg = Message {
         id: 0,
@@ -581,6 +593,7 @@ fn test_set_messages_merge_order_backend_then_local() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     cache.add_message(temp_msg);
     cache.add_message(streaming_msg);
@@ -598,6 +611,7 @@ fn test_set_messages_merge_order_backend_then_local() {
         reasoning_collapsed: true,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     }];
 
     cache.set_messages(thread_id.clone(), backend_msgs);
@@ -630,6 +644,7 @@ fn test_set_messages_empty_backend_preserves_local() {
         reasoning_collapsed: false,
         segments: Vec::new(),
         render_version: 0,
+        image_hashes: Vec::new(),
     };
     cache.add_message(streaming_msg);
 

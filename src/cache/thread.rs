@@ -104,7 +104,14 @@ impl ThreadCache {
 
     /// Create a new thread with a streaming assistant response
     /// Returns the thread_id for tracking
+    /// Convenience wrapper — creates a streaming thread with no attached images.
     pub fn create_streaming_thread(&mut self, first_message: String) -> String {
+        self.create_streaming_thread_with_images(first_message, Vec::new())
+    }
+
+    /// Create a new thread with a streaming assistant placeholder, attaching image hashes
+    /// to the initial user message.
+    pub fn create_streaming_thread_with_images(&mut self, first_message: String, image_hashes: Vec<String>) -> String {
         let thread_id = Uuid::new_v4().to_string();
         let now = Utc::now();
 
@@ -152,6 +159,7 @@ impl ThreadCache {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes,
         };
         self.add_message(user_message);
 
@@ -168,6 +176,7 @@ impl ThreadCache {
             reasoning_collapsed: false, // Show reasoning while streaming
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         self.add_message(assistant_message);
 
@@ -189,6 +198,17 @@ impl ThreadCache {
         first_message: String,
         thread_type: ThreadType,
         working_directory: Option<String>,
+    ) -> String {
+        self.create_pending_thread_with_images(first_message, thread_type, working_directory, Vec::new())
+    }
+
+    /// Create a new pending thread with image hashes attached to the initial user message.
+    pub fn create_pending_thread_with_images(
+        &mut self,
+        first_message: String,
+        thread_type: ThreadType,
+        working_directory: Option<String>,
+        image_hashes: Vec<String>,
     ) -> String {
         let thread_id = Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -237,6 +257,7 @@ impl ThreadCache {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes,
         };
         self.add_message(user_message);
 
@@ -253,6 +274,7 @@ impl ThreadCache {
             reasoning_collapsed: false, // Show reasoning while streaming
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         self.add_message(assistant_message);
 
@@ -364,6 +386,7 @@ impl ThreadCache {
                 reasoning_collapsed: true,
                 segments: Vec::new(),
                 render_version: 0,
+            image_hashes: Vec::new(),
             },
             Message {
                 id: 2,
@@ -377,6 +400,7 @@ impl ThreadCache {
                 reasoning_collapsed: true,
                 segments: Vec::new(),
                 render_version: 0,
+            image_hashes: Vec::new(),
             },
         ];
 
@@ -412,6 +436,7 @@ impl ThreadCache {
                 reasoning_collapsed: true,
                 segments: Vec::new(),
                 render_version: 0,
+            image_hashes: Vec::new(),
             },
             Message {
                 id: 4,
@@ -425,6 +450,7 @@ impl ThreadCache {
                 reasoning_collapsed: true,
                 segments: Vec::new(),
                 render_version: 0,
+            image_hashes: Vec::new(),
             },
         ];
 
@@ -460,6 +486,7 @@ impl ThreadCache {
                 reasoning_collapsed: true,
                 segments: Vec::new(),
                 render_version: 0,
+            image_hashes: Vec::new(),
             },
             Message {
                 id: 6,
@@ -473,6 +500,7 @@ impl ThreadCache {
                 reasoning_collapsed: true,
                 segments: Vec::new(),
                 render_version: 0,
+            image_hashes: Vec::new(),
             },
         ];
 

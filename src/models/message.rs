@@ -68,6 +68,9 @@ pub struct ServerMessage {
     /// Name for tool responses
     #[serde(default)]
     pub name: Option<String>,
+    /// Image hashes for attached images (from backend persistence)
+    #[serde(default)]
+    pub image_hashes: Option<Vec<String>>,
 }
 
 impl ServerMessage {
@@ -153,6 +156,7 @@ impl ServerMessage {
             reasoning_collapsed: true,
             segments,
             render_version: 0,
+            image_hashes: self.image_hashes.unwrap_or_default(),
         }
     }
 }
@@ -188,6 +192,9 @@ pub struct Message {
     /// Version counter for rendered line cache invalidation
     #[serde(default)]
     pub render_version: u64,
+    /// Image hashes for attached images (user messages only)
+    #[serde(default)]
+    pub image_hashes: Vec<String>,
 }
 
 impl Message {
@@ -403,6 +410,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         }
     }
 
@@ -860,6 +868,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
 
         let msg = server_msg.to_client_message("thread-1", 42);
@@ -913,6 +922,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
 
         let msg = server_msg.to_client_message("thread-1", 1);
@@ -937,6 +947,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
 
         let msg = server_msg.to_client_message("thread-2", 99);
@@ -976,6 +987,7 @@ mod tests {
             ]),
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
 
         let msg = server_msg.to_client_message("thread-3", 5);
@@ -1017,6 +1029,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
 
         let msg = server_msg.to_client_message("thread-4", 0);
@@ -1043,6 +1056,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
 
         let msg = server_msg.to_client_message("thread-5", 10);
@@ -1072,6 +1086,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
 
         let msg = server_msg.to_client_message("thread-6", 20);
@@ -1102,6 +1117,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
         let client_msg = server_msg.to_client_message("thread-1", 1);
         assert_eq!(client_msg.content, "User's actual message");
@@ -1123,6 +1139,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
         let client_msg = server_msg.to_client_message("thread-1", 1);
         // Assistant messages should NOT have prefix stripped
@@ -1139,6 +1156,7 @@ mod tests {
             tool_calls: None,
             tool_call_id: None,
             name: None,
+            image_hashes: None,
         };
         let client_msg = server_msg.to_client_message("thread-1", 1);
         assert_eq!(client_msg.content, "Block content");

@@ -133,6 +133,22 @@ impl App {
                 if self.active_thread_id.as_ref() == Some(&thread_id) {
                     self.reset_scroll();
                 }
+
+                // Fire native OS notification when the TUI is not focused.
+                // If the terminal doesn't support focus reporting (focus_supported=false),
+                // we always notify since we can't detect focus state.
+                let should_notify = !self.focus_supported || !self.is_focused;
+                tracing::debug!(
+                    "StreamComplete: is_focused={}, focus_supported={}, should_notify={}, thread_id={}",
+                    self.is_focused,
+                    self.focus_supported,
+                    should_notify,
+                    thread_id
+                );
+                if should_notify {
+                    let title = self.cache.get_thread(&thread_id).map(|t| t.title.as_str());
+                    crate::notifications::notify_task_complete(title);
+                }
             }
             AppMessage::StreamError {
                 thread_id,

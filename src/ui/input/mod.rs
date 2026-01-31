@@ -5,6 +5,7 @@
 
 mod folder_chip;
 mod height;
+pub(crate) mod image_chip;
 mod keybinds;
 mod permission;
 
@@ -13,7 +14,14 @@ pub use folder_chip::{
     calculate_chip_width, format_chip_folder_name, render_folder_chip, COLOR_CHIP_BG,
     COLOR_CHIP_TEXT, MAX_CHIP_FOLDER_NAME_LEN,
 };
-pub use height::{calculate_input_area_height, calculate_input_box_height, MAX_INPUT_LINES};
+pub use height::{
+    calculate_input_area_height, calculate_input_area_height_with_images,
+    calculate_input_box_height, MAX_INPUT_LINES,
+};
+pub use image_chip::{
+    calculate_image_chips_width, format_image_chip_text, render_image_chips,
+    COLOR_IMAGE_CHIP_BG, COLOR_IMAGE_CHIP_TEXT,
+};
 pub use keybinds::{build_contextual_keybinds, build_responsive_keybinds};
 pub use permission::{
     get_permission_preview, parse_ask_user_question, DEFAULT_PERMISSION_BOX_HEIGHT,
@@ -91,13 +99,46 @@ pub fn render_input_area_with_blink(
     let line_count = app.textarea.line_count();
     let input_box_height = calculate_input_box_height(line_count);
 
-    let input_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(input_box_height), // Input box (dynamic height)
-            Constraint::Length(1),                // Keybinds
-        ])
-        .split(inner);
+    let has_images = !app.pending_images.is_empty();
+
+    let (input_area, keybinds_area) = if has_images {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),                // Image chips row (above border)
+                Constraint::Length(input_box_height), // Input box
+                Constraint::Length(1),                // Keybinds
+            ])
+            .split(inner);
+
+        // Render image chips above the input box border
+        let mut spans: Vec<Span<'static>> = vec![Span::raw(" ")];
+        for (i, img) in app.pending_images.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw(" "));
+            }
+            let chip_text = format_image_chip_text(i, &img.hash);
+            spans.push(Span::styled(
+                chip_text,
+                Style::default()
+                    .fg(COLOR_IMAGE_CHIP_TEXT)
+                    .bg(COLOR_IMAGE_CHIP_BG),
+            ));
+        }
+        let image_line = Paragraph::new(Line::from(spans));
+        frame.render_widget(image_line, chunks[0]);
+
+        (chunks[1], chunks[2])
+    } else {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(input_box_height), // Input box (dynamic height)
+                Constraint::Length(1),                // Keybinds
+            ])
+            .split(inner);
+        (chunks[0], chunks[1])
+    };
 
     // Render the folder chip + input widget using our custom composite widget
     let input_with_chip = InputWithChipWidget {
@@ -106,14 +147,14 @@ pub fn render_input_area_with_blink(
         cursor_visible,
         selected_folder: app.selected_folder.as_ref(),
     };
-    frame.render_widget(input_with_chip, input_chunks[0]);
+    frame.render_widget(input_with_chip, input_area);
 
     // Build responsive keybind hints based on terminal dimensions
     let ctx = LayoutContext::new(app.terminal_width, app.terminal_height);
     let keybinds = build_responsive_keybinds(app, &ctx);
 
     let keybinds_widget = Paragraph::new(keybinds);
-    frame.render_widget(keybinds_widget, input_chunks[1]);
+    frame.render_widget(keybinds_widget, keybinds_area);
 }
 
 /// Render the input area with static (non-blinking) cursor.
@@ -158,7 +199,7 @@ impl Widget for InputWithChipWidget<'_, '_> {
             let chip_width = calculate_chip_width(&folder.name);
             let spacing = 1u16; // Space after chip
 
-            // Render the chip at the start of the inner area (top-left)
+            // Render the folder chip at the start of the inner area (top-left)
             render_folder_chip(buf, inner_area.x, inner_area.y, &folder.name);
 
             // Calculate remaining area for textarea
@@ -227,6 +268,24 @@ pub fn build_input_section_with_cursor(
             )]));
         }
     };
+
+    // 1.5. Image attachment chips (between mode indicator and top border)
+    if !app.pending_images.is_empty() {
+        let mut spans = vec![Span::raw("  ")];
+        for (i, img) in app.pending_images.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw(" "));
+            }
+            let chip_text = format_image_chip_text(i, &img.hash);
+            spans.push(Span::styled(
+                chip_text,
+                Style::default()
+                    .fg(COLOR_IMAGE_CHIP_TEXT)
+                    .bg(COLOR_IMAGE_CHIP_BG),
+            ));
+        }
+        lines.push(Line::from(spans));
+    }
 
     // 2. Input top border (full-width horizontal line)
     lines.push(Line::from(Span::styled(

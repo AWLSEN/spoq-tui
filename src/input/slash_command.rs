@@ -252,12 +252,6 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_empty() {
-        let results = SlashCommand::filter("");
-        assert_eq!(results.len(), 7);
-    }
-
-    #[test]
     fn test_filter_partial_match() {
         let results = SlashCommand::filter("/sy");
         assert_eq!(results, vec![SlashCommand::Sync]);

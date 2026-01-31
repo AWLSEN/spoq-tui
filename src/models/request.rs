@@ -3,6 +3,17 @@ use uuid::Uuid;
 
 use super::thread::ThreadType;
 
+/// Image attachment payload for the stream request.
+///
+/// Contains the base64-encoded PNG data and a short hash for identification.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ImageAttachmentPayload {
+    /// Short hash identifier (8 hex chars of sha256).
+    pub hash: String,
+    /// Base64-encoded PNG data (no data URI prefix).
+    pub data: String,
+}
+
 /// Permission mode for Claude tool execution
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +53,9 @@ pub struct StreamRequest {
     /// Plan mode flag - when true, conductor uses read-only tool registry
     #[serde(default)]
     pub plan_mode: bool,
+    /// Image attachments as base64-encoded PNGs
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<ImageAttachmentPayload>,
     /// Use next account after rate limit (waterfall failover)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_next_account: Option<bool>,
@@ -62,6 +76,7 @@ impl StreamRequest {
             permission_mode: None,
             working_directory: None,
             plan_mode: false,
+            images: Vec::new(),
             use_next_account: None,
             current_account_id: None,
         }
@@ -78,6 +93,7 @@ impl StreamRequest {
             permission_mode: None,
             working_directory: None,
             plan_mode: false,
+            images: Vec::new(),
             use_next_account: None,
             current_account_id: None,
         }
@@ -95,6 +111,7 @@ impl StreamRequest {
             permission_mode: None,
             working_directory: None,
             plan_mode: false,
+            images: Vec::new(),
             use_next_account: None,
             current_account_id: None,
         }
@@ -121,6 +138,12 @@ impl StreamRequest {
     /// Set plan mode for this request (builder pattern)
     pub fn with_plan_mode(mut self, plan_mode: bool) -> Self {
         self.plan_mode = plan_mode;
+        self
+    }
+
+    /// Set image attachments for this request (builder pattern)
+    pub fn with_images(mut self, images: Vec<ImageAttachmentPayload>) -> Self {
+        self.images = images;
         self
     }
 

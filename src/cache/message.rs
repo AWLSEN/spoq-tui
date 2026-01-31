@@ -52,6 +52,7 @@ impl ThreadCache {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         self.add_message(message);
@@ -108,7 +109,7 @@ impl ThreadCache {
     ///
     /// # Returns
     /// `true` if the thread exists and messages were added, `false` otherwise.
-    pub fn add_streaming_message(&mut self, thread_id: &str, user_content: String) -> bool {
+    pub fn add_streaming_message(&mut self, thread_id: &str, user_content: String, image_hashes: Vec<String>) -> bool {
         // Verify thread exists
         if !self.threads.contains_key(thread_id) {
             return false;
@@ -136,6 +137,7 @@ impl ThreadCache {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes,
         };
         self.add_message(user_message);
 
@@ -152,6 +154,7 @@ impl ThreadCache {
             reasoning_collapsed: false, // Show reasoning while streaming
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         self.add_message(assistant_message);
 
@@ -336,6 +339,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         cache.add_message(message);
@@ -361,6 +365,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         }];
 
         cache.set_messages("thread-001".to_string(), new_messages);
@@ -572,7 +577,7 @@ mod tests {
         cache.finalize_message(&thread_id, 1);
 
         // Add a follow-up message
-        let result = cache.add_streaming_message(&thread_id, "Follow-up question".to_string());
+        let result = cache.add_streaming_message(&thread_id, "Follow-up question".to_string(), Vec::new());
 
         assert!(result);
 
@@ -595,7 +600,7 @@ mod tests {
     fn test_add_streaming_message_returns_false_for_nonexistent_thread() {
         let mut cache = ThreadCache::new();
 
-        let result = cache.add_streaming_message("nonexistent", "Message".to_string());
+        let result = cache.add_streaming_message("nonexistent", "Message".to_string(), Vec::new());
 
         assert!(!result);
         assert!(cache.get_messages("nonexistent").is_none());
@@ -613,7 +618,7 @@ mod tests {
         );
 
         // Add follow-up
-        cache.add_streaming_message(&thread_id, "New follow-up message".to_string());
+        cache.add_streaming_message(&thread_id, "New follow-up message".to_string(), Vec::new());
 
         // Preview should be updated
         assert_eq!(
@@ -630,7 +635,7 @@ mod tests {
         let original_updated_at = cache.get_thread(&thread_id).unwrap().updated_at;
 
         // Sleep briefly to ensure time difference (or we can just check it's >= original)
-        cache.add_streaming_message(&thread_id, "Follow-up".to_string());
+        cache.add_streaming_message(&thread_id, "Follow-up".to_string(), Vec::new());
 
         let new_updated_at = cache.get_thread(&thread_id).unwrap().updated_at;
         assert!(new_updated_at >= original_updated_at);
@@ -649,7 +654,7 @@ mod tests {
         assert_eq!(cache.threads()[0].id, thread3);
 
         // Add message to thread 1
-        cache.add_streaming_message(&thread1, "Follow-up".to_string());
+        cache.add_streaming_message(&thread1, "Follow-up".to_string(), Vec::new());
 
         // Now thread 1 should be at front
         assert_eq!(cache.threads()[0].id, thread1);
@@ -666,7 +671,7 @@ mod tests {
         cache.finalize_message(&thread_id, 2);
 
         // Add second exchange
-        cache.add_streaming_message(&thread_id, "Second".to_string());
+        cache.add_streaming_message(&thread_id, "Second".to_string(), Vec::new());
 
         let messages = cache.get_messages(&thread_id).unwrap();
         // Messages: [user(1), assistant(2), user(3), assistant(0)]
@@ -681,7 +686,7 @@ mod tests {
         cache.finalize_message(&thread_id, 1);
 
         // Add follow-up
-        cache.add_streaming_message(&thread_id, "Follow-up".to_string());
+        cache.add_streaming_message(&thread_id, "Follow-up".to_string(), Vec::new());
 
         // Stream tokens to the new assistant message
         cache.append_to_message(&thread_id, "Response ");
@@ -720,7 +725,7 @@ mod tests {
 
         // Add follow-up question
         let result =
-            cache.add_streaming_message("thread-abc", "Tell me more about ownership.".to_string());
+            cache.add_streaming_message("thread-abc", "Tell me more about ownership.".to_string(), Vec::new());
         assert!(result);
 
         // Stream second response
@@ -761,7 +766,7 @@ mod tests {
         let mut cache = ThreadCache::with_stub_data();
 
         // Add to an existing stub thread
-        let result = cache.add_streaming_message("thread-001", "New question".to_string());
+        let result = cache.add_streaming_message("thread-001", "New question".to_string(), Vec::new());
         assert!(result);
 
         let messages = cache.get_messages("thread-001").unwrap();
@@ -905,7 +910,7 @@ mod tests {
         cache.finalize_message(&thread_id, 100);
 
         // Add another exchange
-        cache.add_streaming_message(&thread_id, "Second question".to_string());
+        cache.add_streaming_message(&thread_id, "Second question".to_string(), Vec::new());
         cache.append_reasoning_to_message(&thread_id, "Reasoning 2");
         cache.finalize_message(&thread_id, 101);
 
@@ -973,6 +978,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         let streaming_assistant_msg = Message {
             id: 0, // Placeholder ID
@@ -986,6 +992,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         cache.set_messages(
             thread_id.clone(),
@@ -1005,6 +1012,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         let historical_msg2 = Message {
             id: 2,
@@ -1018,6 +1026,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
 
         // This is the critical call that would previously REPLACE all messages
@@ -1083,6 +1092,7 @@ mod tests {
             reasoning_collapsed: false,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         cache.set_messages(thread_id.clone(), vec![streaming_msg]);
 
@@ -1113,6 +1123,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         }];
 
         cache.set_messages("thread-001".to_string(), new_messages);
@@ -1163,6 +1174,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         cache.set_messages(thread_id.clone(), vec![local_msg]);
 
@@ -1179,6 +1191,7 @@ mod tests {
             reasoning_collapsed: true,
             segments: Vec::new(),
             render_version: 0,
+            image_hashes: Vec::new(),
         };
         cache.set_messages(thread_id.clone(), vec![backend_msg]);
 

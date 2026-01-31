@@ -19,14 +19,14 @@ pub mod virtualization;
 pub use permission_inline::build_permission_lines;
 #[allow(unused_imports)]
 pub use subagent_events::{render_subagent_event, render_subagent_events_block, TreeConnector};
-pub use text_wrapping::estimate_wrapped_line_count;
+pub use text_wrapping::{apply_background_to_line, estimate_wrapped_line_count, wrap_line_with_prefix};
 #[allow(unused_imports)]
 pub use tool_events::{render_tool_event, truncate_preview};
 
 // Used by this module's main functions
 use errors::render_inline_error_banners;
 use segments::render_message_segments;
-use text_wrapping::{apply_background_to_line, wrap_lines_with_prefix};
+use text_wrapping::wrap_lines_with_prefix;
 use thinking::render_thinking_block;
 use virtualization::{estimate_message_height_fast, MessageHeight};
 
@@ -40,6 +40,7 @@ use ratatui::{
 
 use crate::app::App;
 use crate::models::{Message, MessageRole};
+use crate::ui::input::image_chip::{format_image_chip_text, COLOR_IMAGE_CHIP_BG, COLOR_IMAGE_CHIP_TEXT};
 
 use super::helpers::inner_rect;
 use super::layout::LayoutContext;
@@ -101,6 +102,26 @@ fn build_file_chips_line(paths: &[String], label: &str, label_style: Style) -> L
         ));
     }
 
+    Line::from(spans)
+}
+
+/// Build a line with image attachment chips.
+///
+/// Renders image hashes as purple chips matching the input area style.
+fn build_image_chips_line(hashes: &[String], label: &str, label_style: Style) -> Line<'static> {
+    let mut spans = vec![Span::styled(label.to_string(), label_style)];
+    for (i, hash) in hashes.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::raw(" "));
+        }
+        let chip_text = format_image_chip_text(i, hash);
+        spans.push(Span::styled(
+            chip_text,
+            Style::default()
+                .fg(COLOR_IMAGE_CHIP_TEXT)
+                .bg(COLOR_IMAGE_CHIP_BG),
+        ));
+    }
     Line::from(spans)
 }
 
@@ -236,6 +257,13 @@ pub fn render_single_message(
                 let mut chips_line = build_file_chips_line(&file_refs, label, label_style);
                 apply_background_to_line(&mut chips_line, COLOR_HUMAN_BG, max_width);
                 message_lines.push(chips_line);
+            }
+
+            // Render image attachment chips if present (for user messages)
+            if message.role == MessageRole::User && !message.image_hashes.is_empty() {
+                let mut img_line = build_image_chips_line(&message.image_hashes, label, label_style);
+                apply_background_to_line(&mut img_line, COLOR_HUMAN_BG, max_width);
+                message_lines.push(img_line);
             }
 
             let content_lines_arc = app.markdown_cache.render(&display_content);

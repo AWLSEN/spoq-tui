@@ -1695,7 +1695,7 @@ impl App {
         self.reset_scroll();
 
         // Add streaming message to cache so UI shows the incoming response
-        if !self.cache.add_streaming_message(&thread_id, "continue".to_string()) {
+        if !self.cache.add_streaming_message(&thread_id, "continue".to_string(), Vec::new()) {
             // Thread doesn't exist in cache
             self.stream_error = Some("Thread no longer exists.".to_string());
             return;

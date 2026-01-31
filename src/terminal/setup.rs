@@ -5,7 +5,10 @@
 
 use crossterm::{
     cursor::Show,
-    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
+    event::{
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture,
+    },
     execute,
     terminal::{disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -30,7 +33,8 @@ pub fn enter_tui_mode<W: Write>(writer: &mut W) -> io::Result<()> {
         writer,
         EnterAlternateScreen,
         EnableBracketedPaste,
-        EnableMouseCapture
+        EnableMouseCapture,
+        EnableFocusChange
     )
 }
 
@@ -56,6 +60,7 @@ pub fn leave_tui_mode<W: Write>(writer: &mut W) {
     // Leave alternate screen and disable features
     let _ = execute!(
         writer,
+        DisableFocusChange,
         DisableMouseCapture,
         DisableBracketedPaste,
         LeaveAlternateScreen
