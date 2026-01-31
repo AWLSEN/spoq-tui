@@ -298,18 +298,8 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             (*anchor_y, 6 + account_rows)
         }
         OverlayState::VpsConfig { anchor_y, ref state, .. } => {
-            use crate::view_state::dashboard_view::VpsConfigState;
-            // Height depends on state
-            let height = match state {
-                VpsConfigState::InputFields { error, .. } => {
-                    // Title(1) + blank(1) + 3 fields * 3 rows each + error?(1) + blank(1) + help(1) + borders(2)
-                    if error.is_some() { 18 } else { 17 }
-                }
-                VpsConfigState::Provisioning { .. } => 10,
-                VpsConfigState::Success { .. } => 10,
-                VpsConfigState::Error { .. } => 10,
-                VpsConfigState::Authenticating { .. } => 12,
-            };
+            // Content height from card + borders(2)
+            let height = vps_config_card::calculate_height(state) + 2;
             (*anchor_y, height)
         }
     }

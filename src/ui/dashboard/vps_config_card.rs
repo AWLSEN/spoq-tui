@@ -20,9 +20,17 @@ use crate::view_state::{VpsConfigMode, VpsConfigState};
 /// Calculate the height needed for the VPS config card based on state.
 pub fn calculate_height(state: &VpsConfigState) -> u16 {
     match state {
-        VpsConfigState::InputFields { error, .. } => {
-            // Title(1) + blank(1) + 3 fields * 3 rows each + error?(1) + blank(1) + help(1)
-            if error.is_some() { 16 } else { 15 }
+        VpsConfigState::InputFields { mode, error, .. } => {
+            match mode {
+                VpsConfigMode::Remote => {
+                    // Title(1) + blank(1) + mode(1) + blank(1) + 3 fields * 2 rows + error?(1) + blank(1) + help(1)
+                    if error.is_some() { 14 } else { 13 }
+                }
+                VpsConfigMode::Local => {
+                    // Title(1) + blank(1) + mode(1) + blank(1) + info(2) + blank(1) + help(1)
+                    8
+                }
+            }
         }
         VpsConfigState::Provisioning { .. } => 8,
         VpsConfigState::Success { .. } => 8,
@@ -80,9 +88,60 @@ fn render_input_fields(
     field_focus: u8,
     error: Option<&str>,
 ) {
-    // Layout: title, blank, 3 fields (label + input each), error?, blank, help
+    match mode {
+        VpsConfigMode::Remote => render_remote_fields(frame, area, ip, username, password, field_focus, error),
+        VpsConfigMode::Local => render_local_fields(frame, area, field_focus),
+    }
+}
+
+/// Render the mode selector row
+fn render_mode_selector(frame: &mut Frame, area: Rect, mode: &VpsConfigMode, focused: bool) {
+    let (remote_style, local_style) = match mode {
+        VpsConfigMode::Remote => (
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default().fg(COLOR_DIM),
+        ),
+        VpsConfigMode::Local => (
+            Style::default().fg(COLOR_DIM),
+            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        ),
+    };
+
+    let highlight_left = if focused { "\u{25b8} " } else { "" };
+    let highlight_right = if focused { " \u{25c2}" } else { "" };
+
+    let line = match mode {
+        VpsConfigMode::Remote => Line::from(vec![
+            Span::styled("   Mode: ", Style::default().fg(COLOR_DIM)),
+            Span::styled(format!("{highlight_left}Remote VPS{highlight_right}"), remote_style),
+            Span::raw("  "),
+            Span::styled("Local", local_style),
+        ]),
+        VpsConfigMode::Local => Line::from(vec![
+            Span::styled("   Mode: ", Style::default().fg(COLOR_DIM)),
+            Span::styled("Remote VPS", remote_style),
+            Span::raw("  "),
+            Span::styled(format!("{highlight_left}Local{highlight_right}"), local_style),
+        ]),
+    };
+
+    frame.render_widget(Paragraph::new(line), area);
+}
+
+/// Render Remote mode: mode selector + IP/username/password fields
+fn render_remote_fields(
+    frame: &mut Frame,
+    area: Rect,
+    ip: &str,
+    username: &str,
+    password: &str,
+    field_focus: u8,
+    error: Option<&str>,
+) {
     let mut constraints = vec![
         Constraint::Length(1), // Title
+        Constraint::Length(1), // Blank
+        Constraint::Length(1), // Mode selector
         Constraint::Length(1), // Blank
         Constraint::Length(1), // IP label
         Constraint::Length(1), // IP input
@@ -93,56 +152,50 @@ fn render_input_fields(
     ];
 
     if error.is_some() {
-        constraints.push(Constraint::Length(1)); // Error message
+        constraints.push(Constraint::Length(1)); // Error
     }
 
     constraints.push(Constraint::Length(1)); // Blank
-    constraints.push(Constraint::Length(1)); // Help line
-    constraints.push(Constraint::Min(0));    // Remaining
+    constraints.push(Constraint::Length(1)); // Help
+    constraints.push(Constraint::Min(0));
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
         .split(area);
 
-    // Title - centered, white + bold
+    // Title
     let title = Line::from(Span::styled(
         "Change VPS",
         Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
     ));
-    frame.render_widget(
-        Paragraph::new(title).alignment(Alignment::Center),
-        chunks[0],
-    );
+    frame.render_widget(Paragraph::new(title).alignment(Alignment::Center), chunks[0]);
+
+    // Mode selector
+    render_mode_selector(frame, chunks[2], &VpsConfigMode::Remote, field_focus == 0);
 
     // IP Address field
-    let ip_focused = field_focus == 0;
-    render_field(frame, chunks[2], chunks[3], "VPS IP Address", ip, ip_focused, false);
+    render_field(frame, chunks[4], chunks[5], "VPS IP Address", ip, field_focus == 1, false);
 
     // Username field
-    let username_focused = field_focus == 1;
-    render_field(frame, chunks[4], chunks[5], "SSH Username", username, username_focused, false);
+    render_field(frame, chunks[6], chunks[7], "SSH Username", username, field_focus == 2, false);
 
     // Password field
-    let password_focused = field_focus == 2;
-    render_field(frame, chunks[6], chunks[7], "SSH Password", password, password_focused, true);
+    render_field(frame, chunks[8], chunks[9], "SSH Password", password, field_focus == 3, true);
 
-    // Error message (if present)
-    let help_chunk_idx = if error.is_some() {
+    // Error message
+    let help_idx = if error.is_some() {
         let error_line = Line::from(Span::styled(
             error.unwrap_or(""),
             Style::default().fg(Color::Red),
         ));
-        frame.render_widget(
-            Paragraph::new(error_line).alignment(Alignment::Center),
-            chunks[8],
-        );
-        10 // help is at index 10 (skip error + blank)
+        frame.render_widget(Paragraph::new(error_line).alignment(Alignment::Center), chunks[10]);
+        12
     } else {
-        9 // help is at index 9 (skip blank)
+        11
     };
 
-    // Help line - centered
+    // Help line
     let help = Line::from(vec![
         Span::styled("[Tab]", Style::default().fg(Color::Green)),
         Span::raw(" Next   "),
@@ -151,10 +204,61 @@ fn render_input_fields(
         Span::styled("[Esc]", Style::default().fg(Color::Red)),
         Span::raw(" Cancel"),
     ]);
-    frame.render_widget(
-        Paragraph::new(help).alignment(Alignment::Center),
-        chunks[help_chunk_idx],
-    );
+    frame.render_widget(Paragraph::new(help).alignment(Alignment::Center), chunks[help_idx]);
+}
+
+/// Render Local mode: mode selector + info text
+fn render_local_fields(frame: &mut Frame, area: Rect, field_focus: u8) {
+    let constraints = vec![
+        Constraint::Length(1), // Title
+        Constraint::Length(1), // Blank
+        Constraint::Length(1), // Mode selector
+        Constraint::Length(1), // Blank
+        Constraint::Length(1), // Info line 1
+        Constraint::Length(1), // Info line 2
+        Constraint::Length(1), // Blank
+        Constraint::Length(1), // Help
+        Constraint::Min(0),
+    ];
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    // Title
+    let title = Line::from(Span::styled(
+        "Change VPS",
+        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+    ));
+    frame.render_widget(Paragraph::new(title).alignment(Alignment::Center), chunks[0]);
+
+    // Mode selector
+    render_mode_selector(frame, chunks[2], &VpsConfigMode::Local, field_focus == 0);
+
+    // Info text
+    let info1 = Line::from(Span::styled(
+        "   Conductor will run locally",
+        Style::default().fg(COLOR_DIM),
+    ));
+    frame.render_widget(Paragraph::new(info1), chunks[4]);
+
+    let info2 = Line::from(Span::styled(
+        "   on http://localhost:8000",
+        Style::default().fg(COLOR_DIM),
+    ));
+    frame.render_widget(Paragraph::new(info2), chunks[5]);
+
+    // Help line
+    let help = Line::from(vec![
+        Span::styled("[\u{2190}\u{2192}]", Style::default().fg(Color::Green)),
+        Span::raw(" Mode   "),
+        Span::styled("[Enter]", Style::default().fg(Color::Green)),
+        Span::raw(" Start   "),
+        Span::styled("[Esc]", Style::default().fg(Color::Red)),
+        Span::raw(" Cancel"),
+    ]);
+    frame.render_widget(Paragraph::new(help).alignment(Alignment::Center), chunks[7]);
 }
 
 /// Render a single input field with label
