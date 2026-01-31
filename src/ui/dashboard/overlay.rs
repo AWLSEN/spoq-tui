@@ -195,6 +195,17 @@ pub fn render(
         } => {
             accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref());
         }
+        OverlayState::VpsConfig { ref state, .. } => {
+            // TODO: Implement vps_config_card::render (Phase 9)
+            // For now, just render a placeholder
+            use ratatui::widgets::{Paragraph, Block, Borders};
+            use ratatui::style::{Style, Color};
+            let text = format!("VPS Config: {:?}", state);
+            let paragraph = Paragraph::new(text)
+                .block(Block::default().borders(Borders::NONE))
+                .style(Style::default().fg(Color::White));
+            frame.render_widget(paragraph, inner_area);
+        }
     }
 }
 
@@ -292,6 +303,20 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             // Header(1) + blank(1) + accounts(n, min 1) + blank(1) + help(1) + borders(2)
             let account_rows = accounts.len().max(1) as u16;
             (*anchor_y, 6 + account_rows)
+        }
+        OverlayState::VpsConfig { anchor_y, ref state, .. } => {
+            use crate::view_state::dashboard_view::VpsConfigState;
+            // Height depends on state
+            let height = match state {
+                VpsConfigState::InputFields { error, .. } => {
+                    // Title(1) + blank(1) + 3 fields * 3 rows each + error?(1) + blank(1) + help(1) + borders(2)
+                    if error.is_some() { 18 } else { 17 }
+                }
+                VpsConfigState::Provisioning { .. } => 10,
+                VpsConfigState::Success { .. } => 10,
+                VpsConfigState::Error { .. } => 10,
+            };
+            (*anchor_y, height)
         }
     }
 }

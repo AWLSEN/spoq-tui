@@ -925,9 +925,8 @@ impl App {
                 let _ = self.message_tx.send(crate::app::AppMessage::OpenClaudeAccounts);
             }
             SlashCommand::Vps => {
-                // TODO: Open VPS config overlay (Phase 6)
-                // For now, just log that the command was triggered
-                tracing::info!("SlashCommand::Vps executed - VPS config overlay not yet implemented");
+                // Open VPS config overlay
+                self.dashboard.show_vps_config();
             }
         }
         self.mark_dirty();

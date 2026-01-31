@@ -135,6 +135,10 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
         OverlayState::ClaudeAccounts { accounts, ref status_message, .. } => {
             accounts_card::calculate_height(accounts.len(), status_message.is_some()).min(parent_area.height - 4)
         }
+        OverlayState::VpsConfig { .. } => {
+            // VpsConfig card has variable height based on state, but ~15 rows is reasonable
+            15.min(parent_area.height - 4)
+        }
     };
 
     let x = parent_area.x + (parent_area.width.saturating_sub(overlay_width)) / 2;
@@ -146,6 +150,7 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
         OverlayState::Plan { anchor_y, .. } => *anchor_y,
         OverlayState::ClaudeLogin { anchor_y, .. } => *anchor_y,
         OverlayState::ClaudeAccounts { anchor_y, .. } => *anchor_y,
+        OverlayState::VpsConfig { anchor_y, .. } => *anchor_y,
     };
 
     // Try to position overlay so anchor_y is near the top

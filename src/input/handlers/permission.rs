@@ -786,6 +786,123 @@ pub fn handle_rate_limit_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles VPS config overlay commands.
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
+    use crate::view_state::{OverlayState, VpsConfigState};
+
+    // Check that we have a VPS config overlay
+    let state = match app.dashboard.overlay() {
+        Some(OverlayState::VpsConfig { state, .. }) => state.clone(),
+        _ => return false,
+    };
+
+    match cmd {
+        Command::VpsConfigNextField => {
+            app.dashboard.vps_config_next_field();
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigPrevField => {
+            app.dashboard.vps_config_prev_field();
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigTypeChar(c) => {
+            // In Error state, check for 'r'/'R' to retry
+            if let VpsConfigState::Error { .. } = state {
+                if *c == 'r' || *c == 'R' {
+                    // Reset to InputFields state, keeping the previous values
+                    app.dashboard.vps_config_retry();
+                    app.mark_dirty();
+                    return true;
+                }
+                // Ignore other chars in Error state
+                return true;
+            }
+
+            // In Provisioning or Success state, ignore all chars
+            if !matches!(state, VpsConfigState::InputFields { .. }) {
+                return true;
+            }
+
+            app.dashboard.vps_config_type_char(*c);
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigBackspace => {
+            // Only allow backspace in InputFields state
+            if !matches!(state, VpsConfigState::InputFields { .. }) {
+                return true;
+            }
+
+            app.dashboard.vps_config_backspace();
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigSubmit => {
+            match state {
+                VpsConfigState::InputFields { ip, username, password, .. } => {
+                    // Validate inputs
+                    if ip.is_empty() {
+                        app.dashboard.vps_config_set_error("IP address is required".to_string());
+                        app.mark_dirty();
+                        return true;
+                    }
+                    if password.len() < 8 {
+                        app.dashboard.vps_config_set_error("Password must be at least 8 characters".to_string());
+                        app.mark_dirty();
+                        return true;
+                    }
+
+                    // Start the VPS replacement process
+                    app.start_vps_replace(ip, username, password);
+                    app.mark_dirty();
+                }
+                VpsConfigState::Success { .. } => {
+                    // Dismiss the overlay and reconnect WebSocket
+                    app.dashboard.collapse_overlay();
+                    app.reconnect_websocket();
+                    app.mark_dirty();
+                }
+                _ => {
+                    // Ignore submit in Provisioning or Error states
+                }
+            }
+            true
+        }
+
+        Command::VpsConfigClose => {
+            // Esc behavior depends on state
+            match state {
+                VpsConfigState::Provisioning { .. } => {
+                    // Can't close during provisioning - server-side operation in progress
+                    // Return true to indicate we handled it (by ignoring it)
+                }
+                VpsConfigState::Success { .. } => {
+                    // Close and reconnect WebSocket
+                    app.dashboard.collapse_overlay();
+                    app.reconnect_websocket();
+                    app.mark_dirty();
+                }
+                _ => {
+                    // InputFields or Error - just close
+                    app.dashboard.collapse_overlay();
+                    app.mark_dirty();
+                }
+            }
+            true
+        }
+
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

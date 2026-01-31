@@ -49,6 +49,7 @@ mod system_stats;
 pub use app_view::AppViewState;
 pub use dashboard_view::{
     ClaudeLoginState, DashboardViewState, OverlayState, Progress, RenderContext, Theme, ThreadView,
+    VpsConfigState,
 };
 pub use scroll_state::ScrollState;
 pub use session_view::SessionViewState;

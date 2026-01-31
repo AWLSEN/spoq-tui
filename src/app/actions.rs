@@ -337,6 +337,133 @@ impl App {
 
         info!("Thread {} marked as verified", thread_id);
     }
+
+    // ========================================================================
+    // VPS Config Actions
+    // ========================================================================
+
+    /// Start the VPS replacement process.
+    ///
+    /// This method transitions the VPS config overlay to "Provisioning" state
+    /// and spawns an async task to:
+    /// 1. Call the backend replace_byovps endpoint
+    /// 2. Wait for the new conductor to be healthy
+    /// 3. Sync credentials to the new conductor
+    /// 4. Send success/failure messages back to the UI
+    pub fn start_vps_replace(&mut self, ip: String, username: String, password: String) {
+        use crate::view_state::VpsConfigState;
+
+        // Update overlay to Provisioning state
+        self.dashboard.update_vps_config_state(VpsConfigState::Provisioning {
+            phase: "Connecting to central API...".to_string(),
+        });
+
+        // Clone necessary data for the async task
+        let tx = self.message_tx.clone();
+
+        // Extract tokens from the existing central_api client
+        let (auth_token, refresh_token) = match &self.central_api {
+            Some(api) => (
+                api.auth_token().map(|s| s.to_string()),
+                api.get_refresh_token().map(|s| s.to_string()),
+            ),
+            None => {
+                let _ = tx.send(crate::app::AppMessage::VpsConfigFailed {
+                    error: "Central API client not available".to_string(),
+                });
+                return;
+            }
+        };
+
+        tokio::spawn(async move {
+            use crate::app::AppMessage;
+            use crate::auth::central_api::CentralApiClient;
+
+            // Send progress update
+            let _ = tx.send(AppMessage::VpsConfigProgress {
+                phase: "Replacing VPS...".to_string(),
+            });
+
+            // Create a new CentralApiClient with the same tokens
+            let mut api = CentralApiClient::new();
+            if let Some(token) = auth_token {
+                api = api.with_auth(&token);
+            }
+            if let Some(token) = refresh_token {
+                api = api.with_refresh_token(&token);
+            }
+
+            // Call the replace_byovps endpoint
+            match api.replace_byovps(&ip, &username, &password).await {
+                Ok(response) => {
+                    // The response contains hostname, ip_address, jwt_secret, ssh_password, message
+                    let hostname = response.hostname.clone();
+                    let vps_url = format!("https://{}", hostname);
+
+                    // Send progress: waiting for conductor
+                    let _ = tx.send(AppMessage::VpsConfigProgress {
+                        phase: "Waiting for conductor...".to_string(),
+                    });
+
+                    // Poll health endpoint until ready (timeout: 120s)
+                    let health_url = format!("{}/health", vps_url);
+                    let start = std::time::Instant::now();
+                    let timeout = std::time::Duration::from_secs(120);
+                    let interval = std::time::Duration::from_secs(3);
+
+                    loop {
+                        if start.elapsed() > timeout {
+                            let _ = tx.send(AppMessage::VpsConfigFailed {
+                                error: "Timeout waiting for conductor to start".to_string(),
+                            });
+                            return;
+                        }
+
+                        // Check health
+                        if let Ok(resp) = reqwest::get(&health_url).await {
+                            if resp.status().is_success() {
+                                break;
+                            }
+                        }
+
+                        tokio::time::sleep(interval).await;
+                    }
+
+                    // Conductor is healthy, sync credentials
+                    let _ = tx.send(AppMessage::VpsConfigProgress {
+                        phase: "Syncing credentials...".to_string(),
+                    });
+
+                    // TODO: Create ConductorClient and sync credentials (Phase 7)
+
+                    // Send success
+                    let _ = tx.send(AppMessage::VpsConfigSuccess {
+                        vps_url,
+                        hostname,
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(AppMessage::VpsConfigFailed {
+                        error: format!("Failed to replace VPS: {}", e),
+                    });
+                }
+            }
+        });
+    }
+
+    /// Reconnect the WebSocket to the current VPS URL.
+    ///
+    /// This should be called after a successful VPS swap to establish
+    /// a connection to the new conductor.
+    pub fn reconnect_websocket(&mut self) {
+        // Drop the old sender to disconnect
+        self.ws_sender = None;
+        self.ws_connection_state = WsConnectionState::Disconnected;
+
+        // WebSocket reconnection will be handled by the main event loop
+        // when it detects ws_sender is None and vps_url is Some
+        info!("WebSocket disconnected, ready for reconnection to new VPS");
+    }
 }
 
 // ============================================================================

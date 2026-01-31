@@ -2021,6 +2021,30 @@ impl App {
                 }
                 self.mark_dirty();
             }
+            // VpsConfig message handlers (Phase 7 implementation)
+            AppMessage::VpsConfigProgress { phase } => {
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    *state = VpsConfigState::Provisioning { phase };
+                }
+                self.mark_dirty();
+            }
+            AppMessage::VpsConfigSuccess { vps_url, hostname } => {
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                tracing::info!("VPS config success: {} at {}", &hostname, &vps_url);
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    *state = VpsConfigState::Success { hostname: hostname.clone() };
+                }
+                // TODO: Rebuild ConductorClient, clear cache, reconnect WS (Phase 7)
+                self.mark_dirty();
+            }
+            AppMessage::VpsConfigFailed { error } => {
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    *state = VpsConfigState::Error { error };
+                }
+                self.mark_dirty();
+            }
         }
     }
 }

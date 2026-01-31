@@ -235,6 +235,11 @@ pub enum OverlayState {
         /// Status message shown at bottom (e.g., "Authenticating...", "Added!", error)
         status_message: Option<String>,
     },
+    /// VPS configuration overlay (/vps command)
+    VpsConfig {
+        state: VpsConfigState,
+        anchor_y: u16,
+    },
 }
 
 /// Info about a Claude account for display in the overlay
@@ -264,8 +269,38 @@ pub enum ClaudeLoginState {
     BrowserOpenFailed { auth_url: String, error: String },
 }
 
+/// State of the VPS configuration dialog (/vps command)
+#[derive(Debug, Clone)]
+pub enum VpsConfigState {
+    /// Input form for VPS credentials
+    InputFields {
+        ip: String,
+        username: String,
+        password: String,
+        /// Which field is focused: 0=IP, 1=username, 2=password
+        field_focus: u8,
+        /// Validation error message (shown below password field)
+        error: Option<String>,
+    },
+    /// Provisioning in progress
+    Provisioning {
+        /// Current phase description (e.g., "Replacing VPS...", "Waiting for conductor...")
+        phase: String,
+    },
+    /// VPS replacement succeeded
+    Success {
+        /// New VPS hostname (e.g., "user.spoq.dev")
+        hostname: String,
+    },
+    /// VPS replacement failed
+    Error {
+        /// Error message
+        error: String,
+    },
+}
+
 impl OverlayState {
-    /// Get the thread ID associated with this overlay (returns empty string for ClaudeLogin)
+    /// Get the thread ID associated with this overlay (returns empty string for ClaudeLogin/VpsConfig)
     pub fn thread_id(&self) -> &str {
         match self {
             OverlayState::Question { thread_id, .. } => thread_id,
@@ -273,6 +308,7 @@ impl OverlayState {
             OverlayState::Plan { thread_id, .. } => thread_id,
             OverlayState::ClaudeLogin { .. } => "",
             OverlayState::ClaudeAccounts { .. } => "",
+            OverlayState::VpsConfig { .. } => "",
         }
     }
 
@@ -284,6 +320,7 @@ impl OverlayState {
             OverlayState::Plan { thread_title, .. } => thread_title,
             OverlayState::ClaudeLogin { .. } => "Claude Login",
             OverlayState::ClaudeAccounts { .. } => "Claude Accounts",
+            OverlayState::VpsConfig { .. } => "Change VPS",
         }
     }
 
@@ -295,6 +332,7 @@ impl OverlayState {
             OverlayState::Plan { repository, .. } => repository,
             OverlayState::ClaudeLogin { .. } => "",
             OverlayState::ClaudeAccounts { .. } => "",
+            OverlayState::VpsConfig { .. } => "",
         }
     }
 

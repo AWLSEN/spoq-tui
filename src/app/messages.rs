@@ -282,6 +282,22 @@ pub enum AppMessage {
         error: Option<String>,
     },
     // =========================================================================
+    // VPS Config Messages (/vps command)
+    // =========================================================================
+    /// VPS replacement progress update
+    VpsConfigProgress {
+        phase: String,
+    },
+    /// VPS replacement succeeded
+    VpsConfigSuccess {
+        vps_url: String,
+        hostname: String,
+    },
+    /// VPS replacement failed
+    VpsConfigFailed {
+        error: String,
+    },
+    // =========================================================================
     // Sync Messages
     // =========================================================================
     /// Trigger token sync operation (from /sync command)

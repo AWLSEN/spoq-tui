@@ -271,6 +271,22 @@ pub enum Command {
     ClaudeAccountsMoveDown,
 
     // =========================================================================
+    // VPS Config Commands (/vps overlay)
+    // =========================================================================
+    /// Move to next field (Tab/Down)
+    VpsConfigNextField,
+    /// Move to previous field (Shift+Tab/Up)
+    VpsConfigPrevField,
+    /// Type a character in the focused field
+    VpsConfigTypeChar(char),
+    /// Backspace in the focused field
+    VpsConfigBackspace,
+    /// Submit the form (Enter)
+    VpsConfigSubmit,
+    /// Close the VPS config overlay (Escape)
+    VpsConfigClose,
+
+    // =========================================================================
     // Conversation Screen Commands
     // =========================================================================
     /// Dismiss focused error (d key)
@@ -402,6 +418,12 @@ impl Command {
             Command::ClaudeAccountsClose => "Close Claude accounts",
             Command::ClaudeAccountsMoveUp => "Move selection up",
             Command::ClaudeAccountsMoveDown => "Move selection down",
+            Command::VpsConfigNextField => "Next VPS config field",
+            Command::VpsConfigPrevField => "Previous VPS config field",
+            Command::VpsConfigTypeChar(_) => "Type in VPS config field",
+            Command::VpsConfigBackspace => "Backspace in VPS config field",
+            Command::VpsConfigSubmit => "Submit VPS config",
+            Command::VpsConfigClose => "Close VPS config",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

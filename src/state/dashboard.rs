@@ -931,6 +931,120 @@ impl DashboardState {
     }
 
     // ========================================================================
+    // VPS Config Overlay
+    // ========================================================================
+
+    /// Show the VPS config overlay
+    pub fn show_vps_config(&mut self) {
+        use crate::view_state::VpsConfigState;
+
+        self.overlay = Some(OverlayState::VpsConfig {
+            state: VpsConfigState::InputFields {
+                ip: String::new(),
+                username: "root".to_string(),
+                password: String::new(),
+                field_focus: 0,
+                error: None,
+            },
+            anchor_y: 5,
+        });
+    }
+
+    /// Update the VPS config overlay state
+    pub fn update_vps_config_state(&mut self, new_state: crate::view_state::VpsConfigState) {
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            *state = new_state;
+        }
+    }
+
+    /// Move to the next field in VPS config
+    pub fn vps_config_next_field(&mut self) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut field_focus, .. } = state {
+                *field_focus = (*field_focus + 1) % 3;
+            }
+        }
+    }
+
+    /// Move to the previous field in VPS config
+    pub fn vps_config_prev_field(&mut self) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut field_focus, .. } = state {
+                *field_focus = if *field_focus == 0 { 2 } else { *field_focus - 1 };
+            }
+        }
+    }
+
+    /// Type a character in the current VPS config field
+    pub fn vps_config_type_char(&mut self, c: char) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut ip, ref mut username, ref mut password, field_focus, ref mut error } = state {
+                // Clear any validation error when user types
+                *error = None;
+                match field_focus {
+                    0 => ip.push(c),
+                    1 => username.push(c),
+                    2 => password.push(c),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Backspace in the current VPS config field
+    pub fn vps_config_backspace(&mut self) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut ip, ref mut username, ref mut password, field_focus, ref mut error } = state {
+                // Clear any validation error when user types
+                *error = None;
+                match field_focus {
+                    0 => { ip.pop(); }
+                    1 => { username.pop(); }
+                    2 => { password.pop(); }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// Set a validation error on the VPS config overlay
+    pub fn vps_config_set_error(&mut self, error_msg: String) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            if let VpsConfigState::InputFields { ref mut error, .. } = state {
+                *error = Some(error_msg);
+            }
+        }
+    }
+
+    /// Retry from error state - reset to InputFields keeping values
+    pub fn vps_config_retry(&mut self) {
+        use crate::view_state::VpsConfigState;
+
+        if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.overlay {
+            // Preserve the InputFields state if we're in Error
+            if matches!(state, VpsConfigState::Error { .. }) {
+                *state = VpsConfigState::InputFields {
+                    ip: String::new(),
+                    username: "root".to_string(),
+                    password: String::new(),
+                    field_focus: 0,
+                    error: None,
+                };
+            }
+        }
+    }
+
+    // ========================================================================
     // Question Navigation (for Question overlay)
     // ========================================================================
 
