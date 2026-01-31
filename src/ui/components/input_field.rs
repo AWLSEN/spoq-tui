@@ -5,7 +5,7 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
