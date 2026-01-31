@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::models::dashboard::WaitingFor;
+use crate::models::PermissionMode;
 use crate::state::session::AskUserQuestionState;
 use crate::ui::input::parse_ask_user_question;
 use crate::websocket::{
@@ -379,6 +380,12 @@ impl App {
                 if sent {
                     self.dashboard.remove_plan_request(&thread_id);
                     self.dashboard.set_thread_planning(&thread_id, false);
+                    // Switch to Execution mode after plan approval
+                    self.permission_mode = PermissionMode::Execution;
+                    self.thread_mode_sync.request_mode_change(
+                        thread_id.clone(),
+                        PermissionMode::Execution,
+                    );
                 }
                 sent
             }
