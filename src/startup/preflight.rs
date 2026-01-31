@@ -198,8 +198,15 @@ pub fn run_preflight_checks(
         (Some(vps), Some(url))
     };
 
-    // Step 3: Health check loop (unless skipped - for local dev)
-    if !config.skip_health_check {
+    // Step 3: Health check loop (unless skipped or local mode)
+    // The health check loop does credential sync and GH CLI checks that
+    // only apply to remote VPS — skip it for local conductor.
+    let is_local_url = vps_url
+        .as_ref()
+        .map(|u| u.contains("localhost") || u.contains("127.0.0.1"))
+        .unwrap_or(false);
+
+    if !config.skip_health_check && !is_local_url {
         if let (Some(ref vps), Some(ref url)) = (&vps_state, &vps_url) {
             run_health_check_loop(runtime, url, &mut credentials, &manager, vps.ip.as_deref())
                 .map_err(PreflightError::HealthCheck)?;

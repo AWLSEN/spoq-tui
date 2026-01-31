@@ -82,7 +82,12 @@ fn generate_jwt_secret() -> String {
 }
 
 /// Start conductor process on localhost with required env vars.
-/// Uses `kill_on_drop(true)` so process dies when Child is dropped.
+///
+/// The conductor runs as a background daemon — it is NOT killed when the
+/// returned `Child` handle is dropped. This means:
+/// - Preflight can start it and return without killing it
+/// - On next startup, `is_running()` detects it and skips re-start
+/// - User can stop it manually or by switching to Remote mode
 pub async fn start_conductor(
     port: u16,
     owner_id: &str,
@@ -103,7 +108,7 @@ pub async fn start_conductor(
         .env("CONDUCTOR_SKIP_REGISTRATION", "1")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .kill_on_drop(true)
+        .kill_on_drop(false)
         .spawn()
         .map_err(|e| format!("Failed to start conductor: {}", e))?;
 

@@ -100,6 +100,28 @@ pub fn verify_vps(
             eprintln!("Warning: Failed to save credentials after provisioning");
         }
 
+        // If user chose Local mode, there's no VPS record in the backend.
+        // Return a synthetic response with the local conductor URL.
+        let spoq_config = crate::startup::config::SpoqConfig::load();
+        if spoq_config.is_local() {
+            let local_url = spoq_config
+                .conductor_url
+                .unwrap_or_else(|| format!("http://127.0.0.1:{}", crate::conductor::local::default_port()));
+            return Ok(VpsStatusResponse {
+                vps_id: "local".to_string(),
+                status: "ready".to_string(),
+                hostname: None,
+                ip: None,
+                url: Some(local_url),
+                ssh_username: None,
+                provider: Some("local".to_string()),
+                plan_id: None,
+                data_center_id: None,
+                created_at: None,
+                ready_at: None,
+            });
+        }
+
         // Fetch VPS state again after provisioning
         vps_state = fetch_vps_status(runtime, credentials)?;
     }
