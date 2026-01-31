@@ -924,6 +924,11 @@ impl App {
                 // Open Claude accounts overlay and request accounts list
                 let _ = self.message_tx.send(crate::app::AppMessage::OpenClaudeAccounts);
             }
+            SlashCommand::Vps => {
+                // TODO: Open VPS config overlay (Phase 6)
+                // For now, just log that the command was triggered
+                tracing::info!("SlashCommand::Vps executed - VPS config overlay not yet implemented");
+            }
         }
         self.mark_dirty();
     }

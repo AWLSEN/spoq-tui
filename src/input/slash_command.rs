@@ -14,6 +14,10 @@ pub enum SlashCommand {
     /// Primary: /sync
     Sync,
 
+    /// Change VPS connection
+    /// Primary: /vps
+    Vps,
+
     /// Open billing portal for subscription management
     /// Primary: /manage
     /// Aliases: /upgrade
@@ -53,6 +57,7 @@ impl SlashCommand {
     pub fn all() -> Vec<Self> {
         vec![
             SlashCommand::Sync,
+            SlashCommand::Vps,
             SlashCommand::Manage,
             SlashCommand::Repos,
             SlashCommand::New,
@@ -83,6 +88,7 @@ impl SlashCommand {
 
         match normalized.as_str() {
             "sync" => Some(SlashCommand::Sync),
+            "vps" => Some(SlashCommand::Vps),
             "manage" | "upgrade" => Some(SlashCommand::Manage),
             "repos" => Some(SlashCommand::Repos),
             "new" | "clear" => Some(SlashCommand::New),
@@ -100,6 +106,7 @@ impl SlashCommand {
     pub fn name(&self) -> &'static str {
         match self {
             SlashCommand::Sync => "/sync",
+            SlashCommand::Vps => "/vps",
             SlashCommand::Manage => "/manage",
             SlashCommand::Repos => "/repos",
             SlashCommand::New => "/new",
@@ -117,6 +124,7 @@ impl SlashCommand {
     pub fn aliases(&self) -> Vec<&'static str> {
         match self {
             SlashCommand::Sync => vec!["/sync"],
+            SlashCommand::Vps => vec!["/vps"],
             SlashCommand::Manage => vec!["/manage", "/upgrade"],
             SlashCommand::Repos => vec!["/repos"],
             SlashCommand::New => vec!["/new", "/clear"],
@@ -131,6 +139,7 @@ impl SlashCommand {
     pub fn description(&self) -> &'static str {
         match self {
             SlashCommand::Sync => "Sync credentials to VPS",
+            SlashCommand::Vps => "Change VPS connection",
             SlashCommand::Manage => "Manage subscription and billing",
             SlashCommand::Repos => "Browse GitHub repositories",
             SlashCommand::New => "Start a new chat",
