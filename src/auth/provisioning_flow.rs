@@ -4,6 +4,7 @@
 //! It uses the Tokio runtime to call existing async methods on CentralApiClient.
 
 use std::io::{self, Write};
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -126,6 +127,34 @@ fn sync_tokens_to_vps(
     }
 }
 
+/// Validate an IP address string (IPv4 or IPv6).
+///
+/// # Arguments
+/// * `input` - The IP address string to validate
+///
+/// # Returns
+/// * `Ok(())` - Valid IP address
+/// * `Err(String)` - Error message describing the validation failure
+fn validate_ip_address(input: &str) -> Result<(), String> {
+    let trimmed = input.trim();
+
+    if trimmed.is_empty() {
+        return Err("IP address cannot be empty".to_string());
+    }
+
+    // Try parsing as IPv4
+    if trimmed.parse::<Ipv4Addr>().is_ok() {
+        return Ok(());
+    }
+
+    // Try parsing as IPv6
+    if trimmed.parse::<Ipv6Addr>().is_ok() {
+        return Ok(());
+    }
+
+    Err("Invalid IP address format. Enter IPv4 (e.g., 192.168.1.1) or IPv6 (e.g., 2001:db8::1)".to_string())
+}
+
 /// Collect BYOVPS credentials from user input with interrupt support.
 ///
 /// # Arguments
@@ -137,7 +166,7 @@ fn sync_tokens_to_vps(
 fn collect_byovps_credentials(
     interrupted: &Arc<AtomicBool>,
 ) -> Result<ByovpsCredentials, CentralApiError> {
-    // Prompt for VPS IP address
+    // Prompt for VPS IP address with validation
     let vps_ip = loop {
         check_interrupt(interrupted);
 
@@ -160,11 +189,10 @@ fn collect_byovps_credentials(
         check_interrupt(interrupted);
 
         let trimmed = input.trim().to_string();
-        if !trimmed.is_empty() {
-            break trimmed;
+        match validate_ip_address(&trimmed) {
+            Ok(()) => break trimmed,
+            Err(e) => println!("{}", e),
         }
-
-        println!("IP address cannot be empty. Please try again.");
     };
 
     // Prompt for SSH username (default: "root")
