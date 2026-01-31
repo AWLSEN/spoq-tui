@@ -147,7 +147,27 @@ impl App {
                     ModalType::None
                 }
             } else {
-                ModalType::None
+                // No overlay open - check for pending AskUserQuestion on selected thread
+                // Only intercept when textarea is empty (matches permission behavior)
+                if self.textarea.is_empty() {
+                    let threads = self.cache.threads();
+                    if self.threads_index < threads.len() {
+                        let thread_id = &threads[self.threads_index].id;
+                        if let Some(perm) = self.dashboard.get_pending_permission(thread_id) {
+                            if perm.tool_name == "AskUserQuestion" && perm.tool_input.is_some() {
+                                ModalType::AskUserQuestionPending
+                            } else {
+                                ModalType::None
+                            }
+                        } else {
+                            ModalType::None
+                        }
+                    } else {
+                        ModalType::None
+                    }
+                } else {
+                    ModalType::None
+                }
             }
         } else if let Some(ref thread_id) = self.active_thread_id {
             // For Conversation screen, check thread-scoped permission or plan approval
@@ -273,6 +293,13 @@ impl App {
                 if handlers::handle_vps_config_command(self, &cmd) {
                     return true;
                 }
+            }
+            ModalType::AskUserQuestionPending => {
+                // Handle A key to open question overlay
+                if handlers::handle_dashboard_question_command(self, &cmd) {
+                    return true;
+                }
+                // Fall through to allow navigation commands
             }
             ModalType::None => {}
         }

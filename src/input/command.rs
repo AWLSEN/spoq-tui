@@ -223,6 +223,8 @@ pub enum Command {
     DashboardQuestionBackspace,
     /// Type char in dashboard overlay "Other" text input
     DashboardQuestionTypeChar(char),
+    /// Open question dialogue overlay for AskUserQuestion (A key on CommandDeck)
+    OpenQuestionOverlay,
 
     // =========================================================================
     // Plan Approval Commands
@@ -407,6 +409,7 @@ impl Command {
             Command::DashboardQuestionCancelOther => "Cancel dashboard other input",
             Command::DashboardQuestionBackspace => "Backspace in dashboard other input",
             Command::DashboardQuestionTypeChar(_) => "Type in dashboard other input",
+            Command::OpenQuestionOverlay => "Open question overlay",
             Command::PlanScrollUp => "Scroll plan up",
             Command::PlanScrollDown => "Scroll plan down",
             Command::ApprovePlan => "Approve plan",

@@ -201,6 +201,23 @@ pub fn handle_dashboard_question_command(app: &mut App, cmd: &Command) -> bool {
             true
         }
 
+        Command::OpenQuestionOverlay => {
+            // Open question overlay for AskUserQuestion (A key on CommandDeck)
+            if app.screen == Screen::CommandDeck {
+                // Get selected thread (same logic as open_selected_thread in navigation.rs)
+                let threads = app.cache.threads();
+                if app.threads_index < threads.len() {
+                    let thread_id = threads[app.threads_index].id.clone();
+                    // Compute anchor_y based on thread position
+                    let anchor_y = (app.threads_index as u16 * 3) + 5;
+                    app.dashboard.expand_thread(&thread_id, anchor_y);
+                    app.mark_dirty();
+                    return true;
+                }
+            }
+            false
+        }
+
         _ => false,
     }
 }

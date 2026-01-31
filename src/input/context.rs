@@ -32,6 +32,9 @@ pub enum ModalType {
     DashboardQuestionOverlay,
     /// Dashboard question overlay "Other" text input mode
     DashboardQuestionOverlayOther,
+    /// AskUserQuestion permission pending but overlay not yet open (CommandDeck)
+    /// Only active when textarea is empty (matches permission behavior)
+    AskUserQuestionPending,
     /// Claude login dialog is active
     ClaudeLogin,
     /// Claude accounts management overlay is active

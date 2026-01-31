@@ -295,6 +295,14 @@ impl CommandRegistry {
                 }
             }
 
+            ModalType::AskUserQuestionPending => {
+                // Only 'A'/'a' opens the overlay, other keys fall through to normal handling
+                if let KeyCode::Char('a') | KeyCode::Char('A') = key.code {
+                    return Some(Command::OpenQuestionOverlay);
+                }
+                None // Fall through for navigation (arrows), etc.
+            }
+
             ModalType::None => {
                 // Should not reach here, but handle gracefully
                 None
