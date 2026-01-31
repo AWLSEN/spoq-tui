@@ -34,6 +34,7 @@ use crate::ui::dashboard::accounts_card;
 use crate::ui::dashboard::login_card;
 use crate::ui::dashboard::plan_card;
 use crate::ui::dashboard::question_card::{self, QuestionRenderConfig};
+use crate::ui::dashboard::vps_config_card;
 use crate::ui::dashboard::{OverlayState, RenderContext};
 
 /// Maximum height for question card as percentage of list area
@@ -195,6 +196,9 @@ pub fn render(
         } => {
             accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref());
         }
+        OverlayState::VpsConfig { ref state, .. } => {
+            vps_config_card::render(frame, inner_area, state);
+        }
     }
 }
 
@@ -292,6 +296,11 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             // Header(1) + blank(1) + accounts(n, min 1) + blank(1) + help(1) + borders(2)
             let account_rows = accounts.len().max(1) as u16;
             (*anchor_y, 6 + account_rows)
+        }
+        OverlayState::VpsConfig { anchor_y, ref state, .. } => {
+            // Content height from card + borders(2)
+            let height = vps_config_card::calculate_height(state) + 2;
+            (*anchor_y, height)
         }
     }
 }

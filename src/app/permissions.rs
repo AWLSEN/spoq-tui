@@ -907,6 +907,7 @@ mod tests {
             WsOutgoingMessage::ClaudeAccountsListRequest(_) => panic!("Expected CommandResponse"),
             WsOutgoingMessage::ClaudeAccountAddRequest(_) => panic!("Expected CommandResponse"),
             WsOutgoingMessage::ClaudeAccountRemoveRequest(_) => panic!("Expected CommandResponse"),
+            WsOutgoingMessage::ClaudeAccountSelectRequest(_) => panic!("Expected CommandResponse"),
         }
     }
 

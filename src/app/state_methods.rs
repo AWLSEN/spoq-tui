@@ -924,6 +924,10 @@ impl App {
                 // Open Claude accounts overlay and request accounts list
                 let _ = self.message_tx.send(crate::app::AppMessage::OpenClaudeAccounts);
             }
+            SlashCommand::Vps => {
+                // Open VPS config overlay
+                self.dashboard.show_vps_config();
+            }
         }
         self.mark_dirty();
     }

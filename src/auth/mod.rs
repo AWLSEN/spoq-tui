@@ -33,7 +33,7 @@ pub use central_api::CentralApiClient;
 pub use credentials::{Credentials, CredentialsManager};
 pub use device_flow::{run_device_flow, DeviceFlowError};
 pub use flow::run_auth_flow;
-pub use provisioning_flow::{run_provisioning_flow, start_stopped_vps};
+pub use provisioning_flow::{run_provisioning_flow, start_stopped_vps, validate_ip_address};
 pub use token_migration::{detect_tokens, get_local_credentials_info, TokenDetectionResult};
 pub use token_verification::{
     display_missing_tokens_error, verify_local_tokens, LocalTokenVerification,

@@ -29,7 +29,7 @@ pub mod health;
 pub mod preflight;
 pub mod vps;
 
-pub use config::{StartupConfig, StartupResult};
+pub use config::{SpoqConfig, StartupConfig, StartupResult};
 pub use preflight::run_preflight_checks;
 
 #[cfg(test)]

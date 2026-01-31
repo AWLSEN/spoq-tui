@@ -282,6 +282,19 @@ impl CommandRegistry {
                 Some(Command::Noop)
             }
 
+            ModalType::VpsConfig => {
+                // VPS config modal - handle Tab, Enter, Esc, R, and char input
+                match key.code {
+                    KeyCode::Tab | KeyCode::Down => Some(Command::VpsConfigNextField),
+                    KeyCode::BackTab | KeyCode::Up => Some(Command::VpsConfigPrevField),
+                    KeyCode::Enter => Some(Command::VpsConfigSubmit),
+                    KeyCode::Esc => Some(Command::VpsConfigClose),
+                    KeyCode::Backspace => Some(Command::VpsConfigBackspace),
+                    KeyCode::Char(c) => Some(Command::VpsConfigTypeChar(c)),
+                    _ => Some(Command::Noop),
+                }
+            }
+
             ModalType::None => {
                 // Should not reach here, but handle gracefully
                 None

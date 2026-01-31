@@ -839,6 +839,59 @@ impl App {
                     None,
                 );
             }
+            AppMessage::WsReconnected { sender } => {
+                use crate::websocket::WsConnectionState;
+                tracing::info!("WebSocket reconnected to new VPS");
+                self.ws_sender = Some(sender);
+                self.ws_connection_state = WsConnectionState::Connected;
+
+                // Clear stale dashboard data from old conductor
+                self.dashboard
+                    .set_threads(vec![], &std::collections::HashMap::new());
+                self.dashboard.compute_thread_views();
+                self.cache.clear();
+                tracing::info!("Cleared stale dashboard data after VPS swap");
+
+                // Re-fetch threads from new conductor
+                let client = self.client.clone();
+                let tx = self.message_tx.clone();
+                tokio::spawn(async move {
+                    match client.fetch_threads().await {
+                        Ok(threads) => {
+                            let _ = tx.send(AppMessage::DashboardDataRefreshed { threads });
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to fetch threads from new conductor: {:?}",
+                                e
+                            );
+                        }
+                    }
+                });
+
+                self.mark_dirty();
+            }
+            AppMessage::DashboardDataRefreshed { threads } => {
+                let total = threads.len();
+                let threads: Vec<_> = threads
+                    .into_iter()
+                    .take(crate::app::MAX_DASHBOARD_THREADS)
+                    .collect();
+                tracing::info!(
+                    "Dashboard refreshed: {} threads (limited to {})",
+                    total,
+                    threads.len()
+                );
+                self.dashboard
+                    .set_threads(threads.clone(), &std::collections::HashMap::new());
+                self.dashboard.compute_thread_views();
+                for thread in threads.into_iter().rev() {
+                    self.cache.upsert_thread(thread);
+                }
+                self.connection_status = true;
+                self.system_stats.connected = true;
+                self.mark_dirty();
+            }
             AppMessage::WsDisconnected => {
                 use crate::websocket::WsConnectionState;
                 tracing::info!("WebSocket disconnected");
@@ -2025,6 +2078,144 @@ impl App {
                         acct.status = status;
                         acct.cooldown_until = cooldown_until;
                     }
+                }
+                self.mark_dirty();
+            }
+            // VpsConfig message handlers (Phase 7 implementation)
+            AppMessage::VpsConfigProgress { phase } => {
+                use crate::view_state::dashboard_view::{OverlayState, ProvisioningPhase, VpsConfigState};
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    // Parse progress from phase string (e.g., "45% - Executing script")
+                    let provisioning_phase = if let Some(pct_idx) = phase.find('%') {
+                        if let Ok(pct) = phase[..pct_idx].trim().parse::<u8>() {
+                            let message = phase.get(pct_idx + 1..)
+                                .map(|s| s.trim_start_matches([' ', '-'].as_ref()).to_string())
+                                .unwrap_or_default();
+                            ProvisioningPhase::WaitingForHealth { progress: pct, message }
+                        } else {
+                            ProvisioningPhase::ReplacingVps
+                        }
+                    } else if phase.contains("Connecting") || phase.contains("Starting") {
+                        ProvisioningPhase::Connecting
+                    } else if phase.contains("Finalizing") {
+                        ProvisioningPhase::Finalizing
+                    } else {
+                        ProvisioningPhase::ReplacingVps
+                    };
+
+                    // Preserve spinner_frame if already in Provisioning state
+                    let spinner_frame = if let VpsConfigState::Provisioning { spinner_frame, .. } = state {
+                        *spinner_frame
+                    } else {
+                        0
+                    };
+                    *state = VpsConfigState::Provisioning { phase: provisioning_phase, spinner_frame };
+                }
+                self.mark_dirty();
+            }
+            AppMessage::VpsConfigSuccess { vps_url, hostname } => {
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                tracing::info!("VPS config success: {} at {}", &hostname, &vps_url);
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    *state = VpsConfigState::Success { hostname: hostname.clone() };
+                }
+                // Update vps_url so reconnect_websocket() targets the new VPS
+                self.vps_url = Some(vps_url.clone());
+                // Rebuild ConductorClient to point at the new VPS
+                if let Some(ref token) = self.credentials.access_token {
+                    self.client = std::sync::Arc::new(
+                        crate::conductor::ConductorClient::with_url(&vps_url).with_auth(token),
+                    );
+                }
+                // Persist conductor mode to ~/.spoq/config.json
+                let spoq_config = if vps_url.contains("localhost") || vps_url.contains("127.0.0.1") {
+                    crate::startup::config::SpoqConfig {
+                        conductor_mode: "local".to_string(),
+                        conductor_url: Some(vps_url.clone()),
+                    }
+                } else {
+                    crate::startup::config::SpoqConfig {
+                        conductor_mode: "remote".to_string(),
+                        conductor_url: None,
+                    }
+                };
+                if let Err(e) = spoq_config.save() {
+                    tracing::warn!("Failed to save conductor config: {}", e);
+                }
+                self.mark_dirty();
+            }
+            AppMessage::VpsConfigFailed { error, is_auth_error } => {
+                tracing::error!("VPS config failed: {} (auth_error={})", error, is_auth_error);
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState, VpsError};
+
+                // Convert error string and flag to VpsError
+                let vps_error = if is_auth_error {
+                    VpsError::AuthExpired
+                } else if error.contains("Network") || error.contains("connection") {
+                    VpsError::Network(error.clone())
+                } else if error.contains("SSH") {
+                    VpsError::SshFailed(error.clone())
+                } else if error.contains("Timeout") || error.contains("timeout") {
+                    VpsError::Timeout
+                } else {
+                    VpsError::Unknown(error.clone())
+                };
+
+                // Get saved input from pending credentials
+                let saved_input = self.dashboard.take_vps_pending_credentials()
+                    .map(|(ip, _user, password)| (ip, password));
+
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    *state = VpsConfigState::Error { error: vps_error, saved_input };
+                }
+                self.mark_dirty();
+            }
+            AppMessage::VpsAuthStarted { verification_url, user_code } => {
+                use crate::view_state::dashboard_view::{OverlayState, VpsConfigState};
+                if let Some(OverlayState::VpsConfig { ref mut state, .. }) = self.dashboard.overlay_mut() {
+                    *state = VpsConfigState::Authenticating {
+                        verification_url,
+                        user_code,
+                        spinner_frame: 0,
+                    };
+                }
+                self.mark_dirty();
+            }
+            AppMessage::LocalConductorStarted { child } => {
+                if let Ok(mut guard) = child.try_lock() {
+                    self.local_conductor = guard.take();
+                }
+            }
+            AppMessage::VpsAuthComplete { access_token, refresh_token, expires_in, user_id } => {
+                // Update credentials
+                self.credentials.access_token = Some(access_token.clone());
+                if let Some(rt) = refresh_token {
+                    self.credentials.refresh_token = Some(rt);
+                }
+                // Compute and store expiration so startup doesn't consider token expired
+                let expires_secs = expires_in
+                    .or_else(|| crate::auth::central_api::get_jwt_expires_in(&access_token))
+                    .unwrap_or(900);
+                self.credentials.expires_at = Some(
+                    chrono::Utc::now().timestamp() + i64::from(expires_secs),
+                );
+                if let Some(uid) = user_id {
+                    self.credentials.user_id = Some(uid);
+                }
+                // Save to disk
+                if let Some(ref manager) = self.credentials_manager {
+                    let _ = manager.save(&self.credentials);
+                }
+                // Recreate CentralApiClient with new tokens
+                let mut new_central = crate::auth::central_api::CentralApiClient::new()
+                    .with_auth(&access_token);
+                if let Some(ref rt) = self.credentials.refresh_token {
+                    new_central = new_central.with_refresh_token(rt);
+                }
+                self.central_api = Some(std::sync::Arc::new(new_central));
+                // Auto-retry VPS replace with stored credentials
+                if let Some((ip, _username, password)) = self.dashboard.take_vps_pending_credentials() {
+                    self.start_vps_replace(ip, password);
                 }
                 self.mark_dirty();
             }

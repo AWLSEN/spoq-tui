@@ -807,6 +807,166 @@ pub fn handle_rate_limit_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handle VPS config submit action. Returns true if the action was handled.
+///
+/// SECURITY: This function validates ALL inputs before ANY action is taken.
+/// The function returns early on validation failure - no VPS operation can
+/// be triggered with invalid data.
+///
+/// This function is designed to be called from multiple contexts (command
+/// handlers, main event loop) to avoid code duplication.
+pub fn handle_vps_config_submit(app: &mut App) -> bool {
+    use crate::view_state::{OverlayState, VpsConfigMode, VpsConfigState};
+
+    // Get current overlay state - return early if not VpsConfig
+    let state = match app.dashboard.overlay() {
+        Some(OverlayState::VpsConfig { state, .. }) => state.clone(),
+        _ => return false,
+    };
+
+    match state {
+        VpsConfigState::InputFields { ref mode, ref ip, ref password, .. } => {
+            match mode {
+                VpsConfigMode::Remote => {
+                    // VALIDATION BLOCK - must complete before any action
+                    let ip_error = if ip.is_empty() {
+                        Some("IP address is required".to_string())
+                    } else if crate::auth::validate_ip_address(ip).is_err() {
+                        Some("Invalid IP address format".to_string())
+                    } else {
+                        None
+                    };
+                    let password_error = if password.len() < 8 {
+                        Some("Password must be at least 8 characters".to_string())
+                    } else {
+                        None
+                    };
+
+                    // FAIL CLOSED - any error means no action
+                    if ip_error.is_some() || password_error.is_some() {
+                        app.dashboard.vps_config_set_field_errors(ip_error, password_error);
+                        app.mark_dirty();
+                        return true; // Handled, but with errors
+                    }
+
+                    // Only reach here if ALL validations passed
+                    app.start_vps_replace(ip.clone(), password.clone());
+                }
+                VpsConfigMode::Local => {
+                    app.start_local_conductor();
+                }
+            }
+            app.mark_dirty();
+            true
+        }
+        VpsConfigState::Success { .. } => {
+            app.dashboard.collapse_overlay();
+            app.reconnect_websocket();
+            app.mark_dirty();
+            true
+        }
+        _ => true, // Provisioning/Error states - ignore submit but mark as handled
+    }
+}
+
+/// Handles VPS config overlay commands.
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_vps_config_command(app: &mut App, cmd: &Command) -> bool {
+    use crate::view_state::{OverlayState, VpsConfigState};
+
+    // Check that we have a VPS config overlay
+    let state = match app.dashboard.overlay() {
+        Some(OverlayState::VpsConfig { state, .. }) => state.clone(),
+        _ => return false,
+    };
+
+    match cmd {
+        Command::VpsConfigNextField => {
+            app.dashboard.vps_config_next_field();
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigPrevField => {
+            app.dashboard.vps_config_prev_field();
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigTypeChar(c) => {
+            // In Error state, check for 'r'/'R' to retry or 'l'/'L' to login
+            if let VpsConfigState::Error { ref error, .. } = state {
+                let is_auth_error = error.is_auth_error();
+                if is_auth_error && (*c == 'l' || *c == 'L') {
+                    app.start_vps_reauth();
+                    app.mark_dirty();
+                    return true;
+                } else if !is_auth_error && (*c == 'r' || *c == 'R') {
+                    app.dashboard.vps_config_retry();
+                    app.mark_dirty();
+                    return true;
+                }
+                return true;
+            }
+
+            // In Provisioning or Success state, ignore all chars
+            if !matches!(state, VpsConfigState::InputFields { .. }) {
+                return true;
+            }
+
+            app.dashboard.vps_config_type_char(*c);
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigBackspace => {
+            // Only allow backspace in InputFields state
+            if !matches!(state, VpsConfigState::InputFields { .. }) {
+                return true;
+            }
+
+            app.dashboard.vps_config_backspace();
+            app.mark_dirty();
+            true
+        }
+
+        Command::VpsConfigToggleMode => {
+            if matches!(state, VpsConfigState::InputFields { field_focus: 0, .. }) {
+                app.dashboard.vps_config_toggle_mode();
+                app.mark_dirty();
+            }
+            true
+        }
+
+        Command::VpsConfigSubmit => handle_vps_config_submit(app),
+
+        Command::VpsConfigClose => {
+            // Esc behavior depends on state
+            match state {
+                VpsConfigState::Provisioning { .. } => {
+                    // Can't close during provisioning - server-side operation in progress
+                    // Return true to indicate we handled it (by ignoring it)
+                }
+                VpsConfigState::Success { .. } => {
+                    // Close and reconnect WebSocket
+                    app.dashboard.collapse_overlay();
+                    app.reconnect_websocket();
+                    app.mark_dirty();
+                }
+                _ => {
+                    // InputFields or Error - just close
+                    app.dashboard.collapse_overlay();
+                    app.mark_dirty();
+                }
+            }
+            true
+        }
+
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

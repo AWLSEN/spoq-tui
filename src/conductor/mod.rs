@@ -3,6 +3,8 @@
 //! This module provides the HTTP client for interacting with the Conductor backend,
 //! including streaming responses via Server-Sent Events (SSE).
 
+pub mod local;
+
 use crate::adapters::ReqwestHttpClient;
 use crate::debug::{DebugEvent, DebugEventKind, DebugEventSender, RawSseEventData};
 use crate::events::SseEvent;

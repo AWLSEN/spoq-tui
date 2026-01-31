@@ -331,6 +331,8 @@ pub struct App {
     pub credentials: Credentials,
     /// VPS URL for the current session (fetched from API at startup)
     pub vps_url: Option<String>,
+    /// Handle to local conductor process (killed on drop via kill_on_drop)
+    pub local_conductor: Option<tokio::process::Child>,
     /// System statistics (CPU, RAM) for dashboard header
     pub system_stats: SystemStats,
     /// Timestamp of last Ctrl+C press (for double-press exit detection)
@@ -469,10 +471,15 @@ impl App {
         let credentials_manager = CredentialsManager::new();
 
         // Create central API client, with auth if token available
-        let central_api = if let Some(ref token) = credentials.access_token {
-            Arc::new(CentralApiClient::new().with_auth(token))
-        } else {
-            Arc::new(CentralApiClient::new())
+        let central_api = {
+            let mut client = CentralApiClient::new();
+            if let Some(ref token) = credentials.access_token {
+                client = client.with_auth(token);
+            }
+            if let Some(ref token) = credentials.refresh_token {
+                client = client.with_refresh_token(token);
+            }
+            Arc::new(client)
         };
 
         Ok(Self {
@@ -554,6 +561,7 @@ impl App {
             credentials_manager,
             credentials,
             vps_url,
+            local_conductor: None,
             system_stats: SystemStats::default(),
             last_ctrl_c_time: None,
             cursor_blink: CursorBlinkState::default(),
@@ -729,10 +737,12 @@ impl App {
             );
         }
 
-        // Recreate CentralApiClient with new token
-        self.central_api = Some(Arc::new(
-            CentralApiClient::new().with_auth(&token_response.access_token),
-        ));
+        // Recreate CentralApiClient with new token and refresh token
+        let mut new_central = CentralApiClient::new().with_auth(&token_response.access_token);
+        if let Some(ref rt) = self.credentials.refresh_token {
+            new_central = new_central.with_refresh_token(rt);
+        }
+        self.central_api = Some(Arc::new(new_central));
 
         // Save refreshed credentials to disk
         if let Some(ref manager) = self.credentials_manager {

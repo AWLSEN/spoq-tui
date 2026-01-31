@@ -168,16 +168,15 @@ fn run_ssh_command(
     );
 
     let remote_host = format!("{}@{}", ssh_username, vps_ip);
-    let escaped_password = ssh_password.replace("'", "'\\''"); // Escape single quotes
 
+    // Use SSHPASS environment variable instead of command-line argument
+    // to prevent password from being visible in process list (ps aux)
     let output = Command::new("sshpass")
-        .arg("-p")
-        .arg(&escaped_password)
+        .arg("-e") // Read password from SSHPASS environment variable
+        .env("SSHPASS", ssh_password)
         .arg("ssh")
         .arg("-o")
-        .arg("StrictHostKeyChecking=no")
-        .arg("-o")
-        .arg("UserKnownHostsFile=/dev/null")
+        .arg("StrictHostKeyChecking=accept-new")
         .arg("-o")
         .arg("ConnectTimeout=30")
         .arg(&remote_host)

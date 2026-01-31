@@ -304,6 +304,46 @@ pub struct ByovpsPendingResponse {
     pub message: String,
 }
 
+/// Response from async BYOVPS replace endpoint (POST /api/byovps/replace).
+/// The new async endpoint returns an operation_id for polling.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ByovpsAsyncResponse {
+    pub operation_id: String,
+    pub hostname: String,
+    pub ip_address: String,
+    pub message: String,
+}
+
+/// Operation status from GET /api/byovps/operations/{id}
+#[derive(Debug, Clone, Deserialize)]
+pub struct OperationStatus {
+    pub id: String,
+    pub operation_type: String,
+    pub status: String, // "pending", "running", "completed", "failed"
+    pub progress: u8,
+    pub steps: Vec<OperationStep>,
+    pub message: String,
+    pub result: Option<OperationResult>,
+    pub error: Option<String>,
+}
+
+/// Individual step in an operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct OperationStep {
+    pub name: String,
+    pub completed: bool,
+}
+
+/// Result data from a completed operation
+#[derive(Debug, Clone, Deserialize)]
+pub struct OperationResult {
+    pub hostname: String,
+    pub ip_address: String,
+    pub jwt_secret: String,
+    pub ssh_password: String,
+    pub vps_id: Option<String>,
+}
+
 /// Response from BYOVPS provision endpoint (POST /api/byovps/provision).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ByovpsProvisionResponse {
@@ -652,7 +692,7 @@ impl CentralApiClient {
         } else {
             "***".to_string()
         };
-        eprintln!("[API] POST {} (refresh_token={})", url, token_preview);
+        tracing::debug!("[API] POST {} (refresh_token={})", url, token_preview);
 
         let body = serde_json::json!({
             "refresh_token": refresh_token,
@@ -667,7 +707,7 @@ impl CentralApiClient {
             .await?;
 
         let status = response.status();
-        eprintln!("[API] Response status: {}", status);
+        tracing::debug!("[API] Response status: {}", status);
 
         if !status.is_success() {
             let status_code = status.as_u16();
@@ -675,12 +715,12 @@ impl CentralApiClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            eprintln!("[API] Error response body: {}", body);
+            tracing::warn!("[API] Error response body: {}", body);
             return Err(parse_error_response(status_code, &body));
         }
 
         let data: TokenResponse = response.json().await?;
-        eprintln!("[API] Token refresh successful, received new access_token");
+        tracing::info!("[API] Token refresh successful, received new access_token");
         Ok(data)
     }
 
@@ -773,7 +813,7 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
-                println!("Token expired (401), attempting refresh...");
+                tracing::info!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
@@ -789,7 +829,7 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
@@ -801,12 +841,12 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
                         } else {
-                            println!("Token refresh successful");
+                            tracing::info!("Token refresh successful");
                         }
 
                         // Retry with new token
@@ -818,7 +858,7 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        println!("Token refresh failed: {}", refresh_error);
+                        tracing::warn!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
                             message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
@@ -826,7 +866,7 @@ impl CentralApiClient {
                     }
                 }
             } else {
-                println!("Token expired (401), no refresh token available");
+                tracing::info!("Token expired (401), no refresh token available");
                 return Err(CentralApiError::ServerError {
                     status: 401,
                     message: "No refresh token available. Please sign in again.".to_string(),
@@ -893,14 +933,14 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
-                println!("Token expired (401), attempting refresh...");
+                tracing::info!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
                         if let Some(new_refresh_token) = token_response.refresh_token {
                             self.refresh_token = Some(new_refresh_token);
                         }
-                        println!("Token refresh successful");
+                        tracing::info!("Token refresh successful");
 
                         // Retry with new token
                         let builder = self
@@ -911,7 +951,7 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        println!("Token refresh failed: {}", refresh_error);
+                        tracing::warn!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
                             message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
@@ -919,7 +959,7 @@ impl CentralApiClient {
                     }
                 }
             } else {
-                println!("Token expired (401), no refresh token available");
+                tracing::info!("Token expired (401), no refresh token available");
                 return Err(CentralApiError::ServerError {
                     status: 401,
                     message: "No refresh token available. Please sign in again.".to_string(),
@@ -968,14 +1008,14 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
-                println!("Token expired (401), attempting refresh...");
+                tracing::info!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
                         if let Some(new_refresh_token) = token_response.refresh_token {
                             self.refresh_token = Some(new_refresh_token);
                         }
-                        println!("Token refresh successful");
+                        tracing::info!("Token refresh successful");
 
                         // Retry with new token
                         let builder = self
@@ -986,7 +1026,7 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        println!("Token refresh failed: {}", refresh_error);
+                        tracing::warn!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
                             message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
@@ -994,7 +1034,7 @@ impl CentralApiClient {
                     }
                 }
             } else {
-                println!("Token expired (401), no refresh token available");
+                tracing::info!("Token expired (401), no refresh token available");
                 return Err(CentralApiError::ServerError {
                     status: 401,
                     message: "No refresh token available. Please sign in again.".to_string(),
@@ -1032,7 +1072,7 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
-                println!("Token expired (401), attempting refresh...");
+                tracing::info!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
@@ -1048,7 +1088,7 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
@@ -1060,12 +1100,12 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
                         } else {
-                            println!("Token refresh successful");
+                            tracing::info!("Token refresh successful");
                         }
 
                         // Retry with new token
@@ -1073,7 +1113,7 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        println!("Token refresh failed: {}", refresh_error);
+                        tracing::warn!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
                             message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
@@ -1081,7 +1121,7 @@ impl CentralApiClient {
                     }
                 }
             } else {
-                println!("Token expired (401), no refresh token available");
+                tracing::info!("Token expired (401), no refresh token available");
                 return Err(CentralApiError::ServerError {
                     status: 401,
                     message: "No refresh token available. Please sign in again.".to_string(),
@@ -1369,7 +1409,7 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
-                println!("Token expired (401), attempting refresh...");
+                tracing::info!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
@@ -1385,7 +1425,7 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
@@ -1397,12 +1437,12 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
                         } else {
-                            println!("Token refresh successful");
+                            tracing::info!("Token refresh successful");
                         }
 
                         // Retry with new token
@@ -1414,7 +1454,7 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        println!("Token refresh failed: {}", refresh_error);
+                        tracing::warn!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
                             message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
@@ -1422,7 +1462,7 @@ impl CentralApiClient {
                     }
                 }
             } else {
-                println!("Token expired (401), no refresh token available");
+                tracing::info!("Token expired (401), no refresh token available");
                 return Err(CentralApiError::ServerError {
                     status: 401,
                     message: "No refresh token available. Please sign in again.".to_string(),
@@ -1485,7 +1525,7 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
-                println!("Token expired (401), attempting refresh...");
+                tracing::info!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
@@ -1501,7 +1541,7 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
@@ -1513,12 +1553,12 @@ impl CentralApiClient {
                                 chrono::DateTime::<chrono::Utc>::from_timestamp(expires_at, 0)
                                     .map(|dt| dt.to_rfc3339())
                                     .unwrap_or_else(|| "unknown".to_string());
-                            println!(
+                            tracing::info!(
                                 "Token refresh successful, new expiration: {}",
                                 expiration_time
                             );
                         } else {
-                            println!("Token refresh successful");
+                            tracing::info!("Token refresh successful");
                         }
 
                         // Retry with new token
@@ -1530,7 +1570,7 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        println!("Token refresh failed: {}", refresh_error);
+                        tracing::warn!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
                             message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
@@ -1538,7 +1578,7 @@ impl CentralApiClient {
                     }
                 }
             } else {
-                println!("Token expired (401), no refresh token available");
+                tracing::info!("Token expired (401), no refresh token available");
                 return Err(CentralApiError::ServerError {
                     status: 401,
                     message: "No refresh token available. Please sign in again.".to_string(),
@@ -1558,6 +1598,157 @@ impl CentralApiClient {
         }
 
         let data: ByovpsPendingResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Replace an existing BYOVPS with a new one.
+    ///
+    /// POST /api/byovps/replace
+    ///
+    /// Requires authentication. Atomically terminates any existing VPS and
+    /// provisions a new one. Unlike /provision which returns 409 if user has
+    /// an active VPS, /replace handles the termination automatically.
+    ///
+    /// # Arguments
+    /// * `vps_ip` - The IP address of the new VPS (IPv4 or IPv6)
+    /// * `ssh_username` - SSH username for connecting to the VPS
+    /// * `ssh_password` - SSH password for connecting to the VPS
+    ///
+    /// # Returns
+    /// * `Ok(ByovpsAsyncResponse)` - Replacement queued, poll for status
+    /// * `Err(CentralApiError)` - Replacement failed
+    pub async fn replace_byovps(
+        &mut self,
+        vps_ip: &str,
+        ssh_username: &str,
+        ssh_password: &str,
+    ) -> Result<ByovpsAsyncResponse, CentralApiError> {
+        let url = format!("{}/api/byovps/replace", self.base_url);
+
+        let body = ByovpsProvisionRequest {
+            vps_ip: vps_ip.to_string(),
+            ssh_username: ssh_username.to_string(),
+            ssh_password: ssh_password.to_string(),
+        };
+
+        // First attempt
+        let builder = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Check for 401 and retry with refreshed token if available
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                tracing::info!("Token expired (401), attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+                        tracing::info!("Token refresh successful");
+
+                        // Retry with new token
+                        let builder = self
+                            .client
+                            .post(&url)
+                            .header("Content-Type", "application/json")
+                            .json(&body);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(e) => {
+                        tracing::error!("Token refresh failed: {:?}", e);
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!(
+                                "Token refresh failed: {}. Please re-authenticate.",
+                                e
+                            ),
+                        });
+                    }
+                }
+            } else {
+                tracing::warn!("Token expired (401), no refresh token available");
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available. Please sign in again.".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: ByovpsAsyncResponse = response.json().await?;
+        Ok(data)
+    }
+
+    /// Poll the status of an async BYOVPS operation.
+    ///
+    /// GET /api/byovps/operations/{id}
+    ///
+    /// Returns the current status of an async provisioning operation.
+    /// Poll until status is "completed" or "failed".
+    pub async fn poll_operation(
+        &mut self,
+        operation_id: &str,
+    ) -> Result<OperationStatus, CentralApiError> {
+        let url = format!("{}/api/byovps/operations/{}", self.base_url, operation_id);
+
+        let builder = self.client.get(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        // Handle 401 with token refresh
+        let response = if response.status().as_u16() == 401 {
+            if let Some(ref refresh_token) = self.refresh_token.clone() {
+                tracing::info!("Token expired (401) during poll, attempting refresh...");
+                match self.refresh_token(refresh_token).await {
+                    Ok(token_response) => {
+                        self.auth_token = Some(token_response.access_token.clone());
+                        if let Some(new_refresh_token) = token_response.refresh_token {
+                            self.refresh_token = Some(new_refresh_token);
+                        }
+                        let builder = self.client.get(&url);
+                        self.add_auth_header(builder).send().await?
+                    }
+                    Err(e) => {
+                        return Err(CentralApiError::ServerError {
+                            status: 401,
+                            message: format!("Token refresh failed: {}", e),
+                        });
+                    }
+                }
+            } else {
+                return Err(CentralApiError::ServerError {
+                    status: 401,
+                    message: "No refresh token available".to_string(),
+                });
+            }
+        } else {
+            response
+        };
+
+        if !response.status().is_success() {
+            let status = response.status().as_u16();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(parse_error_response(status, &body));
+        }
+
+        let data: OperationStatus = response.json().await?;
         Ok(data)
     }
 
@@ -1590,7 +1781,7 @@ impl CentralApiClient {
         // Check for 401 and retry with refreshed token if available
         let response = if response.status().as_u16() == 401 {
             if let Some(ref refresh_token) = self.refresh_token.clone() {
-                println!("Token expired (401), attempting refresh...");
+                tracing::info!("Token expired (401), attempting refresh...");
                 match self.refresh_token(refresh_token).await {
                     Ok(token_response) => {
                         self.auth_token = Some(token_response.access_token.clone());
@@ -1600,7 +1791,7 @@ impl CentralApiClient {
                         }
 
                         // Log successful refresh
-                        println!("Token refresh successful");
+                        tracing::info!("Token refresh successful");
 
                         // Retry with new token
                         let builder = self
@@ -1611,7 +1802,7 @@ impl CentralApiClient {
                         self.add_auth_header(builder).send().await?
                     }
                     Err(refresh_error) => {
-                        println!("Token refresh failed: {}", refresh_error);
+                        tracing::warn!("Token refresh failed: {}", refresh_error);
                         return Err(CentralApiError::ServerError {
                             status: 401,
                             message: format!("Token refresh failed: {}. Your session may have expired. Please run the CLI again to re-authenticate.", refresh_error),
@@ -1619,7 +1810,7 @@ impl CentralApiClient {
                     }
                 }
             } else {
-                println!("Token expired (401), no refresh token available");
+                tracing::info!("Token expired (401), no refresh token available");
                 return Err(CentralApiError::ServerError {
                     status: 401,
                     message: "No refresh token available. Please sign in again.".to_string(),

@@ -113,6 +113,9 @@ impl App {
         } else if let Some(OverlayState::ClaudeAccounts { .. }) = self.dashboard.overlay() {
             // ClaudeAccounts overlay is screen-agnostic (works from Conversation or CommandDeck)
             ModalType::ClaudeAccounts
+        } else if let Some(OverlayState::VpsConfig { .. }) = self.dashboard.overlay() {
+            // VpsConfig overlay is screen-agnostic (CommandDeck only, but check before screen)
+            ModalType::VpsConfig
         } else if self.rate_limit_modal.is_some() {
             // Rate limit confirmation modal is screen-agnostic
             ModalType::RateLimitConfirm
@@ -263,6 +266,11 @@ impl App {
             }
             ModalType::RateLimitConfirm => {
                 if handlers::handle_rate_limit_command(self, &cmd) {
+                    return true;
+                }
+            }
+            ModalType::VpsConfig => {
+                if handlers::handle_vps_config_command(self, &cmd) {
                     return true;
                 }
             }

@@ -715,6 +715,93 @@ where
                                 }
                             }
 
+                            // =========================================================
+                            // VPS Config Overlay Key Handling (screen-agnostic)
+                            // Captures ALL keys when overlay is open
+                            // =========================================================
+                            if let Some(spoq::view_state::OverlayState::VpsConfig { ref state, .. }) = app.dashboard.overlay() {
+                                use spoq::view_state::VpsConfigState;
+                                let state_clone = state.clone();
+
+                                match key.code {
+                                    KeyCode::Esc => {
+                                        // Can't close during provisioning or authenticating
+                                        if matches!(state_clone, VpsConfigState::Provisioning { .. } | VpsConfigState::Authenticating { .. }) {
+                                            continue;
+                                        }
+                                        // Close and reconnect WS if success
+                                        if matches!(state_clone, VpsConfigState::Success { .. }) {
+                                            app.reconnect_websocket();
+                                        }
+                                        app.dashboard.collapse_overlay();
+                                        app.mark_dirty();
+                                        continue;
+                                    }
+                                    KeyCode::Left | KeyCode::Right => {
+                                        if let VpsConfigState::InputFields { field_focus, .. } = state_clone {
+                                            if field_focus == 0 {
+                                                app.dashboard.vps_config_toggle_mode();
+                                                app.mark_dirty();
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Enter => {
+                                        spoq::input::handlers::handle_vps_config_submit(app);
+                                        continue;
+                                    }
+                                    KeyCode::Tab | KeyCode::Down => {
+                                        if matches!(state_clone, VpsConfigState::InputFields { .. }) {
+                                            app.dashboard.vps_config_next_field();
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::BackTab | KeyCode::Up => {
+                                        if matches!(state_clone, VpsConfigState::InputFields { .. }) {
+                                            app.dashboard.vps_config_prev_field();
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Backspace => {
+                                        if matches!(state_clone, VpsConfigState::InputFields { .. }) {
+                                            app.dashboard.vps_config_backspace();
+                                            app.mark_dirty();
+                                        }
+                                        continue;
+                                    }
+                                    KeyCode::Char(c) => {
+                                        match state_clone {
+                                            VpsConfigState::InputFields { .. } => {
+                                                app.dashboard.vps_config_type_char(c);
+                                                app.mark_dirty();
+                                            }
+                                            VpsConfigState::Error { ref error, .. } => {
+                                                let is_auth_error = error.is_auth_error();
+                                                if is_auth_error && (c == 'l' || c == 'L') {
+                                                    // Start device flow re-authentication
+                                                    app.start_vps_reauth();
+                                                    app.mark_dirty();
+                                                } else if !is_auth_error && (c == 'r' || c == 'R') {
+                                                    // Retry VPS replace
+                                                    app.dashboard.vps_config_retry();
+                                                    app.mark_dirty();
+                                                }
+                                            }
+                                            _ => {
+                                                // Ignore chars in Provisioning/Success
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                    _ => {
+                                        // Swallow all other keys while overlay is open
+                                        continue;
+                                    }
+                                }
+                            }
+
                             // Handle input routing based on the top needs-action thread type
                             // This takes priority over all other key handling
                             if let Some((thread_id, waiting_for)) = app.dashboard.get_top_needs_action_thread() {

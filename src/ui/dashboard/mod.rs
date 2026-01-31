@@ -14,6 +14,7 @@ pub mod states;
 pub mod thread_list;
 pub mod thread_row;
 pub mod tooltip;
+pub mod vps_config_card;
 
 // Re-export types from view_state for backward compatibility
 // This allows existing code using `crate::ui::dashboard::*` to keep working
@@ -135,6 +136,10 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
         OverlayState::ClaudeAccounts { accounts, ref status_message, .. } => {
             accounts_card::calculate_height(accounts.len(), status_message.is_some()).min(parent_area.height - 4)
         }
+        OverlayState::VpsConfig { .. } => {
+            // VpsConfig card has variable height based on state, but ~15 rows is reasonable
+            15.min(parent_area.height - 4)
+        }
     };
 
     let x = parent_area.x + (parent_area.width.saturating_sub(overlay_width)) / 2;
@@ -146,6 +151,7 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
         OverlayState::Plan { anchor_y, .. } => *anchor_y,
         OverlayState::ClaudeLogin { anchor_y, .. } => *anchor_y,
         OverlayState::ClaudeAccounts { anchor_y, .. } => *anchor_y,
+        OverlayState::VpsConfig { anchor_y, .. } => *anchor_y,
     };
 
     // Try to position overlay so anchor_y is near the top

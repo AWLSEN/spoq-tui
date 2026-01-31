@@ -38,6 +38,8 @@ pub enum ModalType {
     ClaudeAccounts,
     /// Rate limit confirmation modal is active
     RateLimitConfirm,
+    /// VPS configuration overlay is active (/vps command)
+    VpsConfig,
 }
 
 /// Context information for input handling.

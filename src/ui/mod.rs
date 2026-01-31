@@ -20,6 +20,7 @@
 
 mod browse_list;
 mod command_deck;
+pub mod components;
 pub mod context;
 mod conversation;
 pub mod dashboard;
