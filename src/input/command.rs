@@ -237,6 +237,16 @@ pub enum Command {
     ApprovePlan,
     /// Reject plan (N/n when plan approval is pending)
     RejectPlan,
+    /// Enter plan feedback text input mode (F key)
+    PlanFeedbackMode,
+    /// Type character in plan feedback input
+    PlanFeedbackTypeChar(char),
+    /// Backspace in plan feedback input
+    PlanFeedbackBackspace,
+    /// Submit plan feedback (Enter) — sends rejection with feedback message
+    PlanFeedbackSubmit,
+    /// Cancel plan feedback (Escape) — returns to Y/N/F mode
+    PlanFeedbackCancel,
 
     // =========================================================================
     // Rate Limit Commands
@@ -414,6 +424,11 @@ impl Command {
             Command::PlanScrollDown => "Scroll plan down",
             Command::ApprovePlan => "Approve plan",
             Command::RejectPlan => "Reject plan",
+            Command::PlanFeedbackMode => "Enter plan feedback mode",
+            Command::PlanFeedbackTypeChar(_) => "Type in plan feedback",
+            Command::PlanFeedbackBackspace => "Backspace in plan feedback",
+            Command::PlanFeedbackSubmit => "Submit plan feedback",
+            Command::PlanFeedbackCancel => "Cancel plan feedback",
             Command::ContinueWithNextAccount => "Continue with next account",
             Command::CancelRateLimitRetry => "Cancel rate limit retry",
             Command::ClaudeLoginOpenBrowser => "Open browser for Claude login",

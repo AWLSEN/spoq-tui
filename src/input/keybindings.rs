@@ -276,7 +276,16 @@ impl KeybindingConfig {
         plan_approval.insert(KeyCombo::plain(KeyCode::Char('Y')), Command::ApprovePlan);
         plan_approval.insert(KeyCombo::plain(KeyCode::Char('n')), Command::RejectPlan);
         plan_approval.insert(KeyCombo::plain(KeyCode::Char('N')), Command::RejectPlan);
+        plan_approval.insert(KeyCombo::plain(KeyCode::Char('f')), Command::PlanFeedbackMode);
+        plan_approval.insert(KeyCombo::plain(KeyCode::Char('F')), Command::PlanFeedbackMode);
         self.modal.insert(ModalType::PlanApproval, plan_approval);
+
+        // Plan feedback text input bindings
+        let mut plan_feedback = HashMap::new();
+        plan_feedback.insert(KeyCombo::plain(KeyCode::Esc), Command::PlanFeedbackCancel);
+        plan_feedback.insert(KeyCombo::plain(KeyCode::Enter), Command::PlanFeedbackSubmit);
+        plan_feedback.insert(KeyCombo::plain(KeyCode::Backspace), Command::PlanFeedbackBackspace);
+        self.modal.insert(ModalType::PlanFeedback, plan_feedback);
 
         // Rate limit confirmation bindings
         let mut rate_limit_confirm = HashMap::new();

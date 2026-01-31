@@ -232,6 +232,10 @@ pub struct App {
     pub scroll_accumulator: f32,
     /// Current permission mode for Claude interactions
     pub permission_mode: PermissionMode,
+    /// Plan feedback text input buffer
+    pub plan_feedback_text: String,
+    /// Whether plan feedback text input mode is active
+    pub plan_feedback_active: bool,
     /// Session-level state (skills, permissions, oauth, tokens)
     pub session_state: SessionState,
     /// Tool execution tracking per-thread (cleared on done event)
@@ -513,6 +517,8 @@ impl App {
             scroll_changed: false,
             scroll_accumulator: 0.0,
             permission_mode: PermissionMode::default(),
+            plan_feedback_text: String::new(),
+            plan_feedback_active: false,
             session_state: SessionState::new(),
             tool_tracker: ToolTracker::new(),
             subagent_tracker: SubagentTracker::new(),
@@ -1360,6 +1366,7 @@ mod tests {
         app.handle_message(AppMessage::StreamError {
             thread_id: "thread-001".to_string(),
             error: "Connection failed".to_string(),
+            error_code: None,
         });
 
         // Verify the error was stored

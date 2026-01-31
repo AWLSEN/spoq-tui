@@ -237,7 +237,7 @@ impl CommandRegistry {
             }
 
             ModalType::PlanApproval => {
-                // Check modal-specific bindings (Up/Down for scroll, y/n for approve/reject)
+                // Check modal-specific bindings (Up/Down for scroll, y/n for approve/reject, f for feedback)
                 if let Some(cmd) = self.config.get_modal(ModalType::PlanApproval, &combo) {
                     return Some(cmd.clone());
                 }
@@ -245,6 +245,26 @@ impl CommandRegistry {
                 // Allow PageUp/PageDown to also scroll the conversation
                 if matches!(key.code, KeyCode::PageUp | KeyCode::PageDown) {
                     return None; // Fall through to normal handling
+                }
+
+                // Ignore other keys
+                Some(Command::Noop)
+            }
+
+            ModalType::PlanFeedback => {
+                // Check modal-specific bindings (Esc, Enter, Backspace)
+                if let Some(cmd) = self.config.get_modal(ModalType::PlanFeedback, &combo) {
+                    return Some(cmd.clone());
+                }
+
+                // Handle character input for feedback text
+                if let KeyCode::Char(c) = key.code {
+                    if !key
+                        .modifiers
+                        .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER)
+                    {
+                        return Some(Command::PlanFeedbackTypeChar(c));
+                    }
                 }
 
                 // Ignore other keys

@@ -276,6 +276,11 @@ impl App {
                     return true;
                 }
             }
+            ModalType::PlanFeedback => {
+                if handlers::handle_plan_feedback_command(self, &cmd) {
+                    return true;
+                }
+            }
             ModalType::ClaudeLogin => {
                 if handlers::handle_claude_login_command(self, &cmd) {
                     return true;

@@ -24,6 +24,8 @@ pub enum ModalType {
     Permission,
     /// Plan approval prompt is pending (ExitPlanMode converted to plan approval)
     PlanApproval,
+    /// Plan feedback text input mode (typing feedback to send with rejection)
+    PlanFeedback,
     /// AskUserQuestion prompt is active (session-level, inline)
     AskUserQuestion,
     /// AskUserQuestion "Other" text input mode (session-level)

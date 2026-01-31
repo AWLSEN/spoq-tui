@@ -36,6 +36,19 @@ impl App {
     /// }
     /// ```
     pub fn send_permission_response_for_thread(&self, request_id: &str, allowed: bool) -> bool {
+        self.send_permission_response_with_message(request_id, allowed, None)
+    }
+
+    /// Send a permission response with an optional feedback message via WebSocket.
+    ///
+    /// This is the general form that supports passing a message (e.g., plan feedback).
+    /// `send_permission_response_for_thread` delegates to this with `message: None`.
+    pub fn send_permission_response_with_message(
+        &self,
+        request_id: &str,
+        allowed: bool,
+        message: Option<String>,
+    ) -> bool {
         let sender = match &self.ws_sender {
             Some(s) => s,
             None => {
@@ -49,6 +62,7 @@ impl App {
             return false;
         }
 
+        let has_message = message.is_some();
         let response = WsCommandResponse {
             type_: "command_response".to_string(),
             request_id: request_id.to_string(),
@@ -56,7 +70,7 @@ impl App {
                 status: "success".to_string(),
                 data: WsPermissionData {
                     allowed,
-                    message: None,
+                    message,
                 },
             },
         };
@@ -64,8 +78,8 @@ impl App {
         match sender.try_send(WsOutgoingMessage::CommandResponse(response)) {
             Ok(()) => {
                 info!(
-                    "Sent permission response via WebSocket: {} -> {}",
-                    request_id, allowed
+                    "Sent permission response via WebSocket: {} -> {} (has_message={})",
+                    request_id, allowed, has_message
                 );
                 true
             }

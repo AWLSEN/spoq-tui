@@ -792,6 +792,67 @@ pub fn handle_plan_approval_command(app: &mut App, cmd: &Command) -> bool {
     }
 }
 
+/// Handles plan feedback text input commands (typing, submit, cancel).
+///
+/// Returns `true` if the command was handled successfully.
+pub fn handle_plan_feedback_command(app: &mut App, cmd: &Command) -> bool {
+    match cmd {
+        Command::PlanFeedbackMode => {
+            app.plan_feedback_active = true;
+            app.plan_feedback_text.clear();
+            app.mark_dirty();
+            true
+        }
+        Command::PlanFeedbackTypeChar(c) => {
+            app.plan_feedback_text.push(*c);
+            app.mark_dirty();
+            true
+        }
+        Command::PlanFeedbackBackspace => {
+            app.plan_feedback_text.pop();
+            app.mark_dirty();
+            true
+        }
+        Command::PlanFeedbackCancel => {
+            app.plan_feedback_active = false;
+            app.plan_feedback_text.clear();
+            app.mark_dirty();
+            true
+        }
+        Command::PlanFeedbackSubmit => {
+            if app.plan_feedback_text.is_empty() {
+                return true; // Ignore empty submit
+            }
+            let thread_id = match &app.active_thread_id {
+                Some(id) => id.clone(),
+                None => return false,
+            };
+            let request_id = match app.dashboard.get_plan_request_id(&thread_id) {
+                Some(id) => id.to_string(),
+                None => return false,
+            };
+            let from_permission = app.dashboard.is_plan_from_permission(&thread_id);
+            let feedback = app.plan_feedback_text.clone();
+
+            // Send rejection with feedback message
+            let sent = if from_permission {
+                app.send_permission_response_with_message(&request_id, false, Some(feedback))
+            } else {
+                app.send_plan_approval_response(&request_id, false)
+            };
+            if sent {
+                app.dashboard.remove_plan_request(&thread_id);
+                // Keep planning mode — Claude will revise and call ExitPlanMode again
+            }
+            app.plan_feedback_active = false;
+            app.plan_feedback_text.clear();
+            app.mark_dirty();
+            sent
+        }
+        _ => false,
+    }
+}
+
 /// Handles rate limit confirmation commands (Y/N/Esc when rate_limit_modal is showing).
 ///
 /// Returns true if the command was handled.
