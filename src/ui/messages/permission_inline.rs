@@ -18,7 +18,7 @@ use crate::ui::layout::LayoutContext;
 // ============================================================================
 
 /// Server timeout for permission requests (seconds)
-const PERMISSION_TIMEOUT_SECS: u64 = 55;
+const PERMISSION_TIMEOUT_SECS: u64 = 300;
 
 /// Countdown threshold for urgent styling (red color)
 const URGENT_THRESHOLD_SECS: u64 = 5;

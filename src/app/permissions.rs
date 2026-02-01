@@ -15,8 +15,8 @@ use tracing::{debug, error, info, warn};
 
 use super::App;
 
-/// Maximum elapsed time before considering a permission expired (server times out at 55s)
-const PERMISSION_TIMEOUT_SECS: u64 = 50;
+/// Maximum elapsed time before considering a permission expired (server times out at 300s)
+const PERMISSION_TIMEOUT_SECS: u64 = 295;
 
 /// Retry delay for WebSocket send failures
 const WS_RETRY_DELAY_MS: u64 = 500;
