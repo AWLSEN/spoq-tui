@@ -947,6 +947,60 @@ impl App {
                 // Open VPS config overlay
                 self.dashboard.show_vps_config();
             }
+            SlashCommand::Discard => {
+                use crate::app::types::Screen;
+
+                // Guard: must be in conversation with an active thread
+                if self.screen != Screen::Conversation || self.active_thread_id.is_none() {
+                    self.set_timed_error(
+                        "Can only discard from within a thread".into(),
+                        std::time::Duration::from_secs(4),
+                    );
+                    return;
+                }
+
+                // Guard: cannot discard while streaming
+                if self.is_streaming() {
+                    self.set_timed_error(
+                        "Cannot discard while streaming — wait for response to finish".into(),
+                        std::time::Duration::from_secs(4),
+                    );
+                    return;
+                }
+
+                let thread_id = self.active_thread_id.clone().unwrap();
+
+                // Clean up dashboard state for this thread
+                self.dashboard.remove_plan_request(&thread_id);
+                self.dashboard.set_thread_planning(&thread_id, false);
+                self.dashboard.collapse_overlay();
+
+                // Optimistic local removal from cache
+                self.cache.remove_thread(&thread_id);
+
+                // Navigate back to command deck
+                self.navigate_to_command_deck();
+
+                // Fire-and-forget backend delete
+                let tx = self.message_tx.clone();
+                let client = std::sync::Arc::clone(&self.client);
+                let tid = thread_id.clone();
+                tokio::spawn(async move {
+                    match client.delete_thread(&tid).await {
+                        Ok(_) => {
+                            let _ = tx.send(crate::app::AppMessage::ThreadDeleted {
+                                thread_id: tid,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = tx.send(crate::app::AppMessage::ThreadDeleteFailed {
+                                thread_id: tid,
+                                error: e.to_string(),
+                            });
+                        }
+                    }
+                });
+            }
         }
         self.mark_dirty();
     }

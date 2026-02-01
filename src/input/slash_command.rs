@@ -50,6 +50,11 @@ pub enum SlashCommand {
     /// Primary: /claude
     /// Aliases: /accounts
     Claude,
+
+    /// Delete the current thread
+    /// Primary: /discard
+    /// Aliases: /delete
+    Discard,
 }
 
 impl SlashCommand {
@@ -65,6 +70,7 @@ impl SlashCommand {
             SlashCommand::Settings,
             SlashCommand::Threads,
             SlashCommand::Claude,
+            SlashCommand::Discard,
         ]
     }
 
@@ -96,6 +102,7 @@ impl SlashCommand {
             "settings" | "config" => Some(SlashCommand::Settings),
             "threads" | "sessions" | "resume" => Some(SlashCommand::Threads),
             "claude" | "accounts" => Some(SlashCommand::Claude),
+            "discard" | "delete" => Some(SlashCommand::Discard),
             _ => None,
         }
     }
@@ -114,6 +121,7 @@ impl SlashCommand {
             SlashCommand::Settings => "/settings",
             SlashCommand::Threads => "/threads",
             SlashCommand::Claude => "/claude",
+            SlashCommand::Discard => "/discard",
         }
     }
 
@@ -132,6 +140,7 @@ impl SlashCommand {
             SlashCommand::Settings => vec!["/settings", "/config"],
             SlashCommand::Threads => vec!["/threads", "/sessions", "/resume"],
             SlashCommand::Claude => vec!["/claude", "/accounts"],
+            SlashCommand::Discard => vec!["/discard", "/delete"],
         }
     }
 
@@ -147,6 +156,7 @@ impl SlashCommand {
             SlashCommand::Settings => "Open settings panel",
             SlashCommand::Threads => "View and manage threads",
             SlashCommand::Claude => "Manage Claude Code accounts",
+            SlashCommand::Discard => "Delete the current thread",
         }
     }
 
@@ -294,5 +304,44 @@ mod tests {
     fn test_filter_case_insensitive() {
         let results = SlashCommand::filter("/SYN");
         assert_eq!(results, vec![SlashCommand::Sync]);
+    }
+
+    #[test]
+    fn test_parse_discard() {
+        assert_eq!(SlashCommand::parse("/discard"), Some(SlashCommand::Discard));
+        assert_eq!(SlashCommand::parse("discard"), Some(SlashCommand::Discard));
+        assert_eq!(SlashCommand::parse("/delete"), Some(SlashCommand::Discard));
+        assert_eq!(SlashCommand::parse("delete"), Some(SlashCommand::Discard));
+        assert_eq!(SlashCommand::parse("/DISCARD"), Some(SlashCommand::Discard));
+    }
+
+    #[test]
+    fn test_discard_name() {
+        assert_eq!(SlashCommand::Discard.name(), "/discard");
+    }
+
+    #[test]
+    fn test_discard_aliases() {
+        assert_eq!(SlashCommand::Discard.aliases(), vec!["/discard", "/delete"]);
+    }
+
+    #[test]
+    fn test_discard_description() {
+        assert_eq!(SlashCommand::Discard.description(), "Delete the current thread");
+    }
+
+    #[test]
+    fn test_filter_discard() {
+        let results = SlashCommand::filter("/disc");
+        assert_eq!(results, vec![SlashCommand::Discard]);
+
+        let results = SlashCommand::filter("del");
+        assert_eq!(results, vec![SlashCommand::Discard]);
+    }
+
+    #[test]
+    fn test_all_includes_discard() {
+        let all = SlashCommand::all();
+        assert!(all.contains(&SlashCommand::Discard));
     }
 }
