@@ -295,11 +295,11 @@ impl App {
 
         // Also check all pending permissions if no specific thread permission found
         let perm_info = perm_info.or_else(|| {
-            // Search all pending permissions
-            for (_, perm) in self.dashboard.pending_permissions_iter() {
-                return Some((perm.permission_id.clone(), perm.tool_name.clone()));
-            }
-            None
+            // Get first pending permission (if any)
+            self.dashboard
+                .pending_permissions_iter()
+                .next()
+                .map(|(_, perm)| (perm.permission_id.clone(), perm.tool_name.clone()))
         });
 
         if let Some((permission_id, tool_name)) = perm_info {
