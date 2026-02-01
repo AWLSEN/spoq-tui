@@ -38,6 +38,33 @@ impl ThreadCache {
         }
     }
 
+    /// Remove a thread and all its associated data from the cache.
+    ///
+    /// Clears: threads, thread_order, messages, last_accessed, errors,
+    /// pending_title_updates, and pending_to_real mappings (both as key and value).
+    ///
+    /// Returns `true` if the thread existed and was removed, `false` otherwise.
+    pub fn remove_thread(&mut self, thread_id: &str) -> bool {
+        let existed = self.threads.remove(thread_id).is_some();
+
+        if existed {
+            self.thread_order.retain(|id| id != thread_id);
+            self.messages.remove(thread_id);
+            self.last_accessed.remove(thread_id);
+            self.errors.remove(thread_id);
+            self.pending_title_updates.remove(thread_id);
+
+            // Remove from pending_to_real: both as key and as value
+            self.pending_to_real.remove(thread_id);
+            self.pending_to_real.retain(|_, real_id| real_id != thread_id);
+
+            // Reset focused error index since errors may have changed
+            self.focused_error_index = 0;
+        }
+
+        existed
+    }
+
     /// Get a thread by ID
     pub fn get_thread(&self, id: &str) -> Option<&Thread> {
         self.threads.get(id)
@@ -1346,5 +1373,177 @@ mod tests {
 
         // Pending updates should be cleared
         assert!(cache.pending_title_updates.is_empty());
+    }
+
+    // ============= remove_thread Tests =============
+
+    #[test]
+    fn test_remove_thread_returns_true_if_existed() {
+        let mut cache = ThreadCache::with_stub_data();
+        assert!(cache.get_thread("thread-001").is_some());
+
+        let removed = cache.remove_thread("thread-001");
+
+        assert!(removed);
+        assert!(cache.get_thread("thread-001").is_none());
+    }
+
+    #[test]
+    fn test_remove_thread_returns_false_if_not_existed() {
+        let mut cache = ThreadCache::new();
+
+        let removed = cache.remove_thread("nonexistent-thread");
+
+        assert!(!removed);
+    }
+
+    #[test]
+    fn test_remove_thread_clears_all_fields() {
+        let mut cache = ThreadCache::new();
+
+        // Create a thread with messages
+        let thread_id = cache.create_streaming_thread("Test message".to_string());
+
+        // Add some errors
+        cache.errors.insert(
+            thread_id.clone(),
+            vec![crate::models::ErrorInfo {
+                id: "err-1".to_string(),
+                error_code: "test".to_string(),
+                message: "Test error".to_string(),
+                timestamp: Utc::now(),
+            }],
+        );
+
+        // Add pending title update
+        cache
+            .pending_title_updates
+            .insert(thread_id.clone(), ("Title".to_string(), None));
+
+        // Verify data exists
+        assert!(cache.threads.contains_key(&thread_id));
+        assert!(cache.thread_order.contains(&thread_id));
+        assert!(cache.messages.contains_key(&thread_id));
+        assert!(cache.last_accessed.contains_key(&thread_id));
+        assert!(cache.errors.contains_key(&thread_id));
+        assert!(cache.pending_title_updates.contains_key(&thread_id));
+
+        // Remove the thread
+        let removed = cache.remove_thread(&thread_id);
+
+        assert!(removed);
+        assert!(!cache.threads.contains_key(&thread_id));
+        assert!(!cache.thread_order.contains(&thread_id));
+        assert!(!cache.messages.contains_key(&thread_id));
+        assert!(!cache.last_accessed.contains_key(&thread_id));
+        assert!(!cache.errors.contains_key(&thread_id));
+        assert!(!cache.pending_title_updates.contains_key(&thread_id));
+    }
+
+    #[test]
+    fn test_remove_thread_clears_pending_to_real_as_key() {
+        let mut cache = ThreadCache::new();
+
+        // Create a pending thread
+        let pending_id =
+            cache.create_pending_thread("Test".to_string(), ThreadType::Conversation, None);
+
+        // Manually add a pending_to_real mapping (normally done by reconcile)
+        cache
+            .pending_to_real
+            .insert(pending_id.clone(), "real-id".to_string());
+
+        assert!(cache.pending_to_real.contains_key(&pending_id));
+
+        // Remove the pending thread
+        cache.remove_thread(&pending_id);
+
+        // Pending_to_real entry should be removed
+        assert!(!cache.pending_to_real.contains_key(&pending_id));
+    }
+
+    #[test]
+    fn test_remove_thread_clears_pending_to_real_as_value() {
+        let mut cache = ThreadCache::new();
+
+        // Create a thread
+        let thread_id = cache.create_stub_thread("Test".to_string());
+
+        // Manually add a pending_to_real mapping where thread_id is the VALUE
+        cache
+            .pending_to_real
+            .insert("pending-id".to_string(), thread_id.clone());
+
+        assert!(cache.pending_to_real.values().any(|v| v == &thread_id));
+
+        // Remove the thread (which is the VALUE in pending_to_real)
+        cache.remove_thread(&thread_id);
+
+        // The pending_to_real entry pointing to this thread should be removed
+        assert!(!cache.pending_to_real.values().any(|v| v == &thread_id));
+    }
+
+    #[test]
+    fn test_remove_thread_resets_focused_error_index() {
+        let mut cache = ThreadCache::with_stub_data();
+
+        // Set focused error index to non-zero
+        cache.focused_error_index = 5;
+
+        // Remove a thread
+        cache.remove_thread("thread-001");
+
+        // Focused error index should be reset
+        assert_eq!(cache.focused_error_index, 0);
+    }
+
+    #[test]
+    fn test_remove_thread_does_not_affect_other_threads() {
+        let mut cache = ThreadCache::with_stub_data();
+        let initial_count = cache.thread_count();
+
+        // Remove one thread
+        cache.remove_thread("thread-001");
+
+        // Other threads should remain
+        assert_eq!(cache.thread_count(), initial_count - 1);
+        assert!(cache.get_thread("thread-002").is_some());
+        assert!(cache.get_thread("thread-003").is_some());
+    }
+
+    #[test]
+    fn test_remove_thread_updates_thread_order() {
+        let mut cache = ThreadCache::with_stub_data();
+
+        // Verify initial order
+        let threads = cache.threads();
+        assert_eq!(threads[0].id, "thread-001");
+        assert_eq!(threads[1].id, "thread-002");
+        assert_eq!(threads[2].id, "thread-003");
+
+        // Remove middle thread
+        cache.remove_thread("thread-002");
+
+        // Order should be updated
+        let threads = cache.threads();
+        assert_eq!(threads.len(), 2);
+        assert_eq!(threads[0].id, "thread-001");
+        assert_eq!(threads[1].id, "thread-003");
+    }
+
+    #[test]
+    fn test_remove_thread_idempotent() {
+        let mut cache = ThreadCache::with_stub_data();
+
+        // Remove a thread
+        let first_remove = cache.remove_thread("thread-001");
+        assert!(first_remove);
+
+        // Remove again - should return false
+        let second_remove = cache.remove_thread("thread-001");
+        assert!(!second_remove);
+
+        // Cache should still be consistent
+        assert_eq!(cache.thread_count(), 2);
     }
 }
