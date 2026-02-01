@@ -581,6 +581,108 @@ where
                             }
 
                             // =========================================================
+                            // Dashboard Plan Overlay Key Handling (CommandDeck)
+                            // Captures keys when Plan overlay is open, similar to
+                            // Question overlay. Uses thread_id from overlay state so
+                            // plan approval works from CommandDeck (where active_thread_id
+                            // is None).
+                            // =========================================================
+                            if app.screen == Screen::CommandDeck {
+                                if let Some(spoq::view_state::OverlayState::Plan { .. }) = app.dashboard.overlay() {
+                                    let overlay_thread_id = app.dashboard.overlay().unwrap().thread_id().to_string();
+                                    let feedback_active = app.dashboard.get_plan_approval_state(&overlay_thread_id)
+                                        .map(|s| s.feedback_active)
+                                        .unwrap_or(false);
+
+                                    if feedback_active {
+                                        // Feedback text input mode — absorb ALL keys
+                                        match key.code {
+                                            KeyCode::Esc => {
+                                                if let Some(state) = app.dashboard.get_plan_approval_state_mut(&overlay_thread_id) {
+                                                    state.feedback_active = false;
+                                                    state.feedback_text.clear();
+                                                }
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Enter => {
+                                                app.submit_plan_feedback_for_thread(&overlay_thread_id);
+                                                continue;
+                                            }
+                                            KeyCode::Backspace => {
+                                                if let Some(state) = app.dashboard.get_plan_approval_state_mut(&overlay_thread_id) {
+                                                    state.feedback_text.pop();
+                                                }
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                                                if let Some(state) = app.dashboard.get_plan_approval_state_mut(&overlay_thread_id) {
+                                                    state.feedback_text.push(c);
+                                                }
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            _ => continue,
+                                        }
+                                    } else {
+                                        // Navigation mode
+                                        match key.code {
+                                            KeyCode::Esc => {
+                                                app.dashboard.collapse_overlay();
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Up => {
+                                                if let Some(state) = app.dashboard.get_plan_approval_state_mut(&overlay_thread_id) {
+                                                    state.prev_action();
+                                                }
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Down => {
+                                                if let Some(state) = app.dashboard.get_plan_approval_state_mut(&overlay_thread_id) {
+                                                    state.next_action();
+                                                }
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+                                            KeyCode::Enter => {
+                                                let selected = app.dashboard.get_plan_approval_state(&overlay_thread_id)
+                                                    .map(|s| s.selected_action)
+                                                    .unwrap_or(0);
+                                                match selected {
+                                                    0 => { app.handle_plan_approval_key_for_thread('y', &overlay_thread_id); }
+                                                    1 => { app.handle_plan_approval_key_for_thread('n', &overlay_thread_id); }
+                                                    2 => {
+                                                        if let Some(state) = app.dashboard.get_plan_approval_state_mut(&overlay_thread_id) {
+                                                            state.feedback_active = true;
+                                                            state.feedback_text.clear();
+                                                        }
+                                                        app.mark_dirty();
+                                                    }
+                                                    _ => {}
+                                                }
+                                                continue;
+                                            }
+                                            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                                                app.handle_plan_approval_key_for_thread('y', &overlay_thread_id);
+                                                continue;
+                                            }
+                                            KeyCode::Char('n') | KeyCode::Char('N') => {
+                                                app.handle_plan_approval_key_for_thread('n', &overlay_thread_id);
+                                                continue;
+                                            }
+                                            _ => {
+                                                // Block other keys while overlay is open
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // =========================================================
                             // Claude Accounts Overlay Key Handling (screen-agnostic)
                             // Captures ALL keys when overlay is open
                             // =========================================================
