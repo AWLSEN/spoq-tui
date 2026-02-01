@@ -167,6 +167,9 @@ pub fn render(
             request_id,
             summary,
             scroll_offset,
+            selected_action,
+            feedback_text,
+            feedback_active,
             ..
         } => {
             render_plan_content(
@@ -178,6 +181,9 @@ pub fn render(
                 request_id,
                 summary,
                 *scroll_offset,
+                *selected_action,
+                *feedback_active,
+                feedback_text,
             );
         }
         OverlayState::ClaudeLogin {
@@ -492,6 +498,9 @@ fn render_plan_content(
     request_id: &str,
     summary: &PlanSummary,
     scroll_offset: usize,
+    selected_action: usize,
+    feedback_active: bool,
+    feedback_text: &str,
 ) {
     plan_card::render(
         frame,
@@ -502,6 +511,9 @@ fn render_plan_content(
         request_id,
         summary,
         scroll_offset,
+        selected_action,
+        feedback_active,
+        feedback_text,
     );
 }
 

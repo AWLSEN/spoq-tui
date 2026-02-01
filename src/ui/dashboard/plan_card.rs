@@ -51,6 +51,9 @@ const MAX_VISIBLE_PHASES: usize = 5;
 /// * `request_id` - Request ID for plan approval
 /// * `summary` - PlanSummary containing phases and metadata
 /// * `scroll_offset` - Current scroll position in phase list
+/// * `selected_action` - Currently selected action (0=Approve, 1=Reject, 2=Feedback)
+/// * `feedback_active` - Whether feedback text input is currently active
+/// * `feedback_text` - Feedback text content
 #[allow(clippy::too_many_arguments)]
 pub fn render(
     frame: &mut Frame,
@@ -61,6 +64,9 @@ pub fn render(
     _request_id: &str,
     summary: &PlanSummary,
     scroll_offset: usize,
+    selected_action: usize,
+    feedback_active: bool,
+    feedback_text: &str,
 ) {
     // Guard against zero-height areas
     if area.height < 3 {
@@ -140,40 +146,85 @@ pub fn render(
         );
     }
 
-    // Pad to consistent height before buttons
-    let button_row_y = area.y + area.height.saturating_sub(1);
+    // Pad to leave room for actions + help
+    y += 1; // blank line before actions
 
-    // Skip if button row would overlap with content
-    if button_row_y <= y {
+    // Calculate where actions should start
+    let actions_start_y = area.y + area.height.saturating_sub(5); // 3 actions + 1 help + 1 blank
+
+    // Skip if actions would overlap with content
+    if actions_start_y <= y {
         return;
     }
 
-    // Row 10: Buttons row - [view full]            [reject] [approve]
-    let view_btn = "[view full]";
-    let reject_btn = "[reject]";
-    let approve_btn = "[approve]";
+    let mut action_y = actions_start_y;
 
-    // [view full] on the left
-    let view_len = view_btn.len() as u16;
-    let view_area = Rect::new(area.x, button_row_y, view_len, 1);
-    frame.render_widget(Span::raw(view_btn), view_area);
+    // Action 0: Approve
+    let approve_selected = selected_action == 0;
+    let approve_line = if approve_selected {
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Green)),
+            Span::styled("Approve", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Approve", Style::default().fg(Color::DarkGray)),
+        ])
+    };
+    frame.render_widget(approve_line, Rect::new(area.x, action_y, area.width, 1));
+    action_y += 1;
 
-    // [approve] on the right
-    let approve_len = approve_btn.len() as u16;
-    let approve_x = area.x + area.width.saturating_sub(approve_len);
-    let approve_area = Rect::new(approve_x, button_row_y, approve_len, 1);
+    // Action 1: Reject
+    let reject_selected = selected_action == 1;
+    let reject_line = if reject_selected {
+        Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Red)),
+            Span::styled("Reject", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Reject", Style::default().fg(Color::DarkGray)),
+        ])
+    };
+    frame.render_widget(reject_line, Rect::new(area.x, action_y, area.width, 1));
+    action_y += 1;
+
+    // Action 2: Feedback
+    let feedback_selected = selected_action == 2;
+    if feedback_active {
+        // Show active feedback text input with cursor
+        let feedback_display = format!("  Feedback: {}█", feedback_text);
+        let feedback_line = Line::styled(feedback_display, Style::default().fg(Color::Yellow));
+        frame.render_widget(feedback_line, Rect::new(area.x, action_y, area.width, 1));
+    } else if feedback_selected {
+        let feedback_line = Line::from(vec![
+            Span::styled("> ", Style::default().fg(Color::Yellow)),
+            Span::styled("Feedback", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]);
+        frame.render_widget(feedback_line, Rect::new(area.x, action_y, area.width, 1));
+    } else {
+        let feedback_line = Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Feedback", Style::default().fg(Color::DarkGray)),
+        ]);
+        frame.render_widget(feedback_line, Rect::new(area.x, action_y, area.width, 1));
+    }
+    action_y += 1;
+
+    // Blank line
+    action_y += 1;
+
+    // Help text
+    let help_text = if feedback_active {
+        "enter submit  esc cancel"
+    } else {
+        "↑↓ navigate  enter select"
+    };
     frame.render_widget(
-        Span::styled(approve_btn, Style::default().fg(Color::Green)),
-        approve_area,
-    );
-
-    // [reject] to the left of [approve] with 2-char gap
-    let reject_len = reject_btn.len() as u16;
-    let reject_x = approve_x.saturating_sub(reject_len + 2);
-    let reject_area = Rect::new(reject_x, button_row_y, reject_len, 1);
-    frame.render_widget(
-        Span::styled(reject_btn, Style::default().fg(Color::Red)),
-        reject_area,
+        Span::styled(help_text, Style::default().fg(Color::DarkGray)),
+        Rect::new(area.x, action_y, area.width, 1),
     );
 }
 
