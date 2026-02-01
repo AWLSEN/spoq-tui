@@ -48,6 +48,7 @@ pub fn render_plan_approval(
     summary: &PlanSummary,
     ctx: &LayoutContext,
     markdown_cache: &mut MarkdownCache,
+    selected_action: usize,
     feedback_active: bool,
     feedback_text: &str,
 ) -> Vec<Line<'static>> {
@@ -156,34 +157,73 @@ pub fn render_plan_approval(
         lines.push(Line::raw("│"));
     }
 
-    // Action hints
-    lines.push(Line::from(vec![
-        Span::raw("│   "),
-        Span::styled("[y]", Style::default().fg(Color::Green)),
-        Span::raw(" approve    "),
-        Span::styled("[n]", Style::default().fg(Color::Red)),
-        Span::raw(" reject    "),
-        Span::styled("[f]", Style::default().fg(Color::Yellow)),
-        Span::raw(" feedback"),
-    ]));
-
-    // Feedback text input (when active)
-    if feedback_active {
-        lines.push(Line::raw("│"));
+    // Vertical action selection
+    // Action 0: Approve
+    if selected_action == 0 {
         lines.push(Line::from(vec![
             Span::raw("│   "),
-            Span::styled("> ", Style::default().fg(Color::Yellow)),
+            Span::styled("> ", Style::default().fg(Color::Green)),
+            Span::styled("Approve", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::raw("  "),
+            Span::styled("Approve", Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
+    // Action 1: Reject
+    if selected_action == 1 {
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::styled("> ", Style::default().fg(Color::Red)),
+            Span::styled("Reject", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::raw("  "),
+            Span::styled("Reject", Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
+    // Action 2: Feedback
+    if feedback_active {
+        // Show active feedback text input with cursor
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::raw("  "),
+            Span::styled("Feedback: ", Style::default().fg(Color::Yellow)),
             Span::raw(feedback_text.to_string()),
             Span::styled("\u{2588}", Style::default().fg(Color::Yellow)),
         ]));
+    } else if selected_action == 2 {
         lines.push(Line::from(vec![
             Span::raw("│   "),
-            Span::styled(
-                "Enter submit  Esc cancel",
-                Style::default().fg(Color::DarkGray),
-            ),
+            Span::styled("> ", Style::default().fg(Color::Yellow)),
+            Span::styled("Feedback", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        ]));
+    } else {
+        lines.push(Line::from(vec![
+            Span::raw("│   "),
+            Span::raw("  "),
+            Span::styled("Feedback", Style::default().fg(Color::DarkGray)),
         ]));
     }
+
+    lines.push(Line::raw("│"));
+
+    // Help text
+    let help_text = if feedback_active {
+        "enter submit  esc cancel"
+    } else {
+        "↑↓ navigate  enter select"
+    };
+    lines.push(Line::from(vec![
+        Span::raw("│   "),
+        Span::styled(help_text, Style::default().fg(Color::DarkGray)),
+    ]));
 
     lines.push(Line::raw("│"));
 
@@ -206,7 +246,7 @@ mod tests {
         );
         let ctx = LayoutContext::new(100, 40);
         let mut cache = MarkdownCache::new();
-        let lines = render_plan_approval(&summary, &ctx, &mut cache, false, "");
+        let lines = render_plan_approval(&summary, &ctx, &mut cache, 0, false, "");
 
         // Should have header, separators, content, file path, actions
         assert!(lines.len() >= 8);
@@ -234,7 +274,7 @@ mod tests {
         );
         let ctx = LayoutContext::new(100, 40);
         let mut cache = MarkdownCache::new();
-        let lines = render_plan_approval(&summary, &ctx, &mut cache, false, "");
+        let lines = render_plan_approval(&summary, &ctx, &mut cache, 0, false, "");
 
         let full_text: String = lines.iter().map(|l| l.to_string()).collect();
 
@@ -256,12 +296,14 @@ mod tests {
         );
         let ctx = LayoutContext::new(100, 40);
         let mut cache = MarkdownCache::new();
-        let lines = render_plan_approval(&summary, &ctx, &mut cache, false, "");
+        let lines = render_plan_approval(&summary, &ctx, &mut cache, 0, false, "");
 
         let full_text: String = lines.iter().map(|l| l.to_string()).collect();
-        assert!(full_text.contains("[y]"));
-        assert!(full_text.contains("[n]"));
-        assert!(full_text.contains("approve"));
-        assert!(full_text.contains("reject"));
+        // Check for vertical selection UI
+        assert!(full_text.contains("Approve"));
+        assert!(full_text.contains("Reject"));
+        assert!(full_text.contains("Feedback"));
+        // Check for help text
+        assert!(full_text.contains("navigate"));
     }
 }
