@@ -338,15 +338,15 @@ impl App {
         }
     }
 
-    /// Handle a plan approval key press ('y' or 'n')
+    /// Handle a plan approval key press ('y' or 'n') for the active thread.
     ///
     /// Returns true if a plan approval was handled, false if no pending plan approval.
     /// This is called when no permission is pending but y/n was pressed.
+    /// Delegates to `handle_plan_approval_key_for_thread` using `active_thread_id`.
     ///
     /// Note: If the plan originated from an ExitPlanMode permission request,
     /// we send a permission_response instead of plan_approval_response.
     fn handle_plan_approval_key(&mut self, key: char) -> bool {
-        // Get active thread ID (conversation view)
         let thread_id = match &self.active_thread_id {
             Some(id) => id.clone(),
             None => {
@@ -354,9 +354,20 @@ impl App {
                 return false;
             }
         };
+        self.handle_plan_approval_key_for_thread(key, &thread_id)
+    }
 
+    /// Handle a plan approval key press ('y' or 'n') for a specific thread.
+    ///
+    /// This is the core implementation that accepts an explicit thread_id,
+    /// allowing it to work from both the Conversation screen (via active_thread_id)
+    /// and the CommandDeck (via needs-action thread_id or overlay thread_id).
+    ///
+    /// Returns true if a plan approval was handled, false if no pending plan approval
+    /// or the key is not recognized.
+    pub fn handle_plan_approval_key_for_thread(&mut self, key: char, thread_id: &str) -> bool {
         // Check if there's a plan approval pending for this thread
-        let request_id = match self.dashboard.get_plan_request_id(&thread_id) {
+        let request_id = match self.dashboard.get_plan_request_id(thread_id) {
             Some(id) => id.to_string(),
             None => {
                 info!("No plan approval pending for thread {}", thread_id);
@@ -365,7 +376,7 @@ impl App {
         };
 
         // Check if this plan came from a permission request (ExitPlanMode)
-        let from_permission = self.dashboard.is_plan_from_permission(&thread_id);
+        let from_permission = self.dashboard.is_plan_from_permission(thread_id);
 
         match key {
             'y' | 'Y' => {
@@ -381,12 +392,12 @@ impl App {
                     self.send_plan_approval_response(&request_id, true)
                 };
                 if sent {
-                    self.dashboard.remove_plan_request(&thread_id);
-                    self.dashboard.set_thread_planning(&thread_id, false);
+                    self.dashboard.remove_plan_request(thread_id);
+                    self.dashboard.set_thread_planning(thread_id, false);
                     // Switch to Execution mode after plan approval
                     self.permission_mode = PermissionMode::Execution;
                     self.thread_mode_sync.request_mode_change(
-                        thread_id.clone(),
+                        thread_id.to_string(),
                         PermissionMode::Execution,
                     );
                 }
@@ -405,8 +416,8 @@ impl App {
                     self.send_plan_approval_response(&request_id, false)
                 };
                 if sent {
-                    self.dashboard.remove_plan_request(&thread_id);
-                    self.dashboard.set_thread_planning(&thread_id, false);
+                    self.dashboard.remove_plan_request(thread_id);
+                    self.dashboard.set_thread_planning(thread_id, false);
                 }
                 sent
             }
@@ -417,17 +428,24 @@ impl App {
         }
     }
 
-    /// Submit plan feedback text as a rejection with a message.
+    /// Submit plan feedback text as a rejection with a message for the active thread.
     ///
-    /// Extracts feedback text from the plan approval state, sends a rejection
-    /// response that includes the feedback, and cleans up the state.
+    /// Delegates to `submit_plan_feedback_for_thread` using `active_thread_id`.
     pub fn submit_plan_feedback(&mut self) {
         let thread_id = match &self.active_thread_id {
             Some(id) => id.clone(),
             None => return,
         };
+        self.submit_plan_feedback_for_thread(&thread_id);
+    }
 
-        let feedback = self.dashboard.get_plan_approval_state(&thread_id)
+    /// Submit plan feedback text as a rejection with a message for a specific thread.
+    ///
+    /// Extracts feedback text from the plan approval state, sends a rejection
+    /// response that includes the feedback, and cleans up the state.
+    /// Accepts an explicit thread_id so it works from both Conversation and CommandDeck.
+    pub fn submit_plan_feedback_for_thread(&mut self, thread_id: &str) {
+        let feedback = self.dashboard.get_plan_approval_state(thread_id)
             .map(|s| s.feedback_text.clone())
             .unwrap_or_default();
 
@@ -436,11 +454,11 @@ impl App {
             return;
         }
 
-        let request_id = match self.dashboard.get_plan_request_id(&thread_id) {
+        let request_id = match self.dashboard.get_plan_request_id(thread_id) {
             Some(id) => id.to_string(),
             None => return,
         };
-        let from_permission = self.dashboard.is_plan_from_permission(&thread_id);
+        let from_permission = self.dashboard.is_plan_from_permission(thread_id);
 
         let sent = if from_permission {
             self.send_permission_response_with_message(&request_id, false, Some(feedback))
@@ -449,11 +467,11 @@ impl App {
         };
 
         if sent {
-            self.dashboard.remove_plan_request(&thread_id);
+            self.dashboard.remove_plan_request(thread_id);
             // Keep planning mode — Claude will revise and call ExitPlanMode again
         }
 
-        if let Some(state) = self.dashboard.get_plan_approval_state_mut(&thread_id) {
+        if let Some(state) = self.dashboard.get_plan_approval_state_mut(thread_id) {
             state.feedback_active = false;
             state.feedback_text.clear();
         }
