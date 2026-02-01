@@ -71,8 +71,15 @@ pub fn render(
     // Calculate card dimensions based on overlay type
     let (anchor_y, card_height) = calculate_card_dimensions(overlay, list_area);
 
-    // Card width is 80% of list area
-    let card_width = ((list_area.width as f32) * CARD_WIDTH_PERCENT) as u16;
+    // Card width: adaptive for Question overlays, fixed 80% for others
+    let card_width = if matches!(overlay, OverlayState::Question { .. }) {
+        let default_width = ((list_area.width as f32) * CARD_WIDTH_PERCENT) as u16;
+        let min_width = 40u16.min(list_area.width);
+        let max_width = ((list_area.width as f32) * 0.92) as u16;
+        default_width.clamp(min_width, max_width)
+    } else {
+        ((list_area.width as f32) * CARD_WIDTH_PERCENT) as u16
+    };
     let card_x = list_area.x + (list_area.width - card_width) / 2;
     let mut card_y = anchor_y + 1; // Below the anchor row
 
@@ -119,6 +126,7 @@ pub fn render(
             thread_title,
             repository,
             question_data,
+            scroll_offset,
             ..
         } => {
             render_question_content(
@@ -130,6 +138,8 @@ pub fn render(
                 question_data.as_ref(),
                 ctx.question_state,
                 ctx.question_timer_secs,
+                *scroll_offset,
+                card_height,
             );
         }
         OverlayState::FreeForm {
@@ -232,67 +242,24 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             question_data,
             ..
         } => {
-            // Get option count and check for multi-question (tabs)
-            let (option_count, has_tabs) = question_data
-                .as_ref()
-                .map(|qd| {
-                    let opts = qd.questions.first().map(|q| q.options.len()).unwrap_or(0);
-                    let tabs = qd.questions.len() > 1;
-                    (opts, tabs)
-                })
-                .unwrap_or((0, false));
-
-            // Calculate required height dynamically:
-            // - 1 row: header (title · repo)
-            // - 1 row: tab bar (only if has_tabs)
-            // - 1 row: blank after header/tabs
-            // - N rows: question text (wrapped, up to 5 lines)
-            // - 1 row: blank before options
-            // - N rows: options (1-2 per option depending on descriptions)
-            // - 1 row: Other option
-            // - 1 row: blank before help
-            // - 1 row: help text
-            // - 2 rows: border (top + bottom)
-            let tab_row = if has_tabs { 1 } else { 0 };
-            let header_section = 1 + tab_row + 1; // header + optional tabs + blank
-
-            // Calculate question text height dynamically
             let card_width = ((list_area.width as f32) * CARD_WIDTH_PERCENT) as u16;
-            let card_inner_width = card_width.saturating_sub(4) as usize; // border + padding
-            let question_text = question_data
-                .as_ref()
-                .and_then(|qd| qd.questions.first())
-                .map(|q| q.question.as_str())
-                .unwrap_or("");
-            let question_section = if card_inner_width > 0 && !question_text.is_empty() {
-                question_card::wrap_text(question_text, card_inner_width, 5)
-                    .len()
-                    .max(2) as u16
-            } else {
-                2u16
-            };
+            let inner_width = card_width.saturating_sub(4) as usize;
 
-            // Account for descriptions in options section
-            let has_descriptions = question_data
-                .as_ref()
-                .and_then(|qd| qd.questions.first())
-                .map(|q| q.options.iter().any(|o| !o.description.is_empty()))
-                .unwrap_or(false);
-            let per_option_rows: u16 = if has_descriptions { 2 } else { 1 };
-            let options_section = 1 + (option_count as u16 * per_option_rows) + 1; // blank + options + Other
-            let footer_section = 1 + 1; // blank + help
-            let borders = 2;
+            // Extract options as (label, description) pairs for measurement
+            let (options_pairs, has_tabs) = extract_question_options(question_data);
+            let question_text = extract_question_text(question_data);
 
-            let content_height = header_section + question_section + options_section + footer_section;
-            let total_height = content_height + borders;
+            // Exact content measurement — no artificial caps
+            let content_height =
+                question_card::calculate_height(&question_text, &options_pairs, has_tabs, inner_width);
+            let total_height = content_height + 2; // +2 for borders
 
-            // Calculate dynamic minimum based on actual content needs
-            // At minimum we need: header(1) + blank(1) + question(2) + blank(1) + 1 option + other(1) + blank(1) + help(1) + borders(2) = 11
-            let dynamic_min = total_height.max(QUESTION_CARD_MIN_HEIGHT);
-
-            // Apply max height constraint (50% of list area, but at least the minimum)
-            let max_height = ((list_area.height as f32) * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16;
-            let card_height = dynamic_min.min(max_height.max(QUESTION_CARD_MIN_HEIGHT));
+            // Apply constraints
+            let max_height =
+                ((list_area.height as f32) * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16;
+            let card_height = total_height
+                .max(QUESTION_CARD_MIN_HEIGHT)
+                .min(max_height.max(QUESTION_CARD_MIN_HEIGHT));
 
             (*anchor_y, card_height)
         }
@@ -343,6 +310,7 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
 }
 
 /// Render the question content using the new QuestionRenderConfig
+#[allow(clippy::too_many_arguments)]
 fn render_question_content(
     frame: &mut Frame,
     area: Rect,
@@ -352,6 +320,8 @@ fn render_question_content(
     question_data: Option<&crate::state::session::AskUserQuestionData>,
     question_state: Option<&DashboardQuestionState>,
     timer_secs: Option<u32>,
+    scroll_offset: usize,
+    card_height: u16,
 ) {
     // Get tab index from question state, default to 0
     let tab_index = question_state.map(|s| s.tab_index).unwrap_or(0);
@@ -395,6 +365,18 @@ fn render_question_content(
         .map(|s| s.answered.clone())
         .unwrap_or_default();
 
+    // Determine if scroll is needed by comparing content height to card height
+    let inner_width = area.width as usize;
+    let options_pairs: Vec<(String, String)> = option_labels
+        .iter()
+        .zip(option_descriptions.iter())
+        .map(|(l, d)| (l.clone(), d.clone()))
+        .collect();
+    let has_tabs = tab_headers.len() > 1;
+    let content_height =
+        question_card::calculate_height(&question_text, &options_pairs, has_tabs, inner_width);
+    let needs_scroll = content_height + 2 > card_height; // +2 for borders
+
     // Build the render config
     let config = QuestionRenderConfig {
         question: &question_text,
@@ -409,11 +391,45 @@ fn render_question_content(
         tab_headers: &tab_headers,
         current_tab: tab_index,
         tabs_answered: &tabs_answered,
-        scroll_offset: 0,
-        needs_scroll: false,
+        scroll_offset,
+        needs_scroll,
     };
 
     question_card::render_question(frame, area, thread_id, title, repo, &config);
+}
+
+/// Extract (label, description) pairs and tab presence from question data.
+fn extract_question_options(
+    question_data: &Option<crate::state::session::AskUserQuestionData>,
+) -> (Vec<(String, String)>, bool) {
+    question_data
+        .as_ref()
+        .map(|qd| {
+            let pairs = qd
+                .questions
+                .first()
+                .map(|q| {
+                    q.options
+                        .iter()
+                        .map(|o| (o.label.clone(), o.description.clone()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let has_tabs = qd.questions.len() > 1;
+            (pairs, has_tabs)
+        })
+        .unwrap_or_default()
+}
+
+/// Extract question text from question data (first question).
+fn extract_question_text(
+    question_data: &Option<crate::state::session::AskUserQuestionData>,
+) -> String {
+    question_data
+        .as_ref()
+        .and_then(|qd| qd.questions.first())
+        .map(|q| q.question.clone())
+        .unwrap_or_default()
 }
 
 /// Render a rounded border using Unicode box-drawing characters

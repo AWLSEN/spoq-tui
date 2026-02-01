@@ -1323,20 +1323,40 @@ impl DashboardState {
         }
     }
 
-    /// Move to the previous option in the question overlay
+    /// Move to the previous option in the question overlay.
+    /// Auto-scrolls to keep the selected option visible.
     pub fn question_prev_option(&mut self) {
         let option_count = self.get_current_option_count();
         if let Some(state) = &mut self.question_state {
             state.prev_option(option_count);
         }
+        // Auto-scroll: use total option count as upper bound for visible count
+        // (if all options fit, scroll_offset stays 0; if not, this keeps selection visible)
+        let visible = self.estimate_visible_option_count();
+        self.ensure_option_visible(visible);
     }
 
-    /// Move to the next option in the question overlay
+    /// Move to the next option in the question overlay.
+    /// Auto-scrolls to keep the selected option visible.
     pub fn question_next_option(&mut self) {
         let option_count = self.get_current_option_count();
         if let Some(state) = &mut self.question_state {
             state.next_option(option_count);
         }
+        // Auto-scroll: keep selected option visible
+        let visible = self.estimate_visible_option_count();
+        self.ensure_option_visible(visible);
+    }
+
+    /// Estimate how many options fit in the visible card area.
+    ///
+    /// Without exact layout info, we use a conservative default.
+    /// The card's option area is roughly: card_height - header(1) - tabs(0-1) - blanks(3) - question(2) - other(1) - help(1) - borders(2) ≈ card_height - 10.
+    /// With ~1-2 rows per option, visible count ≈ (card_height - 10).
+    /// Since we don't store card_height in state, use 6 as a safe default.
+    fn estimate_visible_option_count(&self) -> usize {
+        // Default: enough for typical cards to scroll smoothly
+        6
     }
 
     /// Move to the next question tab

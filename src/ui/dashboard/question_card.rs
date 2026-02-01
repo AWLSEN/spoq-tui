@@ -174,8 +174,11 @@ pub fn render_question(
     // Row: blank
     y += 1;
 
-    // Question text (wrapped, up to 5 lines for longer questions)
-    let question_lines = wrap_text(config.question, area.width as usize, 5);
+    // Question text (wrapped, dynamic max based on card height)
+    let max_q_lines = ((area.height as usize) * 40 / 100)
+        .max(2)
+        .min(MEASURE_MAX_QUESTION_LINES);
+    let question_lines = wrap_text(config.question, area.width as usize, max_q_lines);
     for line in &question_lines {
         frame.render_widget(Line::raw(line.clone()), Rect::new(area.x, y, area.width, 1));
         y += 1;
@@ -196,21 +199,63 @@ pub fn render_question(
     let reserved_rows = 2; // 1 for Other, 1 for help line
     let available_option_rows = total_rows.saturating_sub(rows_used + reserved_rows);
 
-    // Calculate if we have space for descriptions
-    let options_count = config.options.len();
-    let has_descriptions = !config.option_descriptions.is_empty();
-    // Show descriptions if we have enough rows (at least 2 rows per option)
-    let show_descriptions = has_descriptions && available_option_rows >= options_count * 2;
+    // Option indentation (local aliases for constants)
+    let option_indent = OPTION_INDENT;
+    let description_indent = DESCRIPTION_INDENT;
 
-    // Render options
-    let option_indent = 4u16; // "    " indent
-    let description_indent = 10u16; // Extra indent for descriptions
+    // Calculate if we have space for descriptions
+    let has_descriptions = !config.option_descriptions.is_empty();
+    let available_width = (area.width.saturating_sub(option_indent)) as usize;
+    let desc_avail_width = (area.width.saturating_sub(description_indent)) as usize;
+    let show_descriptions = has_descriptions && {
+        let total_with_descs: usize = config
+            .options
+            .iter()
+            .enumerate()
+            .map(|(i, opt)| {
+                let label_text = format!("  [ ] {}", opt);
+                let label_lines =
+                    wrap_text(&label_text, available_width, MEASURE_MAX_OPTION_LINES).len();
+                let desc_lines = config
+                    .option_descriptions
+                    .get(i)
+                    .filter(|d| !d.is_empty())
+                    .map(|d| wrap_text(d, desc_avail_width, MEASURE_MAX_OPTION_LINES).len())
+                    .unwrap_or(0);
+                label_lines + desc_lines
+            })
+            .sum();
+        total_with_descs <= available_option_rows
+    };
+
+    // Render options with scroll support
     let max_y = area.y + area.height.saturating_sub(reserved_rows as u16);
 
+    // Scroll indicator: show "▲" if scrolled down
+    let has_scroll_up = config.needs_scroll && config.scroll_offset > 0;
+    if has_scroll_up && y < max_y {
+        frame.render_widget(
+            Line::styled(
+                "\u{25b2} more options above",
+                Style::default().fg(Color::DarkGray),
+            ),
+            Rect::new(area.x + option_indent, y, area.width - option_indent, 1),
+        );
+        y += 1;
+    }
+
+    let mut last_rendered_option = 0usize;
     for (i, opt) in config.options.iter().enumerate() {
+        // Skip options before scroll_offset
+        if i < config.scroll_offset {
+            continue;
+        }
+
         if y >= max_y {
             break; // No room for more options
         }
+
+        last_rendered_option = i;
 
         let is_cursor = config.selected_index == Some(i);
         let marker = if config.multi_select {
@@ -238,10 +283,10 @@ pub fn render_question(
         };
 
         let option_text = format!("{}{} {}", cursor_char, marker, opt);
-        let available_width = (area.width - option_indent) as usize;
+        let opt_available_width = (area.width - option_indent) as usize;
 
-        // Wrap option text up to 2 lines instead of truncating
-        let option_lines = wrap_text(&option_text, available_width, 2);
+        // Wrap option text with generous limit
+        let option_lines = wrap_text(&option_text, opt_available_width, MEASURE_MAX_OPTION_LINES);
 
         // Style: highlight if cursor is on this option
         let style = if is_cursor && !config.other_selected {
@@ -264,8 +309,8 @@ pub fn render_question(
             if let Some(desc) = config.option_descriptions.get(i) {
                 if !desc.is_empty() {
                     let desc_width = (area.width - description_indent) as usize;
-                    // Wrap description up to 2 lines instead of truncating
-                    let desc_lines = wrap_text(desc, desc_width, 2);
+                    // Wrap description with generous limit
+                    let desc_lines = wrap_text(desc, desc_width, MEASURE_MAX_OPTION_LINES);
                     let desc_style = Style::default().fg(Color::DarkGray);
                     for desc_line in &desc_lines {
                         if y >= max_y {
@@ -284,6 +329,21 @@ pub fn render_question(
                 y += 1;
             }
         }
+    }
+
+    // Scroll indicator: show "▼" if more options below
+    let has_scroll_down = config.needs_scroll
+        && !config.options.is_empty()
+        && last_rendered_option < config.options.len().saturating_sub(1);
+    if has_scroll_down && y < max_y {
+        frame.render_widget(
+            Line::styled(
+                "\u{25bc} more options below",
+                Style::default().fg(Color::DarkGray),
+            ),
+            Rect::new(area.x + option_indent, y, area.width - option_indent, 1),
+        );
+        y += 1;
     }
 
     // Render "Other" option
@@ -804,11 +864,12 @@ pub fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
 // ============================================================================
 
 /// Measured content dimensions for a question card.
-#[allow(dead_code)]
 struct ContentMeasurement {
     /// Rows needed for question text
+    #[allow(dead_code)]
     question_rows: u16,
     /// Rows needed per option (label lines + description lines)
+    #[allow(dead_code)]
     option_rows: Vec<u16>,
     /// Total content rows (all sections)
     total_rows: u16,
