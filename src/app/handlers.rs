@@ -2373,6 +2373,19 @@ impl App {
                 }
                 self.mark_dirty();
             }
+            AppMessage::ThreadDeleted { thread_id } => {
+                // Thread was successfully deleted from backend
+                // (Cache already cleared, navigation already happened in /discard handler)
+                tracing::info!("Thread {} deleted from backend", thread_id);
+            }
+            AppMessage::ThreadDeleteFailed { thread_id, error } => {
+                // Backend delete failed - show timed error
+                tracing::warn!("Failed to delete thread {}: {}", thread_id, error);
+                self.set_timed_error(
+                    format!("Failed to delete thread: {}", error),
+                    std::time::Duration::from_secs(4),
+                );
+            }
         }
     }
 }

@@ -410,6 +410,15 @@ pub enum AppMessage {
     ClaudeAccountPasteSubmit {
         token: String,
     },
+    /// Thread was successfully deleted from the backend
+    ThreadDeleted {
+        thread_id: String,
+    },
+    /// Thread deletion failed
+    ThreadDeleteFailed {
+        thread_id: String,
+        error: String,
+    },
 }
 
 #[cfg(test)]
