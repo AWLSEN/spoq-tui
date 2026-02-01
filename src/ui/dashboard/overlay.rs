@@ -129,6 +129,7 @@ pub fn render(
                 repository,
                 question_data.as_ref(),
                 ctx.question_state,
+                ctx.question_timer_secs,
             );
         }
         OverlayState::FreeForm {
@@ -316,6 +317,7 @@ fn render_question_content(
     repo: &str,
     question_data: Option<&crate::state::session::AskUserQuestionData>,
     question_state: Option<&DashboardQuestionState>,
+    timer_secs: Option<u32>,
 ) {
     // Get tab index from question state, default to 0
     let tab_index = question_state.map(|s| s.tab_index).unwrap_or(0);
@@ -369,7 +371,7 @@ fn render_question_content(
         multi_selections: &multi_selections_owned,
         other_input: if other_active { other_input } else { "" },
         other_selected,
-        timer_seconds: None,
+        timer_seconds: timer_secs,
         tab_headers: &tab_headers,
         current_tab: tab_index,
         tabs_answered: &tabs_answered,
@@ -822,6 +824,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            question_timer_secs: None,
             repos: &repos,
         };
 
@@ -861,6 +864,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            question_timer_secs: None,
             repos: &repos,
         };
 
@@ -901,6 +905,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            question_timer_secs: None,
             repos: &repos,
         };
 
@@ -941,6 +946,7 @@ mod tests {
             system_stats: &system_stats,
             theme: &theme,
             question_state: None,
+            question_timer_secs: None,
             repos: &repos,
         };
 

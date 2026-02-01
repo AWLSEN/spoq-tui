@@ -588,6 +588,8 @@ pub struct RenderContext<'a> {
     pub theme: &'a Theme,
     /// Question navigation state for multi-question flow
     pub question_state: Option<&'a DashboardQuestionState>,
+    /// Remaining seconds for the current question timer (None = no timer)
+    pub question_timer_secs: Option<u32>,
     /// GitHub repos for empty state
     pub repos: &'a [crate::models::GitHubRepo],
 }
@@ -608,6 +610,7 @@ impl<'a> RenderContext<'a> {
             system_stats,
             theme,
             question_state: None,
+            question_timer_secs: None,
             repos,
         }
     }
@@ -621,6 +624,12 @@ impl<'a> RenderContext<'a> {
     /// Set question navigation state
     pub fn with_question_state(mut self, state: Option<&'a DashboardQuestionState>) -> Self {
         self.question_state = state;
+        self
+    }
+
+    /// Set question timer remaining seconds
+    pub fn with_question_timer(mut self, secs: Option<u32>) -> Self {
+        self.question_timer_secs = secs;
         self
     }
 

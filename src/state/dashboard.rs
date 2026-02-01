@@ -11,6 +11,7 @@ use crate::view_state::{
 };
 use crate::websocket::messages::PhaseStatus;
 use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 use tracing::info;
 
 // ============================================================================
@@ -275,8 +276,8 @@ pub struct DashboardState {
     /// Phase progress data by thread_id during plan execution
     phase_progress: HashMap<String, PhaseProgressData>,
     /// Pending question data by thread_id (for AskUserQuestion tool)
-    /// Stores (request_id, question_data) tuple for WebSocket response
-    pending_questions: HashMap<String, (String, AskUserQuestionData)>,
+    /// Stores (request_id, question_data, received_at) tuple for WebSocket response and timeout tracking
+    pending_questions: HashMap<String, (String, AskUserQuestionData, Instant)>,
     /// Pending permission requests by thread_id (for permission prompts)
     /// Each thread can have at most one pending permission at a time
     pending_permissions: HashMap<String, PermissionRequest>,
@@ -644,8 +645,10 @@ impl DashboardState {
         request_id: String,
         question_data: AskUserQuestionData,
     ) {
-        self.pending_questions
-            .insert(thread_id.to_string(), (request_id, question_data));
+        self.pending_questions.insert(
+            thread_id.to_string(),
+            (request_id, question_data, Instant::now()),
+        );
         self.thread_views_dirty = true;
     }
 
@@ -653,14 +656,21 @@ impl DashboardState {
     pub fn get_pending_question(&self, thread_id: &str) -> Option<&AskUserQuestionData> {
         self.pending_questions
             .get(thread_id)
-            .map(|(_, data)| data)
+            .map(|(_, data, _)| data)
+    }
+
+    /// Get elapsed seconds since a pending question was received
+    pub fn get_pending_question_elapsed_secs(&self, thread_id: &str) -> Option<u64> {
+        self.pending_questions
+            .get(thread_id)
+            .map(|(_, _, received_at)| received_at.elapsed().as_secs())
     }
 
     /// Get pending question request ID for a thread
     pub fn get_pending_question_request_id(&self, thread_id: &str) -> Option<&str> {
         self.pending_questions
             .get(thread_id)
-            .map(|(request_id, _)| request_id.as_str())
+            .map(|(request_id, _, _)| request_id.as_str())
     }
 
     /// Clear pending question data for a thread
@@ -791,7 +801,16 @@ impl DashboardState {
                 let question_data = self
                     .pending_questions
                     .get(thread_id)
-                    .map(|(_, data)| data.clone());
+                    .map(|(_, data, _)| data.clone());
+
+                // If waiting for user input but no question data, the question expired.
+                // Don't open an empty question overlay.
+                if question_data.is_none()
+                    && matches!(waiting_for, Some(WaitingFor::UserInput))
+                {
+                    return;
+                }
+
                 // Initialize question navigation state if we have question data
                 self.question_state = question_data
                     .as_ref()
@@ -1418,9 +1437,21 @@ impl DashboardState {
         // Ensure thread views are fresh before building context
         self.compute_thread_views();
 
+        // Compute question timer if a question overlay is open
+        let question_timer = self.overlay.as_ref().and_then(|overlay| {
+            if let OverlayState::Question { thread_id, .. } = overlay {
+                self.get_pending_question_elapsed_secs(thread_id).map(|elapsed| {
+                    300u64.saturating_sub(elapsed) as u32
+                })
+            } else {
+                None
+            }
+        });
+
         RenderContext::new(&self.thread_views, &self.aggregate, system_stats, theme, repos)
             .with_overlay(self.overlay.as_ref())
             .with_question_state(self.question_state.as_ref())
+            .with_question_timer(question_timer)
     }
 
     /// Compute and cache thread views if dirty

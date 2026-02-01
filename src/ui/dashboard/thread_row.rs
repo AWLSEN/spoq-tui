@@ -1009,6 +1009,7 @@ mod tests {
             system_stats: &SYSTEM_STATS,
             theme,
             question_state: None,
+            question_timer_secs: None,
             repos: REPOS,
         }
     }
