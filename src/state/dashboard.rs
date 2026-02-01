@@ -406,6 +406,22 @@ impl DashboardState {
                 status
             );
             self.pending_questions.remove(thread_id);
+
+            // Auto-close the question overlay if it's open for this thread
+            if let Some(OverlayState::Question {
+                thread_id: overlay_tid,
+                ..
+            }) = &self.overlay
+            {
+                if overlay_tid == thread_id {
+                    tracing::debug!(
+                        "Auto-closing question overlay for expired thread {}",
+                        thread_id
+                    );
+                    self.overlay = None;
+                    self.question_state = None;
+                }
+            }
         }
 
         // Check if we should clear pending permission data:
