@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::models::dashboard::WaitingFor;
+use crate::models::dashboard::{ThreadStatus, WaitingFor};
 use crate::models::PermissionMode;
 use crate::state::session::AskUserQuestionState;
 use crate::ui::input::parse_ask_user_question;
@@ -249,6 +249,28 @@ impl App {
             warn!("Permission {} not found when cancelling", permission_id);
         }
         self.question_state.reset();
+    }
+
+    /// Complete cleanup after an AskUserQuestion response is sent.
+    ///
+    /// Clears all related state: both storage maps, waiting_for, both question
+    /// states (session-level and dashboard-level), and the dashboard overlay.
+    /// Safe to call even when some state doesn't exist (e.g., no overlay open).
+    ///
+    /// `thread_id_hint` is used when the caller already knows the thread_id
+    /// (e.g., dashboard overlay path). Falls back to looking up via permission_id.
+    fn cleanup_question_response(&mut self, permission_id: &str, thread_id_hint: Option<&str>) {
+        let thread_id_from_perm = self.dashboard.clear_permission_by_id(permission_id);
+        let thread_id = thread_id_hint.map(|s| s.to_string()).or(thread_id_from_perm);
+
+        if let Some(ref tid) = thread_id {
+            self.dashboard.clear_pending_question(tid);
+            self.dashboard.update_thread_status(tid, ThreadStatus::Running, None);
+        }
+
+        self.question_state.reset();
+        self.dashboard.collapse_overlay();
+        self.mark_dirty();
     }
 
     /// Allow the tool always for this session and approve (user pressed 'a')
@@ -749,11 +771,9 @@ impl App {
             answers.insert(question.question.clone(), answer);
         }
 
-        // Send the response with answers
+        // Send the response and clean up all related state
         self.send_question_response(&permission_id, answers);
-        // Clear the permission by searching across all threads
-        self.dashboard.clear_permission_by_id(&permission_id);
-        self.question_state.reset();
+        self.cleanup_question_response(&permission_id, None);
 
         true
     }
@@ -784,17 +804,9 @@ impl App {
             thread_id, request_id
         );
 
-        // Send the response via WebSocket
+        // Send the response and clean up all related state
         self.send_question_response(request_id, answers);
-
-        // Clear the pending question data for this thread
-        self.dashboard.clear_pending_question(thread_id);
-
-        // Collapse the overlay
-        self.dashboard.collapse_overlay();
-
-        // Mark UI as dirty
-        self.mark_dirty();
+        self.cleanup_question_response(request_id, Some(thread_id));
 
         debug!(
             "Dashboard question submitted and overlay closed for thread {}",
