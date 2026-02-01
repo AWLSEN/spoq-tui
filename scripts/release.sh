@@ -18,7 +18,8 @@ set -e
 RUSTUP_TOOLCHAIN="${HOME}/.rustup/toolchains/stable-aarch64-apple-darwin/bin"
 if [[ -d "$RUSTUP_TOOLCHAIN" ]]; then
     # Use a clean PATH with rustup first, avoiding duplicate Homebrew entries
-    export PATH="${RUSTUP_TOOLCHAIN}:/opt/homebrew/bin:/usr/bin:/bin"
+    # Include ~/.cargo/bin for rustup command itself
+    export PATH="${RUSTUP_TOOLCHAIN}:${HOME}/.cargo/bin:/opt/homebrew/bin:/usr/bin:/bin"
 else
     echo "ERROR: rustup toolchain not found at $RUSTUP_TOOLCHAIN"
     echo "Install with: rustup default stable"
@@ -165,16 +166,16 @@ log_success "All binaries built successfully"
 
 # Verify macOS binaries have correct architecture
 log_step "Verifying binary architectures"
-x86_arch=$(file target/x86_64-apple-darwin/release/spoq | grep -o 'x86_64' || true)
-arm_arch=$(file target/aarch64-apple-darwin/release/spoq | grep -o 'arm64' || true)
-if [[ "$x86_arch" != "x86_64" ]]; then
+x86_file=$(file target/x86_64-apple-darwin/release/spoq)
+arm_file=$(file target/aarch64-apple-darwin/release/spoq)
+if [[ "$x86_file" != *"x86_64"* ]] || [[ "$x86_file" == *"arm64"* ]]; then
     log_error "darwin-x86_64 binary has wrong architecture! Expected x86_64."
-    file target/x86_64-apple-darwin/release/spoq
+    echo "$x86_file"
     exit 1
 fi
-if [[ "$arm_arch" != "arm64" ]]; then
+if [[ "$arm_file" != *"arm64"* ]] || [[ "$arm_file" == *"x86_64"* ]]; then
     log_error "darwin-aarch64 binary has wrong architecture! Expected arm64."
-    file target/aarch64-apple-darwin/release/spoq
+    echo "$arm_file"
     exit 1
 fi
 log_success "All binary architectures verified"
