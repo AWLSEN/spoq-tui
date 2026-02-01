@@ -152,8 +152,8 @@ pub fn render_question(
     // Row: blank
     y += 1;
 
-    // Row 2-3: Question text (wrapped, max 2 lines)
-    let question_lines = wrap_text(config.question, area.width as usize, 2);
+    // Question text (wrapped, up to 5 lines for longer questions)
+    let question_lines = wrap_text(config.question, area.width as usize, 5);
     for line in &question_lines {
         frame.render_widget(Line::raw(line.clone()), Rect::new(area.x, y, area.width, 1));
         y += 1;

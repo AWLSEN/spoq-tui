@@ -240,17 +240,40 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             // - 1 row: header (title · repo)
             // - 1 row: tab bar (only if has_tabs)
             // - 1 row: blank after header/tabs
-            // - 2 rows: question text (wrapped, max 2 lines)
+            // - N rows: question text (wrapped, up to 5 lines)
             // - 1 row: blank before options
-            // - N rows: options (one per option)
+            // - N rows: options (1-2 per option depending on descriptions)
             // - 1 row: Other option
             // - 1 row: blank before help
             // - 1 row: help text
             // - 2 rows: border (top + bottom)
             let tab_row = if has_tabs { 1 } else { 0 };
             let header_section = 1 + tab_row + 1; // header + optional tabs + blank
-            let question_section = 2; // question text (max 2 lines)
-            let options_section = 1 + option_count as u16 + 1; // blank + options + Other
+
+            // Calculate question text height dynamically
+            let card_width = ((list_area.width as f32) * CARD_WIDTH_PERCENT) as u16;
+            let card_inner_width = card_width.saturating_sub(4) as usize; // border + padding
+            let question_text = question_data
+                .as_ref()
+                .and_then(|qd| qd.questions.first())
+                .map(|q| q.question.as_str())
+                .unwrap_or("");
+            let question_section = if card_inner_width > 0 && !question_text.is_empty() {
+                question_card::wrap_text(question_text, card_inner_width, 5)
+                    .len()
+                    .max(2) as u16
+            } else {
+                2u16
+            };
+
+            // Account for descriptions in options section
+            let has_descriptions = question_data
+                .as_ref()
+                .and_then(|qd| qd.questions.first())
+                .map(|q| q.options.iter().any(|o| !o.description.is_empty()))
+                .unwrap_or(false);
+            let per_option_rows: u16 = if has_descriptions { 2 } else { 1 };
+            let options_section = 1 + (option_count as u16 * per_option_rows) + 1; // blank + options + Other
             let footer_section = 1 + 1; // blank + help
             let borders = 2;
 
