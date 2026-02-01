@@ -193,13 +193,7 @@ impl App {
             }
         }
 
-        // Clear the pending permission by searching across all threads
-        if let Some(thread_id) = self.dashboard.clear_permission_by_id(permission_id) {
-            debug!("Cleared permission {} from thread {}", permission_id, thread_id);
-        } else {
-            warn!("Permission {} not found when clearing", permission_id);
-        }
-        self.mark_dirty();
+        self.cleanup_question_response(permission_id, None);
     }
 
     /// Deny a pending permission (user pressed 'n')
@@ -221,14 +215,7 @@ impl App {
             }
         }
 
-        // Clear the pending permission by searching across all threads and reset question state
-        if let Some(thread_id) = self.dashboard.clear_permission_by_id(permission_id) {
-            debug!("Cleared permission {} from thread {}", permission_id, thread_id);
-        } else {
-            warn!("Permission {} not found when clearing", permission_id);
-        }
-        self.question_state.reset();
-        self.mark_dirty();
+        self.cleanup_question_response(permission_id, None);
     }
 
     /// Cancel a pending permission (user pressed Shift+Escape)
@@ -242,13 +229,7 @@ impl App {
             warn!("No WebSocket sender available for cancel");
         }
 
-        // Clear the pending permission by searching across all threads and reset question state
-        if let Some(thread_id) = self.dashboard.clear_permission_by_id(permission_id) {
-            debug!("Cancelled and cleared permission {} from thread {}", permission_id, thread_id);
-        } else {
-            warn!("Permission {} not found when cancelling", permission_id);
-        }
-        self.question_state.reset();
+        self.cleanup_question_response(permission_id, None);
     }
 
     /// Complete cleanup after an AskUserQuestion response is sent.
