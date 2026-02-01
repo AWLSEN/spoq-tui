@@ -11,7 +11,9 @@
 use ratatui::backend::TestBackend;
 use ratatui::layout::Rect;
 use ratatui::Terminal;
-use spoq::state::dashboard::{DashboardQuestionState, DashboardState};
+use spoq::models::dashboard::{ThreadStatus, WaitingFor};
+use spoq::models::{Thread, ThreadMode, ThreadType};
+use spoq::state::dashboard::DashboardState;
 use spoq::state::session::{AskUserQuestionData, Question, QuestionOption};
 use spoq::ui::dashboard::overlay;
 use spoq::ui::dashboard::question_card::{self, QuestionRenderConfig};
@@ -21,6 +23,26 @@ use std::collections::HashMap;
 // ============================================================================
 // Test Helpers
 // ============================================================================
+
+fn make_test_thread(id: &str, title: &str) -> Thread {
+    Thread {
+        id: id.to_string(),
+        title: title.to_string(),
+        description: None,
+        preview: format!("Preview for {}", title),
+        updated_at: chrono::Utc::now(),
+        thread_type: ThreadType::Programming,
+        mode: ThreadMode::default(),
+        model: Some("claude-opus-4".to_string()),
+        permission_mode: Some("plan".to_string()),
+        message_count: 5,
+        created_at: chrono::Utc::now(),
+        working_directory: Some(format!("/Users/sam/{}", id)),
+        status: Some(ThreadStatus::Waiting),
+        verified: None,
+        verified_at: None,
+    }
+}
 
 fn make_question_with_many_options(count: usize) -> AskUserQuestionData {
     let options: Vec<QuestionOption> = (0..count)
@@ -62,63 +84,31 @@ fn make_question_with_long_text() -> AskUserQuestionData {
     }
 }
 
+fn setup_question_overlay(state: &mut DashboardState, thread_id: &str, question_data: AskUserQuestionData) {
+    // Add thread
+    let thread = make_test_thread(thread_id, "Test Thread");
+    state.add_thread(thread);
+
+    // Set waiting for UserInput
+    state.update_thread_status(thread_id, ThreadStatus::Waiting, Some(WaitingFor::UserInput));
+
+    // Add pending question
+    state.set_pending_question(thread_id, "req-1".to_string(), question_data);
+
+    // Expand thread to create overlay
+    state.expand_thread(thread_id, 10);
+}
+
+fn get_scroll_offset(state: &DashboardState) -> Option<usize> {
+    match state.overlay() {
+        Some(OverlayState::Question { scroll_offset, .. }) => Some(*scroll_offset),
+        _ => None,
+    }
+}
+
 // ============================================================================
-// Calculate Height Tests (overlay.rs helpers)
+// Helper Functions (note: extract_question_* are private, tested indirectly)
 // ============================================================================
-
-#[test]
-fn test_extract_question_options() {
-    let question_data = make_question_with_many_options(3);
-    let (pairs, has_tabs) = overlay::extract_question_options(&Some(question_data));
-
-    assert_eq!(pairs.len(), 3);
-    assert_eq!(pairs[0].0, "Option 1");
-    assert_eq!(pairs[0].1, "Description for option 1");
-    assert!(!has_tabs);
-}
-
-#[test]
-fn test_extract_question_options_with_tabs() {
-    let question_data = AskUserQuestionData {
-        questions: vec![
-            Question {
-                question: "Q1?".to_string(),
-                header: "Tab1".to_string(),
-                options: vec![QuestionOption {
-                    label: "A".to_string(),
-                    description: "".to_string(),
-                }],
-                multi_select: false,
-            },
-            Question {
-                question: "Q2?".to_string(),
-                header: "Tab2".to_string(),
-                options: vec![QuestionOption {
-                    label: "B".to_string(),
-                    description: "".to_string(),
-                }],
-                multi_select: false,
-            },
-        ],
-        answers: HashMap::new(),
-    };
-
-    let (_, has_tabs) = overlay::extract_question_options(&Some(question_data));
-    assert!(has_tabs);
-}
-
-#[test]
-fn test_extract_question_text() {
-    let question_data = make_question_with_many_options(2);
-    let text = overlay::extract_question_text(&Some(question_data));
-    assert_eq!(text, "Which option should I use?");
-}
-
-#[test]
-fn test_extract_question_text_empty() {
-    let text = overlay::extract_question_text(&None);
-    assert_eq!(text, "");
-}
 
 // ============================================================================
 // Calculate Height Tests (question_card.rs)
@@ -294,20 +284,10 @@ fn test_question_next_option_auto_scrolls() {
     let question_data = make_question_with_many_options(10);
 
     // Setup question overlay
-    state.add_pending_question(
-        "thread-1",
-        "req-1".to_string(),
-        question_data.clone(),
-    );
-    state.expand_thread(
-        "thread-1",
-        "Test Thread",
-        "~/repo",
-        0, // anchor_y
-    );
+    setup_question_overlay(&mut state, "thread-1", question_data);
 
     // Start at first option (scroll_offset should be 0)
-    assert_eq!(state.question_scroll_offset(), Some(0));
+    assert_eq!(get_scroll_offset(&state), Some(0));
 
     // Navigate down several times
     for _ in 0..7 {
@@ -316,7 +296,7 @@ fn test_question_next_option_auto_scrolls() {
 
     // After navigating to option 7, scroll should have adjusted
     // (exact value depends on estimate_visible_option_count, which defaults to 6)
-    let scroll = state.question_scroll_offset();
+    let scroll = get_scroll_offset(&state);
     assert!(
         scroll.is_some(),
         "Scroll offset should be set after navigation"
@@ -332,18 +312,13 @@ fn test_question_prev_option_auto_scrolls() {
     let mut state = DashboardState::new();
     let question_data = make_question_with_many_options(10);
 
-    state.add_pending_question(
-        "thread-1",
-        "req-1".to_string(),
-        question_data.clone(),
-    );
-    state.expand_thread("thread-1", "Test Thread", "~/repo", 0);
+    setup_question_overlay(&mut state, "thread-1", question_data);
 
     // Navigate down to trigger scrolling
     for _ in 0..8 {
         state.question_next_option();
     }
-    let scroll_after_down = state.question_scroll_offset().unwrap();
+    let scroll_after_down = get_scroll_offset(&state).unwrap();
     assert!(scroll_after_down > 0);
 
     // Navigate back up
@@ -352,7 +327,7 @@ fn test_question_prev_option_auto_scrolls() {
     }
 
     // Scroll should have decreased
-    let scroll_after_up = state.question_scroll_offset().unwrap();
+    let scroll_after_up = get_scroll_offset(&state).unwrap();
     assert!(
         scroll_after_up < scroll_after_down,
         "Scroll should decrease when navigating up: {} vs {}",
@@ -366,12 +341,7 @@ fn test_ensure_option_visible_keeps_selection_in_view() {
     let mut state = DashboardState::new();
     let question_data = make_question_with_many_options(20);
 
-    state.add_pending_question(
-        "thread-1",
-        "req-1".to_string(),
-        question_data.clone(),
-    );
-    state.expand_thread("thread-1", "Test Thread", "~/repo", 0);
+    setup_question_overlay(&mut state, "thread-1", question_data);
 
     // Directly set selection to option 15 (beyond visible area)
     if let Some(q_state) = state.question_state_mut() {
@@ -381,7 +351,7 @@ fn test_ensure_option_visible_keeps_selection_in_view() {
     // Trigger ensure_option_visible via navigation
     state.ensure_option_visible(6); // visible_option_count = 6
 
-    let scroll = state.question_scroll_offset().unwrap();
+    let scroll = get_scroll_offset(&state).unwrap();
     // With option 15 selected and 6 visible, scroll should be at least 10
     // (15 - 6 + 1 = 10)
     assert!(
@@ -396,16 +366,11 @@ fn test_scroll_offset_not_negative() {
     let mut state = DashboardState::new();
     let question_data = make_question_with_many_options(5);
 
-    state.add_pending_question(
-        "thread-1",
-        "req-1".to_string(),
-        question_data.clone(),
-    );
-    state.expand_thread("thread-1", "Test Thread", "~/repo", 0);
+    setup_question_overlay(&mut state, "thread-1", question_data);
 
     // Navigate to first option (should keep scroll at 0)
     state.question_prev_option();
-    let scroll = state.question_scroll_offset().unwrap();
+    let scroll = get_scroll_offset(&state).unwrap();
     assert_eq!(scroll, 0, "Scroll should not go below 0");
 }
 
@@ -415,8 +380,8 @@ fn test_scroll_offset_not_negative() {
 
 #[test]
 fn test_adaptive_width_for_question_overlay() {
-    // This test verifies that Question overlays use adaptive width logic
-    // while other overlays use fixed 80% width
+    // This test verifies that Question overlays render correctly
+    // (adaptive width logic is in overlay.rs but tested via rendering)
     let backend = TestBackend::new(100, 40);
     let mut terminal = Terminal::new(backend).unwrap();
 
@@ -465,26 +430,21 @@ fn test_full_scroll_flow_with_rendering() {
     let mut state = DashboardState::new();
     let question_data = make_question_with_many_options(15);
 
-    state.add_pending_question(
-        "thread-1",
-        "req-1".to_string(),
-        question_data.clone(),
-    );
-    state.expand_thread("thread-1", "Test Thread", "~/repo", 5);
+    setup_question_overlay(&mut state, "thread-1", question_data);
 
     // Navigate down to middle
     for _ in 0..7 {
         state.question_next_option();
     }
 
-    let scroll_mid = state.question_scroll_offset().unwrap();
+    let scroll_mid = get_scroll_offset(&state).unwrap();
 
     // Navigate to near end
     for _ in 0..6 {
         state.question_next_option();
     }
 
-    let scroll_end = state.question_scroll_offset().unwrap();
+    let scroll_end = get_scroll_offset(&state).unwrap();
     assert!(scroll_end > scroll_mid, "Scroll should increase");
 
     // Navigate back to start
@@ -492,7 +452,7 @@ fn test_full_scroll_flow_with_rendering() {
         state.question_prev_option();
     }
 
-    let scroll_start = state.question_scroll_offset().unwrap();
+    let scroll_start = get_scroll_offset(&state).unwrap();
     assert_eq!(scroll_start, 0, "Scroll should return to 0");
 }
 
@@ -591,12 +551,7 @@ fn test_scroll_with_zero_visible_options() {
     let mut state = DashboardState::new();
     let question_data = make_question_with_many_options(3);
 
-    state.add_pending_question(
-        "thread-1",
-        "req-1".to_string(),
-        question_data.clone(),
-    );
-    state.expand_thread("thread-1", "Test Thread", "~/repo", 0);
+    setup_question_overlay(&mut state, "thread-1", question_data);
 
     // Call ensure_option_visible with 0 (should not panic)
     state.ensure_option_visible(0);
