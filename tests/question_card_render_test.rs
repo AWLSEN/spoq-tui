@@ -33,7 +33,7 @@ fn test_question_render_config_construction_single_select() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(120), // 2 minutes
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: Some(120), // 2 minutes
     };
 
     assert_eq!(config.question, "Choose one option:");
@@ -60,7 +60,7 @@ fn test_question_render_config_construction_multi_select() {
         multi_selections: &selections,
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     assert!(config.multi_select);
@@ -82,7 +82,7 @@ fn test_question_render_config_with_other_input() {
         multi_selections: &[],
         other_input: "Maybe later",
         other_selected: true,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(30), // 30 seconds
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: Some(30), // 30 seconds
     };
 
     assert!(config.other_selected);
@@ -127,7 +127,7 @@ fn test_render_single_select_first_option_selected() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -170,7 +170,7 @@ fn test_render_single_select_last_option_selected() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -209,7 +209,7 @@ fn test_render_single_select_other_selected() {
         multi_selections: &[],
         other_input: "Custom option",
         other_selected: true,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -257,7 +257,7 @@ fn test_render_multi_select_no_selections() {
         multi_selections: &selections,
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -301,7 +301,7 @@ fn test_render_multi_select_some_selections() {
         multi_selections: &selections,
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -345,7 +345,7 @@ fn test_render_multi_select_all_selections() {
         multi_selections: &selections,
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -385,7 +385,7 @@ fn test_render_multi_select_with_other_input() {
         multi_selections: &selections,
         other_input: "Custom feature",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -428,7 +428,7 @@ fn test_render_timer_normal_time() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(272), // 4:32 - normal time
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: Some(272), // 4:32 - normal time
     };
 
     
@@ -466,7 +466,7 @@ fn test_render_timer_urgent_time() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(5), // 5 seconds - urgent (< 10)
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: Some(5), // 5 seconds - urgent (< 10)
     };
 
     
@@ -504,7 +504,7 @@ fn test_render_no_timer() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None, // No timer
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None, // No timer
     };
 
     
@@ -542,7 +542,7 @@ fn test_render_timer_zero_seconds() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: Some(0), // Zero seconds
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: Some(0), // Zero seconds
     };
 
     
@@ -584,7 +584,7 @@ fn test_render_many_options() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -625,7 +625,7 @@ fn test_render_long_question_text() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -663,7 +663,7 @@ fn test_render_empty_options() {
         multi_selections: &[],
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     
@@ -708,7 +708,7 @@ fn test_render_mismatched_selections_length() {
         multi_selections: &selections,
         other_input: "",
         other_selected: false,
-        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], timer_seconds: None,
+        option_descriptions: &[], tab_headers: &[], current_tab: 0, tabs_answered: &[], scroll_offset: 0, needs_scroll: false, timer_seconds: None,
     };
 
     

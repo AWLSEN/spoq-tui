@@ -679,6 +679,7 @@ fn test_render_context_with_overlay() {
         repository: "~/repo".to_string(),
         question_data: None,
         anchor_y: 10,
+        scroll_offset: 0,
     };
 
     let ctx = ctx.with_overlay(Some(&overlay));

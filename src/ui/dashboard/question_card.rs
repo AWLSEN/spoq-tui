@@ -80,6 +80,10 @@ pub struct QuestionRenderConfig<'a> {
     pub current_tab: usize,
     /// Which tabs have been answered
     pub tabs_answered: &'a [bool],
+    /// Scroll offset for the options section (0 = no scroll)
+    pub scroll_offset: usize,
+    /// Whether the card content exceeds available height (enables scroll indicators)
+    pub needs_scroll: bool,
 }
 
 impl<'a> Default for QuestionRenderConfig<'a> {
@@ -97,6 +101,8 @@ impl<'a> Default for QuestionRenderConfig<'a> {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         }
     }
 }
@@ -395,6 +401,8 @@ pub fn render(
                 tab_headers: &[],
                 current_tab: 0,
                 tabs_answered: &[],
+                scroll_offset: 0,
+                needs_scroll: false,
             };
             render_question(frame, area, thread_id, title, repo, &config);
         }
@@ -1116,6 +1124,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1161,6 +1171,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1201,6 +1213,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1240,6 +1254,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1279,6 +1295,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1512,6 +1530,8 @@ mod tests {
             tab_headers: &tab_headers,
             current_tab: 0,
             tabs_answered: &tabs_answered,
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1554,6 +1574,8 @@ mod tests {
             tab_headers: &tab_headers,
             current_tab: 1, // Second tab active
             tabs_answered: &tabs_answered,
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1617,9 +1639,11 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
-        
+
         terminal
             .draw(|frame| {
                 // Large enough area to show descriptions (need 2 rows per option)
@@ -1669,6 +1693,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1722,9 +1748,11 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
-        
+
         terminal
             .draw(|frame| {
                 let area = Rect::new(0, 0, 56, 18);
@@ -1768,6 +1796,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         
@@ -1814,6 +1844,8 @@ mod tests {
             tab_headers: &[],
             current_tab: 0,
             tabs_answered: &[],
+            scroll_offset: 0,
+            needs_scroll: false,
         };
 
         

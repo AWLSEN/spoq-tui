@@ -907,6 +907,7 @@ impl DashboardState {
                     repository: thread.display_repository(),
                     question_data,
                     anchor_y,
+                    scroll_offset: 0,
                 })
             }
         };
@@ -951,6 +952,7 @@ impl DashboardState {
             repository,
             question_data,
             anchor_y,
+            scroll_offset: _,
         }) = self.overlay.take()
         {
             if tid == thread_id {
@@ -985,6 +987,7 @@ impl DashboardState {
                     repository,
                     question_data,
                     anchor_y,
+                    scroll_offset: 0,
                 });
             }
         }
@@ -1287,6 +1290,37 @@ impl DashboardState {
             }
         }
         false
+    }
+
+    /// Adjust scroll_offset on the Question overlay so the currently selected
+    /// option is visible. Called after next_option/prev_option.
+    ///
+    /// `visible_option_count` is the number of options that can be displayed
+    /// at once (based on card height). If 0, does nothing.
+    pub fn ensure_option_visible(&mut self, visible_option_count: usize) {
+        if visible_option_count == 0 {
+            return;
+        }
+        let selected_idx = self
+            .question_state
+            .as_ref()
+            .and_then(|qs| {
+                let tab = qs.tab_index;
+                qs.selections.get(tab).copied().flatten()
+            })
+            .unwrap_or(0);
+
+        if let Some(OverlayState::Question {
+            ref mut scroll_offset,
+            ..
+        }) = self.overlay
+        {
+            if selected_idx < *scroll_offset {
+                *scroll_offset = selected_idx;
+            } else if selected_idx >= *scroll_offset + visible_option_count {
+                *scroll_offset = selected_idx.saturating_sub(visible_option_count - 1);
+            }
+        }
     }
 
     /// Move to the previous option in the question overlay
@@ -1909,6 +1943,170 @@ mod tests {
 
         if let Some(OverlayState::Question { thread_id, .. }) = state.overlay() {
             assert_eq!(thread_id, "t1");
+        } else {
+            panic!("Expected Question overlay");
+        }
+    }
+
+    #[test]
+    fn test_ensure_option_visible_zero_visible_count_is_noop() {
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+        state.expand_thread("t1", 10);
+
+        // With 0 visible count, scroll_offset should not change
+        state.ensure_option_visible(0);
+
+        if let Some(OverlayState::Question { scroll_offset, .. }) = state.overlay() {
+            assert_eq!(*scroll_offset, 0);
+        } else {
+            panic!("Expected Question overlay");
+        }
+    }
+
+    #[test]
+    fn test_ensure_option_visible_scrolls_down() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        // Create question data with 10 options
+        let options: Vec<QuestionOption> = (0..10)
+            .map(|i| QuestionOption {
+                label: format!("Option {}", i),
+                description: String::new(),
+            })
+            .collect();
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Pick one".to_string(),
+                header: String::new(),
+                options,
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state
+            .waiting_for
+            .insert("t1".to_string(), WaitingFor::UserInput);
+        state.set_pending_question("t1", "req-1".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Move selection to option 7 (beyond visible window of 3)
+        if let Some(qs) = state.question_state_mut() {
+            qs.selections[0] = Some(7);
+        }
+
+        // Only 3 options visible at a time
+        state.ensure_option_visible(3);
+
+        if let Some(OverlayState::Question { scroll_offset, .. }) = state.overlay() {
+            // scroll_offset should be adjusted so option 7 is visible
+            // selected_idx(7) >= scroll_offset(0) + visible(3), so
+            // scroll_offset = 7 - (3 - 1) = 5
+            assert_eq!(*scroll_offset, 5);
+        } else {
+            panic!("Expected Question overlay");
+        }
+    }
+
+    #[test]
+    fn test_ensure_option_visible_scrolls_up() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let options: Vec<QuestionOption> = (0..10)
+            .map(|i| QuestionOption {
+                label: format!("Option {}", i),
+                description: String::new(),
+            })
+            .collect();
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Pick one".to_string(),
+                header: String::new(),
+                options,
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state
+            .waiting_for
+            .insert("t1".to_string(), WaitingFor::UserInput);
+        state.set_pending_question("t1", "req-1".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Manually set scroll_offset to 5 (simulating previous scrolling)
+        if let Some(OverlayState::Question {
+            ref mut scroll_offset,
+            ..
+        }) = state.overlay
+        {
+            *scroll_offset = 5;
+        }
+
+        // Move selection to option 2 (before scroll window starting at 5)
+        if let Some(qs) = state.question_state_mut() {
+            qs.selections[0] = Some(2);
+        }
+
+        state.ensure_option_visible(3);
+
+        if let Some(OverlayState::Question { scroll_offset, .. }) = state.overlay() {
+            // selected_idx(2) < scroll_offset(5), so scroll_offset = 2
+            assert_eq!(*scroll_offset, 2);
+        } else {
+            panic!("Expected Question overlay");
+        }
+    }
+
+    #[test]
+    fn test_ensure_option_visible_no_change_when_already_visible() {
+        use crate::state::session::{AskUserQuestionData, Question, QuestionOption};
+
+        let mut state = DashboardState::new();
+        let thread = make_thread("t1", "Test Thread");
+        state.threads.insert("t1".to_string(), thread);
+
+        let options: Vec<QuestionOption> = (0..10)
+            .map(|i| QuestionOption {
+                label: format!("Option {}", i),
+                description: String::new(),
+            })
+            .collect();
+        let question_data = AskUserQuestionData {
+            questions: vec![Question {
+                question: "Pick one".to_string(),
+                header: String::new(),
+                options,
+                multi_select: false,
+            }],
+            answers: std::collections::HashMap::new(),
+        };
+
+        state
+            .waiting_for
+            .insert("t1".to_string(), WaitingFor::UserInput);
+        state.set_pending_question("t1", "req-1".to_string(), question_data);
+        state.expand_thread("t1", 10);
+
+        // Selection at 1, scroll at 0, visible 3 -> option 1 is visible (in range [0, 3))
+        if let Some(qs) = state.question_state_mut() {
+            qs.selections[0] = Some(1);
+        }
+
+        state.ensure_option_visible(3);
+
+        if let Some(OverlayState::Question { scroll_offset, .. }) = state.overlay() {
+            assert_eq!(*scroll_offset, 0);
         } else {
             panic!("Expected Question overlay");
         }

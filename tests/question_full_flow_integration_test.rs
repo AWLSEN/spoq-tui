@@ -534,6 +534,8 @@ fn test_question_card_renders_options_correctly() {
         current_tab: 0,
         tabs_answered: &tabs_answered,
         timer_seconds: None,
+        scroll_offset: 0,
+        needs_scroll: false,
     };
 
     terminal
@@ -585,6 +587,8 @@ fn test_question_card_renders_multi_select_with_checkboxes() {
         current_tab: 0,
         tabs_answered: &[false],
         timer_seconds: None,
+        scroll_offset: 0,
+        needs_scroll: false,
     };
 
     terminal

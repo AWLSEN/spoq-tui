@@ -202,6 +202,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data,
             anchor_y: 10,
+            scroll_offset: 0,
         };
 
         let area = calculate_overlay_area(parent, &overlay);

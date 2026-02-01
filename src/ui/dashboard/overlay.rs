@@ -409,6 +409,8 @@ fn render_question_content(
         tab_headers: &tab_headers,
         current_tab: tab_index,
         tabs_answered: &tabs_answered,
+        scroll_offset: 0,
+        needs_scroll: false,
     };
 
     question_card::render_question(frame, area, thread_id, title, repo, &config);
@@ -561,6 +563,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data,
             anchor_y: 10,
+            scroll_offset: 0,
         };
 
         let (anchor, height) = calculate_card_dimensions(&overlay, list_area);
@@ -584,6 +587,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data,
             anchor_y: 5,
+            scroll_offset: 0,
         };
 
         let (_, height) = calculate_card_dimensions(&overlay, list_area);
@@ -660,6 +664,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data,
             anchor_y: 10,
+            scroll_offset: 0,
         };
 
         let (_, height) = calculate_card_dimensions(&overlay, list_area);
@@ -707,6 +712,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data,
             anchor_y: 10,
+            scroll_offset: 0,
         };
 
         let (_, height) = calculate_card_dimensions(&overlay, list_area);
@@ -727,6 +733,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data,
             anchor_y: 10,
+            scroll_offset: 0,
         };
 
         let (_, height) = calculate_card_dimensions(&overlay, list_area);
@@ -748,6 +755,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data,
             anchor_y: 5,
+            scroll_offset: 0,
         };
 
         let (_, height) = calculate_card_dimensions(&overlay, list_area);
@@ -854,6 +862,7 @@ mod tests {
             repository: "my-project".to_string(),
             question_data,
             anchor_y: 5,
+            scroll_offset: 0,
         };
 
         let threads = vec![];
@@ -894,6 +903,7 @@ mod tests {
             repository: "my-repo".to_string(),
             question_data,
             anchor_y: 10,
+            scroll_offset: 0,
         };
 
         let threads = vec![];
@@ -976,6 +986,7 @@ mod tests {
             repository: "repo".to_string(),
             question_data,
             anchor_y: 18, // Near bottom
+            scroll_offset: 0,
         };
 
         let threads = vec![];

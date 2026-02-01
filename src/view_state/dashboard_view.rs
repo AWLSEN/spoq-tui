@@ -194,6 +194,8 @@ pub enum OverlayState {
         question_data: Option<AskUserQuestionData>,
         /// Y position to anchor the overlay
         anchor_y: u16,
+        /// Scroll offset for the options list (0 = no scroll)
+        scroll_offset: usize,
     },
     /// Free-form text input
     FreeForm {
@@ -941,6 +943,7 @@ mod tests {
             repository: "~/repo".to_string(),
             question_data: None,
             anchor_y: 10,
+            scroll_offset: 0,
         };
         assert_eq!(overlay.thread_id(), "thread-1");
         assert_eq!(overlay.thread_title(), "Test Thread");
