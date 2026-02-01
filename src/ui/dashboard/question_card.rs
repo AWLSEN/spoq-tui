@@ -37,6 +37,22 @@ use ratatui::{
     Frame,
 };
 
+// ============================================================================
+// Constants
+// ============================================================================
+
+/// Indent (in columns) applied to option labels.
+const OPTION_INDENT: u16 = 4;
+
+/// Indent (in columns) applied to option descriptions.
+const DESCRIPTION_INDENT: u16 = 10;
+
+/// Generous max-lines limit used when *measuring* question text.
+const MEASURE_MAX_QUESTION_LINES: usize = 50;
+
+/// Generous max-lines limit used when *measuring* option label/description text.
+const MEASURE_MAX_OPTION_LINES: usize = 4;
+
 /// Configuration for rendering a question card
 #[derive(Debug, Clone)]
 pub struct QuestionRenderConfig<'a> {
@@ -773,6 +789,98 @@ pub fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
         let chars: Vec<char> = s.chars().take(max_len - 3).collect();
         format!("{}...", chars.into_iter().collect::<String>())
     }
+}
+
+// ============================================================================
+// Content Measurement
+// ============================================================================
+
+/// Measured content dimensions for a question card.
+#[allow(dead_code)]
+struct ContentMeasurement {
+    /// Rows needed for question text
+    question_rows: u16,
+    /// Rows needed per option (label lines + description lines)
+    option_rows: Vec<u16>,
+    /// Total content rows (all sections)
+    total_rows: u16,
+}
+
+/// Measure exact content height for a question card.
+///
+/// Wraps all text sections with generous line limits to get true dimensions.
+/// Used by `calculate_height()` and can be used by rendering code.
+fn measure_content(
+    question_text: &str,
+    options: &[(String, String)], // (label, description) pairs
+    has_tabs: bool,
+    inner_width: usize,
+) -> ContentMeasurement {
+    // Fixed sections
+    let header = 1u16;
+    let tab_bar: u16 = if has_tabs { 1 } else { 0 };
+    let blanks = 3u16; // post-header(1) + pre-options(1) + pre-help(1)
+    let other = 1u16;
+    let help = 1u16;
+
+    // Question text: wrap with generous limit, min 2 rows
+    let question_rows = if inner_width > 0 && !question_text.is_empty() {
+        wrap_text(question_text, inner_width, MEASURE_MAX_QUESTION_LINES)
+            .len()
+            .max(2) as u16
+    } else {
+        2u16
+    };
+
+    // Per-option: measure actual wrapped label + description
+    let label_width = inner_width.saturating_sub(OPTION_INDENT as usize);
+    let desc_width = inner_width.saturating_sub(DESCRIPTION_INDENT as usize);
+
+    let mut option_rows_vec = Vec::with_capacity(options.len());
+    for (label, desc) in options {
+        let prefix = format!("  [ ] {}", label);
+        let label_lines = if label_width > 0 {
+            wrap_text(&prefix, label_width, MEASURE_MAX_OPTION_LINES).len() as u16
+        } else {
+            1u16
+        };
+        let desc_lines = if !desc.is_empty() && desc_width > 0 {
+            wrap_text(desc, desc_width, MEASURE_MAX_OPTION_LINES).len() as u16
+        } else {
+            0u16
+        };
+        option_rows_vec.push(label_lines + desc_lines);
+    }
+
+    let options_total: u16 = option_rows_vec.iter().sum();
+    let total = header + tab_bar + blanks + question_rows + options_total + other + help;
+
+    ContentMeasurement {
+        question_rows,
+        option_rows: option_rows_vec,
+        total_rows: total,
+    }
+}
+
+/// Calculate exact content height for a question card (excluding borders).
+///
+/// Measures all sections without artificial truncation caps so the overlay
+/// can size the card to fit all content. Follows the pattern of
+/// `login_card::calculate_height()` and `vps_config_card::calculate_height()`.
+///
+/// # Arguments
+/// * `question_text` - The question text to display
+/// * `options` - Slice of (label, description) pairs for each option
+/// * `has_tabs` - Whether the question has multiple tabs
+/// * `inner_width` - Available width inside the card (after borders/padding)
+pub fn calculate_height(
+    question_text: &str,
+    options: &[(String, String)],
+    has_tabs: bool,
+    inner_width: usize,
+) -> u16 {
+    let measurement = measure_content(question_text, options, has_tabs, inner_width);
+    measurement.total_rows
 }
 
 // ============================================================================
@@ -1724,5 +1832,111 @@ mod tests {
             .unwrap();
 
         // 3 options + 1 Other
+    }
+
+    // -------------------- Content Measurement Tests --------------------
+
+    #[test]
+    fn test_calculate_height_simple() {
+        // header(1) + blanks(3) + question(2 min) + options(2*1) + other(1) + help(1) = 10
+        let options = vec![
+            ("Option A".to_string(), "".to_string()),
+            ("Option B".to_string(), "".to_string()),
+        ];
+        let height = calculate_height("Short question?", &options, false, 50);
+        assert_eq!(height, 10);
+    }
+
+    #[test]
+    fn test_calculate_height_with_tabs() {
+        let options = vec![("A".to_string(), "".to_string())];
+        let height_no_tabs = calculate_height("Q?", &options, false, 50);
+        let height_with_tabs = calculate_height("Q?", &options, true, 50);
+        assert_eq!(height_with_tabs, height_no_tabs + 1);
+    }
+
+    #[test]
+    fn test_calculate_height_long_question() {
+        let long_q = "This is a very long question that should wrap to multiple lines when the available width is narrow enough to force wrapping behavior in the text";
+        let options = vec![("A".to_string(), "".to_string())];
+        let height_wide = calculate_height(long_q, &options, false, 200);
+        let height_narrow = calculate_height(long_q, &options, false, 20);
+        assert!(
+            height_narrow > height_wide,
+            "Narrow width should produce more rows"
+        );
+    }
+
+    #[test]
+    fn test_calculate_height_with_descriptions() {
+        let options_no_desc = vec![("Option A".to_string(), "".to_string())];
+        let options_with_desc = vec![(
+            "Option A".to_string(),
+            "A detailed description of this option".to_string(),
+        )];
+        let h_no = calculate_height("Q?", &options_no_desc, false, 50);
+        let h_with = calculate_height("Q?", &options_with_desc, false, 50);
+        assert!(
+            h_with > h_no,
+            "Options with descriptions should be taller"
+        );
+    }
+
+    #[test]
+    fn test_calculate_height_many_options() {
+        let options: Vec<(String, String)> = (0..10)
+            .map(|i| {
+                (
+                    format!("Option {}", i),
+                    format!("Description for option {}", i),
+                )
+            })
+            .collect();
+        let height = calculate_height("Pick one:", &options, false, 50);
+        // Should be significantly taller than a 2-option card
+        assert!(
+            height > 20,
+            "10 options with descriptions should need many rows, got {}",
+            height
+        );
+    }
+
+    #[test]
+    fn test_calculate_height_empty() {
+        let height = calculate_height("", &[], false, 50);
+        // header(1) + blanks(3) + question(2 min) + other(1) + help(1) = 8
+        assert_eq!(height, 8);
+    }
+
+    #[test]
+    fn test_calculate_height_zero_width() {
+        let options = vec![("A".to_string(), "".to_string())];
+        let height = calculate_height("Q?", &options, false, 0);
+        // Should handle gracefully with defaults
+        assert!(height >= 8);
+    }
+
+    #[test]
+    fn test_measure_content_option_rows() {
+        let options = vec![
+            ("Short".to_string(), "".to_string()),
+            (
+                "Medium option".to_string(),
+                "Has a description".to_string(),
+            ),
+            (
+                "A very long option label that will definitely need wrapping on a narrow display"
+                    .to_string(),
+                "".to_string(),
+            ),
+        ];
+        let m = measure_content("Q?", &options, false, 30);
+        assert_eq!(m.option_rows.len(), 3);
+        // First option: short label, no desc -> 1 row
+        assert_eq!(m.option_rows[0], 1);
+        // Second option: medium label (1 row) + description (1 row) = 2
+        assert!(m.option_rows[1] >= 2);
+        // Third option: long label wraps -> multiple rows
+        assert!(m.option_rows[2] >= 2);
     }
 }
