@@ -36,6 +36,16 @@ impl App {
     /// Clear the current stream error
     pub fn clear_error(&mut self) {
         self.stream_error = None;
+        self.timed_error_dismiss = None;
+        self.mark_dirty();
+    }
+
+    /// Set a timed error that will auto-dismiss after the given duration.
+    ///
+    /// This is useful for transient errors (e.g., running /discard from CommandDeck).
+    pub fn set_timed_error(&mut self, message: String, duration: std::time::Duration) {
+        self.stream_error = Some(message);
+        self.timed_error_dismiss = Some(std::time::Instant::now() + duration);
         self.mark_dirty();
     }
 
@@ -116,6 +126,15 @@ impl App {
                     self.claude_login_auto_close = None;
                     self.mark_dirty();
                 }
+            }
+        }
+
+        // Check auto-dismiss timer for timed errors
+        if let Some(dismiss_at) = self.timed_error_dismiss {
+            if std::time::Instant::now() >= dismiss_at {
+                self.stream_error = None;
+                self.timed_error_dismiss = None;
+                self.mark_dirty();
             }
         }
     }

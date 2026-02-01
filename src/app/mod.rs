@@ -355,6 +355,8 @@ pub struct App {
     pub(crate) credential_file_watcher: Option<RecommendedWatcher>,
     /// Auto-close timer for Claude login success dialog
     pub claude_login_auto_close: Option<std::time::Instant>,
+    /// Auto-dismiss timer for timed errors (e.g., from /discard on wrong screen)
+    pub timed_error_dismiss: Option<std::time::Instant>,
     /// Rate limit modal state (shown when account hits rate limit)
     pub rate_limit_modal: Option<RateLimitModalState>,
 }
@@ -572,6 +574,7 @@ impl App {
             credential_debouncer: Debouncer::new(),
             credential_file_watcher: None,
             claude_login_auto_close: None,
+            timed_error_dismiss: None,
             rate_limit_modal: None,
         })
     }
