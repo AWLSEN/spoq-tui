@@ -174,21 +174,19 @@ pub fn render_question(
     let reserved_rows = 2; // 1 for Other, 1 for help line
     let available_option_rows = total_rows.saturating_sub(rows_used + reserved_rows);
 
-    // Calculate if we have space for descriptions (need at least 2 rows per option)
+    // Calculate if we have space for descriptions
     let options_count = config.options.len();
     let has_descriptions = !config.option_descriptions.is_empty();
+    // Show descriptions if we have enough rows (at least 2 rows per option)
     let show_descriptions = has_descriptions && available_option_rows >= options_count * 2;
 
     // Render options
     let option_indent = 4u16; // "    " indent
     let description_indent = 10u16; // Extra indent for descriptions
-    let mut options_rendered = 0;
+    let max_y = area.y + area.height.saturating_sub(reserved_rows as u16);
 
     for (i, opt) in config.options.iter().enumerate() {
-        // Check if we have room for this option (plus description if showing)
-        let rows_needed = if show_descriptions { 2 } else { 1 };
-        let rows_remaining = available_option_rows.saturating_sub(options_rendered * rows_needed);
-        if rows_remaining < rows_needed {
+        if y >= max_y {
             break; // No room for more options
         }
 
@@ -218,7 +216,10 @@ pub fn render_question(
         };
 
         let option_text = format!("{}{} {}", cursor_char, marker, opt);
-        let option_truncated = truncate_with_ellipsis(&option_text, (area.width - option_indent) as usize);
+        let available_width = (area.width - option_indent) as usize;
+
+        // Wrap option text up to 2 lines instead of truncating
+        let option_lines = wrap_text(&option_text, available_width, 2);
 
         // Style: highlight if cursor is on this option
         let style = if is_cursor && !config.other_selected {
@@ -227,26 +228,39 @@ pub fn render_question(
             Style::default().fg(Color::Gray)
         };
 
-        let option_area = Rect::new(area.x + option_indent, y, area.width - option_indent, 1);
-        frame.render_widget(Line::styled(option_truncated, style), option_area);
-
-        y += 1;
-        options_rendered += 1;
+        for line_text in &option_lines {
+            if y >= max_y {
+                break;
+            }
+            let option_area = Rect::new(area.x + option_indent, y, area.width - option_indent, 1);
+            frame.render_widget(Line::styled(line_text.clone(), style), option_area);
+            y += 1;
+        }
 
         // Render description below label if space permits
         if show_descriptions {
             if let Some(desc) = config.option_descriptions.get(i) {
                 if !desc.is_empty() {
                     let desc_width = (area.width - description_indent) as usize;
-                    let desc_truncated = truncate_with_ellipsis(desc, desc_width);
+                    // Wrap description up to 2 lines instead of truncating
+                    let desc_lines = wrap_text(desc, desc_width, 2);
                     let desc_style = Style::default().fg(Color::DarkGray);
-                    frame.render_widget(
-                        Line::styled(desc_truncated, desc_style),
-                        Rect::new(area.x + description_indent, y, area.width - description_indent, 1),
-                    );
+                    for desc_line in &desc_lines {
+                        if y >= max_y {
+                            break;
+                        }
+                        frame.render_widget(
+                            Line::styled(desc_line.clone(), desc_style),
+                            Rect::new(area.x + description_indent, y, area.width - description_indent, 1),
+                        );
+                        y += 1;
+                    }
                 }
             }
-            y += 1;
+            // Only add spacer if description was empty (to maintain consistent spacing)
+            if config.option_descriptions.get(i).map(|d| d.is_empty()).unwrap_or(true) && y < max_y {
+                y += 1;
+            }
         }
     }
 
