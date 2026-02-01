@@ -1983,6 +1983,9 @@ impl App {
                 use crate::websocket::{WsClaudeAuthTokenResponse, WsOutgoingMessage};
                 let response = WsClaudeAuthTokenResponse::new_with_email(request_id.clone(), token, email);
                 if let Some(ref sender) = self.ws_sender {
+                    let json_preview = serde_json::to_string(&WsOutgoingMessage::ClaudeAuthTokenResponse(response.clone()))
+                        .unwrap_or_else(|e| format!("SERIALIZE_ERR: {}", e));
+                    tracing::info!("WS_SEND claude_auth_token: {}", &json_preview[..json_preview.len().min(200)]);
                     if let Err(e) = sender.try_send(WsOutgoingMessage::ClaudeAuthTokenResponse(response)) {
                         tracing::error!("Failed to send Claude auth token: {}", e);
 
@@ -1991,6 +1994,8 @@ impl App {
                             request_id,
                             error: "Failed to send token to server - connection may be lost".to_string(),
                         });
+                    } else {
+                        tracing::info!("WS_SEND claude_auth_token: queued successfully for request_id={}", request_id);
                     }
                 } else {
                     tracing::error!("No WebSocket connection available to send Claude auth token");
@@ -2014,9 +2019,11 @@ impl App {
                 if let Some(OverlayState::ClaudeAccounts {
                     ref mut adding,
                     ref mut status_message,
+                    ref mut auth_url,
                     ..
                 }) = self.dashboard.overlay_mut() {
                     *adding = false;
+                    *auth_url = None;
                     *status_message = Some(format!("Auth failed: {}", error));
                 }
                 self.mark_dirty();
@@ -2032,13 +2039,15 @@ impl App {
                         "Claude CLI auth token stored successfully: request_id={}",
                         request_id
                     );
-                    // Update overlay: clear adding, show success, then auto-refresh list
+                    // Update overlay: clear adding, clear auth URL, show success, then auto-refresh list
                     if let Some(OverlayState::ClaudeAccounts {
                         ref mut adding,
                         ref mut status_message,
+                        ref mut auth_url,
                         ..
                     }) = self.dashboard.overlay_mut() {
                         *adding = false;
+                        *auth_url = None;
                         *status_message = Some("Account added successfully!".to_string());
                     }
                     self.mark_dirty();
