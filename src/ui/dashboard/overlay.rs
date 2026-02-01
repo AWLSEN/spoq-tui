@@ -305,9 +305,14 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
         OverlayState::Plan {
             anchor_y, summary, ..
         } => {
-            // Plan card height based on phases
+            // Dynamic height: header(1) + blank(1) + summary(1) + blank(1) + phases(min(phases,5))
+            //                 + blank(1) + actions(3) + help(1) + borders(2)
             let phase_rows = summary.phases.len().min(5) as u16;
-            (*anchor_y, 6 + phase_rows + 2)
+            let content_height = 1 + 1 + 1 + 1 + phase_rows + 1 + 3 + 1;
+            let total_height = content_height + 2; // +2 for borders
+            let max_height = ((list_area.height as f32) * QUESTION_CARD_MAX_HEIGHT_PERCENT) as u16;
+            let card_height = total_height.min(max_height).max(14); // minimum 14 rows
+            (*anchor_y, card_height)
         }
         OverlayState::ClaudeLogin {
             anchor_y, state, ..
@@ -617,14 +622,18 @@ mod tests {
             request_id: "req-1".to_string(),
             summary,
             scroll_offset: 0,
+            selected_action: 0,
+            feedback_text: String::new(),
+            feedback_active: false,
             anchor_y: 8,
         };
 
         let (anchor, height) = calculate_card_dimensions(&overlay, list_area);
 
         assert_eq!(anchor, 8);
-        // 6 base + 3 phases (capped at 5) + 2
-        assert_eq!(height, 6 + 3 + 2);
+        // content: header(1) + blank(1) + summary(1) + blank(1) + phases(3) + blank(1) + actions(3) + help(1) = 12
+        // total: 12 + borders(2) = 14
+        assert_eq!(height, 14);
     }
 
     #[test]

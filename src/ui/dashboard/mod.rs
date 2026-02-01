@@ -233,6 +233,9 @@ mod tests {
             request_id: "req-1".to_string(),
             summary,
             scroll_offset: 0,
+            selected_action: 0,
+            feedback_text: String::new(),
+            feedback_active: false,
             anchor_y: 15,
         };
 

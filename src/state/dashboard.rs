@@ -856,6 +856,11 @@ impl DashboardState {
                 if let Some(plan_request) = self.plan_requests.get(thread_id) {
                     // Clear question state when opening Plan overlay
                     self.question_state = None;
+                    let (selected_action, feedback_text, feedback_active) = self
+                        .plan_approval_states
+                        .get(thread_id)
+                        .map(|s| (s.selected_action, s.feedback_text.clone(), s.feedback_active))
+                        .unwrap_or((0, String::new(), false));
                     Some(OverlayState::Plan {
                         thread_id: thread_id.to_string(),
                         thread_title: thread.title.clone(),
@@ -863,6 +868,9 @@ impl DashboardState {
                         request_id: plan_request.request_id.clone(),
                         summary: plan_request.summary.clone(),
                         scroll_offset: 0,
+                        selected_action,
+                        feedback_text,
+                        feedback_active,
                         anchor_y,
                     })
                 } else {

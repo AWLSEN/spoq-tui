@@ -214,6 +214,9 @@ pub enum OverlayState {
         request_id: String,
         summary: PlanSummary,
         scroll_offset: usize,
+        selected_action: usize,     // 0=Approve, 1=Reject, 2=Feedback
+        feedback_text: String,
+        feedback_active: bool,
         anchor_y: u16,
     },
     /// Claude CLI login required dialog
@@ -959,6 +962,9 @@ mod tests {
                 Some(1000),
             ),
             scroll_offset: 0,
+            selected_action: 0,
+            feedback_text: String::new(),
+            feedback_active: false,
             anchor_y: 5,
         };
         assert!(overlay.is_plan());
