@@ -133,8 +133,8 @@ fn calculate_overlay_area(parent_area: Rect, overlay: &OverlayState) -> Rect {
             // Height based on login state
             login_card::calculate_height(state).min(parent_area.height - 4)
         }
-        OverlayState::ClaudeAccounts { accounts, ref status_message, paste_mode, .. } => {
-            accounts_card::calculate_height(accounts.len(), status_message.is_some(), *paste_mode).min(parent_area.height - 4)
+        OverlayState::ClaudeAccounts { accounts, ref status_message, paste_mode, ref auth_url, .. } => {
+            accounts_card::calculate_height(accounts.len(), status_message.is_some(), *paste_mode, auth_url.is_some()).min(parent_area.height - 4)
         }
         OverlayState::VpsConfig { .. } => {
             // VpsConfig card has variable height based on state, but ~15 rows is reasonable

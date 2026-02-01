@@ -24,6 +24,7 @@ pub fn render(
     status_message: Option<&str>,
     paste_mode: bool,
     paste_buffer: &str,
+    auth_url: Option<&str>,
 ) {
     let mut lines: Vec<Line> = Vec::new();
 
@@ -144,6 +145,19 @@ pub fn render(
         lines.push(Line::from(""));
     }
 
+    // Auth URL (shown when setup-token surfaces an OAuth URL)
+    if let Some(url) = auth_url {
+        lines.push(Line::from(vec![
+            Span::styled("  URL: ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(url, Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(Span::styled(
+            "  Open this URL to authenticate",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+    }
+
     // Help text - dim [A]/[T] when adding or paste mode is active
     let disabled = adding || paste_mode;
     let add_key_color = if disabled { Color::DarkGray } else { Color::Cyan };
@@ -170,10 +184,11 @@ pub fn render(
 }
 
 /// Calculate the height needed for the accounts card.
-pub fn calculate_height(account_count: usize, has_status: bool, paste_mode: bool) -> u16 {
-    // title(1) + blank(1) + accounts(max(1,n)) + blank(1) + [paste(2) + blank(1)] + [status(1) + blank(1)] + help(1)
+pub fn calculate_height(account_count: usize, has_status: bool, paste_mode: bool, has_auth_url: bool) -> u16 {
+    // title(1) + blank(1) + accounts(max(1,n)) + blank(1) + [paste(2) + blank(1)] + [status(1) + blank(1)] + [url(2) + blank(1)] + help(1)
     let rows = account_count.max(1) as u16;
     let status_rows = if has_status { 2 } else { 0 };
     let paste_rows = if paste_mode { 3 } else { 0 };
-    4 + rows + status_rows + paste_rows
+    let url_rows = if has_auth_url { 3 } else { 0 };
+    4 + rows + status_rows + paste_rows + url_rows
 }

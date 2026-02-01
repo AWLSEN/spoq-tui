@@ -1869,7 +1869,26 @@ impl App {
                     tokio::task::spawn_blocking(move || {
                         tracing::info!("Running claude setup-token for request_id={}", req_id);
 
-                        match crate::setup::run_claude_setup_token() {
+                        // Create event channel for real-time URL forwarding
+                        let (event_tx, event_rx) = std::sync::mpsc::channel();
+                        let tx_url = tx.clone();
+                        let req_id_url = req_id.clone();
+
+                        // Spawn a thread to forward setup events (URLs) to the main message loop
+                        std::thread::spawn(move || {
+                            while let Ok(event) = event_rx.recv() {
+                                match event {
+                                    crate::setup::ClaudeSetupEvent::UrlFound(url) => {
+                                        let _ = tx_url.send(AppMessage::ClaudeAuthUrlAvailable {
+                                            request_id: req_id_url.clone(),
+                                            url,
+                                        });
+                                    }
+                                }
+                            }
+                        });
+
+                        match crate::setup::run_claude_setup_token_with_events(Some(event_tx)) {
                             Ok(result) if result.success => {
                                 if let Some(token) = result.token {
                                     if token.is_empty() {
@@ -1921,6 +1940,22 @@ impl App {
                         });
                     });
                 });
+            }
+            AppMessage::ClaudeAuthUrlAvailable { request_id, url } => {
+                tracing::info!(
+                    "OAuth URL available for request_id={}: {}",
+                    request_id, url
+                );
+                use crate::view_state::dashboard_view::OverlayState;
+                if let Some(OverlayState::ClaudeAccounts {
+                    ref mut auth_url,
+                    ref mut status_message,
+                    ..
+                }) = self.dashboard.overlay_mut() {
+                    *auth_url = Some(url);
+                    *status_message = Some("Authenticating... (open URL or paste token with [T])".to_string());
+                }
+                self.mark_dirty();
             }
             AppMessage::ClaudeAuthTokenCaptured {
                 request_id,

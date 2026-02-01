@@ -238,6 +238,8 @@ pub enum OverlayState {
         paste_mode: bool,
         /// Buffer for pasted token text
         paste_buffer: String,
+        /// OAuth URL from setup-token output (for display in overlay)
+        auth_url: Option<String>,
     },
     /// VPS configuration overlay (/vps command)
     VpsConfig {

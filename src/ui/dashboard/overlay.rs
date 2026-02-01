@@ -194,9 +194,10 @@ pub fn render(
             ref status_message,
             paste_mode,
             ref paste_buffer,
+            ref auth_url,
             ..
         } => {
-            accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref(), *paste_mode, paste_buffer);
+            accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref(), *paste_mode, paste_buffer, auth_url.as_deref());
         }
         OverlayState::VpsConfig { ref state, .. } => {
             vps_config_card::render(frame, inner_area, state);
@@ -293,9 +294,9 @@ fn calculate_card_dimensions(overlay: &OverlayState, list_area: Rect) -> (u16, u
             (*anchor_y, height + 4)
         }
         OverlayState::ClaudeAccounts {
-            anchor_y, accounts, paste_mode, ref status_message, ..
+            anchor_y, accounts, paste_mode, ref status_message, ref auth_url, ..
         } => {
-            let height = accounts_card::calculate_height(accounts.len(), status_message.is_some(), *paste_mode);
+            let height = accounts_card::calculate_height(accounts.len(), status_message.is_some(), *paste_mode, auth_url.is_some());
             (*anchor_y, height + 2) // +2 for borders
         }
         OverlayState::VpsConfig { anchor_y, ref state, .. } => {

@@ -110,6 +110,13 @@ pub fn is_claude_installed() -> bool {
         .unwrap_or(false)
 }
 
+/// Events emitted during setup-token execution
+#[derive(Debug, Clone)]
+pub enum ClaudeSetupEvent {
+    /// An OAuth URL was found in the output
+    UrlFound(String),
+}
+
 /// Run `claude setup-token` and capture the OAuth token
 ///
 /// This function:
@@ -117,7 +124,17 @@ pub fn is_claude_installed() -> bool {
 /// 2. Opens the browser for authentication
 /// 3. Captures the OAuth token from stdout
 /// 4. Returns the token for sending to Conductor
+///
+/// If `event_tx` is provided, intermediate events (like OAuth URLs) are sent
+/// back in real-time while the function continues waiting for the token.
 pub fn run_claude_setup_token() -> Result<ClaudeAuthResult, ClaudeAuthError> {
+    run_claude_setup_token_with_events(None)
+}
+
+/// Run `claude setup-token` with real-time event channel for URL surfacing
+pub fn run_claude_setup_token_with_events(
+    event_tx: Option<mpsc::Sender<ClaudeSetupEvent>>,
+) -> Result<ClaudeAuthResult, ClaudeAuthError> {
     if !is_claude_installed() {
         return Err(ClaudeAuthError::NotInstalled);
     }
@@ -182,6 +199,9 @@ pub fn run_claude_setup_token() -> Result<ClaudeAuthResult, ClaudeAuthError> {
     let token_regex = Regex::new(r"(sk-ant-oat[a-zA-Z0-9_-]+)").unwrap();
     // Regex to strip ANSI escape sequences
     let ansi_regex = Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]").unwrap();
+    // Regex to match OAuth URLs in output
+    let url_regex = Regex::new(r#"(https://[^\s"<>\x1b]+)"#).unwrap();
+    let mut url_sent = false;
 
     let mut captured_token: Option<String> = None;
     let mut full_output = String::new();
@@ -200,6 +220,18 @@ pub fn run_claude_setup_token() -> Result<ClaudeAuthResult, ClaudeAuthError> {
                 // Strip ANSI escape codes for pattern matching
                 let clean_line = ansi_regex.replace_all(&line, "").to_string();
                 full_output.push_str(&clean_line);
+
+                // Check for OAuth URL in output (send back immediately)
+                if !url_sent {
+                    if let Some(caps) = url_regex.captures(&clean_line) {
+                        let url = caps[1].to_string();
+                        tracing::info!("Found OAuth URL in setup-token output: {}", url);
+                        if let Some(ref tx) = event_tx {
+                            let _ = tx.send(ClaudeSetupEvent::UrlFound(url));
+                        }
+                        url_sent = true;
+                    }
+                }
 
                 // Check for token in output
                 if let Some(caps) = token_regex.captures(&clean_line) {

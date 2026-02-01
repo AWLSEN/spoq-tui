@@ -5,5 +5,5 @@
 pub mod claude_auth;
 pub mod gh_auth;
 
-pub use claude_auth::{run_claude_setup_token, run_claude_setup_token_async, ClaudeAuthError, ClaudeAuthResult};
+pub use claude_auth::{run_claude_setup_token, run_claude_setup_token_with_events, run_claude_setup_token_async, ClaudeAuthError, ClaudeAuthResult, ClaudeSetupEvent};
 pub use gh_auth::{ensure_gh_authenticated, is_gh_authenticated, is_gh_installed, GhAuthError};

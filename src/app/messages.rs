@@ -277,6 +277,11 @@ pub enum AppMessage {
         request_id: String,
         message: String,
     },
+    /// OAuth URL found in setup-token output (for display in overlay)
+    ClaudeAuthUrlAvailable {
+        request_id: String,
+        url: String,
+    },
     /// Claude CLI auth token captured - send to backend
     ClaudeAuthTokenCaptured {
         request_id: String,
