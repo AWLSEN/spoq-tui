@@ -38,7 +38,7 @@ use crate::ui::dashboard::vps_config_card;
 use crate::ui::dashboard::{OverlayState, RenderContext};
 
 /// Maximum height for question card as percentage of list area
-const QUESTION_CARD_MAX_HEIGHT_PERCENT: f32 = 0.50;
+const QUESTION_CARD_MAX_HEIGHT_PERCENT: f32 = 0.85;
 
 /// Minimum height for question card (rows)
 /// Calculated from: header(1) + blank(1) + question(2) + blank(1) + options(2min) + other(1) + blank(1) + help(1) + borders(2) = 12
