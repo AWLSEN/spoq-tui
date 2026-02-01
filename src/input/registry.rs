@@ -286,9 +286,21 @@ impl CommandRegistry {
                 match key.code {
                     KeyCode::Char('a') | KeyCode::Char('A') => Some(Command::ClaudeAccountsAdd),
                     KeyCode::Char('r') | KeyCode::Char('R') => Some(Command::ClaudeAccountsRemove),
+                    KeyCode::Char('t') | KeyCode::Char('T') => Some(Command::ClaudeAccountsPasteStart),
                     KeyCode::Up => Some(Command::ClaudeAccountsMoveUp),
                     KeyCode::Down => Some(Command::ClaudeAccountsMoveDown),
                     KeyCode::Esc => Some(Command::ClaudeAccountsClose),
+                    _ => Some(Command::Noop),
+                }
+            }
+
+            ModalType::ClaudeAccountsPaste => {
+                // Paste-token text input mode — route chars/Enter/Esc/Backspace
+                match key.code {
+                    KeyCode::Enter => Some(Command::ClaudeAccountsPasteSubmit),
+                    KeyCode::Esc => Some(Command::ClaudeAccountsPasteCancel),
+                    KeyCode::Backspace => Some(Command::ClaudeAccountsPasteBackspace),
+                    KeyCode::Char(c) => Some(Command::ClaudeAccountsPasteChar(c)),
                     _ => Some(Command::Noop),
                 }
             }

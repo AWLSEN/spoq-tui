@@ -234,6 +234,10 @@ pub enum OverlayState {
         add_request_id: Option<String>,
         /// Status message shown at bottom (e.g., "Authenticating...", "Added!", error)
         status_message: Option<String>,
+        /// True when paste-token text input is active
+        paste_mode: bool,
+        /// Buffer for pasted token text
+        paste_buffer: String,
     },
     /// VPS configuration overlay (/vps command)
     VpsConfig {

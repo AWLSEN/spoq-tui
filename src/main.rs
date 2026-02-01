@@ -585,6 +585,100 @@ where
                             // Captures ALL keys when overlay is open
                             // =========================================================
                             if let Some(spoq::view_state::OverlayState::ClaudeAccounts { .. }) = app.dashboard.overlay() {
+                                // Check if paste mode is active
+                                let is_paste_mode = if let Some(spoq::view_state::OverlayState::ClaudeAccounts { paste_mode, .. }) = app.dashboard.overlay() {
+                                    *paste_mode
+                                } else {
+                                    false
+                                };
+
+                                if is_paste_mode {
+                                    // Paste-token text input mode — route all keys to paste handling
+                                    match key.code {
+                                        KeyCode::Esc => {
+                                            // Cancel paste mode
+                                            if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                                ref mut paste_mode,
+                                                ref mut paste_buffer,
+                                                ..
+                                            }) = app.dashboard.overlay_mut() {
+                                                *paste_mode = false;
+                                                *paste_buffer = String::new();
+                                            }
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Enter => {
+                                            // Submit pasted token
+                                            let token = if let Some(spoq::view_state::OverlayState::ClaudeAccounts { ref paste_buffer, .. }) = app.dashboard.overlay() {
+                                                paste_buffer.trim().to_string()
+                                            } else {
+                                                String::new()
+                                            };
+
+                                            // Validate token format
+                                            if !token.starts_with("sk-ant-") {
+                                                if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                                    ref mut status_message,
+                                                    ..
+                                                }) = app.dashboard.overlay_mut() {
+                                                    *status_message = Some("Invalid token format (expected sk-ant-...)".to_string());
+                                                }
+                                                app.mark_dirty();
+                                                continue;
+                                            }
+
+                                            // Exit paste mode, set adding state
+                                            if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                                ref mut paste_mode,
+                                                ref mut paste_buffer,
+                                                ref mut adding,
+                                                ref mut add_request_id,
+                                                ref mut status_message,
+                                                ..
+                                            }) = app.dashboard.overlay_mut() {
+                                                *paste_mode = false;
+                                                *paste_buffer = String::new();
+                                                *adding = true;
+                                                let rid = uuid::Uuid::new_v4().to_string();
+                                                *add_request_id = Some(rid);
+                                                *status_message = Some("Sending token to server...".to_string());
+                                            }
+                                            app.mark_dirty();
+
+                                            // Send token via AppMessage
+                                            let _ = app.message_tx.send(spoq::app::AppMessage::ClaudeAccountPasteSubmit {
+                                                token,
+                                            });
+                                            continue;
+                                        }
+                                        KeyCode::Backspace => {
+                                            if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                                ref mut paste_buffer,
+                                                ..
+                                            }) = app.dashboard.overlay_mut() {
+                                                paste_buffer.pop();
+                                            }
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        KeyCode::Char(c) => {
+                                            if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                                ref mut paste_buffer,
+                                                ..
+                                            }) = app.dashboard.overlay_mut() {
+                                                paste_buffer.push(c);
+                                            }
+                                            app.mark_dirty();
+                                            continue;
+                                        }
+                                        _ => {
+                                            continue; // Swallow other keys in paste mode
+                                        }
+                                    }
+                                }
+
+                                // Normal ClaudeAccounts mode
                                 match key.code {
                                     KeyCode::Esc => {
                                         app.dashboard.collapse_overlay();
@@ -623,6 +717,29 @@ where
                                             );
                                             let _ = sender.try_send(msg);
                                         }
+                                        continue;
+                                    }
+                                    KeyCode::Char('t') | KeyCode::Char('T') => {
+                                        // Enter paste-token mode (block if already adding)
+                                        let is_adding = if let Some(spoq::view_state::OverlayState::ClaudeAccounts { adding, .. }) = app.dashboard.overlay() {
+                                            *adding
+                                        } else {
+                                            false
+                                        };
+                                        if is_adding {
+                                            continue;
+                                        }
+                                        if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                            ref mut paste_mode,
+                                            ref mut paste_buffer,
+                                            ref mut status_message,
+                                            ..
+                                        }) = app.dashboard.overlay_mut() {
+                                            *paste_mode = true;
+                                            *paste_buffer = String::new();
+                                            *status_message = None;
+                                        }
+                                        app.mark_dirty();
                                         continue;
                                     }
                                     KeyCode::Char('r') | KeyCode::Char('R') => {
@@ -1908,6 +2025,20 @@ where
                             continue;
                         }
                         Event::Paste(text) => {
+                            // Intercept paste events for ClaudeAccounts paste-token mode
+                            if let Some(spoq::view_state::OverlayState::ClaudeAccounts { paste_mode, .. }) = app.dashboard.overlay() {
+                                if *paste_mode {
+                                    if let Some(spoq::view_state::OverlayState::ClaudeAccounts {
+                                        ref mut paste_buffer,
+                                        ..
+                                    }) = app.dashboard.overlay_mut() {
+                                        paste_buffer.push_str(&text);
+                                    }
+                                    app.mark_dirty();
+                                    continue;
+                                }
+                            }
+
                             // Handle paste events from bracketed paste mode
                             // Auto-focus to input if not already focused
                             if app.focus != Focus::Input {

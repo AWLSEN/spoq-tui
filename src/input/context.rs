@@ -41,6 +41,8 @@ pub enum ModalType {
     ClaudeLogin,
     /// Claude accounts management overlay is active
     ClaudeAccounts,
+    /// Claude accounts paste-token text input mode
+    ClaudeAccountsPaste,
     /// Rate limit confirmation modal is active
     RateLimitConfirm,
     /// VPS configuration overlay is active (/vps command)

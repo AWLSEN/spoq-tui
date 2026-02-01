@@ -185,11 +185,13 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
         selected_index,
         adding,
         ref status_message,
+        paste_mode,
+        ref paste_buffer,
         ..
     }) = app.dashboard.overlay()
     {
         let card_width = 50u16.min(size.width.saturating_sub(4));
-        let card_height = super::dashboard::accounts_card::calculate_height(accounts.len(), status_message.is_some())
+        let card_height = super::dashboard::accounts_card::calculate_height(accounts.len(), status_message.is_some(), *paste_mode)
             .saturating_add(2) // borders
             .min(size.height.saturating_sub(4));
 
@@ -209,7 +211,7 @@ pub fn render_conversation_screen(frame: &mut Frame, app: &mut App) {
         frame.render_widget(block, card_area);
 
         // Render card content
-        super::dashboard::accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref());
+        super::dashboard::accounts_card::render(frame, inner_area, accounts, *selected_index, *adding, status_message.as_deref(), *paste_mode, paste_buffer);
     }
 
     // Render rate limit modal (screen-agnostic floating modal)

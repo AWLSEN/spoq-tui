@@ -724,6 +724,126 @@ pub fn handle_claude_accounts_command(app: &mut App, cmd: &Command) -> bool {
             }
             true
         }
+        Command::ClaudeAccountsPasteStart => {
+            // Enter paste-token mode
+            if let Some(OverlayState::ClaudeAccounts {
+                ref mut paste_mode,
+                ref mut paste_buffer,
+                ref mut status_message,
+                adding,
+                ..
+            }) = app.dashboard.overlay_mut() {
+                if !*adding {
+                    *paste_mode = true;
+                    *paste_buffer = String::new();
+                    *status_message = None;
+                }
+            }
+            app.mark_dirty();
+            true
+        }
+        Command::ClaudeAccountsPasteChar(c) => {
+            if let Some(OverlayState::ClaudeAccounts {
+                ref mut paste_buffer,
+                paste_mode,
+                ..
+            }) = app.dashboard.overlay_mut() {
+                if *paste_mode {
+                    paste_buffer.push(*c);
+                }
+            }
+            app.mark_dirty();
+            true
+        }
+        Command::ClaudeAccountsPasteBackspace => {
+            if let Some(OverlayState::ClaudeAccounts {
+                ref mut paste_buffer,
+                paste_mode,
+                ..
+            }) = app.dashboard.overlay_mut() {
+                if *paste_mode {
+                    paste_buffer.pop();
+                }
+            }
+            app.mark_dirty();
+            true
+        }
+        Command::ClaudeAccountsPasteCancel => {
+            if let Some(OverlayState::ClaudeAccounts {
+                ref mut paste_mode,
+                ref mut paste_buffer,
+                ..
+            }) = app.dashboard.overlay_mut() {
+                *paste_mode = false;
+                *paste_buffer = String::new();
+            }
+            app.mark_dirty();
+            true
+        }
+        Command::ClaudeAccountsPasteSubmit => {
+            // Validate and submit the pasted token
+            let token = match app.dashboard.overlay() {
+                Some(OverlayState::ClaudeAccounts { paste_buffer, paste_mode, .. }) => {
+                    if !*paste_mode {
+                        return true;
+                    }
+                    paste_buffer.clone()
+                }
+                _ => return true,
+            };
+
+            // Validate token format
+            let token = token.trim().to_string();
+            if !token.starts_with("sk-ant-") {
+                if let Some(OverlayState::ClaudeAccounts {
+                    ref mut status_message,
+                    ..
+                }) = app.dashboard.overlay_mut() {
+                    *status_message = Some("Invalid token format (expected sk-ant-...)".to_string());
+                }
+                app.mark_dirty();
+                return true;
+            }
+
+            // Exit paste mode, set adding state
+            if let Some(OverlayState::ClaudeAccounts {
+                ref mut paste_mode,
+                ref mut paste_buffer,
+                ref mut adding,
+                ref mut add_request_id,
+                ref mut status_message,
+                ..
+            }) = app.dashboard.overlay_mut() {
+                *paste_mode = false;
+                *paste_buffer = String::new();
+                *adding = true;
+                let request_id = uuid::Uuid::new_v4().to_string();
+                *add_request_id = Some(request_id.clone());
+                *status_message = Some("Sending token to server...".to_string());
+            }
+
+            // Send token directly to backend via AppMessage
+            let _ = app.message_tx.send(crate::app::AppMessage::ClaudeAccountPasteSubmit {
+                token,
+            });
+            app.mark_dirty();
+            true
+        }
+        Command::Paste(text) => {
+            // Handle system paste event while in paste mode
+            if let Some(OverlayState::ClaudeAccounts {
+                ref mut paste_buffer,
+                paste_mode,
+                ..
+            }) = app.dashboard.overlay_mut() {
+                if *paste_mode {
+                    paste_buffer.push_str(text);
+                    app.mark_dirty();
+                    return true;
+                }
+            }
+            false
+        }
         _ => false,
     }
 }

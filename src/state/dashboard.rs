@@ -816,6 +816,8 @@ impl DashboardState {
             adding: false,
             add_request_id: None,
             status_message: None,
+            paste_mode: false,
+            paste_buffer: String::new(),
         });
     }
 

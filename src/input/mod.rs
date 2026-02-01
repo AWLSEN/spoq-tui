@@ -110,9 +110,13 @@ impl App {
             ModalType::SlashAutocomplete
         } else if self.thread_switcher.visible {
             ModalType::ThreadSwitcher
-        } else if let Some(OverlayState::ClaudeAccounts { .. }) = self.dashboard.overlay() {
+        } else if let Some(OverlayState::ClaudeAccounts { paste_mode, .. }) = self.dashboard.overlay() {
             // ClaudeAccounts overlay is screen-agnostic (works from Conversation or CommandDeck)
-            ModalType::ClaudeAccounts
+            if *paste_mode {
+                ModalType::ClaudeAccountsPaste
+            } else {
+                ModalType::ClaudeAccounts
+            }
         } else if let Some(OverlayState::VpsConfig { .. }) = self.dashboard.overlay() {
             // VpsConfig overlay is screen-agnostic (CommandDeck only, but check before screen)
             ModalType::VpsConfig
@@ -294,7 +298,7 @@ impl App {
                     return true;
                 }
             }
-            ModalType::ClaudeAccounts => {
+            ModalType::ClaudeAccounts | ModalType::ClaudeAccountsPaste => {
                 if handlers::handle_claude_accounts_command(self, &cmd) {
                     return true;
                 }

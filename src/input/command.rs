@@ -283,6 +283,16 @@ pub enum Command {
     ClaudeAccountsMoveDown,
     /// Select the highlighted account as primary (Enter/1-9)
     ClaudeAccountsSelect,
+    /// Enter paste-token mode (T/t)
+    ClaudeAccountsPasteStart,
+    /// Type character in paste-token input
+    ClaudeAccountsPasteChar(char),
+    /// Backspace in paste-token input
+    ClaudeAccountsPasteBackspace,
+    /// Submit pasted token (Enter)
+    ClaudeAccountsPasteSubmit,
+    /// Cancel paste-token mode (Escape)
+    ClaudeAccountsPasteCancel,
 
     // =========================================================================
     // VPS Config Commands (/vps overlay)
@@ -448,6 +458,11 @@ impl Command {
             Command::VpsConfigToggleMode => "Toggle VPS config mode",
             Command::VpsConfigClose => "Close VPS config",
             Command::ClaudeAccountsSelect => "Select account as primary",
+            Command::ClaudeAccountsPasteStart => "Enter paste token mode",
+            Command::ClaudeAccountsPasteChar(_) => "Type in paste token input",
+            Command::ClaudeAccountsPasteBackspace => "Backspace in paste token input",
+            Command::ClaudeAccountsPasteSubmit => "Submit pasted token",
+            Command::ClaudeAccountsPasteCancel => "Cancel paste token mode",
             Command::DismissError => "Dismiss error",
             Command::ToggleReasoning => "Toggle reasoning view",
             Command::OpenOAuthUrl => "Open OAuth URL",

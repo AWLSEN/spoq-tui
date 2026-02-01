@@ -18,7 +18,12 @@ pub enum AppMessage {
     /// Streaming completed successfully
     StreamComplete { thread_id: String, message_id: i64 },
     /// An error occurred during streaming
-    StreamError { thread_id: String, error: String },
+    StreamError {
+        thread_id: String,
+        error: String,
+        /// Machine-readable error code from backend (e.g., "auth_error", "session_limit")
+        error_code: Option<String>,
+    },
     /// Stream was cancelled by user request (Ctrl+C)
     StreamCancelled { thread_id: String, reason: String },
     /// Rate limit hit - account is rate-limited
@@ -395,6 +400,10 @@ pub enum AppMessage {
         account_id: String,
         status: String,
         cooldown_until: Option<i64>,
+    },
+    /// User pasted a token directly (cross-device add account flow)
+    ClaudeAccountPasteSubmit {
+        token: String,
     },
 }
 

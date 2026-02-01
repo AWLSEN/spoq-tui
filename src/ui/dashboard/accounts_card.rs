@@ -22,6 +22,8 @@ pub fn render(
     selected_index: usize,
     adding: bool,
     status_message: Option<&str>,
+    paste_mode: bool,
+    paste_buffer: &str,
 ) {
     let mut lines: Vec<Line> = Vec::new();
 
@@ -103,9 +105,32 @@ pub fn render(
 
     lines.push(Line::from(""));
 
+    // Paste-token input field
+    if paste_mode {
+        lines.push(Line::from(vec![
+            Span::styled("  Token: ", Style::default().fg(Color::Cyan)),
+            Span::styled(
+                if paste_buffer.is_empty() {
+                    "paste or type token here..."
+                } else {
+                    paste_buffer
+                },
+                Style::default().fg(if paste_buffer.is_empty() { Color::DarkGray } else { Color::White }),
+            ),
+            Span::styled("_", Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "  [Enter] Submit  [Esc] Cancel",
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
     // Status message (e.g., "Authenticating...", "Account added!", error)
     if let Some(msg) = status_message {
-        let color = if msg.starts_with("Failed") || msg.starts_with("Auth failed") || msg.contains("already added") {
+        let color = if msg.starts_with("Failed") || msg.starts_with("Auth failed") || msg.starts_with("Invalid") || msg.contains("already added") {
             Color::Red
         } else if msg.contains("successfully") {
             Color::Green
@@ -119,21 +144,25 @@ pub fn render(
         lines.push(Line::from(""));
     }
 
-    // Help text - dim [A] when adding is in progress
-    let add_key_color = if adding { Color::DarkGray } else { Color::Cyan };
-    let add_label_color = if adding { Color::DarkGray } else { Color::Gray };
+    // Help text - dim [A]/[T] when adding or paste mode is active
+    let disabled = adding || paste_mode;
+    let add_key_color = if disabled { Color::DarkGray } else { Color::Cyan };
+    let add_label_color = if disabled { Color::DarkGray } else { Color::Gray };
     lines.push(Line::from(vec![
-        Span::styled(" [Enter/1-9] ", Style::default().fg(Color::Cyan)),
-        Span::styled("Select", Style::default().fg(Color::Gray)),
+        Span::styled(" [Enter/1-9] ", Style::default().fg(if paste_mode { Color::DarkGray } else { Color::Cyan })),
+        Span::styled("Select", Style::default().fg(if paste_mode { Color::DarkGray } else { Color::Gray })),
         Span::raw("  "),
         Span::styled(" [A] ", Style::default().fg(add_key_color)),
         Span::styled(if adding { "Adding..." } else { "Add" }, Style::default().fg(add_label_color)),
         Span::raw("  "),
-        Span::styled(" [R] ", Style::default().fg(Color::Cyan)),
-        Span::styled("Remove", Style::default().fg(Color::Gray)),
+        Span::styled(" [T] ", Style::default().fg(add_key_color)),
+        Span::styled(if paste_mode { "Pasting..." } else { "Paste" }, Style::default().fg(add_label_color)),
+        Span::raw("  "),
+        Span::styled(" [R] ", Style::default().fg(if disabled { Color::DarkGray } else { Color::Cyan })),
+        Span::styled("Remove", Style::default().fg(if disabled { Color::DarkGray } else { Color::Gray })),
         Span::raw("  "),
         Span::styled(" [Esc] ", Style::default().fg(Color::Cyan)),
-        Span::styled("Close", Style::default().fg(Color::Gray)),
+        Span::styled(if paste_mode { "Cancel" } else { "Close" }, Style::default().fg(Color::Gray)),
     ]));
 
     let paragraph = Paragraph::new(lines).alignment(Alignment::Left);
@@ -141,9 +170,10 @@ pub fn render(
 }
 
 /// Calculate the height needed for the accounts card.
-pub fn calculate_height(account_count: usize, has_status: bool) -> u16 {
-    // title(1) + blank(1) + accounts(max(1,n)) + blank(1) + [status(1) + blank(1)] + help(1)
+pub fn calculate_height(account_count: usize, has_status: bool, paste_mode: bool) -> u16 {
+    // title(1) + blank(1) + accounts(max(1,n)) + blank(1) + [paste(2) + blank(1)] + [status(1) + blank(1)] + help(1)
     let rows = account_count.max(1) as u16;
     let status_rows = if has_status { 2 } else { 0 };
-    4 + rows + status_rows
+    let paste_rows = if paste_mode { 3 } else { 0 };
+    4 + rows + status_rows + paste_rows
 }

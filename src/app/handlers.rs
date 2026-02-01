@@ -2128,6 +2128,57 @@ impl App {
                 }
                 self.mark_dirty();
             }
+            AppMessage::ClaudeAccountPasteSubmit { token } => {
+                // Direct token paste: send token to conductor as claude_auth_token (add-account flow)
+                tracing::info!(
+                    "Claude account paste-submit: token_length={}",
+                    token.len()
+                );
+
+                use crate::websocket::{WsClaudeAuthTokenResponse, WsOutgoingMessage};
+                let request_id = uuid::Uuid::new_v4().to_string();
+                let response = WsClaudeAuthTokenResponse::new(request_id.clone(), token);
+
+                if let Some(ref sender) = self.ws_sender {
+                    if let Err(e) = sender.try_send(WsOutgoingMessage::ClaudeAuthTokenResponse(response)) {
+                        tracing::error!("Failed to send pasted token: {}", e);
+                        use crate::view_state::dashboard_view::OverlayState;
+                        if let Some(OverlayState::ClaudeAccounts {
+                            ref mut adding,
+                            ref mut status_message,
+                            ..
+                        }) = self.dashboard.overlay_mut() {
+                            *adding = false;
+                            *status_message = Some("Failed: connection lost".to_string());
+                        }
+                        self.mark_dirty();
+                    } else {
+                        // Update overlay status
+                        use crate::view_state::dashboard_view::OverlayState;
+                        if let Some(OverlayState::ClaudeAccounts {
+                            ref mut add_request_id,
+                            ref mut status_message,
+                            ..
+                        }) = self.dashboard.overlay_mut() {
+                            *add_request_id = Some(request_id);
+                            *status_message = Some("Authenticating... (sending token)".to_string());
+                        }
+                        self.mark_dirty();
+                    }
+                } else {
+                    tracing::error!("No WebSocket connection for paste token");
+                    use crate::view_state::dashboard_view::OverlayState;
+                    if let Some(OverlayState::ClaudeAccounts {
+                        ref mut adding,
+                        ref mut status_message,
+                        ..
+                    }) = self.dashboard.overlay_mut() {
+                        *adding = false;
+                        *status_message = Some("Failed: no connection to server".to_string());
+                    }
+                    self.mark_dirty();
+                }
+            }
             // VpsConfig message handlers (Phase 7 implementation)
             AppMessage::VpsConfigProgress { phase } => {
                 use crate::view_state::dashboard_view::{OverlayState, ProvisioningPhase, VpsConfigState};
