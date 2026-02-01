@@ -1192,6 +1192,44 @@ impl ConductorClient {
         Ok(verified)
     }
 
+    /// Delete a thread permanently.
+    ///
+    /// Calls `DELETE /v1/threads/{thread_id}` to delete the thread from the backend.
+    ///
+    /// # Arguments
+    /// * `thread_id` - The ID of the thread to delete
+    ///
+    /// # Returns
+    /// - `Ok(true)` if the thread was deleted successfully
+    /// - `Ok(false)` if the thread was not found (404)
+    /// - `Err(ConductorError)` for other errors
+    pub async fn delete_thread(&self, thread_id: &str) -> Result<bool, ConductorError> {
+        let url = format!("{}/v1/threads/{}", self.base_url, thread_id);
+
+        let builder = self.client.delete(&url);
+        let response = self.add_auth_header(builder).send().await?;
+
+        let status = response.status();
+
+        if status.as_u16() == 404 {
+            // Thread not found - not an error, just means nothing to delete
+            return Ok(false);
+        }
+
+        if !status.is_success() {
+            let message = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(ConductorError::ServerError {
+                status: status.as_u16(),
+                message,
+            });
+        }
+
+        Ok(true)
+    }
+
     /// Update the mode of a thread.
     ///
     /// Calls `PUT /v1/threads/{thread_id}/mode` to update the thread's mode.
