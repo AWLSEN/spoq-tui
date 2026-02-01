@@ -1907,10 +1907,17 @@ impl App {
                                         email: result.email,
                                     });
                                 } else {
-                                    tracing::error!("Claude setup-token succeeded but no token captured");
+                                    // Fallback case: auth may have succeeded (e.g. ~/.claude.json
+                                    // was updated) but we couldn't capture the raw token from stdout
+                                    let error_msg = if result.email.is_some() {
+                                        "Auth succeeded locally but token not captured — paste it with [T]".to_string()
+                                    } else {
+                                        "Token capture succeeded but token is empty".to_string()
+                                    };
+                                    tracing::error!("Claude setup-token: {}", error_msg);
                                     let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
                                         request_id: req_id,
-                                        error: "Token capture succeeded but token is empty".to_string(),
+                                        error: error_msg,
                                     });
                                 }
                             }
@@ -1924,9 +1931,14 @@ impl App {
                             }
                             Err(e) => {
                                 tracing::error!("Claude setup-token error: {}", e);
+                                let error_msg = if matches!(e, crate::setup::ClaudeAuthError::Timeout) {
+                                    "Timed out — try pasting the token with [T]".to_string()
+                                } else {
+                                    e.to_string()
+                                };
                                 let _ = tx.send(AppMessage::ClaudeAuthTokenFailed {
                                     request_id: req_id,
-                                    error: e.to_string(),
+                                    error: error_msg,
                                 });
                             }
                         }

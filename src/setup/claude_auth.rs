@@ -99,6 +99,56 @@ fn read_claude_email() -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Fallback: check if ~/.claude.json was recently modified and contains a token.
+///
+/// This is useful when `setup-token` times out but the user may have actually
+/// completed browser authentication — the CLI writes `~/.claude.json` with the
+/// OAuth token on success, even if we failed to capture stdout.
+///
+/// Returns `Some(ClaudeAuthResult)` if a fresh token was written (modified
+/// within the last 5 minutes), `None` otherwise.
+fn check_claude_json_for_token() -> Option<ClaudeAuthResult> {
+    let home = dirs::home_dir()?;
+    let config_path = home.join(".claude.json");
+    let metadata = std::fs::metadata(&config_path).ok()?;
+    let modified = metadata.modified().ok()?;
+    let age = std::time::SystemTime::now().duration_since(modified).ok()?;
+
+    // Only trust the file if it was modified within the last 5 minutes
+    if age > Duration::from_secs(300) {
+        tracing::debug!("~/.claude.json too old ({:?} ago), skipping fallback", age);
+        return None;
+    }
+
+    let contents = std::fs::read_to_string(&config_path).ok()?;
+    let config: serde_json::Value = serde_json::from_str(&contents).ok()?;
+
+    // Look for oauthAccount.accessToken or similar token fields
+    let email = config
+        .get("oauthAccount")
+        .and_then(|acct| acct.get("emailAddress"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // If we found an email, the auth likely succeeded — but we don't have the
+    // raw token from the file (Claude CLI doesn't store it in plain text).
+    // We report this as a special result so the caller can inform the user.
+    if email.is_some() {
+        tracing::info!(
+            "Fallback: found recent ~/.claude.json with email {:?}",
+            email
+        );
+        Some(ClaudeAuthResult {
+            success: true,
+            token: None, // Token not extractable from config
+            email,
+            error: None,
+        })
+    } else {
+        None
+    }
+}
+
 /// Check if Claude CLI is installed
 pub fn is_claude_installed() -> bool {
     std::process::Command::new("claude")
@@ -211,6 +261,12 @@ pub fn run_claude_setup_token_with_events(
         // Check timeout
         if start_time.elapsed() > timeout {
             let _ = child.kill();
+            // Fallback: check if ~/.claude.json was updated (auth may have
+            // succeeded even though we couldn't capture the token from stdout)
+            if let Some(result) = check_claude_json_for_token() {
+                tracing::info!("Timeout but fallback found recent auth in ~/.claude.json");
+                return Ok(result);
+            }
             return Err(ClaudeAuthError::Timeout);
         }
 

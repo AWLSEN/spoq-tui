@@ -131,7 +131,9 @@ pub fn render(
 
     // Status message (e.g., "Authenticating...", "Account added!", error)
     if let Some(msg) = status_message {
-        let color = if msg.starts_with("Failed") || msg.starts_with("Auth failed") || msg.starts_with("Invalid") || msg.contains("already added") {
+        let color = if msg.contains("Timed out") || msg.contains("paste") {
+            Color::Yellow // Actionable hint — not a hard failure
+        } else if msg.starts_with("Failed") || msg.starts_with("Auth failed") || msg.starts_with("Invalid") || msg.contains("already added") {
             Color::Red
         } else if msg.contains("successfully") {
             Color::Green
