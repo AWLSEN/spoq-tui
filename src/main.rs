@@ -1189,7 +1189,7 @@ where
                                                     continue;
                                                 }
                                                 KeyCode::Enter => {
-                                                    app.submit_plan_feedback();
+                                                    app.submit_plan_feedback_for_thread(&thread_id);
                                                     continue;
                                                 }
                                                 KeyCode::Backspace => {
@@ -1210,6 +1210,8 @@ where
                                             }
                                         } else {
                                             // Plan approval navigation mode
+                                            // Note: unhandled keys fall through (not swallowed)
+                                            // so Tab-tab thread switcher and other global keys work.
                                             match key.code {
                                                 KeyCode::Up => {
                                                     if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
@@ -1230,8 +1232,8 @@ where
                                                         .map(|s| s.selected_action)
                                                         .unwrap_or(0);
                                                     match selected {
-                                                        0 => { app.handle_permission_key('y'); }
-                                                        1 => { app.handle_permission_key('n'); }
+                                                        0 => { app.handle_plan_approval_key_for_thread('y', &thread_id); }
+                                                        1 => { app.handle_plan_approval_key_for_thread('n', &thread_id); }
                                                         2 => {
                                                             if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
                                                                 state.feedback_active = true;
@@ -1244,13 +1246,13 @@ where
                                                     continue;
                                                 }
                                                 KeyCode::Char(c) if (app.screen == Screen::Conversation || app.textarea.is_empty()) => {
-                                                    // Legacy y/n/a shortcut
-                                                    if app.handle_permission_key(c) {
+                                                    // Use thread_id from needs-action (not active_thread_id)
+                                                    if app.handle_plan_approval_key_for_thread(c, &thread_id) {
                                                         continue;
                                                     }
                                                     // Fall through to normal input
                                                 }
-                                                _ => continue,
+                                                _ => {} // Let unhandled keys fall through
                                             }
                                         }
                                     }
