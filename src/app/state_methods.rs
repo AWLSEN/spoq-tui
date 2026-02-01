@@ -1733,6 +1733,7 @@ impl App {
                     let _ = message_tx.send(AppMessage::StreamError {
                         thread_id: thread_id_for_task,
                         error: e.to_string(),
+                        error_code: None,
                     });
                 }
             }

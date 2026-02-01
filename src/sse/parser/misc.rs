@@ -57,6 +57,8 @@ pub(super) fn parse_context_compacted_event(
 }
 
 /// Parse error event
+///
+/// Backend sends: `{"type":"error", ..., "error": {"code":"auth_error", "message":"..."}}`
 pub(super) fn parse_error_event(event_type: &str, data: &str) -> Result<SseEvent, SseParseError> {
     let payload: ErrorPayload =
         serde_json::from_str(data).map_err(|e| SseParseError::InvalidJson {
@@ -64,8 +66,8 @@ pub(super) fn parse_error_event(event_type: &str, data: &str) -> Result<SseEvent
             source: e.to_string(),
         })?;
     Ok(SseEvent::Error {
-        message: payload.message,
-        code: payload.code,
+        message: payload.error.message,
+        code: payload.error.code,
     })
 }
 
@@ -163,20 +165,23 @@ mod tests {
     fn test_parse_error_event() {
         let result = parse_sse_event(
             "error",
-            r#"{"message": "Something went wrong", "code": "ERR_500"}"#,
+            r#"{"error": {"message": "Something went wrong", "code": "provider_error"}}"#,
         );
         assert_eq!(
             result.unwrap(),
             SseEvent::Error {
                 message: "Something went wrong".to_string(),
-                code: Some("ERR_500".to_string()),
+                code: Some("provider_error".to_string()),
             }
         );
     }
 
     #[test]
     fn test_parse_error_event_without_code() {
-        let result = parse_sse_event("error", r#"{"message": "Oops"}"#);
+        let result = parse_sse_event(
+            "error",
+            r#"{"error": {"message": "Oops"}}"#,
+        );
         assert_eq!(
             result.unwrap(),
             SseEvent::Error {
@@ -187,12 +192,27 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_error_event_with_classified_code() {
+        let result = parse_sse_event(
+            "error",
+            r#"{"error": {"message": "Authentication failed", "code": "auth_error"}}"#,
+        );
+        assert_eq!(
+            result.unwrap(),
+            SseEvent::Error {
+                message: "Authentication failed".to_string(),
+                code: Some("auth_error".to_string()),
+            }
+        );
+    }
+
+    #[test]
     fn test_parser_error_event() {
         let mut parser = SseParser::new();
 
         parser.feed_line("event: error").unwrap();
         parser
-            .feed_line(r#"data: {"message": "Rate limited", "code": "429"}"#)
+            .feed_line(r#"data: {"error": {"message": "Rate limited", "code": "rate_limited"}}"#)
             .unwrap();
 
         let event = parser.feed_line("").unwrap();
@@ -200,7 +220,7 @@ mod tests {
             event,
             Some(SseEvent::Error {
                 message: "Rate limited".to_string(),
-                code: Some("429".to_string()),
+                code: Some("rate_limited".to_string()),
             })
         );
     }

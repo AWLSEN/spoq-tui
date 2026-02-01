@@ -37,7 +37,8 @@ pub fn prepare_render(app: &mut App, viewport_width: u16) {
 
     // Prepare height cache if we're on the conversation screen
     if app.screen == crate::app::Screen::Conversation {
-        prepare_message_heights(app, viewport_width as usize);
+        let message_width = viewport_width.saturating_sub(4) as usize;
+        prepare_message_heights(app, message_width);
     }
 }
 

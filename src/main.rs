@@ -1031,8 +1031,7 @@ where
                                     }
 
                                     WaitingFor::UserInput => {
-                                        // UserInput dialogs only capture specific dialog navigation keys
-                                        // Let ALL other keys (including Y/N/A) fall through to normal input handling
+                                        // UserInput dialogs capture navigation keys and [a] Answer
                                         match key.code {
                                             KeyCode::Tab => {
                                                 app.question_next_tab();
@@ -1054,8 +1053,17 @@ where
                                                 app.question_confirm();
                                                 continue;
                                             }
+                                            KeyCode::Char('a') | KeyCode::Char('A') => {
+                                                // [a] Answer: open question dialog when textarea is empty
+                                                // Same pattern as other permission events in the command deck
+                                                if app.screen == Screen::Conversation || app.textarea.is_empty() {
+                                                    if app.open_ask_user_question_dialog() {
+                                                        continue;
+                                                    }
+                                                }
+                                                // Fall through to type 'a' in textarea
+                                            }
                                             // All other keys fall through to normal input handling
-                                            // This includes Y/N/A which should NOT be captured here
                                             _ => {
                                                 // Fall through - let the key be handled by normal input processing
                                             }

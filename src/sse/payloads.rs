@@ -62,9 +62,16 @@ pub(crate) struct MessageInfoPayload {
     pub message_id: i64,
 }
 
-/// Error payload
+/// Error payload - backend sends error info in a nested "error" field:
+/// `{"type":"error", "error": {"code":"auth_error", "message":"..."}}`
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct ErrorPayload {
+    pub error: ErrorPayloadInner,
+}
+
+/// Inner error object from backend StreamEvent::Error
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ErrorPayloadInner {
     pub message: String,
     #[serde(default)]
     pub code: Option<String>,
@@ -202,18 +209,20 @@ mod tests {
 
     #[test]
     fn test_error_payload() {
-        let json = r#"{"message": "Something went wrong", "code": "ERR_500"}"#;
+        // Backend wraps error in an "error" field
+        let json = r#"{"error": {"message": "Something went wrong", "code": "ERR_500"}}"#;
         let payload: ErrorPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.message, "Something went wrong");
-        assert_eq!(payload.code, Some("ERR_500".to_string()));
+        assert_eq!(payload.error.message, "Something went wrong");
+        assert_eq!(payload.error.code, Some("ERR_500".to_string()));
     }
 
     #[test]
     fn test_error_payload_no_code() {
-        let json = r#"{"message": "Oops"}"#;
+        // Backend wraps error in an "error" field
+        let json = r#"{"error": {"message": "Oops"}}"#;
         let payload: ErrorPayload = serde_json::from_str(json).unwrap();
-        assert_eq!(payload.message, "Oops");
-        assert!(payload.code.is_none());
+        assert_eq!(payload.error.message, "Oops");
+        assert!(payload.error.code.is_none());
     }
 
     #[test]

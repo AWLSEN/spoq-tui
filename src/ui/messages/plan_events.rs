@@ -1,8 +1,6 @@
 //! Plan mode event rendering for conversation view.
 //!
-//! Provides two render functions:
-//! - `render_planning_indicator`: Shows spinner while Claude is planning
-//! - `render_plan_approval`: Shows plan summary with approve/reject options
+//! Provides `render_plan_approval` to show plan summary with approve/reject options.
 
 use ratatui::{
     style::{Color, Modifier, Style},
@@ -12,7 +10,6 @@ use ratatui::{
 use crate::markdown::MarkdownCache;
 use crate::models::dashboard::PlanSummary;
 
-use super::super::helpers::SPINNER_FRAMES;
 use super::super::layout::LayoutContext;
 
 /// Color for plan mode elements (matches [PLAN] header)
@@ -20,32 +17,6 @@ const COLOR_PLAN: Color = Color::Magenta;
 
 /// Color for phase numbers
 const COLOR_PHASE: Color = Color::Cyan;
-
-/// Render planning-in-progress indicator
-///
-/// Shows a spinner with "Planning..." text while Claude is actively planning.
-///
-/// # Display format
-/// ```text
-/// │
-///   ◈ ⣾ Planning...
-/// │
-/// ```
-pub fn render_planning_indicator(tick_count: u64) -> Vec<Line<'static>> {
-    let frame_index = (tick_count % 10) as usize;
-    let spinner = SPINNER_FRAMES[frame_index];
-
-    vec![
-        Line::raw("│"),
-        Line::from(vec![
-            Span::raw("  "),
-            Span::styled("◈ ", Style::default().fg(COLOR_PLAN)),
-            Span::styled(format!("{} ", spinner), Style::default().fg(COLOR_PLAN)),
-            Span::styled("Planning...", Style::default().fg(COLOR_PLAN)),
-        ]),
-        Line::raw("│"),
-    ]
-}
 
 /// Render plan approval prompt with full plan content
 ///
@@ -222,27 +193,6 @@ pub fn render_plan_approval(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_render_planning_indicator_creates_lines() {
-        let lines = render_planning_indicator(0);
-        assert_eq!(lines.len(), 3);
-        // First and last lines are just vertical bars
-        assert_eq!(lines[0], Line::raw("│"));
-        assert_eq!(lines[2], Line::raw("│"));
-    }
-
-    #[test]
-    fn test_render_planning_indicator_cycles_spinner() {
-        let lines_0 = render_planning_indicator(0);
-        let lines_5 = render_planning_indicator(5);
-        // The spinner frame should change with tick_count
-        assert_ne!(
-            lines_0[1].to_string(),
-            lines_5[1].to_string(),
-            "Spinner should animate"
-        );
-    }
 
     #[test]
     fn test_render_plan_approval_with_content() {

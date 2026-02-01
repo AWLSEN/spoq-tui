@@ -267,6 +267,7 @@ impl App {
                     let _ = message_tx.send(AppMessage::StreamError {
                         thread_id: thread_id_for_task,
                         error: e.to_string(),
+                        error_code: None,
                     });
                 }
             }
@@ -345,6 +346,19 @@ impl App {
                             // which arrives ~3 seconds after done. Stream will close naturally.
                         }
                         SseEvent::Error(error_event) => {
+                            // Map error codes to user-friendly messages
+                            let display_msg = match error_event.code.as_deref() {
+                                Some("auth_error") => "Authentication failed. Token may be expired.".to_string(),
+                                Some("session_limit") => "Session limit reached. Start a new thread.".to_string(),
+                                Some("context_overflow") => "Context window full. Start a new thread.".to_string(),
+                                Some("max_turns_exceeded") => "Max turns reached. Start a new thread.".to_string(),
+                                Some("network_error") => "Network error. Check connection and retry.".to_string(),
+                                Some("billing_error") => "Usage limit reached. Check billing.".to_string(),
+                                Some("service_unavailable") => "Server overloaded. Try again in a moment.".to_string(),
+                                Some("rate_limited") => "Rate limited. Try again later.".to_string(),
+                                _ => error_event.message.clone(),
+                            };
+
                             // Emit Error debug event
                             emit_debug(
                                 &debug_tx,
@@ -357,7 +371,8 @@ impl App {
 
                             let _ = message_tx.send(AppMessage::StreamError {
                                 thread_id: thread_id.to_string(),
-                                error: error_event.message,
+                                error: display_msg,
+                                error_code: error_event.code,
                             });
                             break;
                         }
@@ -765,6 +780,7 @@ impl App {
                     let _ = message_tx.send(AppMessage::StreamError {
                         thread_id: thread_id.to_string(),
                         error: e.to_string(),
+                        error_code: None,
                     });
                     break;
                 }
@@ -1178,5 +1194,111 @@ mod tests {
         // Try to receive another message - should be None since we broke out of the loop
         // Use try_recv to avoid blocking
         assert!(rx.try_recv().is_err(), "Should not receive additional messages after cancelled");
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_error_with_code() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-error";
+
+        // Create an error event with an error code
+        let event = SseEvent::Error(crate::events::ErrorEvent {
+            message: "Raw error message from backend".to_string(),
+            code: Some("auth_error".to_string()),
+        });
+
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::StreamError { thread_id, error, error_code } => {
+                assert_eq!(thread_id, "test-thread-error");
+                // Error message should be mapped to user-friendly text
+                assert_eq!(error, "Authentication failed. Token may be expired.");
+                assert_eq!(error_code, Some("auth_error".to_string()));
+            }
+            _ => panic!("Expected StreamError message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_error_without_code() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-error-no-code";
+
+        // Create an error event without an error code
+        let event = SseEvent::Error(crate::events::ErrorEvent {
+            message: "Something went wrong".to_string(),
+            code: None,
+        });
+
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::StreamError { thread_id, error, error_code } => {
+                assert_eq!(thread_id, "test-thread-error-no-code");
+                // Without code, message should pass through unchanged
+                assert_eq!(error, "Something went wrong");
+                assert_eq!(error_code, None);
+            }
+            _ => panic!("Expected StreamError message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_error_session_limit() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-session-limit";
+
+        let event = SseEvent::Error(crate::events::ErrorEvent {
+            message: "Backend message".to_string(),
+            code: Some("session_limit".to_string()),
+        });
+
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::StreamError { error, error_code, .. } => {
+                assert_eq!(error, "Session limit reached. Start a new thread.");
+                assert_eq!(error_code, Some("session_limit".to_string()));
+            }
+            _ => panic!("Expected StreamError message, got {:?}", msg),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_stream_error_context_overflow() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let thread_id = "test-thread-context-overflow";
+
+        let event = SseEvent::Error(crate::events::ErrorEvent {
+            message: "Backend message".to_string(),
+            code: Some("context_overflow".to_string()),
+        });
+
+        let events: Vec<Result<SseEvent, crate::conductor::ConductorError>> = vec![Ok(event)];
+        let mut pinned_stream = create_stream(events);
+
+        App::process_stream(&mut pinned_stream, &tx, thread_id, None).await;
+
+        let msg = rx.recv().await.expect("Should receive message");
+        match msg {
+            AppMessage::StreamError { error, error_code, .. } => {
+                assert_eq!(error, "Context window full. Start a new thread.");
+                assert_eq!(error_code, Some("context_overflow".to_string()));
+            }
+            _ => panic!("Expected StreamError message, got {:?}", msg),
+        }
     }
 }

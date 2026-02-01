@@ -470,7 +470,7 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                 lines.extend(perm_lines);
             }
 
-            // Add plan mode indicators (planning spinner or plan approval UI)
+            // Show plan approval UI if a plan is pending approval
             if let Some(plan_request) = app.dashboard.get_plan_request(thread_id) {
                 lines.extend(plan_events::render_plan_approval(
                     &plan_request.summary,
@@ -479,10 +479,6 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
                     app.plan_feedback_active,
                     &app.plan_feedback_text,
                 ));
-            } else if app.dashboard.is_thread_planning(thread_id)
-                && app.dashboard.get_pending_permission(thread_id).is_none()
-            {
-                lines.extend(plan_events::render_planning_indicator(app.tick_count));
             }
         }
 
@@ -554,10 +550,8 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
         lines.extend(perm_lines);
     }
 
-    // Add plan mode indicators (planning spinner or plan approval UI)
-    // Priority: plan approval > planning indicator (only if no permission pending)
+    // Show plan approval UI if a plan is pending approval
     if let Some(plan_request) = app.dashboard.get_plan_request(&thread_id) {
-        // Plan approval is pending - show plan summary with approve/reject options
         lines.extend(plan_events::render_plan_approval(
             &plan_request.summary,
             ctx,
@@ -565,11 +559,6 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
             app.plan_feedback_active,
             &app.plan_feedback_text,
         ));
-    } else if app.dashboard.is_thread_planning(&thread_id)
-        && app.dashboard.get_pending_permission(&thread_id).is_none()
-    {
-        // Thread is actively planning and no permission prompt pending
-        lines.extend(plan_events::render_planning_indicator(app.tick_count));
     }
 
     // Append steering section (if active)
