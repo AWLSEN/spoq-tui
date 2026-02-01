@@ -417,6 +417,49 @@ impl App {
         }
     }
 
+    /// Submit plan feedback text as a rejection with a message.
+    ///
+    /// Extracts feedback text from the plan approval state, sends a rejection
+    /// response that includes the feedback, and cleans up the state.
+    pub fn submit_plan_feedback(&mut self) {
+        let thread_id = match &self.active_thread_id {
+            Some(id) => id.clone(),
+            None => return,
+        };
+
+        let feedback = self.dashboard.get_plan_approval_state(&thread_id)
+            .map(|s| s.feedback_text.clone())
+            .unwrap_or_default();
+
+        if feedback.is_empty() {
+            // Nothing to submit
+            return;
+        }
+
+        let request_id = match self.dashboard.get_plan_request_id(&thread_id) {
+            Some(id) => id.to_string(),
+            None => return,
+        };
+        let from_permission = self.dashboard.is_plan_from_permission(&thread_id);
+
+        let sent = if from_permission {
+            self.send_permission_response_with_message(&request_id, false, Some(feedback))
+        } else {
+            self.send_plan_approval_response_with_message(&request_id, false, Some(feedback))
+        };
+
+        if sent {
+            self.dashboard.remove_plan_request(&thread_id);
+            // Keep planning mode — Claude will revise and call ExitPlanMode again
+        }
+
+        if let Some(state) = self.dashboard.get_plan_approval_state_mut(&thread_id) {
+            state.feedback_active = false;
+            state.feedback_text.clear();
+        }
+        self.mark_dirty();
+    }
+
     // ========================================================================
     // AskUserQuestion Navigation Methods
     // ========================================================================

@@ -1070,29 +1070,87 @@ where
                                         }
                                     }
 
-                                    WaitingFor::PlanApproval { ref request_id } => {
-                                        // Conversation: textarea is hidden, so always capture
-                                        // CommandDeck: only capture when textarea is empty
-                                        if let KeyCode::Char(c) = key.code {
-                                            if app.screen == Screen::Conversation || app.textarea.is_empty() {
-                                                app.emit_debug_state_change(
-                                                    "plan_approval_key",
-                                                    "Key pressed during plan approval",
-                                                    &format!("key: '{}', request_id: {}, thread_id: {}", c, request_id, thread_id),
-                                                );
-                                                if app.handle_permission_key(c) {
-                                                    app.emit_debug_state_change(
-                                                        "plan_approval_key",
-                                                        "Plan approval handled",
-                                                        &format!("key: '{}' -> handled", c),
-                                                    );
+                                    WaitingFor::PlanApproval { request_id: _ } => {
+                                        let feedback_active = app.dashboard.get_plan_approval_state(&thread_id)
+                                            .map(|s| s.feedback_active)
+                                            .unwrap_or(false);
+
+                                        if feedback_active {
+                                            // Feedback text input mode — absorb ALL keys
+                                            match key.code {
+                                                KeyCode::Esc => {
+                                                    if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                                                        state.feedback_active = false;
+                                                        state.feedback_text.clear();
+                                                    }
+                                                    app.mark_dirty();
                                                     continue;
                                                 }
-                                                // Key wasn't Y/N/A - fall through to type in textarea
+                                                KeyCode::Enter => {
+                                                    app.submit_plan_feedback();
+                                                    continue;
+                                                }
+                                                KeyCode::Backspace => {
+                                                    if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                                                        state.feedback_text.pop();
+                                                    }
+                                                    app.mark_dirty();
+                                                    continue;
+                                                }
+                                                KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+                                                    if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                                                        state.feedback_text.push(c);
+                                                    }
+                                                    app.mark_dirty();
+                                                    continue;
+                                                }
+                                                _ => continue,
                                             }
-                                            // Textarea has content OR key wasn't Y/N/A: fall through
+                                        } else {
+                                            // Plan approval navigation mode
+                                            match key.code {
+                                                KeyCode::Up => {
+                                                    if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                                                        state.prev_action();
+                                                    }
+                                                    app.mark_dirty();
+                                                    continue;
+                                                }
+                                                KeyCode::Down => {
+                                                    if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                                                        state.next_action();
+                                                    }
+                                                    app.mark_dirty();
+                                                    continue;
+                                                }
+                                                KeyCode::Enter => {
+                                                    let selected = app.dashboard.get_plan_approval_state(&thread_id)
+                                                        .map(|s| s.selected_action)
+                                                        .unwrap_or(0);
+                                                    match selected {
+                                                        0 => { app.handle_permission_key('y'); }
+                                                        1 => { app.handle_permission_key('n'); }
+                                                        2 => {
+                                                            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                                                                state.feedback_active = true;
+                                                                state.feedback_text.clear();
+                                                            }
+                                                            app.mark_dirty();
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                    continue;
+                                                }
+                                                KeyCode::Char(c) if (app.screen == Screen::Conversation || app.textarea.is_empty()) => {
+                                                    // Legacy y/n/a shortcut
+                                                    if app.handle_permission_key(c) {
+                                                        continue;
+                                                    }
+                                                    // Fall through to normal input
+                                                }
+                                                _ => continue,
+                                            }
                                         }
-                                        // Non-char keys or unhandled char keys fall through to normal input
                                     }
                                 }
                             }

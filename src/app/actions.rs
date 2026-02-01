@@ -107,6 +107,16 @@ impl App {
     /// }
     /// ```
     pub fn send_plan_approval_response(&self, request_id: &str, approved: bool) -> bool {
+        self.send_plan_approval_response_with_message(request_id, approved, None)
+    }
+
+    /// Send a plan approval response with an optional feedback message via WebSocket.
+    pub fn send_plan_approval_response_with_message(
+        &self,
+        request_id: &str,
+        approved: bool,
+        message: Option<String>,
+    ) -> bool {
         let sender = match &self.ws_sender {
             Some(s) => s,
             None => {
@@ -120,7 +130,11 @@ impl App {
             return false;
         }
 
-        let response = WsPlanApprovalResponse::new(request_id.to_string(), approved);
+        let response = WsPlanApprovalResponse::with_message(
+            request_id.to_string(),
+            approved,
+            message,
+        );
 
         match sender.try_send(WsOutgoingMessage::PlanApprovalResponse(response)) {
             Ok(()) => {

@@ -322,6 +322,9 @@ pub struct WsPlanApprovalResponse {
     pub request_id: String,
     /// Whether the plan was approved
     pub approved: bool,
+    /// Optional feedback message (sent with rejections)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 impl WsPlanApprovalResponse {
@@ -330,6 +333,16 @@ impl WsPlanApprovalResponse {
             type_: "plan_approval_response".to_string(),
             request_id,
             approved,
+            message: None,
+        }
+    }
+
+    pub fn with_message(request_id: String, approved: bool, message: Option<String>) -> Self {
+        Self {
+            type_: "plan_approval_response".to_string(),
+            request_id,
+            approved,
+            message,
         }
     }
 }

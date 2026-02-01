@@ -127,13 +127,16 @@ fn build_image_chips_line(hashes: &[String], label: &str, label_style: Style) ->
 
 /// Check if the input section should be shown in conversation view.
 ///
-/// Returns false if the active thread has a pending permission,
-/// since users must respond to the permission before sending more input.
+/// Returns false if the active thread has a pending permission or plan approval,
+/// since users must respond before sending more input.
 fn should_show_input_section(app: &App) -> bool {
     app.active_thread_id
         .as_ref()
-        .and_then(|tid| app.dashboard.get_pending_permission(tid))
-        .is_none()
+        .map(|tid| {
+            app.dashboard.get_pending_permission(tid).is_none()
+                && app.dashboard.get_plan_request(tid).is_none()
+        })
+        .unwrap_or(true)
 }
 
 /// Render a single message and return its lines.

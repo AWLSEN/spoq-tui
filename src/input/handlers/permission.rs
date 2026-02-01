@@ -1032,7 +1032,7 @@ pub fn handle_plan_feedback_command(app: &mut App, cmd: &Command) -> bool {
             let sent = if from_permission {
                 app.send_permission_response_with_message(&request_id, false, Some(feedback))
             } else {
-                app.send_plan_approval_response(&request_id, false)
+                app.send_plan_approval_response_with_message(&request_id, false, Some(feedback))
             };
             if sent {
                 app.dashboard.remove_plan_request(&thread_id);
