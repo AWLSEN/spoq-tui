@@ -3,6 +3,7 @@
 //! Provides functions to wrap styled text lines while maintaining prefixes
 //! and optional background colors for visual continuity.
 
+use crate::markdown::{contains_osc8_sequence, display_width_ignoring_escapes};
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
@@ -12,8 +13,12 @@ use unicode_width::UnicodeWidthStr;
 /// Apply full-width background color to a single line.
 /// Pads with spaces to reach max_width and applies bg to all spans.
 pub fn apply_background_to_line(line: &mut Line<'static>, bg_color: Color, max_width: usize) {
-    // Calculate current visual width using unicode width
-    let current_width: usize = line.spans.iter().map(|s| s.content.width()).sum();
+    // Calculate current visual width using unicode width, ignoring escape sequences
+    let current_width: usize = line
+        .spans
+        .iter()
+        .map(|s| display_width_ignoring_escapes(&s.content))
+        .sum();
 
     // Apply background to all existing spans
     for span in line.spans.iter_mut() {
@@ -84,8 +89,11 @@ pub fn wrap_line_with_prefix(
         return vec![result_line];
     }
 
-    // Calculate total width
-    let total_width: usize = segments.iter().map(|(s, _)| s.width()).sum();
+    // Calculate total width, ignoring escape sequences
+    let total_width: usize = segments
+        .iter()
+        .map(|(s, _)| display_width_ignoring_escapes(s))
+        .sum();
 
     // Fast path: if it fits, no wrapping needed
     if total_width <= content_width {
@@ -117,7 +125,7 @@ pub fn wrap_line_with_prefix(
             return;
         }
 
-        let word_width = word.width();
+        let word_width = display_width_ignoring_escapes(word);
 
         // If word fits on current line, add it
         if *current_line_width + word_width <= content_width {
@@ -132,35 +140,47 @@ pub fn wrap_line_with_prefix(
                 *current_line_width = 0;
             }
 
-            // If word itself is wider than content_width, break it
+            // If word itself is wider than content_width, handle it
             if word_width > content_width {
-                let mut remaining = std::mem::take(word);
-                while !remaining.is_empty() {
-                    let mut chunk = String::new();
-                    let mut chunk_width = 0;
-                    let mut chars = remaining.chars().peekable();
+                // Check if this word contains OSC 8 escape sequences
+                if contains_osc8_sequence(word) {
+                    // CRITICAL: Never break OSC 8 sequences character-by-character
+                    // as this corrupts the escape sequence. Instead, add the entire
+                    // word as-is. It may overflow horizontally, but the link will
+                    // remain functional and clickable.
+                    current_line_spans.push(Span::styled(std::mem::take(word), word_style));
+                    *current_line_width = word_width; // Will exceed content_width, but that's OK
+                } else {
+                    // For non-OSC8 content, use character-by-character breaking
+                    let mut remaining = std::mem::take(word);
+                    while !remaining.is_empty() {
+                        let mut chunk = String::new();
+                        let mut chunk_width = 0;
+                        let mut chars = remaining.chars().peekable();
 
-                    while let Some(c) = chars.peek() {
-                        let c_width = unicode_width::UnicodeWidthChar::width(*c).unwrap_or(1);
-                        if chunk_width + c_width > content_width && !chunk.is_empty() {
-                            break;
+                        while let Some(c) = chars.peek() {
+                            let c_width =
+                                unicode_width::UnicodeWidthChar::width(*c).unwrap_or(1);
+                            if chunk_width + c_width > content_width && !chunk.is_empty() {
+                                break;
+                            }
+                            chunk.push(chars.next().unwrap());
+                            chunk_width += c_width;
                         }
-                        chunk.push(chars.next().unwrap());
-                        chunk_width += c_width;
-                    }
 
-                    remaining = chars.collect();
+                        remaining = chars.collect();
 
-                    if !remaining.is_empty() {
-                        // More to come, finish this line
-                        current_line_spans.push(Span::styled(chunk, word_style));
-                        result.push(Line::from(std::mem::take(current_line_spans)));
-                        *current_line_spans = vec![Span::styled(prefix, prefix_style)];
-                        *current_line_width = 0;
-                    } else {
-                        // Last chunk
-                        current_line_spans.push(Span::styled(chunk.clone(), word_style));
-                        *current_line_width = chunk.width();
+                        if !remaining.is_empty() {
+                            // More to come, finish this line
+                            current_line_spans.push(Span::styled(chunk, word_style));
+                            result.push(Line::from(std::mem::take(current_line_spans)));
+                            *current_line_spans = vec![Span::styled(prefix, prefix_style)];
+                            *current_line_width = 0;
+                        } else {
+                            // Last chunk
+                            current_line_spans.push(Span::styled(chunk.clone(), word_style));
+                            *current_line_width = display_width_ignoring_escapes(&chunk);
+                        }
                     }
                 }
             } else {
@@ -520,5 +540,106 @@ mod tests {
                 assert!(span.style.bg.is_none());
             }
         }
+    }
+
+    #[test]
+    fn test_osc8_sequence_not_broken() {
+        use crate::markdown::wrap_osc8_hyperlink;
+
+        // Create a very long URL wrapped in OSC 8
+        let long_url = "https://example.com/very/long/path/that/exceeds/width";
+        let display_text = "Click here for a very long link";
+        let osc8_link = wrap_osc8_hyperlink(long_url, display_text);
+
+        let line = Line::from(vec![Span::raw(osc8_link.clone())]);
+
+        // Use a narrow width that would normally trigger breaking
+        let result = wrap_line_with_prefix(line, "| ", Style::default(), 20, None);
+
+        // The OSC 8 sequence should be preserved intact in a single span
+        // Find the content span (skip the prefix)
+        let content_spans: Vec<_> = result
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .filter(|s| s.content != "| ")
+            .collect();
+
+        // Should have at least one content span
+        assert!(!content_spans.is_empty(), "Expected content spans");
+
+        // Check that the OSC 8 sequence is still present
+        let all_content: String = content_spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+
+        assert!(
+            all_content.contains("\x1b]8;;"),
+            "OSC 8 start sequence missing"
+        );
+        assert!(
+            all_content.contains(long_url),
+            "URL missing from content"
+        );
+    }
+
+    #[test]
+    fn test_osc8_sequence_preserved_in_single_span() {
+        use crate::markdown::wrap_osc8_hyperlink;
+
+        let url = "https://github.com/user/repo";
+        let text = "GitHub Link";
+        let osc8_link = wrap_osc8_hyperlink(url, text);
+
+        let line = Line::from(vec![Span::raw(osc8_link.clone())]);
+        let result = wrap_line_with_prefix(line, "| ", Style::default(), 15, None);
+
+        // Even with narrow width, OSC 8 sequence should not be split
+        // across multiple spans
+        let has_complete_sequence = result.iter().any(|line| {
+            line.spans.iter().any(|span| {
+                span.content.contains("\x1b]8;;")
+                    && span.content.contains(url)
+                    && span.content.contains(text)
+            })
+        });
+
+        assert!(
+            has_complete_sequence,
+            "OSC 8 sequence was split across spans"
+        );
+    }
+
+    #[test]
+    fn test_plain_text_still_wraps_normally() {
+        // Verify that plain text (without OSC 8) still wraps normally
+        let long_text = "word ".repeat(20); // 100 chars
+        let line = Line::from(long_text);
+        let result = wrap_line_with_prefix(line, "| ", Style::default(), 30, None);
+
+        // Should produce multiple lines
+        assert!(result.len() > 1, "Plain text should wrap to multiple lines");
+
+        // Each line should have the prefix
+        for l in &result {
+            assert_eq!(l.spans[0].content.as_ref(), "| ");
+        }
+    }
+
+    #[test]
+    fn test_width_calculation_ignores_escape_sequences() {
+        use crate::markdown::wrap_osc8_hyperlink;
+
+        let url = "https://example.com";
+        let text = "Hi"; // Just 2 display characters
+        let osc8_link = wrap_osc8_hyperlink(url, text);
+
+        let line = Line::from(vec![Span::raw(osc8_link)]);
+
+        // With a width of 10, this should fit (display text is only 2 chars)
+        let result = wrap_line_with_prefix(line, "| ", Style::default(), 10, None);
+
+        // Should be a single line since display width is small
+        assert_eq!(result.len(), 1, "Short display text should fit on one line");
     }
 }

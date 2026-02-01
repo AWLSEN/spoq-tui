@@ -17,7 +17,10 @@ mod styles;
 
 pub use cache::MarkdownCache;
 pub use links::{detect_plain_urls, LinkInfo, ParsedMarkdown};
-pub use styles::wrap_osc8_hyperlink;
+pub use styles::{
+    contains_osc8_sequence, display_width_ignoring_escapes, strip_osc8_sequences,
+    wrap_osc8_hyperlink,
+};
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 use ratatui::{
