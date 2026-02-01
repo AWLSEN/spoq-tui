@@ -16,9 +16,66 @@ pub fn conductor_binary_path() -> Result<PathBuf, std::io::Error> {
     Ok(home.join(".spoq").join("bin").join("conductor"))
 }
 
-/// Check if conductor binary exists
+/// Check if conductor binary exists AND has correct architecture.
+/// Returns false if binary is wrong architecture (triggers re-download).
 pub fn conductor_exists() -> bool {
-    conductor_binary_path().map(|p| p.exists()).unwrap_or(false)
+    let path = match conductor_binary_path() {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+
+    if !path.exists() {
+        return false;
+    }
+
+    // Verify architecture matches current platform
+    match verify_binary_architecture(&path) {
+        Ok(true) => true,
+        Ok(false) => {
+            tracing::warn!("Conductor binary has wrong architecture, will re-download");
+            // Delete the wrong binary so it gets re-downloaded
+            let _ = std::fs::remove_file(&path);
+            false
+        }
+        Err(e) => {
+            tracing::warn!("Failed to verify conductor architecture: {}, assuming valid", e);
+            true // Assume valid if we can't check
+        }
+    }
+}
+
+/// Verify that a binary matches the current platform's architecture.
+/// Returns Ok(true) if matches, Ok(false) if wrong architecture.
+fn verify_binary_architecture(path: &std::path::Path) -> Result<bool, std::io::Error> {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut magic = [0u8; 4];
+    file.read_exact(&mut magic)?;
+
+    // Detect binary format from magic bytes
+    let is_correct = match &magic {
+        // Mach-O (macOS)
+        [0xCF, 0xFA, 0xED, 0xFE] | [0xFE, 0xED, 0xFA, 0xCF] => {
+            // Mach-O 64-bit - correct for macOS
+            cfg!(target_os = "macos")
+        }
+        [0xCA, 0xFE, 0xBA, 0xBE] => {
+            // Mach-O universal binary - correct for macOS
+            cfg!(target_os = "macos")
+        }
+        // ELF (Linux)
+        [0x7F, b'E', b'L', b'F'] => {
+            // ELF binary - correct for Linux
+            cfg!(target_os = "linux")
+        }
+        _ => {
+            // Unknown format, assume incorrect
+            false
+        }
+    };
+
+    Ok(is_correct)
 }
 
 /// Download conductor binary for current platform.

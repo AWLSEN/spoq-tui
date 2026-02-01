@@ -14,9 +14,15 @@
 set -e
 
 # Ensure rustup's toolchain is used (not Homebrew's) for cross-compilation
+# This is critical - Homebrew's cargo doesn't have cross-compilation targets
 RUSTUP_TOOLCHAIN="${HOME}/.rustup/toolchains/stable-aarch64-apple-darwin/bin"
 if [[ -d "$RUSTUP_TOOLCHAIN" ]]; then
-    export PATH="${RUSTUP_TOOLCHAIN}:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+    # Use a clean PATH with rustup first, avoiding duplicate Homebrew entries
+    export PATH="${RUSTUP_TOOLCHAIN}:/opt/homebrew/bin:/usr/bin:/bin"
+else
+    echo "ERROR: rustup toolchain not found at $RUSTUP_TOOLCHAIN"
+    echo "Install with: rustup default stable"
+    exit 1
 fi
 
 # Colors
@@ -120,8 +126,8 @@ log_success "Updated Cargo.toml"
 # Build all platforms
 log_step "Building all platforms"
 
-log_info "Building darwin-x86_64 (native)..."
-cargo build --release --quiet
+log_info "Building darwin-x86_64..."
+cargo build --release --target x86_64-apple-darwin --quiet
 log_success "Built darwin-x86_64"
 
 log_info "Building darwin-aarch64..."
@@ -139,7 +145,7 @@ log_success "Built linux-aarch64"
 # Verify all binaries exist
 log_step "Verifying binaries"
 BINARIES=(
-    "target/release/spoq:darwin-x86_64"
+    "target/x86_64-apple-darwin/release/spoq:darwin-x86_64"
     "target/aarch64-apple-darwin/release/spoq:darwin-aarch64"
     "target/x86_64-unknown-linux-gnu/release/spoq:linux-x86_64"
     "target/aarch64-unknown-linux-gnu/release/spoq:linux-aarch64"
@@ -156,6 +162,22 @@ for entry in "${BINARIES[@]}"; do
 done
 
 log_success "All binaries built successfully"
+
+# Verify macOS binaries have correct architecture
+log_step "Verifying binary architectures"
+x86_arch=$(file target/x86_64-apple-darwin/release/spoq | grep -o 'x86_64' || true)
+arm_arch=$(file target/aarch64-apple-darwin/release/spoq | grep -o 'arm64' || true)
+if [[ "$x86_arch" != "x86_64" ]]; then
+    log_error "darwin-x86_64 binary has wrong architecture! Expected x86_64."
+    file target/x86_64-apple-darwin/release/spoq
+    exit 1
+fi
+if [[ "$arm_arch" != "arm64" ]]; then
+    log_error "darwin-aarch64 binary has wrong architecture! Expected arm64."
+    file target/aarch64-apple-darwin/release/spoq
+    exit 1
+fi
+log_success "All binary architectures verified"
 
 # Upload to Railway
 log_step "Uploading to Railway"
