@@ -261,15 +261,19 @@ fn test_overlay_opens_plan_for_plan_approval() {
     );
 
     // Set up plan request
+    use spoq::models::dashboard::PlanRequest;
     state.set_plan_request(
         "t1",
-        "req-123".to_string(),
-        PlanSummary::new(
-            "Add dark mode".to_string(),
-            vec!["Phase 1".to_string(), "Phase 2".to_string()],
-            10,
-            Some(50000),
-        ),
+        PlanRequest {
+            request_id: "req-123".to_string(),
+            summary: PlanSummary::new(
+                "Add dark mode".to_string(),
+                vec!["Phase 1".to_string(), "Phase 2".to_string()],
+                10,
+                Some(50000),
+            ),
+            from_permission: false,
+        },
     );
 
     // Expand thread
