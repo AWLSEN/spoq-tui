@@ -15,6 +15,61 @@ use std::time::Instant;
 use tracing::info;
 
 // ============================================================================
+// PlanApprovalState
+// ============================================================================
+
+/// Navigation state for plan approval overlays
+///
+/// This struct manages the UI navigation state when a plan approval dialog is displayed.
+/// It tracks the currently selected action (Approve/Reject/Feedback), feedback text,
+/// and whether the feedback text input is active.
+#[derive(Debug, Clone, Default)]
+pub struct PlanApprovalState {
+    /// Currently selected action: 0=Approve, 1=Reject, 2=Feedback
+    pub selected_action: usize,
+    /// Feedback text content
+    pub feedback_text: String,
+    /// Whether feedback text input is active (user is typing)
+    pub feedback_active: bool,
+}
+
+impl PlanApprovalState {
+    /// Create a new PlanApprovalState with Approve selected by default
+    pub fn new() -> Self {
+        Self {
+            selected_action: 0, // Default to Approve
+            feedback_text: String::new(),
+            feedback_active: false,
+        }
+    }
+
+    /// Move to the previous action (with wraparound)
+    pub fn prev_action(&mut self) {
+        self.selected_action = if self.selected_action == 0 {
+            2 // Wrap from Approve to Feedback
+        } else {
+            self.selected_action - 1
+        };
+    }
+
+    /// Move to the next action (with wraparound)
+    pub fn next_action(&mut self) {
+        self.selected_action = if self.selected_action == 2 {
+            0 // Wrap from Feedback to Approve
+        } else {
+            self.selected_action + 1
+        };
+    }
+
+    /// Reset all navigation state
+    pub fn reset(&mut self) {
+        self.selected_action = 0;
+        self.feedback_text.clear();
+        self.feedback_active = false;
+    }
+}
+
+// ============================================================================
 // DashboardQuestionState
 // ============================================================================
 
@@ -271,6 +326,8 @@ pub struct DashboardState {
     waiting_for: HashMap<String, WaitingFor>,
     /// Plan requests pending approval: thread_id -> PlanRequest
     plan_requests: HashMap<String, PlanRequest>,
+    /// Plan approval navigation state by thread_id
+    plan_approval_states: HashMap<String, PlanApprovalState>,
     /// Thread IDs verified locally (backend fallback)
     locally_verified: HashSet<String>,
     /// Phase progress data by thread_id during plan execution
@@ -316,6 +373,7 @@ impl DashboardState {
             agent_states: HashMap::new(),
             waiting_for: HashMap::new(),
             plan_requests: HashMap::new(),
+            plan_approval_states: HashMap::new(),
             locally_verified: HashSet::new(),
             phase_progress: HashMap::new(),
             pending_questions: HashMap::new(),
@@ -467,6 +525,25 @@ impl DashboardState {
     /// Store a plan request for approval
     pub fn set_plan_request(&mut self, thread_id: &str, request: PlanRequest) {
         self.plan_requests.insert(thread_id.to_string(), request);
+        // Initialize plan approval state if not present
+        self.plan_approval_states
+            .entry(thread_id.to_string())
+            .or_insert_with(PlanApprovalState::new);
+    }
+
+    /// Get mutable reference to plan approval state for a thread
+    pub fn get_plan_approval_state_mut(&mut self, thread_id: &str) -> Option<&mut PlanApprovalState> {
+        self.plan_approval_states.get_mut(thread_id)
+    }
+
+    /// Get immutable reference to plan approval state for a thread
+    pub fn get_plan_approval_state(&self, thread_id: &str) -> Option<&PlanApprovalState> {
+        self.plan_approval_states.get(thread_id)
+    }
+
+    /// Remove plan approval state (called when plan is approved/rejected)
+    pub fn remove_plan_approval_state(&mut self, thread_id: &str) {
+        self.plan_approval_states.remove(thread_id);
     }
 
     /// Check if a plan request originated from a permission request
@@ -555,6 +632,7 @@ impl DashboardState {
     /// Remove a plan request (after approval/rejection)
     pub fn remove_plan_request(&mut self, thread_id: &str) {
         self.plan_requests.remove(thread_id);
+        self.plan_approval_states.remove(thread_id);
     }
 
     /// Clear waiting_for state for a thread

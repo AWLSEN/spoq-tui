@@ -148,7 +148,10 @@ impl App {
                         ModalType::Permission
                     }
                 } else if self.dashboard.get_plan_request(thread_id).is_some() {
-                    if self.plan_feedback_active {
+                    let feedback_active = self.dashboard.get_plan_approval_state(thread_id)
+                        .map(|s| s.feedback_active)
+                        .unwrap_or(false);
+                    if feedback_active {
                         ModalType::PlanFeedback
                     } else {
                         ModalType::PlanApproval
@@ -194,7 +197,10 @@ impl App {
                 }
             } else if self.dashboard.get_plan_request(thread_id).is_some() {
                 // Plan approval is pending (e.g., ExitPlanMode converted to plan approval)
-                if self.plan_feedback_active {
+                let feedback_active = self.dashboard.get_plan_approval_state(thread_id)
+                    .map(|s| s.feedback_active)
+                    .unwrap_or(false);
+                if feedback_active {
                     ModalType::PlanFeedback
                 } else {
                     ModalType::PlanApproval

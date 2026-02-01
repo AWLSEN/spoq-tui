@@ -233,11 +233,17 @@ pub enum Command {
     PlanScrollUp,
     /// Scroll plan content down (see more of plan below)
     PlanScrollDown,
-    /// Approve plan (Y/y when plan approval is pending)
+    /// Move selection to previous action (Up arrow in vertical selection mode)
+    PlanPrevAction,
+    /// Move selection to next action (Down arrow in vertical selection mode)
+    PlanNextAction,
+    /// Confirm selected action (Enter in vertical selection mode)
+    PlanConfirmAction,
+    /// Approve plan (Y/y when plan approval is pending) - DEPRECATED, use PlanConfirmAction with selected_action=0
     ApprovePlan,
-    /// Reject plan (N/n when plan approval is pending)
+    /// Reject plan (N/n when plan approval is pending) - DEPRECATED, use PlanConfirmAction with selected_action=1
     RejectPlan,
-    /// Enter plan feedback text input mode (F key)
+    /// Enter plan feedback text input mode (F key) - DEPRECATED, use PlanConfirmAction with selected_action=2
     PlanFeedbackMode,
     /// Type character in plan feedback input
     PlanFeedbackTypeChar(char),
@@ -245,7 +251,7 @@ pub enum Command {
     PlanFeedbackBackspace,
     /// Submit plan feedback (Enter) — sends rejection with feedback message
     PlanFeedbackSubmit,
-    /// Cancel plan feedback (Escape) — returns to Y/N/F mode
+    /// Cancel plan feedback (Escape) — returns to selection mode
     PlanFeedbackCancel,
 
     // =========================================================================
@@ -432,6 +438,9 @@ impl Command {
             Command::OpenQuestionOverlay => "Open question overlay",
             Command::PlanScrollUp => "Scroll plan up",
             Command::PlanScrollDown => "Scroll plan down",
+            Command::PlanPrevAction => "Previous plan action",
+            Command::PlanNextAction => "Next plan action",
+            Command::PlanConfirmAction => "Confirm plan action",
             Command::ApprovePlan => "Approve plan",
             Command::RejectPlan => "Reject plan",
             Command::PlanFeedbackMode => "Enter plan feedback mode",

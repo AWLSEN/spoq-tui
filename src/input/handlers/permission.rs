@@ -896,6 +896,58 @@ pub fn handle_plan_approval_command(app: &mut App, cmd: &Command) -> bool {
             true
         }
 
+        Command::PlanPrevAction => {
+            // Move selection to previous action (with wraparound)
+            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                state.prev_action();
+                app.mark_dirty();
+                true
+            } else {
+                false
+            }
+        }
+
+        Command::PlanNextAction => {
+            // Move selection to next action (with wraparound)
+            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                state.next_action();
+                app.mark_dirty();
+                true
+            } else {
+                false
+            }
+        }
+
+        Command::PlanConfirmAction => {
+            // Confirm the currently selected action
+            let selected_action = app.dashboard.get_plan_approval_state(&thread_id)
+                .map(|s| s.selected_action)
+                .unwrap_or(0);
+
+            match selected_action {
+                0 => {
+                    // Approve
+                    app.handle_permission_key('y')
+                }
+                1 => {
+                    // Reject
+                    app.handle_permission_key('n')
+                }
+                2 => {
+                    // Activate feedback mode
+                    if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                        state.feedback_active = true;
+                        state.feedback_text.clear();
+                        app.mark_dirty();
+                        true
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            }
+        }
+
         Command::ApprovePlan => {
             // Approve plan using existing permission key handler
             // It will check for plan approval after finding no pending permission
@@ -916,43 +968,65 @@ pub fn handle_plan_approval_command(app: &mut App, cmd: &Command) -> bool {
 ///
 /// Returns `true` if the command was handled successfully.
 pub fn handle_plan_feedback_command(app: &mut App, cmd: &Command) -> bool {
+    let thread_id = match &app.active_thread_id {
+        Some(id) => id.clone(),
+        None => return false,
+    };
+
     match cmd {
         Command::PlanFeedbackMode => {
-            app.plan_feedback_active = true;
-            app.plan_feedback_text.clear();
-            app.mark_dirty();
-            true
+            // Deprecated - now handled by PlanConfirmAction
+            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                state.feedback_active = true;
+                state.feedback_text.clear();
+                app.mark_dirty();
+                true
+            } else {
+                false
+            }
         }
         Command::PlanFeedbackTypeChar(c) => {
-            app.plan_feedback_text.push(*c);
-            app.mark_dirty();
-            true
+            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                state.feedback_text.push(*c);
+                app.mark_dirty();
+                true
+            } else {
+                false
+            }
         }
         Command::PlanFeedbackBackspace => {
-            app.plan_feedback_text.pop();
-            app.mark_dirty();
-            true
+            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                state.feedback_text.pop();
+                app.mark_dirty();
+                true
+            } else {
+                false
+            }
         }
         Command::PlanFeedbackCancel => {
-            app.plan_feedback_active = false;
-            app.plan_feedback_text.clear();
-            app.mark_dirty();
-            true
+            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                state.feedback_active = false;
+                state.feedback_text.clear();
+                app.mark_dirty();
+                true
+            } else {
+                false
+            }
         }
         Command::PlanFeedbackSubmit => {
-            if app.plan_feedback_text.is_empty() {
+            let feedback = app.dashboard.get_plan_approval_state(&thread_id)
+                .map(|s| s.feedback_text.clone())
+                .unwrap_or_default();
+
+            if feedback.is_empty() {
                 return true; // Ignore empty submit
             }
-            let thread_id = match &app.active_thread_id {
-                Some(id) => id.clone(),
-                None => return false,
-            };
+
             let request_id = match app.dashboard.get_plan_request_id(&thread_id) {
                 Some(id) => id.to_string(),
                 None => return false,
             };
             let from_permission = app.dashboard.is_plan_from_permission(&thread_id);
-            let feedback = app.plan_feedback_text.clone();
 
             // Send rejection with feedback message
             let sent = if from_permission {
@@ -964,8 +1038,10 @@ pub fn handle_plan_feedback_command(app: &mut App, cmd: &Command) -> bool {
                 app.dashboard.remove_plan_request(&thread_id);
                 // Keep planning mode — Claude will revise and call ExitPlanMode again
             }
-            app.plan_feedback_active = false;
-            app.plan_feedback_text.clear();
+            if let Some(state) = app.dashboard.get_plan_approval_state_mut(&thread_id) {
+                state.feedback_active = false;
+                state.feedback_text.clear();
+            }
             app.mark_dirty();
             sent
         }

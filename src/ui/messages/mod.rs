@@ -472,12 +472,15 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
             // Show plan approval UI if a plan is pending approval
             if let Some(plan_request) = app.dashboard.get_plan_request(thread_id) {
+                let (feedback_active, feedback_text) = app.dashboard.get_plan_approval_state(thread_id)
+                    .map(|s| (s.feedback_active, s.feedback_text.clone()))
+                    .unwrap_or((false, String::new()));
                 lines.extend(plan_events::render_plan_approval(
                     &plan_request.summary,
                     ctx,
                     &mut app.markdown_cache,
-                    app.plan_feedback_active,
-                    &app.plan_feedback_text,
+                    feedback_active,
+                    &feedback_text,
                 ));
             }
         }
@@ -552,12 +555,15 @@ pub fn render_messages_area(frame: &mut Frame, area: Rect, app: &mut App, ctx: &
 
     // Show plan approval UI if a plan is pending approval
     if let Some(plan_request) = app.dashboard.get_plan_request(&thread_id) {
+        let (feedback_active, feedback_text) = app.dashboard.get_plan_approval_state(&thread_id)
+            .map(|s| (s.feedback_active, s.feedback_text.clone()))
+            .unwrap_or((false, String::new()));
         lines.extend(plan_events::render_plan_approval(
             &plan_request.summary,
             ctx,
             &mut app.markdown_cache,
-            app.plan_feedback_active,
-            &app.plan_feedback_text,
+            feedback_active,
+            &feedback_text,
         ));
     }
 
